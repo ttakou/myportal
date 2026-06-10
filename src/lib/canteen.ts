@@ -7,6 +7,7 @@ import {
   type DishOptionGroup,
   type MealPeriod,
   type OptionDemand,
+  type Reservation,
 } from "@/types/canteen";
 
 /**
@@ -182,6 +183,21 @@ export async function getOptionDemand(serviceDate: string): Promise<OptionDemand
     return [];
   }
   return (data ?? []) as OptionDemand[];
+}
+
+/** Per-person reservations for the campboss pack list (admin-scoped via RLS). */
+export async function getReservations(serviceDate: string): Promise<Reservation[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("canteen_reservations")
+    .select("*")
+    .eq("service_date", serviceDate)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("getReservations:", error.message);
+    return [];
+  }
+  return (data ?? []) as Reservation[];
 }
 
 /** Demand summary for the campboss dashboard (admin-scoped via RLS). */

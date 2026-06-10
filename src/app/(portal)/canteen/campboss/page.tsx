@@ -4,6 +4,7 @@ import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import {
   getDishDemand,
   getOptionDemand,
+  getReservations,
   getServedMealPeriods,
   resolveServiceDate,
 } from "@/lib/canteen";
@@ -32,9 +33,10 @@ export default async function CampbossPage({
   }
 
   const serviceDate = resolveServiceDate(searchParams.date);
-  const [initial, initialOptions, mealPeriods] = await Promise.all([
+  const [initial, initialOptions, initialReservations, mealPeriods] = await Promise.all([
     getDishDemand(serviceDate),
     getOptionDemand(serviceDate),
+    getReservations(serviceDate),
     getServedMealPeriods(),
   ]);
   const prettyDate = new Date(serviceDate + "T00:00:00").toLocaleDateString(
@@ -59,6 +61,7 @@ export default async function CampbossPage({
         serviceDate={serviceDate}
         initial={initial}
         initialOptions={initialOptions}
+        initialReservations={initialReservations}
         mealPeriods={mealPeriods}
       />
     </div>

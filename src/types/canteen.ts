@@ -66,6 +66,22 @@ export interface OptionDemand {
   picks: number;
 }
 
+/** A per-person reservation (who reserved what) for the campboss pack list. */
+export interface Reservation {
+  booking_id: string;
+  service_date: string;
+  meal_period: MealPeriod;
+  guest_count: number;
+  prepared_at: string | null;
+  person_name: string | null;
+  person_email: string;
+  dish_name: string;
+  kitchen_name: string;
+  kitchen_kind: KitchenKind;
+  /** Comma-separated chosen options, e.g. "Meat, Rice". */
+  options: string;
+}
+
 /** A row of the canteen_dish_demand view — powers the campboss dashboard. */
 export interface DishDemand {
   dish_id: string;
