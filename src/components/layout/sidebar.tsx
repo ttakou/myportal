@@ -8,9 +8,10 @@ import { NavLinks, type NavLink } from "./nav-links";
  *
  * It fetches the authenticated user's active `tenant_services` and renders ONLY
  * the modules the tenant is subscribed to. Adding/removing a module for a tenant
- * is a pure data change — no code edits required.
+ * is a pure data change — no code edits required. The brand name is passed in by
+ * the layout from the tenant's resolved branding.
  */
-export async function Sidebar() {
+export async function Sidebar({ brandName }: { brandName?: string }) {
   const services = await getActiveServices();
 
   const links: NavLink[] = services.map((s) => ({
@@ -21,10 +22,15 @@ export async function Sidebar() {
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-card">
-      <div className="flex h-16 items-center gap-2 border-b px-6">
-        <span className="text-lg font-semibold tracking-tight">
-          MyEnterprisePortal
+      <div className="flex h-16 flex-col justify-center border-b px-6">
+        <span className="truncate text-lg font-semibold tracking-tight text-brand">
+          {brandName ?? "MyEnterprisePortal"}
         </span>
+        {brandName && (
+          <span className="text-xs text-muted-foreground">
+            Employee Self-Service
+          </span>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col gap-1 overflow-y-auto py-4">
