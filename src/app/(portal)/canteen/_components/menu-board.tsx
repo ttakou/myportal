@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Check, Minus, Plus, Users, UtensilsCrossed } from "lucide-react";
+import { Check, CheckCircle2, Minus, Plus, Users, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,16 +79,22 @@ export function MenuBoard({
         const mealDishes = dishes.filter((d) => d.meal_period === meal);
         if (mealDishes.length === 0) return null;
         const booking = bookingByMeal.get(meal);
+        const mealReady = !!booking?.prepared_at;
 
         return (
           <section key={meal} className="space-y-3">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">{MEAL_PERIOD_LABEL[meal]}</h2>
-              {booking && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
-                  <Check className="h-3 w-3" /> Booked
-                </span>
-              )}
+              {booking &&
+                (mealReady ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                    <CheckCircle2 className="h-3 w-3" /> Ready for collection
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+                    <Check className="h-3 w-3" /> Booked
+                  </span>
+                ))}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -101,7 +107,11 @@ export function MenuBoard({
                     key={dish.id}
                     className={cn(
                       "flex flex-col rounded-lg border p-4",
-                      isBooked ? "border-primary ring-1 ring-primary" : "bg-card",
+                      isBooked && mealReady
+                        ? "border-green-500 ring-2 ring-green-500"
+                        : isBooked
+                          ? "border-primary ring-1 ring-primary"
+                          : "bg-card",
                     )}
                   >
                     <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -123,20 +133,29 @@ export function MenuBoard({
                             {booking!.selected_options.map((o) => o.name).join(", ")}
                           </p>
                         )}
-                        <GuestStepper
-                          booking={booking!}
-                          disabled={pending}
-                          onChange={(n) => run(() => updateGuests(booking!.id, n))}
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                          disabled={pending}
-                          onClick={() => run(() => cancelBooking(booking!.id))}
-                        >
-                          Cancel booking
-                        </Button>
+                        {mealReady ? (
+                          <p className="inline-flex items-center gap-1.5 rounded-md bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Ready for collection
+                          </p>
+                        ) : (
+                          <>
+                            <GuestStepper
+                              booking={booking!}
+                              disabled={pending}
+                              onChange={(n) => run(() => updateGuests(booking!.id, n))}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              disabled={pending}
+                              onClick={() => run(() => cancelBooking(booking!.id))}
+                            >
+                              Cancel booking
+                            </Button>
+                          </>
+                        )}
                       </div>
                     ) : (
                       <div className="mt-3 flex flex-1 flex-col">
@@ -182,7 +201,11 @@ export function MenuBoard({
                         <Button
                           size="sm"
                           className="mt-auto"
-                          disabled={pending || (hasOptions && !selectionValid(dish))}
+                          disabled={
+                            pending ||
+                            mealReady ||
+                            (hasOptions && !selectionValid(dish))
+                          }
                           onClick={() =>
                             run(() =>
                               bookDish(dish.id, 0, [], Array.from(sel)),

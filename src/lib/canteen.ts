@@ -142,7 +142,7 @@ export async function getMyBookings(serviceDate: string): Promise<CanteenBooking
   const { data, error } = await supabase
     .from("canteen_bookings")
     .select(
-      "id, dish_id, kitchen_id, service_date, meal_period, guest_count, guest_names, status," +
+      "id, dish_id, kitchen_id, service_date, meal_period, guest_count, guest_names, status, prepared_at," +
         " canteen_booking_options(canteen_options(id, name))",
     )
     .eq("profile_id", user.id)
@@ -162,6 +162,7 @@ export async function getMyBookings(serviceDate: string): Promise<CanteenBooking
     guest_count: row.guest_count,
     guest_names: row.guest_names,
     status: row.status,
+    prepared_at: row.prepared_at ?? null,
     selected_options: (row.canteen_booking_options ?? [])
       .map((bo: Record<string, any>) =>
         Array.isArray(bo.canteen_options) ? bo.canteen_options[0] : bo.canteen_options,

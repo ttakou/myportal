@@ -51,6 +51,8 @@ export interface CanteenBooking {
   guest_count: number;
   guest_names: string[];
   status: BookingStatus;
+  /** Set by the campboss when the meal is ready for collection. */
+  prepared_at: string | null;
   selected_options: DishOption[];
 }
 
