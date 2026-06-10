@@ -77,3 +77,69 @@ export async function setDishActive(
   revalidatePath("/canteen");
   return { ok: true };
 }
+
+// ---- Dish option groups / options ------------------------------------------
+
+export async function addOptionGroup(input: {
+  dishId: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+}): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  if (!input.name.trim()) return { ok: false, error: "Group name is required." };
+  const min = Math.max(0, Math.floor(input.minSelect));
+  const max = Math.max(1, Math.floor(input.maxSelect));
+  if (max < min) return { ok: false, error: "Max must be ≥ min." };
+
+  const supabase = createClient();
+  const { error } = await supabase.from("canteen_option_groups").insert({
+    dish_id: input.dishId,
+    name: input.name.trim(),
+    min_select: min,
+    max_select: max,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
+export async function addOption(
+  groupId: string,
+  name: string,
+): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  if (!name.trim()) return { ok: false, error: "Option name is required." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("canteen_options")
+    .insert({ group_id: groupId, name: name.trim() });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
+export async function deleteOption(optionId: string): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { error } = await supabase.from("canteen_options").delete().eq("id", optionId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
+export async function deleteOptionGroup(groupId: string): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("canteen_option_groups")
+    .delete()
+    .eq("id", groupId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: true };
+}

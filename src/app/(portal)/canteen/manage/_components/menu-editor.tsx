@@ -1,17 +1,27 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   MEAL_PERIODS,
   MEAL_PERIOD_LABEL,
   type CanteenDish,
+  type DishOptionGroup,
   type MealPeriod,
 } from "@/types/canteen";
 import type { Kitchen } from "@/lib/canteen";
-import { addDish, setDishActive } from "../actions";
+import {
+  addDish,
+  addOption,
+  addOptionGroup,
+  deleteOption,
+  deleteOptionGroup,
+  setDishActive,
+} from "../actions";
+
+type Runner = (fn: () => Promise<{ ok: boolean; error?: string }>) => void;
 
 export function MenuEditor({
   serviceDate,
@@ -137,42 +147,180 @@ export function MenuEditor({
               {rows.map((d) => (
                 <div
                   key={d.id}
-                  className={cn(
-                    "flex items-center justify-between gap-3 px-4 py-3",
-                    !d.is_active && "opacity-60",
-                  )}
+                  className={cn("px-4 py-3", !d.is_active && "opacity-60")}
                 >
-                  <div>
-                    <p className="font-medium">
-                      {d.name}{" "}
-                      <span className="text-xs font-normal text-muted-foreground">
-                        · {d.kitchen_name}
-                        {d.capacity != null && ` · cap ${d.capacity}`}
-                      </span>
-                    </p>
-                    {d.description && (
-                      <p className="text-sm text-muted-foreground">{d.description}</p>
-                    )}
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">
+                        {d.name}{" "}
+                        <span className="text-xs font-normal text-muted-foreground">
+                          · {d.kitchen_name}
+                          {d.capacity != null && ` · cap ${d.capacity}`}
+                        </span>
+                      </p>
+                      {d.description && (
+                        <p className="text-sm text-muted-foreground">{d.description}</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => run(() => setDishActive(d.id, !d.is_active))}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-xs font-medium",
+                        d.is_active
+                          ? "bg-primary/10 text-primary"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {d.is_active ? "Published" : "Hidden"}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() => run(() => setDishActive(d.id, !d.is_active))}
-                    className={cn(
-                      "rounded-full px-2.5 py-1 text-xs font-medium",
-                      d.is_active
-                        ? "bg-primary/10 text-primary"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {d.is_active ? "Published" : "Hidden"}
-                  </button>
+                  <OptionsManager dish={d} run={run} pending={pending} />
                 </div>
               ))}
             </div>
           </section>
         );
       })}
+    </div>
+  );
+}
+
+function OptionsManager({
+  dish,
+  run,
+  pending,
+}: {
+  dish: CanteenDish;
+  run: Runner;
+  pending: boolean;
+}) {
+  const [groupName, setGroupName] = useState("");
+  const [minSel, setMinSel] = useState("1");
+  const [maxSel, setMaxSel] = useState("1");
+
+  return (
+    <div className="mt-3 space-y-2 rounded-md bg-muted/40 p-3">
+      {dish.option_groups.map((g) => (
+        <OptionGroupRow key={g.id} group={g} run={run} pending={pending} />
+      ))}
+
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <input
+          value={groupName}
+          onChange={(e) => setGroupName(e.target.value)}
+          placeholder="New option group (e.g. Protein)"
+          className="rounded-md border bg-background px-2 py-1 text-sm"
+        />
+        <label className="text-xs text-muted-foreground">
+          min{" "}
+          <input
+            value={minSel}
+            onChange={(e) => setMinSel(e.target.value)}
+            type="number"
+            min={0}
+            className="w-12 rounded-md border bg-background px-1 py-1 text-sm"
+          />
+        </label>
+        <label className="text-xs text-muted-foreground">
+          max{" "}
+          <input
+            value={maxSel}
+            onChange={(e) => setMaxSel(e.target.value)}
+            type="number"
+            min={1}
+            className="w-12 rounded-md border bg-background px-1 py-1 text-sm"
+          />
+        </label>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending || !groupName.trim()}
+          onClick={() =>
+            run(async () => {
+              const res = await addOptionGroup({
+                dishId: dish.id,
+                name: groupName,
+                minSelect: Number(minSel) || 0,
+                maxSelect: Number(maxSel) || 1,
+              });
+              if (res.ok) setGroupName("");
+              return res;
+            })
+          }
+        >
+          <Plus className="h-3.5 w-3.5" /> Group
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function OptionGroupRow({
+  group,
+  run,
+  pending,
+}: {
+  group: DishOptionGroup;
+  run: Runner;
+  pending: boolean;
+}) {
+  const [name, setName] = useState("");
+  const rule =
+    group.max_select === 1
+      ? "choose 1"
+      : `choose ${group.min_select}–${group.max_select}`;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="font-medium">{group.name}</span>
+      <span className="text-xs text-muted-foreground">({rule})</span>
+      {group.options.map((o) => (
+        <span
+          key={o.id}
+          className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs"
+        >
+          {o.name}
+          <button
+            type="button"
+            aria-label={`Remove ${o.name}`}
+            disabled={pending}
+            onClick={() => run(() => deleteOption(o.id))}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="add option"
+        className="w-28 rounded-md border bg-background px-2 py-0.5 text-xs"
+      />
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={pending || !name.trim()}
+        onClick={() =>
+          run(async () => {
+            const res = await addOption(group.id, name);
+            if (res.ok) setName("");
+            return res;
+          })
+        }
+      >
+        Add
+      </Button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => run(() => deleteOptionGroup(group.id))}
+        className="text-xs text-muted-foreground hover:text-destructive"
+      >
+        delete group
+      </button>
     </div>
   );
 }
