@@ -72,6 +72,44 @@ export async function setUserActive(
   return { ok: true };
 }
 
+/** Set which meal periods the canteen serves (stored in tenant_services.settings). */
+export async function setCanteenMealPeriods(
+  mealPeriods: string[],
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const allowed = ["breakfast", "lunch", "dinner"];
+  const clean = allowed.filter((m) => mealPeriods.includes(m)); // keep canonical order
+  if (clean.length === 0) {
+    return { ok: false, error: "Select at least one meal period." };
+  }
+
+  const supabase = createClient();
+  const { data: row } = await supabase
+    .from("tenant_services")
+    .select("id, settings, services_catalog!inner(slug)")
+    .eq("services_catalog.slug", "canteen")
+    .maybeSingle();
+  if (!row) return { ok: false, error: "Canteen module is not enabled." };
+
+  const settings = {
+    ...((row.settings as Record<string, unknown>) ?? {}),
+    meal_periods: clean,
+  };
+  const { error } = await supabase
+    .from("tenant_services")
+    .update({ settings })
+    .eq("id", row.id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin");
+  revalidatePath("/canteen");
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen/campboss");
+  return { ok: true };
+}
+
 /** Enable/disable a module for the current tenant (upsert tenant_services). */
 export async function setModuleActive(
   serviceId: string,
