@@ -5,7 +5,6 @@ import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
-  MEAL_PERIODS,
   MEAL_PERIOD_LABEL,
   type CanteenDish,
   type DishOptionGroup,
@@ -27,16 +26,18 @@ export function MenuEditor({
   serviceDate,
   kitchens,
   dishes,
+  mealPeriods,
 }: {
   serviceDate: string;
   kitchens: Kitchen[];
   dishes: CanteenDish[];
+  mealPeriods: MealPeriod[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const [kitchenId, setKitchenId] = useState(kitchens[0]?.id ?? "");
-  const [mealPeriod, setMealPeriod] = useState<MealPeriod>("breakfast");
+  const [mealPeriod, setMealPeriod] = useState<MealPeriod>(mealPeriods[0] ?? "lunch");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [capacity, setCapacity] = useState("");
@@ -105,7 +106,7 @@ export function MenuEditor({
           onChange={(e) => setMealPeriod(e.target.value as MealPeriod)}
           className="rounded-md border bg-background px-2 py-2 text-sm capitalize lg:col-span-1"
         >
-          {MEAL_PERIODS.map((m) => (
+          {mealPeriods.map((m) => (
             <option key={m} value={m}>
               {MEAL_PERIOD_LABEL[m]}
             </option>
@@ -137,7 +138,7 @@ export function MenuEditor({
         />
       </form>
 
-      {MEAL_PERIODS.map((meal) => {
+      {mealPeriods.map((meal) => {
         const rows = dishes.filter((d) => d.meal_period === meal);
         if (rows.length === 0) return null;
         return (

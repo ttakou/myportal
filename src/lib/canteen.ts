@@ -1,11 +1,31 @@
 import { createClient } from "@/lib/supabase/server";
-import type {
-  CanteenDish,
-  CanteenBooking,
-  DishDemand,
-  DishOptionGroup,
-  OptionDemand,
+import {
+  MEAL_PERIODS,
+  type CanteenDish,
+  type CanteenBooking,
+  type DishDemand,
+  type DishOptionGroup,
+  type MealPeriod,
+  type OptionDemand,
 } from "@/types/canteen";
+
+/**
+ * Which meal periods this tenant's canteen serves. Stored data-driven in the
+ * canteen tenant_service settings (`meal_periods`). Defaults to lunch only.
+ */
+export async function getServedMealPeriods(): Promise<MealPeriod[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("tenant_services")
+    .select("settings, services_catalog!inner(slug)")
+    .eq("services_catalog.slug", "canteen")
+    .maybeSingle();
+  const raw = (data?.settings as { meal_periods?: unknown })?.meal_periods;
+  const valid = Array.isArray(raw)
+    ? (raw.filter((m) => MEAL_PERIODS.includes(m as MealPeriod)) as MealPeriod[])
+    : [];
+  return valid.length ? valid : ["lunch"];
+}
 
 const DISH_SELECT =
   "id, kitchen_id, service_date, meal_period, name, description, capacity, is_active," +

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LayoutDashboard, Settings } from "lucide-react";
-import { getMenu, getMyBookings, resolveServiceDate } from "@/lib/canteen";
+import { getMenu, getMyBookings, getServedMealPeriods, resolveServiceDate } from "@/lib/canteen";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { MenuBoard } from "./_components/menu-board";
 
@@ -10,10 +10,11 @@ export default async function CanteenPage({
   searchParams: { date?: string };
 }) {
   const serviceDate = resolveServiceDate(searchParams.date);
-  const [dishes, bookings, role] = await Promise.all([
+  const [dishes, bookings, role, mealPeriods] = await Promise.all([
     getMenu(serviceDate),
     getMyBookings(serviceDate),
     getCurrentRole(),
+    getServedMealPeriods(),
   ]);
   const isAdmin = isAdminRole(role);
 
@@ -54,7 +55,12 @@ export default async function CanteenPage({
           No menu has been published for this date yet.
         </p>
       ) : (
-        <MenuBoard serviceDate={serviceDate} dishes={dishes} bookings={bookings} />
+        <MenuBoard
+          serviceDate={serviceDate}
+          dishes={dishes}
+          bookings={bookings}
+          mealPeriods={mealPeriods}
+        />
       )}
     </div>
   );

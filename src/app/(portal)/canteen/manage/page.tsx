@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
-import { getKitchens, getManagedDishes, resolveServiceDate } from "@/lib/canteen";
+import {
+  getKitchens,
+  getManagedDishes,
+  getServedMealPeriods,
+  resolveServiceDate,
+} from "@/lib/canteen";
 import { MenuEditor } from "./_components/menu-editor";
 
 export default async function ManageMenuPage({
@@ -22,9 +27,10 @@ export default async function ManageMenuPage({
   }
 
   const serviceDate = resolveServiceDate(searchParams.date);
-  const [kitchens, dishes] = await Promise.all([
+  const [kitchens, dishes, mealPeriods] = await Promise.all([
     getKitchens(),
     getManagedDishes(serviceDate),
+    getServedMealPeriods(),
   ]);
 
   return (
@@ -40,7 +46,12 @@ export default async function ManageMenuPage({
         <p className="text-muted-foreground">Publish dishes for {serviceDate}.</p>
       </div>
 
-      <MenuEditor serviceDate={serviceDate} kitchens={kitchens} dishes={dishes} />
+      <MenuEditor
+        serviceDate={serviceDate}
+        kitchens={kitchens}
+        dishes={dishes}
+        mealPeriods={mealPeriods}
+      />
     </div>
   );
 }

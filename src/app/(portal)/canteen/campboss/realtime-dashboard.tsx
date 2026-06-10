@@ -5,7 +5,6 @@ import { Radio, Users, UtensilsCrossed } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
-  MEAL_PERIODS,
   MEAL_PERIOD_LABEL,
   type DishDemand,
   type MealPeriod,
@@ -16,10 +15,12 @@ export function RealtimeDashboard({
   serviceDate,
   initial,
   initialOptions,
+  mealPeriods,
 }: {
   serviceDate: string;
   initial: DishDemand[];
   initialOptions: OptionDemand[];
+  mealPeriods: MealPeriod[];
 }) {
   const [demand, setDemand] = useState<DishDemand[]>(initial);
   const [options, setOptions] = useState<OptionDemand[]>(initialOptions);
@@ -103,7 +104,7 @@ export function RealtimeDashboard({
         </div>
       </div>
 
-      {MEAL_PERIODS.map((meal) => {
+      {mealPeriods.map((meal) => {
         const rows = demand.filter((d) => d.meal_period === meal);
         if (rows.length === 0) return null;
         const mealTotal = rows.reduce((s, d) => s + Number(d.total_covers), 0);

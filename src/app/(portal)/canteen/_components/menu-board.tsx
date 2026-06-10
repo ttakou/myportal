@@ -5,7 +5,6 @@ import { Check, Minus, Plus, Users, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
-  MEAL_PERIODS,
   MEAL_PERIOD_LABEL,
   type CanteenBooking,
   type CanteenDish,
@@ -17,10 +16,12 @@ import { bookDish, cancelBooking, updateGuests } from "../actions";
 export function MenuBoard({
   dishes,
   bookings,
+  mealPeriods,
 }: {
   serviceDate: string;
   dishes: CanteenDish[];
   bookings: CanteenBooking[];
+  mealPeriods: MealPeriod[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export function MenuBoard({
         </p>
       )}
 
-      {MEAL_PERIODS.map((meal) => {
+      {mealPeriods.map((meal) => {
         const mealDishes = dishes.filter((d) => d.meal_period === meal);
         if (mealDishes.length === 0) return null;
         const booking = bookingByMeal.get(meal);
