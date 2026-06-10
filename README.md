@@ -91,8 +91,10 @@ myportal/
    supabase db push   # or run 0001_*.sql then 0002_*.sql
    ```
 
-4. **Enable the Custom Access Token Hook** (required for RLS to work).
-   This step cannot be done in SQL:
+4. **Custom Access Token Hook** (optional optimization).
+   RLS works out of the box via a profile-lookup fallback (see migration
+   `0004_tenant_resolution_fallback.sql`). Enabling the hook makes tenant/role
+   resolution a pure in-JWT check (no per-query profile lookup):
 
    - **Hosted:** Dashboard → Authentication → Hooks → *Customize Access Token
      (JWT) Claims* → enable, select `public.custom_access_token_hook`.
@@ -104,8 +106,8 @@ myportal/
      uri = "pg-functions://postgres/public/custom_access_token_hook"
      ```
 
-   After enabling, users must re-authenticate so their JWT carries the new
-   `app_metadata.tenant_id` / `app_metadata.user_role` claims.
+   `current_tenant_id()` prefers the JWT claim and falls back to the profile
+   lookup automatically, so enabling the hook is seamless.
 
 5. **Run**
 
