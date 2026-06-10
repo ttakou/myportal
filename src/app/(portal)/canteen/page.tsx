@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { LayoutDashboard } from "lucide-react";
+import { LayoutDashboard, Settings } from "lucide-react";
 import { getMenu, getMyBookings, resolveServiceDate } from "@/lib/canteen";
+import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { MenuBoard } from "./_components/menu-board";
 
 export default async function CanteenPage({
@@ -9,10 +10,12 @@ export default async function CanteenPage({
   searchParams: { date?: string };
 }) {
   const serviceDate = resolveServiceDate(searchParams.date);
-  const [dishes, bookings] = await Promise.all([
+  const [dishes, bookings, role] = await Promise.all([
     getMenu(serviceDate),
     getMyBookings(serviceDate),
+    getCurrentRole(),
   ]);
+  const isAdmin = isAdminRole(role);
 
   const prettyDate = new Date(serviceDate + "T00:00:00").toLocaleDateString(
     undefined,
@@ -26,13 +29,24 @@ export default async function CanteenPage({
           <h1 className="text-2xl font-semibold tracking-tight">Canteen</h1>
           <p className="text-muted-foreground">{prettyDate}</p>
         </div>
-        <Link
-          href="/canteen/campboss"
-          className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-        >
-          <LayoutDashboard className="h-4 w-4" />
-          Campboss dashboard
-        </Link>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            <Link
+              href="/canteen/manage"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <Settings className="h-4 w-4" />
+              Manage menu
+            </Link>
+            <Link
+              href="/canteen/campboss"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              Campboss dashboard
+            </Link>
+          </div>
+        )}
       </div>
 
       {dishes.length === 0 ? (

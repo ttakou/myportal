@@ -1,0 +1,79 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import type { MealPeriod } from "@/types/canteen";
+
+export interface ActionResult {
+  ok: boolean;
+  error?: string;
+}
+
+const MEALS: MealPeriod[] = ["breakfast", "lunch", "dinner"];
+
+export async function addDish(input: {
+  kitchenId: string;
+  serviceDate: string;
+  mealPeriod: MealPeriod;
+  name: string;
+  description?: string;
+  capacity?: number | null;
+}): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!MEALS.includes(input.mealPeriod)) {
+    return { ok: false, error: "Invalid meal period." };
+  }
+  if (!input.name.trim()) return { ok: false, error: "Dish name is required." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.serviceDate)) {
+    return { ok: false, error: "Invalid date." };
+  }
+
+  const supabase = createClient();
+  // tenant_id is enforced by RLS via the kitchen's tenant; set from caller tenant.
+  const { data: tenant } = await supabase
+    .from("tenants")
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const { error } = await supabase.from("canteen_dishes").insert({
+    tenant_id: tenant.id,
+    kitchen_id: input.kitchenId,
+    service_date: input.serviceDate,
+    meal_period: input.mealPeriod,
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+    capacity:
+      input.capacity === undefined || input.capacity === null
+        ? null
+        : Math.max(0, Math.floor(input.capacity)),
+  });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
+export async function setDishActive(
+  dishId: string,
+  isActive: boolean,
+): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) {
+    return { ok: false, error: "Not authorized." };
+  }
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("canteen_dishes")
+    .update({ is_active: isActive })
+    .eq("id", dishId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: true };
+}
