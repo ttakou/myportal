@@ -81,12 +81,12 @@ create table if not exists public.profiles (
   avatar_url   text,
   is_active    boolean not null default true,
   created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
 
-  -- A manager must live in the same tenant as their report. Enforced in app +
-  -- the FK above; cross-tenant managers are prevented by RLS at write time.
-  constraint profiles_super_admin_tenant_chk
-    check (role = 'super_admin' or tenant_id is not null)
+  -- Note: tenant_id is intentionally nullable. A freshly signed-up user has no
+  -- tenant until an admin assigns one (the handle_new_user trigger creates a
+  -- "pending" profile). RLS makes a tenant-less profile harmless because
+  -- current_tenant_id() is null, so the user can see nothing until assigned.
 );
 
 create index if not exists idx_profiles_tenant_id on public.profiles (tenant_id);

@@ -190,8 +190,13 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  if public.is_tenant_admin() then
-    return new; -- admins are allowed to change role / tenant_id
+  -- Trusted contexts may change role/tenant_id: backend (service_role or a
+  -- direct connection with no JWT) and tenant admins. Regular signed-in users
+  -- cannot escalate their own role or switch tenants.
+  if auth.jwt() is null
+     or coalesce(auth.jwt() ->> 'role', '') = 'service_role'
+     or public.is_tenant_admin() then
+    return new;
   end if;
   if new.role is distinct from old.role
      or new.tenant_id is distinct from old.tenant_id then
