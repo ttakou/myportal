@@ -26,6 +26,7 @@ create or replace function public.custom_access_token_hook(event jsonb)
 returns jsonb
 language plpgsql
 stable
+set search_path = ''
 as $$
 declare
   claims      jsonb;
@@ -83,6 +84,7 @@ create or replace function public.current_tenant_id()
 returns uuid
 language sql
 stable
+set search_path = ''
 as $$
   select nullif(auth.jwt() -> 'app_metadata' ->> 'tenant_id', '')::uuid;
 $$;
@@ -91,6 +93,7 @@ create or replace function public.current_user_role()
 returns public.user_role
 language sql
 stable
+set search_path = ''
 as $$
   select coalesce(
     auth.jwt() -> 'app_metadata' ->> 'user_role',
@@ -102,6 +105,7 @@ create or replace function public.is_super_admin()
 returns boolean
 language sql
 stable
+set search_path = ''
 as $$
   select public.current_user_role() = 'super_admin';
 $$;
@@ -110,6 +114,7 @@ create or replace function public.is_tenant_admin()
 returns boolean
 language sql
 stable
+set search_path = ''
 as $$
   select public.current_user_role() in ('super_admin', 'tenant_admin');
 $$;
@@ -182,6 +187,7 @@ create policy "profiles_admin_write"
 create or replace function public.enforce_profile_immutables()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   if public.is_tenant_admin() then
@@ -268,3 +274,6 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- Invoked only by the trigger above; remove the RPC attack surface.
+revoke execute on function public.handle_new_user() from authenticated, anon, public;
