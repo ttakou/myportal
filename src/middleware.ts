@@ -1,0 +1,89 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { createMiddlewareClient } from "@/lib/supabase/middleware";
+import {
+  ALWAYS_ALLOWED_PREFIXES,
+  matchModuleRoute,
+} from "@/lib/navigation";
+
+const PUBLIC_PATHS = ["/login", "/auth", "/_next", "/favicon.ico"];
+
+function isPublic(pathname: string) {
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Always refresh the session so server components see a valid token.
+  const { supabase, supabaseResponse } = createMiddlewareClient(request);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // ---- 1. Authentication gate -------------------------------------------------
+  if (!user) {
+    if (isPublic(pathname) || pathname === "/") {
+      return supabaseResponse;
+    }
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set("redirectTo", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Authenticated users hitting public/neutral paths pass straight through.
+  if (
+    isPublic(pathname) ||
+    pathname === "/" ||
+    ALWAYS_ALLOWED_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(p + "/"),
+    )
+  ) {
+    return supabaseResponse;
+  }
+
+  // ---- 2. Module subscription gate -------------------------------------------
+  const matched = matchModuleRoute(pathname);
+
+  // Not a module-gated path → allow (other auth'd app routes).
+  if (!matched) {
+    return supabaseResponse;
+  }
+
+  // Core modules (e.g. /admin) are always available to authenticated tenants.
+  if (matched.isCore) {
+    return supabaseResponse;
+  }
+
+  // Check the tenant's active subscriptions. RLS scopes this to the user's
+  // tenant, so we only ever see our own rows.
+  const { data, error } = await supabase
+    .from("tenant_services")
+    .select("services_catalog!inner(slug)")
+    .eq("is_active", true)
+    .eq("services_catalog.slug", matched.slug)
+    .maybeSingle();
+
+  if (error || !data) {
+    const denied = request.nextUrl.clone();
+    denied.pathname = "/access-denied";
+    denied.searchParams.set("module", matched.slug);
+    // Preserve refreshed auth cookies on the redirect response.
+    const redirect = NextResponse.redirect(denied);
+    supabaseResponse.cookies.getAll().forEach((c) =>
+      redirect.cookies.set(c.name, c.value),
+    );
+    return redirect;
+  }
+
+  return supabaseResponse;
+}
+
+export const config = {
+  // Run on everything except static assets / images.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
+};
