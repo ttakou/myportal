@@ -40,6 +40,12 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Addax Petroleum brand palette (see src/lib/brand.ts).
+        brand: {
+          DEFAULT: "hsl(var(--brand-red))",
+          dark: "hsl(var(--brand-red-dark))",
+          charcoal: "hsl(var(--brand-charcoal))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

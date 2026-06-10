@@ -3,25 +3,44 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * Brand theme — Addax Petroleum (primary customer).
+   * Primary = Addax red (#E2001A ≈ hsl(353 100% 44%)). Neutrals are warm charcoal.
+   * NOTE: the red is an approximation; replace the --primary / --ring / --brand-*
+   * values with the exact hex from Addax's brand guidelines when available.
+   * Brand tokens are also mirrored in src/lib/brand.ts for charts/PDF reports
+   * where CSS variables aren't available.
+   */
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 0 0% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --card-foreground: 0 0% 9%;
+
+    /* Addax red */
+    --primary: 353 100% 44%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 12%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 40%;
+
+    /* Light red tint for hover/selected surfaces */
+    --accent: 353 100% 96%;
+    --accent-foreground: 353 80% 32%;
+
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 353 100% 44%;
     --radius: 0.5rem;
+
+    /* Raw brand palette (hex) for non-CSS contexts referenced via Tailwind */
+    --brand-red: 353 100% 44%;
+    --brand-red-dark: 353 100% 34%;
+    --brand-charcoal: 0 0% 12%;
   }
 
   * {
