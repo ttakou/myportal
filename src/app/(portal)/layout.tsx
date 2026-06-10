@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { createClient } from "@/lib/supabase/server";
 import { getTenantBranding, brandingToCssVars } from "@/lib/branding";
+import { UserMenu } from "./_components/user-menu";
 
 /**
  * Shared layout for all authenticated portal pages (dashboard + every module).
@@ -26,14 +27,30 @@ export default async function PortalLayout({
     redirect("/login");
   }
 
-  const branding = await getTenantBranding();
+  const [branding, profile] = await Promise.all([
+    getTenantBranding(),
+    supabase
+      .from("profiles")
+      .select("full_name, email, role")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then((r) => r.data),
+  ]);
+
+  const displayName = profile?.full_name || profile?.email || "User";
+  const role = profile?.role ?? "employee";
 
   return (
     <div className="flex min-h-screen" style={brandingToCssVars(branding)}>
       <Sidebar brandName={branding.name} />
-      <main className="flex-1 overflow-y-auto bg-background">
-        <div className="container py-8">{children}</div>
-      </main>
+      <div className="flex flex-1 flex-col">
+        <header className="flex h-16 items-center justify-end border-b bg-card px-6">
+          <UserMenu name={displayName} role={role} />
+        </header>
+        <main className="flex-1 overflow-y-auto bg-background">
+          <div className="container py-8">{children}</div>
+        </main>
+      </div>
     </div>
   );
 }
