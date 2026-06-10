@@ -113,6 +113,20 @@ myportal/
    npm run dev
    ```
 
+## Modules
+
+### Canteen Management (Sprint 2)
+- Dual kitchen (Local / Chinese), dated menus per meal period.
+- **1-dish restriction**: one active booking per person per meal per day
+  (partial unique index); switching dishes is allowed and cancels the prior one.
+- **Guest seats**: 0–10 guests per booking, counted into demand.
+- **Campboss realtime dashboard** (`/canteen/campboss`, admins only): live meal
+  demand per kitchen/dish via Supabase Realtime on `canteen_bookings`, backed by
+  the security-invoker `canteen_dish_demand` view (so employees privately see
+  only their own counts, while the campboss sees full headcounts).
+
+Schema: `supabase/migrations/0003_canteen_module.sql`.
+
 ## Onboarding a tenant (until an admin UI exists)
 
 ```sql

@@ -1,0 +1,166 @@
+"use client";
+
+import { useMemo, useState, useTransition } from "react";
+import { Check, Minus, Plus, Users, UtensilsCrossed } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  MEAL_PERIODS,
+  MEAL_PERIOD_LABEL,
+  type CanteenBooking,
+  type CanteenDish,
+  type MealPeriod,
+} from "@/types/canteen";
+import { bookDish, cancelBooking, updateGuests } from "../actions";
+
+export function MenuBoard({
+  dishes,
+  bookings,
+}: {
+  serviceDate: string;
+  dishes: CanteenDish[];
+  bookings: CanteenBooking[];
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  // One active booking per meal period (enforced by the DB).
+  const bookingByMeal = useMemo(() => {
+    const map = new Map<MealPeriod, CanteenBooking>();
+    for (const b of bookings) map.set(b.meal_period, b);
+    return map;
+  }, [bookings]);
+
+  function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Something went wrong.");
+    });
+  }
+
+  return (
+    <div className="space-y-8">
+      {error && (
+        <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
+      {MEAL_PERIODS.map((meal) => {
+        const mealDishes = dishes.filter((d) => d.meal_period === meal);
+        if (mealDishes.length === 0) return null;
+        const booking = bookingByMeal.get(meal);
+
+        return (
+          <section key={meal} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold">{MEAL_PERIOD_LABEL[meal]}</h2>
+              {booking && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+                  <Check className="h-3 w-3" /> Booked
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {mealDishes.map((dish) => {
+                const isBooked = booking?.dish_id === dish.id;
+                return (
+                  <div
+                    key={dish.id}
+                    className={cn(
+                      "flex flex-col rounded-lg border p-4",
+                      isBooked ? "border-primary ring-1 ring-primary" : "bg-card",
+                    )}
+                  >
+                    <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <UtensilsCrossed className="h-3.5 w-3.5" />
+                      {dish.kitchen_name}
+                    </div>
+                    <h3 className="font-medium">{dish.name}</h3>
+                    {dish.description && (
+                      <p className="mt-1 flex-1 text-sm text-muted-foreground">
+                        {dish.description}
+                      </p>
+                    )}
+
+                    {isBooked ? (
+                      <div className="mt-3 space-y-2">
+                        <GuestStepper
+                          booking={booking!}
+                          disabled={pending}
+                          onChange={(n) =>
+                            run(() => updateGuests(booking!.id, n))
+                          }
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          disabled={pending}
+                          onClick={() => run(() => cancelBooking(booking!.id))}
+                        >
+                          Cancel booking
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="mt-3"
+                        disabled={pending}
+                        onClick={() => run(() => bookDish(dish.id))}
+                      >
+                        {booking ? "Switch to this" : "Book"}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function GuestStepper({
+  booking,
+  disabled,
+  onChange,
+}: {
+  booking: CanteenBooking;
+  disabled: boolean;
+  onChange: (n: number) => void;
+}) {
+  const count = booking.guest_count;
+  return (
+    <div className="flex items-center justify-between rounded-md bg-muted px-3 py-1.5 text-sm">
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+        <Users className="h-3.5 w-3.5" /> Guests
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label="Remove guest"
+          className="grid h-6 w-6 place-items-center rounded border disabled:opacity-40"
+          disabled={disabled || count <= 0}
+          onClick={() => onChange(count - 1)}
+        >
+          <Minus className="h-3 w-3" />
+        </button>
+        <span className="w-4 text-center font-medium tabular-nums">{count}</span>
+        <button
+          type="button"
+          aria-label="Add guest"
+          className="grid h-6 w-6 place-items-center rounded border disabled:opacity-40"
+          disabled={disabled || count >= 10}
+          onClick={() => onChange(count + 1)}
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
