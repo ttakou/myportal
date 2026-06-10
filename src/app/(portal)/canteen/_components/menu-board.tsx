@@ -9,6 +9,7 @@ import {
   MEAL_PERIOD_LABEL,
   type CanteenBooking,
   type CanteenDish,
+  type DishOptionGroup,
   type MealPeriod,
 } from "@/types/canteen";
 import { bookDish, cancelBooking, updateGuests } from "../actions";
@@ -23,8 +24,9 @@ export function MenuBoard({
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Per-dish option selection: dishId -> set of option ids.
+  const [selections, setSelections] = useState<Record<string, Set<string>>>({});
 
-  // One active booking per meal period (enforced by the DB).
   const bookingByMeal = useMemo(() => {
     const map = new Map<MealPeriod, CanteenBooking>();
     for (const b of bookings) map.set(b.meal_period, b);
@@ -36,6 +38,31 @@ export function MenuBoard({
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) setError(res.error ?? "Something went wrong.");
+    });
+  }
+
+  function toggleOption(dish: CanteenDish, group: DishOptionGroup, optionId: string) {
+    setSelections((prev) => {
+      const next = new Set(prev[dish.id] ?? []);
+      const groupIds = group.options.map((o) => o.id);
+      const selectedInGroup = groupIds.filter((id) => next.has(id));
+      if (group.max_select === 1) {
+        groupIds.forEach((id) => next.delete(id));
+        if (!selectedInGroup.includes(optionId)) next.add(optionId);
+      } else if (next.has(optionId)) {
+        next.delete(optionId);
+      } else if (selectedInGroup.length < group.max_select) {
+        next.add(optionId);
+      }
+      return { ...prev, [dish.id]: next };
+    });
+  }
+
+  function selectionValid(dish: CanteenDish): boolean {
+    const sel = selections[dish.id] ?? new Set<string>();
+    return dish.option_groups.every((g) => {
+      const n = g.options.filter((o) => sel.has(o.id)).length;
+      return n >= g.min_select && n <= g.max_select;
     });
   }
 
@@ -66,6 +93,8 @@ export function MenuBoard({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {mealDishes.map((dish) => {
                 const isBooked = booking?.dish_id === dish.id;
+                const sel = selections[dish.id] ?? new Set<string>();
+                const hasOptions = dish.option_groups.length > 0;
                 return (
                   <div
                     key={dish.id}
@@ -80,19 +109,23 @@ export function MenuBoard({
                     </div>
                     <h3 className="font-medium">{dish.name}</h3>
                     {dish.description && (
-                      <p className="mt-1 flex-1 text-sm text-muted-foreground">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         {dish.description}
                       </p>
                     )}
 
                     {isBooked ? (
                       <div className="mt-3 space-y-2">
+                        {booking!.selected_options.length > 0 && (
+                          <p className="text-sm">
+                            <span className="text-muted-foreground">Your choice: </span>
+                            {booking!.selected_options.map((o) => o.name).join(", ")}
+                          </p>
+                        )}
                         <GuestStepper
                           booking={booking!}
                           disabled={pending}
-                          onChange={(n) =>
-                            run(() => updateGuests(booking!.id, n))
-                          }
+                          onChange={(n) => run(() => updateGuests(booking!.id, n))}
                         />
                         <Button
                           variant="outline"
@@ -105,14 +138,59 @@ export function MenuBoard({
                         </Button>
                       </div>
                     ) : (
-                      <Button
-                        size="sm"
-                        className="mt-3"
-                        disabled={pending}
-                        onClick={() => run(() => bookDish(dish.id))}
-                      >
-                        {booking ? "Switch to this" : "Book"}
-                      </Button>
+                      <div className="mt-3 flex flex-1 flex-col">
+                        {hasOptions && (
+                          <div className="mb-3 space-y-3">
+                            {dish.option_groups.map((g) => (
+                              <fieldset key={g.id}>
+                                <legend className="mb-1 text-xs font-medium text-muted-foreground">
+                                  {g.name}
+                                  <span className="ml-1 font-normal">
+                                    {g.max_select === 1
+                                      ? "(choose 1)"
+                                      : g.min_select > 0
+                                        ? `(choose ${g.min_select}–${g.max_select})`
+                                        : `(up to ${g.max_select})`}
+                                  </span>
+                                </legend>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {g.options.map((o) => {
+                                    const active = sel.has(o.id);
+                                    return (
+                                      <button
+                                        key={o.id}
+                                        type="button"
+                                        disabled={pending}
+                                        onClick={() => toggleOption(dish, g, o.id)}
+                                        className={cn(
+                                          "rounded-full border px-3 py-1 text-sm transition-colors",
+                                          active
+                                            ? "border-primary bg-primary text-primary-foreground"
+                                            : "hover:bg-accent",
+                                        )}
+                                      >
+                                        {o.name}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </fieldset>
+                            ))}
+                          </div>
+                        )}
+                        <Button
+                          size="sm"
+                          className="mt-auto"
+                          disabled={pending || (hasOptions && !selectionValid(dish))}
+                          onClick={() =>
+                            run(() =>
+                              bookDish(dish.id, 0, [], Array.from(sel)),
+                            )
+                          }
+                        >
+                          {booking ? "Switch to this" : "Book"}
+                        </Button>
+                      </div>
                     )}
                   </div>
                 );

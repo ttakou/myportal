@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Radio, Users, UtensilsCrossed } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -9,31 +9,38 @@ import {
   MEAL_PERIOD_LABEL,
   type DishDemand,
   type MealPeriod,
+  type OptionDemand,
 } from "@/types/canteen";
 
 export function RealtimeDashboard({
   serviceDate,
   initial,
+  initialOptions,
 }: {
   serviceDate: string;
   initial: DishDemand[];
+  initialOptions: OptionDemand[];
 }) {
   const [demand, setDemand] = useState<DishDemand[]>(initial);
+  const [options, setOptions] = useState<OptionDemand[]>(initialOptions);
   const [live, setLive] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const supabaseRef = useRef(createClient());
 
   const refetch = useCallback(async () => {
-    const { data } = await supabaseRef.current
-      .from("canteen_dish_demand")
-      .select("*")
-      .eq("service_date", serviceDate)
-      .order("meal_period")
-      .order("kitchen_name");
-    if (data) {
-      setDemand(data as DishDemand[]);
-      setUpdatedAt(new Date());
-    }
+    const supabase = supabaseRef.current;
+    const [d, o] = await Promise.all([
+      supabase
+        .from("canteen_dish_demand")
+        .select("*")
+        .eq("service_date", serviceDate)
+        .order("meal_period")
+        .order("kitchen_name"),
+      supabase.from("canteen_option_demand").select("*").eq("service_date", serviceDate),
+    ]);
+    if (d.data) setDemand(d.data as DishDemand[]);
+    if (o.data) setOptions(o.data as OptionDemand[]);
+    setUpdatedAt(new Date());
   }, [serviceDate]);
 
   useEffect(() => {
@@ -45,12 +52,27 @@ export function RealtimeDashboard({
         { event: "*", schema: "public", table: "canteen_bookings" },
         () => refetch(),
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "canteen_booking_options" },
+        () => refetch(),
+      )
       .subscribe((status) => setLive(status === "SUBSCRIBED"));
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [serviceDate, refetch]);
+
+  const optionsByDish = useMemo(() => {
+    const map = new Map<string, OptionDemand[]>();
+    for (const o of options) {
+      const arr = map.get(o.dish_id) ?? [];
+      arr.push(o);
+      map.set(o.dish_id, arr);
+    }
+    return map;
+  }, [options]);
 
   const grandTotal = demand.reduce((sum, d) => sum + Number(d.total_covers), 0);
 
@@ -97,7 +119,11 @@ export function RealtimeDashboard({
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {rows.map((d) => (
-                <DemandCard key={d.dish_id} d={d} />
+                <DemandCard
+                  key={d.dish_id}
+                  d={d}
+                  options={optionsByDish.get(d.dish_id) ?? []}
+                />
               ))}
             </div>
           </section>
@@ -107,13 +133,19 @@ export function RealtimeDashboard({
   );
 }
 
-function DemandCard({ d }: { d: DishDemand }) {
+function DemandCard({ d, options }: { d: DishDemand; options: OptionDemand[] }) {
   const total = Number(d.total_covers);
   const pct =
     d.capacity && d.capacity > 0
       ? Math.min(100, Math.round((total / d.capacity) * 100))
       : null;
   const over = d.capacity != null && total > d.capacity;
+
+  // Group option counts by their group name (e.g. Protein, Sides).
+  const groups = options.reduce<Record<string, OptionDemand[]>>((acc, o) => {
+    (acc[o.group_name] ??= []).push(o);
+    return acc;
+  }, {});
 
   return (
     <div className="rounded-lg border bg-card p-4">
@@ -146,6 +178,26 @@ function DemandCard({ d }: { d: DishDemand }) {
           >
             {total} / {d.capacity} capacity{over && " · over capacity"}
           </p>
+        </div>
+      )}
+
+      {Object.keys(groups).length > 0 && (
+        <div className="mt-3 space-y-1.5 border-t pt-3">
+          {Object.entries(groups).map(([groupName, opts]) => (
+            <div key={groupName} className="text-xs">
+              <span className="font-medium text-muted-foreground">{groupName}: </span>
+              {opts
+                .slice()
+                .sort((a, b) => Number(b.picks) - Number(a.picks))
+                .map((o, i) => (
+                  <span key={o.option_id}>
+                    {i > 0 && " · "}
+                    {o.option_name}{" "}
+                    <span className="font-semibold tabular-nums">{o.picks}</span>
+                  </span>
+                ))}
+            </div>
+          ))}
         </div>
       )}
     </div>

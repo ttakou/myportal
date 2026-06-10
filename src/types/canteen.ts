@@ -15,6 +15,19 @@ export const KITCHEN_LABEL: Record<KitchenKind, string> = {
   chinese: "Chinese Kitchen",
 };
 
+export interface DishOption {
+  id: string;
+  name: string;
+}
+
+export interface DishOptionGroup {
+  id: string;
+  name: string;
+  min_select: number;
+  max_select: number;
+  options: DishOption[];
+}
+
 export interface CanteenDish {
   id: string;
   kitchen_id: string;
@@ -26,6 +39,7 @@ export interface CanteenDish {
   description: string | null;
   capacity: number | null;
   is_active: boolean;
+  option_groups: DishOptionGroup[];
 }
 
 export interface CanteenBooking {
@@ -37,6 +51,19 @@ export interface CanteenBooking {
   guest_count: number;
   guest_names: string[];
   status: BookingStatus;
+  selected_options: DishOption[];
+}
+
+/** A row of the canteen_option_demand view — per-option counts for the campboss. */
+export interface OptionDemand {
+  option_id: string;
+  service_date: string;
+  meal_period: MealPeriod;
+  dish_id: string;
+  dish_name: string;
+  group_name: string;
+  option_name: string;
+  picks: number;
 }
 
 /** A row of the canteen_dish_demand view — powers the campboss dashboard. */

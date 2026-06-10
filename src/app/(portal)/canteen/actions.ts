@@ -17,40 +17,23 @@ export async function bookDish(
   dishId: string,
   guestCount = 0,
   guestNames: string[] = [],
+  optionIds: string[] = [],
 ): Promise<ActionResult> {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in." };
 
-  // Look up the dish to find which meal/date this booking occupies.
-  const { data: dish, error: dishErr } = await supabase
-    .from("canteen_dishes")
-    .select("service_date, meal_period, is_active")
-    .eq("id", dishId)
-    .maybeSingle();
-
-  if (dishErr || !dish) return { ok: false, error: "Dish not found." };
-  if (!dish.is_active) return { ok: false, error: "That dish is no longer available." };
-
-  // Release any current booking for this meal so the unique index won't reject us.
-  const { error: cancelErr } = await supabase
-    .from("canteen_bookings")
-    .update({ status: "cancelled" })
-    .eq("profile_id", user.id)
-    .eq("service_date", dish.service_date)
-    .eq("meal_period", dish.meal_period)
-    .neq("status", "cancelled");
-  if (cancelErr) return { ok: false, error: cancelErr.message };
-
-  const clampedGuests = Math.max(0, Math.min(10, guestCount));
-  const { error: insertErr } = await supabase.from("canteen_bookings").insert({
-    dish_id: dishId,
-    guest_count: clampedGuests,
-    guest_names: guestNames.slice(0, clampedGuests),
+  // Atomic: validates option rules, enforces the 1-dish rule, and records
+  // the booking + selected options in a single transaction (see canteen_book).
+  const { error } = await supabase.rpc("canteen_book", {
+    p_dish_id: dishId,
+    p_guest_count: Math.max(0, Math.min(10, guestCount)),
+    p_guest_names: guestNames.slice(0, Math.max(0, Math.min(10, guestCount))),
+    p_option_ids: optionIds,
   });
-  if (insertErr) return { ok: false, error: insertErr.message };
+
+  if (error) {
+    // Surface the friendly message raised by the function (e.g. "Choose at least 1…").
+    return { ok: false, error: error.message.replace(/^.*?:\s*/, "") };
+  }
 
   revalidatePath("/canteen");
   return { ok: true };

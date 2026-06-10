@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
-import { getDishDemand, resolveServiceDate } from "@/lib/canteen";
+import { getDishDemand, getOptionDemand, resolveServiceDate } from "@/lib/canteen";
 import { RealtimeDashboard } from "./realtime-dashboard";
 
 export default async function CampbossPage({
@@ -27,7 +27,10 @@ export default async function CampbossPage({
   }
 
   const serviceDate = resolveServiceDate(searchParams.date);
-  const initial = await getDishDemand(serviceDate);
+  const [initial, initialOptions] = await Promise.all([
+    getDishDemand(serviceDate),
+    getOptionDemand(serviceDate),
+  ]);
   const prettyDate = new Date(serviceDate + "T00:00:00").toLocaleDateString(
     undefined,
     { weekday: "long", month: "long", day: "numeric" },
@@ -46,7 +49,11 @@ export default async function CampbossPage({
         <p className="text-muted-foreground">Live meal demand · {prettyDate}</p>
       </div>
 
-      <RealtimeDashboard serviceDate={serviceDate} initial={initial} />
+      <RealtimeDashboard
+        serviceDate={serviceDate}
+        initial={initial}
+        initialOptions={initialOptions}
+      />
     </div>
   );
 }
