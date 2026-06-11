@@ -27,3 +27,25 @@ export async function setReservationPrepared(
   revalidatePath("/canteen/campboss");
   return { ok: true };
 }
+
+/** Campboss marks a reservation as collected (picked up). */
+export async function setReservationCollected(
+  bookingId: string,
+  collected: boolean,
+): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) {
+    return { ok: false, error: "Not authorized." };
+  }
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("canteen_bookings")
+    .update({
+      collected_at: collected ? new Date().toISOString() : null,
+      status: collected ? "served" : "booked",
+    })
+    .eq("id", bookingId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/canteen/campboss");
+  return { ok: true };
+}

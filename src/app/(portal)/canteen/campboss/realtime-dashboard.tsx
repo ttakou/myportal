@@ -18,7 +18,7 @@ import {
   type OptionDemand,
   type Reservation,
 } from "@/types/canteen";
-import { setReservationPrepared } from "./actions";
+import { setReservationCollected, setReservationPrepared } from "./actions";
 
 export function RealtimeDashboard({
   serviceDate,
@@ -87,6 +87,13 @@ export function RealtimeDashboard({
   function togglePacked(r: Reservation) {
     startTransition(async () => {
       await setReservationPrepared(r.booking_id, !r.prepared_at);
+      refetch();
+    });
+  }
+
+  function toggleCollected(r: Reservation) {
+    startTransition(async () => {
+      await setReservationCollected(r.booking_id, !r.collected_at);
       refetch();
     });
   }
@@ -182,13 +189,15 @@ export function RealtimeDashboard({
                   <th className="px-4 py-3 font-medium">Dish &amp; choice</th>
                   <th className="px-4 py-3 font-medium">Pax</th>
                   <th className="px-4 py-3 font-medium text-right">Pack</th>
+                  <th className="px-4 py-3 font-medium text-right">Collected</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {reservations.map((r) => {
                   const packed = !!r.prepared_at;
+                  const collected = !!r.collected_at;
                   return (
-                    <tr key={r.booking_id} className={cn(packed && "bg-primary/5")}>
+                    <tr key={r.booking_id} className={cn(collected ? "bg-green-50" : packed && "bg-primary/5")}>
                       <td className="px-4 py-3 font-medium">
                         {r.person_name || r.person_email}
                         {r.finalized_at ? (
@@ -223,6 +232,22 @@ export function RealtimeDashboard({
                             <Circle className="h-3.5 w-3.5" />
                           )}
                           {packed ? "Packed" : "Mark packed"}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          disabled={pending || !packed}
+                          onClick={() => toggleCollected(r)}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium disabled:opacity-40",
+                            collected
+                              ? "bg-green-100 text-green-700"
+                              : "border text-muted-foreground hover:bg-accent",
+                          )}
+                        >
+                          {collected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                          {collected ? "Collected" : "Mark collected"}
                         </button>
                       </td>
                     </tr>

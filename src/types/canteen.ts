@@ -78,6 +78,7 @@ export interface Reservation {
   guest_count: number;
   prepared_at: string | null;
   finalized_at: string | null;
+  collected_at: string | null;
   person_name: string | null;
   person_email: string;
   dish_name: string;
@@ -100,4 +101,23 @@ export interface DishDemand {
   headcount: number;
   guests: number;
   total_covers: number;
+}
+
+export type LunchOutcome = "booked" | "collected" | "missed" | "cancelled";
+
+export const LUNCH_OUTCOME_LABEL: Record<LunchOutcome, string> = {
+  booked: "Booked",
+  collected: "Collected",
+  missed: "Missed",
+  cancelled: "Cancelled",
+};
+
+export interface LunchHistoryRow {
+  booking_id: string;
+  service_date: string;
+  meal_period: MealPeriod;
+  dish_name: string;
+  kitchen_name: string;
+  options: string;
+  outcome: LunchOutcome;
 }

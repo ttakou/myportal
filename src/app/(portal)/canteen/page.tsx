@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, Settings } from "lucide-react";
+import { History, LayoutDashboard, Settings } from "lucide-react";
 import { getMenu, getMyBookings, getServedMealPeriods, resolveServiceDate } from "@/lib/canteen";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { MenuBoard } from "./_components/menu-board";
@@ -30,24 +30,33 @@ export default async function CanteenPage({
           <h1 className="text-2xl font-semibold tracking-tight">Canteen</h1>
           <p className="text-muted-foreground">{prettyDate}</p>
         </div>
-        {isAdmin && (
-          <div className="flex items-center gap-2">
-            <Link
-              href="/canteen/manage"
-              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-            >
-              <Settings className="h-4 w-4" />
-              Manage menu
-            </Link>
-            <Link
-              href="/canteen/campboss"
-              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-            >
-              <LayoutDashboard className="h-4 w-4" />
-              Campboss dashboard
-            </Link>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/canteen/history"
+            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+          >
+            <History className="h-4 w-4" />
+            History
+          </Link>
+          {isAdmin && (
+            <>
+              <Link
+                href="/canteen/manage"
+                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+              >
+                <Settings className="h-4 w-4" />
+                Manage menu
+              </Link>
+              <Link
+                href="/canteen/campboss"
+                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                Campboss dashboard
+              </Link>
+            </>
+          )}
+        </div>
       </div>
 
       {dishes.length === 0 ? (

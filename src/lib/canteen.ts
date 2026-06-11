@@ -8,6 +8,7 @@ import {
   type MealPeriod,
   type OptionDemand,
   type Reservation,
+  type LunchHistoryRow,
 } from "@/types/canteen";
 
 /**
@@ -217,4 +218,23 @@ export async function getDishDemand(serviceDate: string): Promise<DishDemand[]> 
     return [];
   }
   return (data ?? []) as DishDemand[];
+}
+
+/** The current user's lunch history (every booking, with derived outcome). */
+export async function getMyLunchHistory(): Promise<LunchHistoryRow[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data, error } = await supabase
+    .from("canteen_lunch_history")
+    .select("booking_id, service_date, meal_period, dish_name, kitchen_name, options, outcome")
+    .eq("profile_id", user.id)
+    .order("service_date", { ascending: false });
+  if (error) {
+    console.error("getMyLunchHistory:", error.message);
+    return [];
+  }
+  return (data ?? []) as LunchHistoryRow[];
 }
