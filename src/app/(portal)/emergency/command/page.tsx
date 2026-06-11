@@ -7,6 +7,7 @@ import {
   getActiveBroadcasts,
   getAllIncidents,
   getHelpRequests,
+  getRecentDeliveries,
 } from "@/lib/emergency";
 import { CommandCenter } from "./_components/command-center";
 
@@ -16,9 +17,10 @@ export default async function CommandCenterPage() {
     redirect("/emergency");
   }
 
-  const [incidents, broadcasts] = await Promise.all([
+  const [incidents, broadcasts, deliveries] = await Promise.all([
     getAllIncidents(),
     getActiveBroadcasts(),
+    getRecentDeliveries(),
   ]);
 
   // Accountability is tracked against the active event that requested check-ins.
@@ -48,6 +50,7 @@ export default async function CommandCenterPage() {
         broadcasts={broadcasts}
         accountability={accountability}
         helpRequests={helpRequests}
+        deliveries={deliveries}
         eventTitle={event?.title ?? null}
       />
     </div>

@@ -5,6 +5,7 @@ import type {
   Broadcast,
   Checkin,
   CheckinStatus,
+  DeliveryLog,
   Incident,
 } from "@/types/emergency";
 
@@ -191,6 +192,17 @@ export async function getAccountability(
   const unaccounted = rows.filter((r) => r.status === "unaccounted").length;
 
   return { total: rows.length, safe, needHelp, unaccounted, rows };
+}
+
+/** Recent notification fan-outs for the tenant (RLS gates this to safety admins). */
+export async function getRecentDeliveries(limit = 10): Promise<DeliveryLog[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("eess_delivery_log")
+    .select("id, source_type, audience, channel, recipients, sent, delivered, failed, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as DeliveryLog[];
 }
 
 /** People who selected "I need assistance" for the given event, with locations. */

@@ -3,16 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
-import type {
-  CheckinStatus,
-  IncidentStatus,
-  IncidentType,
-  Severity,
+import { notify } from "@/lib/eess-notify";
+import {
+  INCIDENT_LABEL,
+  type CheckinStatus,
+  type IncidentStatus,
+  type IncidentType,
+  type Severity,
 } from "@/types/emergency";
 
 export interface ActionResult {
   ok: boolean;
   error?: string;
+  incidentId?: string;
 }
 
 const INCIDENT_TYPES: IncidentType[] = [
@@ -49,19 +52,72 @@ export async function reportIncident(input: {
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
-  const { error } = await supabase.from("eess_incidents").insert({
-    reporter_id: user.id,
-    incident_type: input.incidentType,
-    severity: severityFor(input.incidentType),
-    is_sos: input.isSos ?? false,
-    note: input.note?.trim() || null,
-    location_text: input.locationText?.trim() || null,
-    lat: input.lat ?? null,
-    lng: input.lng ?? null,
-    photo_url: input.photoUrl ?? null,
+  const severity = severityFor(input.incidentType);
+  const { data: incident, error } = await supabase
+    .from("eess_incidents")
+    .insert({
+      reporter_id: user.id,
+      incident_type: input.incidentType,
+      severity,
+      is_sos: input.isSos ?? false,
+      note: input.note?.trim() || null,
+      location_text: input.locationText?.trim() || null,
+      lat: input.lat ?? null,
+      lng: input.lng ?? null,
+      photo_url: input.photoUrl ?? null,
+    })
+    .select("id, tenant_id")
+    .single();
+  if (error) return { ok: false, error: error.message };
+
+  // Page the response team. Best-effort; never blocks the report from succeeding.
+  if (incident?.tenant_id) {
+    const label = INCIDENT_LABEL[input.incidentType];
+    const where = input.locationText?.trim();
+    await notify({
+      tenantId: incident.tenant_id,
+      audience: "responders",
+      sourceType: "incident",
+      sourceId: incident.id,
+      payload: {
+        title: input.isSos ? `🚨 SOS — ${label}` : `🚨 ${label} reported`,
+        body:
+          [input.note?.trim(), where ? `Location: ${where}` : null]
+            .filter(Boolean)
+            .join(" · ") || "Open the command center to respond.",
+        url: "/emergency/command",
+        tag: `incident-${incident.id}`,
+        severity,
+      },
+    });
+  }
+
+  revalidatePath("/emergency");
+  revalidatePath("/emergency/command");
+  return { ok: true, incidentId: incident.id };
+}
+
+/**
+ * Attach (or refine) a reported incident's location after the fact. The SOS
+ * flow fires the alert immediately and enriches it with GPS — or a typed
+ * description — as soon as that becomes available, so a slow/blocked GPS never
+ * delays the alert. Scoped to the reporter's own incident via a SECURITY
+ * DEFINER function that only ever touches the location columns.
+ */
+export async function attachIncidentLocation(input: {
+  incidentId: string;
+  lat?: number | null;
+  lng?: number | null;
+  locationText?: string | null;
+}): Promise<ActionResult> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc("eess_set_incident_location", {
+    p_id: input.incidentId,
+    p_lat: input.lat ?? null,
+    p_lng: input.lng ?? null,
+    p_text: input.locationText?.trim() || null,
   });
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/emergency");
   revalidatePath("/emergency/command");
   return { ok: true };
 }
@@ -145,18 +201,40 @@ export async function sendBroadcast(input: {
   if (channels.length === 0) return { ok: false, error: "Pick at least one channel." };
 
   const supabase = createClient();
-  const { error } = await supabase.from("eess_broadcasts").insert({
-    title: input.title.trim(),
-    message: input.message.trim(),
-    severity: input.severity,
-    channels,
-    location_label: input.locationLabel?.trim() || null,
-    center_lat: input.centerLat ?? null,
-    center_lng: input.centerLng ?? null,
-    radius_m: input.radiusM ?? null,
-    requires_checkin: input.requiresCheckin,
-  });
+  const { data: broadcast, error } = await supabase
+    .from("eess_broadcasts")
+    .insert({
+      title: input.title.trim(),
+      message: input.message.trim(),
+      severity: input.severity,
+      channels,
+      location_label: input.locationLabel?.trim() || null,
+      center_lat: input.centerLat ?? null,
+      center_lng: input.centerLng ?? null,
+      radius_m: input.radiusM ?? null,
+      requires_checkin: input.requiresCheckin,
+    })
+    .select("id, tenant_id")
+    .single();
   if (error) return { ok: false, error: error.message };
+
+  // Fan the alert out to every employee over Web Push (other channels TBD).
+  if (channels.includes("push") && broadcast?.tenant_id) {
+    await notify({
+      tenantId: broadcast.tenant_id,
+      audience: "all",
+      sourceType: "broadcast",
+      sourceId: broadcast.id,
+      payload: {
+        title: input.title.trim(),
+        body: input.message.trim(),
+        url: "/emergency",
+        tag: `broadcast-${broadcast.id}`,
+        severity: input.severity,
+      },
+    });
+  }
+
   revalidatePath("/emergency");
   revalidatePath("/emergency/command");
   return { ok: true };

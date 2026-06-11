@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition, type ComponentType } from "react";
 import {
+  BellRing,
   Flame,
   HandHelping,
   HeartPulse,
@@ -20,6 +21,7 @@ import {
   type Accountability,
   type Broadcast,
   type Checkin,
+  type DeliveryLog,
   type Incident,
   type IncidentStatus,
   type IncidentType,
@@ -63,12 +65,14 @@ export function CommandCenter({
   broadcasts,
   accountability,
   helpRequests,
+  deliveries,
   eventTitle,
 }: {
   incidents: Incident[];
   broadcasts: Broadcast[];
   accountability: Accountability;
   helpRequests: Checkin[];
+  deliveries: DeliveryLog[];
   eventTitle: string | null;
 }) {
   const [pending, startTransition] = useTransition();
@@ -90,14 +94,49 @@ export function CommandCenter({
 
       <div className="grid gap-4 lg:grid-cols-3">
         <IncidentStream incidents={incidents} pending={pending} run={run} />
-        <GeoMap helpRequests={helpRequests} />
+        <GeoMap incidents={incidents} helpRequests={helpRequests} />
         <AccountabilityWidget data={accountability} eventTitle={eventTitle} />
       </div>
 
       <BroadcastComposer pending={pending} run={run} />
 
       <ActiveAlerts broadcasts={broadcasts} pending={pending} run={run} />
+
+      <DeliveryAudit deliveries={deliveries} />
     </div>
+  );
+}
+
+// --- Notification delivery audit --------------------------------------------
+function DeliveryAudit({ deliveries }: { deliveries: DeliveryLog[] }) {
+  if (deliveries.length === 0) return null;
+  return (
+    <section className="rounded-xl border bg-card">
+      <header className="flex items-center gap-2 border-b px-4 py-3">
+        <BellRing className="h-5 w-5 text-primary" />
+        <h2 className="font-semibold">Notification delivery</h2>
+      </header>
+      <ul className="divide-y">
+        {deliveries.map((d) => (
+          <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
+            <span className="flex items-center gap-2">
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                {d.source_type === "incident" ? "SOS / incident" : "Broadcast"}
+              </span>
+              <span className="text-muted-foreground">
+                {d.audience === "all" ? "All employees" : "Response team"} ·{" "}
+                {new Date(d.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </span>
+            <span className="flex items-center gap-3 text-xs">
+              <span className="text-green-700">{d.delivered} delivered</span>
+              {d.failed > 0 && <span className="text-red-700">{d.failed} failed</span>}
+              <span className="text-muted-foreground">of {d.recipients} targeted</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -182,56 +221,126 @@ function IncidentStream({
   );
 }
 
-// --- Center: geo-map of help requests ---------------------------------------
-function GeoMap({ helpRequests }: { helpRequests: Checkin[] }) {
-  const pins = helpRequests.filter((h) => h.lat != null && h.lng != null);
+// --- Center: geo-map of located alerts (defaults to a Cameroon map) ---------
 
-  // Normalize coordinates into a 0..100 box for a simple relative plot.
-  const plotted = useMemo(() => {
-    if (pins.length === 0) return [];
-    const lats = pins.map((p) => p.lat as number);
-    const lngs = pins.map((p) => p.lng as number);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    const spanLat = maxLat - minLat || 1;
-    const spanLng = maxLng - minLng || 1;
-    return pins.map((p) => ({
-      ...p,
-      x: pins.length === 1 ? 50 : ((p.lng as number) - minLng) / spanLng * 90 + 5,
-      y: pins.length === 1 ? 50 : (1 - ((p.lat as number) - minLat) / spanLat) * 90 + 5,
-    }));
-  }, [pins]);
+// Cameroon bounding box, used to project lat/lng into the map's 0..100 box.
+const CMR = { minLng: 8.4, maxLng: 16.2, minLat: 1.6, maxLat: 13.1 };
+
+// Reference cities so the map reads as Cameroon even with no active pins.
+const CMR_CITIES: { name: string; lat: number; lng: number }[] = [
+  { name: "Yaoundé", lat: 3.87, lng: 11.52 },
+  { name: "Douala", lat: 4.05, lng: 9.77 },
+  { name: "Bafoussam", lat: 5.48, lng: 10.42 },
+  { name: "Bamenda", lat: 5.96, lng: 10.15 },
+  { name: "Buea", lat: 4.15, lng: 9.24 },
+  { name: "Kribi", lat: 2.94, lng: 9.91 },
+  { name: "Bertoua", lat: 4.58, lng: 13.68 },
+  { name: "Ngaoundéré", lat: 7.33, lng: 13.58 },
+  { name: "Garoua", lat: 9.3, lng: 13.4 },
+  { name: "Maroua", lat: 10.59, lng: 14.32 },
+];
+
+/** Project a coordinate to a clamped 0..100 position within the Cameroon box. */
+function projectCmr(lat: number, lng: number) {
+  const x = ((lng - CMR.minLng) / (CMR.maxLng - CMR.minLng)) * 100;
+  const y = (1 - (lat - CMR.minLat) / (CMR.maxLat - CMR.minLat)) * 100;
+  return {
+    x: Math.max(1.5, Math.min(98.5, x)),
+    y: Math.max(1.5, Math.min(98.5, y)),
+  };
+}
+
+function GeoMap({
+  incidents,
+  helpRequests,
+}: {
+  incidents: Incident[];
+  helpRequests: Checkin[];
+}) {
+  const helpPins = useMemo(
+    () =>
+      helpRequests
+        .filter((h) => h.lat != null && h.lng != null)
+        .map((h) => ({ ...h, ...projectCmr(h.lat as number, h.lng as number) })),
+    [helpRequests],
+  );
+  const incidentPins = useMemo(
+    () =>
+      incidents
+        .filter((i) => i.status !== "resolved" && i.lat != null && i.lng != null)
+        .map((i) => ({ ...i, ...projectCmr(i.lat as number, i.lng as number) })),
+    [incidents],
+  );
+  const located = helpPins.length + incidentPins.length;
 
   return (
     <section className="rounded-xl border bg-card">
       <header className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="font-semibold">Assistance map</h2>
         <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-          {helpRequests.length} need help
+          {located} located
         </span>
       </header>
       <div className="p-3">
-        <div className="relative aspect-square w-full overflow-hidden rounded-lg border bg-[linear-gradient(0deg,transparent_24%,rgba(0,0,0,0.04)_25%,rgba(0,0,0,0.04)_26%,transparent_27%,transparent_74%,rgba(0,0,0,0.04)_75%,rgba(0,0,0,0.04)_76%,transparent_77%),linear-gradient(90deg,transparent_24%,rgba(0,0,0,0.04)_25%,rgba(0,0,0,0.04)_26%,transparent_27%,transparent_74%,rgba(0,0,0,0.04)_75%,rgba(0,0,0,0.04)_76%,transparent_77%)] bg-[length:25%_25%]">
-          {plotted.length === 0 ? (
-            <p className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted-foreground">
-              No located help requests.
-            </p>
-          ) : (
-            plotted.map((p) => (
+        <div className="relative aspect-[68/100] w-full overflow-hidden rounded-lg border bg-emerald-50/40 bg-[linear-gradient(0deg,transparent_19%,rgba(0,0,0,0.04)_20%,transparent_21%),linear-gradient(90deg,transparent_19%,rgba(0,0,0,0.04)_20%,transparent_21%)] bg-[length:20%_20%]">
+          {/* Country label */}
+          <span className="absolute left-2 top-2 rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+            Cameroon
+          </span>
+
+          {/* Reference cities */}
+          {CMR_CITIES.map((c) => {
+            const { x, y } = projectCmr(c.lat, c.lng);
+            return (
               <div
-                key={p.id}
+                key={c.name}
                 className="absolute -translate-x-1/2 -translate-y-1/2"
-                style={{ left: `${p.x}%`, top: `${p.y}%` }}
-                title={`${p.person_name ?? "Unknown"}${p.note ? ` — ${p.note}` : ""}`}
+                style={{ left: `${x}%`, top: `${y}%` }}
               >
-                <span className="relative flex h-3.5 w-3.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
-                  <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-red-600 ring-2 ring-white" />
+                <span className="block h-1.5 w-1.5 rounded-full bg-gray-400" />
+                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 whitespace-nowrap text-[8px] text-gray-500">
+                  {c.name}
                 </span>
               </div>
-            ))
+            );
+          })}
+
+          {/* Help requests (people who need assistance) */}
+          {helpPins.map((p) => (
+            <div
+              key={`h-${p.id}`}
+              className="absolute -translate-x-1/2 -translate-y-1/2"
+              style={{ left: `${p.x}%`, top: `${p.y}%` }}
+              title={`${p.person_name ?? "Unknown"}${p.note ? ` — ${p.note}` : ""}`}
+            >
+              <span className="relative flex h-3.5 w-3.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+                <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-red-600 ring-2 ring-white" />
+              </span>
+            </div>
+          ))}
+
+          {/* Active incidents with a location */}
+          {incidentPins.map((p) => (
+            <div
+              key={`i-${p.id}`}
+              className="absolute -translate-x-1/2 -translate-y-1/2"
+              style={{ left: `${p.x}%`, top: `${p.y}%` }}
+              title={`${INCIDENT_LABEL[p.incident_type]}${p.reporter_name ? ` — ${p.reporter_name}` : ""}`}
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white ring-2 ring-white">
+                <Siren className="h-3 w-3" />
+              </span>
+            </div>
+          ))}
+
+          {located === 0 && (
+            <p className="absolute inset-x-0 bottom-2 text-center text-[11px] text-muted-foreground">
+              No located alerts yet.
+            </p>
           )}
         </div>
+
         <ul className="mt-3 space-y-1.5">
           {helpRequests.map((h) => (
             <li key={h.id} className="rounded-md bg-red-50 px-3 py-2 text-sm">

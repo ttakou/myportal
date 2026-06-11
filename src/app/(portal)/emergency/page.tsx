@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { SosPanel } from "./_components/sos-panel";
 import { SafetyStatusBanner } from "./_components/safety-status-banner";
+import { PushToggle } from "./_components/push-toggle";
 
 const SEVERITY_STYLE: Record<Severity, string> = {
   info: "border-sky-300 bg-sky-50 text-sky-900",
@@ -48,6 +49,8 @@ export default async function EmergencyPage() {
           </Link>
         )}
       </div>
+
+      <PushToggle />
 
       {checkinBroadcast && (
         <SafetyStatusBanner

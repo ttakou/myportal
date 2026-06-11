@@ -143,3 +143,16 @@ export interface Accountability {
   unaccounted: number;
   rows: AccountabilityRow[];
 }
+
+/** One push fan-out, recorded for the command center's delivery audit trail. */
+export interface DeliveryLog {
+  id: string;
+  source_type: "incident" | "broadcast";
+  audience: "responders" | "all";
+  channel: string;
+  recipients: number;
+  sent: number;
+  delivered: number;
+  failed: number;
+  created_at: string;
+}
