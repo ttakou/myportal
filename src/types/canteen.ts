@@ -37,7 +37,12 @@ export interface CanteenDish {
   meal_period: MealPeriod;
   name: string;
   description: string | null;
+  ingredients: string | null;
+  allergens: string[];
+  photo_url: string | null;
   capacity: number | null;
+  available: boolean;
+  change_note: string | null;
   is_active: boolean;
   option_groups: DishOptionGroup[];
 }

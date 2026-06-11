@@ -123,14 +123,46 @@ export function MenuBoard({
                           : "bg-card",
                     )}
                   >
+                    {dish.photo_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={dish.photo_url}
+                        alt={dish.name}
+                        className="mb-2 h-28 w-full rounded-md object-cover"
+                      />
+                    )}
                     <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <UtensilsCrossed className="h-3.5 w-3.5" />
                       {dish.kitchen_name}
+                      {!dish.available && (
+                        <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] text-destructive">
+                          Unavailable
+                        </span>
+                      )}
                     </div>
                     <h3 className="font-medium">{dish.name}</h3>
                     {dish.description && (
                       <p className="mt-1 text-sm text-muted-foreground">
                         {dish.description}
+                      </p>
+                    )}
+                    {dish.ingredients && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="font-medium">Ingredients:</span> {dish.ingredients}
+                      </p>
+                    )}
+                    {dish.allergens.length > 0 && (
+                      <p className="mt-1 flex flex-wrap gap-1">
+                        {dish.allergens.map((a) => (
+                          <span key={a} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                            ⚠ {a}
+                          </span>
+                        ))}
+                      </p>
+                    )}
+                    {dish.change_note && (
+                      <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                        {dish.change_note}
                       </p>
                     )}
 
@@ -234,6 +266,7 @@ export function MenuBoard({
                           disabled={
                             pending ||
                             mealLocked ||
+                            !dish.available ||
                             (hasOptions && !selectionValid(dish))
                           }
                           onClick={() =>

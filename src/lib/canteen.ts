@@ -30,7 +30,7 @@ export async function getServedMealPeriods(): Promise<MealPeriod[]> {
 }
 
 const DISH_SELECT =
-  "id, kitchen_id, service_date, meal_period, name, description, capacity, is_active," +
+  "id, kitchen_id, service_date, meal_period, name, description, ingredients, allergens, photo_url, capacity, available, change_note, is_active," +
   " canteen_kitchens!inner(name, kind)," +
   " canteen_option_groups(id, name, min_select, max_select, sort_order," +
   " canteen_options(id, name, is_active, sort_order))";
@@ -61,7 +61,12 @@ function mapDish(row: Record<string, any>): CanteenDish {
     meal_period: row.meal_period,
     name: row.name,
     description: row.description,
+    ingredients: row.ingredients ?? null,
+    allergens: (row.allergens ?? []) as string[],
+    photo_url: row.photo_url ?? null,
     capacity: row.capacity,
+    available: row.available ?? true,
+    change_note: row.change_note ?? null,
     is_active: row.is_active,
     option_groups: groups,
   };

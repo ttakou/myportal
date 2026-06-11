@@ -131,6 +131,63 @@ export async function deleteOption(optionId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+export async function updateDishDetails(input: {
+  dishId: string;
+  description?: string;
+  ingredients?: string;
+  allergens?: string; // comma-separated
+  capacity?: number | null;
+  available?: boolean;
+  changeNote?: string;
+}): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const patch: Record<string, unknown> = {};
+  if (input.description !== undefined) patch.description = input.description.trim() || null;
+  if (input.ingredients !== undefined) patch.ingredients = input.ingredients.trim() || null;
+  if (input.allergens !== undefined)
+    patch.allergens = input.allergens
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  if (input.capacity !== undefined)
+    patch.capacity = input.capacity === null ? null : Math.max(0, Math.floor(input.capacity));
+  if (input.available !== undefined) patch.available = input.available;
+  if (input.changeNote !== undefined) patch.change_note = input.changeNote.trim() || null;
+
+  const { error } = await supabase.from("canteen_dishes").update(patch).eq("id", input.dishId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
+export async function setDishPhoto(dishId: string, photoUrl: string | null): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("canteen_dishes")
+    .update({ photo_url: photoUrl })
+    .eq("id", dishId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
+export async function copyMenu(fromDate: string, toDate: string): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate))
+    return { ok: false, error: "Invalid date." };
+  if (fromDate === toDate) return { ok: false, error: "Pick a different target date." };
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("canteen_copy_menu", { p_from: fromDate, p_to: toDate });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return { ok: typeof data === "number" ? true : true, error: data === 0 ? "Nothing to copy from that date." : undefined };
+}
+
 export async function deleteOptionGroup(groupId: string): Promise<ActionResult> {
   if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
