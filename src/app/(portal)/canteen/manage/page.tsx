@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess } from "@/lib/auth";
 import {
   getKitchens,
   getManagedDishes,
@@ -14,7 +14,7 @@ export default async function ManageMenuPage({
 }: {
   searchParams: { date?: string };
 }) {
-  if (!isAdminRole(await getCurrentRole())) {
+  if (!(await getAccess()).isCanteenManager) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />

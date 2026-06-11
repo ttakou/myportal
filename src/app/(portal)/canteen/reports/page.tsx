@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess } from "@/lib/auth";
 import { getReportData } from "@/lib/canteen-reports";
 import { ISSUE_LABEL, type IssueType } from "@/types/feedback";
 
@@ -18,7 +18,8 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 export default async function CanteenReportsPage() {
-  if (!isAdminRole(await getCurrentRole())) {
+  const access = await getAccess();
+  if (!access.isFinance && !access.isCanteenManager) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />

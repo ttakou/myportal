@@ -1,10 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
 import type { UserRole } from "@/types/database";
 
+export type FunctionalRole =
+  | "canteen_staff"
+  | "canteen_manager"
+  | "hr_admin"
+  | "finance"
+  | "system_admin";
+
 /**
- * Resolve the current user's role. Prefers the JWT claim (set by the access
- * token hook) and falls back to the profiles table so it still works before the
- * hook is enabled.
+ * Resolve the current user's base role. Prefers the JWT claim (set by the access
+ * token hook) and falls back to the profiles table so it works without the hook.
  */
 export async function getCurrentRole(): Promise<UserRole | null> {
   const supabase = createClient();
@@ -26,4 +32,45 @@ export async function getCurrentRole(): Promise<UserRole | null> {
 
 export function isAdminRole(role: UserRole | null): boolean {
   return role === "super_admin" || role === "tenant_admin";
+}
+
+export interface Access {
+  role: UserRole | null;
+  isAdmin: boolean;
+  isSystemAdmin: boolean;
+  isCanteenManager: boolean;
+  isCanteenStaff: boolean;
+  isHr: boolean;
+  isFinance: boolean;
+}
+
+/** Resolve the current user's base role + functional roles into capability flags. */
+export async function getAccess(): Promise<Access> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const role = await getCurrentRole();
+  const admin = isAdminRole(role);
+
+  let fns: FunctionalRole[] = [];
+  if (user) {
+    const { data } = await supabase
+      .from("profile_roles")
+      .select("role")
+      .eq("profile_id", user.id);
+    fns = (data ?? []).map((r) => r.role as FunctionalRole);
+  }
+  const has = (r: FunctionalRole) => fns.includes(r);
+  const isSystemAdmin = admin || has("system_admin");
+  const isCanteenManager = isSystemAdmin || has("canteen_manager");
+  return {
+    role,
+    isAdmin: admin,
+    isSystemAdmin,
+    isCanteenManager,
+    isCanteenStaff: isCanteenManager || has("canteen_staff"),
+    isHr: isSystemAdmin || has("hr_admin"),
+    isFinance: isSystemAdmin || has("finance"),
+  };
 }

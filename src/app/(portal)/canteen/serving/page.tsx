@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess } from "@/lib/auth";
 import { getReservations, today } from "@/lib/canteen";
 import { ServingScreen } from "./serving-screen";
 
 export default async function ServingPage() {
-  if (!isAdminRole(await getCurrentRole())) {
+  if (!(await getAccess()).isCanteenStaff) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />

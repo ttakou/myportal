@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess, type FunctionalRole } from "@/lib/auth";
 import type { UserRole } from "@/types/database";
 
 export interface ActionResult {
@@ -11,11 +11,49 @@ export interface ActionResult {
 }
 
 const ASSIGNABLE_ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
+const ASSIGNABLE_FUNCTIONAL: FunctionalRole[] = [
+  "canteen_staff",
+  "canteen_manager",
+  "hr_admin",
+  "finance",
+  "system_admin",
+];
 
+/** System-admin level (roles, modules, settings). */
 async function requireAdmin(): Promise<ActionResult | null> {
-  const role = await getCurrentRole();
-  if (!isAdminRole(role)) return { ok: false, error: "Not authorized." };
+  if (!(await getAccess()).isSystemAdmin) return { ok: false, error: "Not authorized." };
   return null;
+}
+
+/** HR level (manage people). */
+async function requireHr(): Promise<ActionResult | null> {
+  if (!(await getAccess()).isHr) return { ok: false, error: "Not authorized." };
+  return null;
+}
+
+export async function addUserRole(userId: string, role: FunctionalRole): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  if (!ASSIGNABLE_FUNCTIONAL.includes(role)) return { ok: false, error: "Invalid role." };
+  const supabase = createClient();
+  const { error } = await supabase.from("profile_roles").insert({ profile_id: userId, role });
+  if (error && !error.message.includes("duplicate")) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+export async function removeUserRole(userId: string, role: FunctionalRole): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profile_roles")
+    .delete()
+    .eq("profile_id", userId)
+    .eq("role", role);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
 }
 
 export async function setUserRole(
@@ -41,7 +79,7 @@ export async function setUserManager(
   userId: string,
   managerId: string | null,
 ): Promise<ActionResult> {
-  const denied = await requireAdmin();
+  const denied = await requireHr();
   if (denied) return denied;
   if (managerId === userId) {
     return { ok: false, error: "A user cannot manage themselves." };
@@ -60,7 +98,7 @@ export async function setUserDepartment(
   userId: string,
   department: string,
 ): Promise<ActionResult> {
-  const denied = await requireAdmin();
+  const denied = await requireHr();
   if (denied) return denied;
   const supabase = createClient();
   const { error } = await supabase
@@ -76,7 +114,7 @@ export async function setUserLunchEligible(
   userId: string,
   eligible: boolean,
 ): Promise<ActionResult> {
-  const denied = await requireAdmin();
+  const denied = await requireHr();
   if (denied) return denied;
   const supabase = createClient();
   const { error } = await supabase
@@ -92,7 +130,7 @@ export async function setUserType(
   userId: string,
   employeeType: "employee" | "contractor" | "guest",
 ): Promise<ActionResult> {
-  const denied = await requireAdmin();
+  const denied = await requireHr();
   if (denied) return denied;
   const supabase = createClient();
   const { error } = await supabase
@@ -108,7 +146,7 @@ export async function setUserActive(
   userId: string,
   isActive: boolean,
 ): Promise<ActionResult> {
-  const denied = await requireAdmin();
+  const denied = await requireHr();
   if (denied) return denied;
   const supabase = createClient();
   const { error } = await supabase
@@ -124,8 +162,7 @@ export async function setUserActive(
 export async function setCanteenMealPeriods(
   mealPeriods: string[],
 ): Promise<ActionResult> {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
 
   const allowed = ["breakfast", "lunch", "dinner"];
   const clean = allowed.filter((m) => mealPeriods.includes(m)); // keep canonical order

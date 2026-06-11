@@ -3,8 +3,11 @@
 import { useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
+import type { FunctionalRole } from "@/lib/auth";
 import type { EmployeeType, TenantUser } from "@/lib/admin";
 import {
+  addUserRole,
+  removeUserRole,
   setUserActive,
   setUserDepartment,
   setUserLunchEligible,
@@ -15,8 +18,21 @@ import {
 
 const ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
 const TYPES: EmployeeType[] = ["employee", "contractor", "guest"];
+const FUNCTIONAL: { role: FunctionalRole; label: string }[] = [
+  { role: "canteen_staff", label: "Canteen staff" },
+  { role: "canteen_manager", label: "Canteen mgr" },
+  { role: "hr_admin", label: "HR" },
+  { role: "finance", label: "Finance" },
+  { role: "system_admin", label: "Sys admin" },
+];
 
-export function UsersPanel({ users }: { users: TenantUser[] }) {
+export function UsersPanel({
+  users,
+  canAssignRoles,
+}: {
+  users: TenantUser[];
+  canAssignRoles: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +68,7 @@ export function UsersPanel({ users }: { users: TenantUser[] }) {
               <th className="px-4 py-3 font-medium">Manager</th>
               <th className="px-4 py-3 font-medium">Lunch</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              {canAssignRoles && <th className="px-4 py-3 font-medium">Access roles</th>}
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -148,11 +165,38 @@ export function UsersPanel({ users }: { users: TenantUser[] }) {
                     {u.is_active ? "Active" : "Inactive"}
                   </button>
                 </td>
+                {canAssignRoles && (
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {FUNCTIONAL.map((fr) => {
+                        const on = u.functional_roles.includes(fr.role);
+                        return (
+                          <button
+                            key={fr.role}
+                            type="button"
+                            disabled={pending}
+                            onClick={() =>
+                              run(() =>
+                                on ? removeUserRole(u.id, fr.role) : addUserRole(u.id, fr.role),
+                              )
+                            }
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                              on ? "bg-primary text-primary-foreground" : "border text-muted-foreground hover:bg-accent",
+                            )}
+                          >
+                            {fr.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
                   No users yet.
                 </td>
               </tr>

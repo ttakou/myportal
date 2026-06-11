@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BarChart3, History, LayoutDashboard, MessageSquare, ScanLine, Settings } from "lucide-react";
 import { getMenu, getMyBookings, getServedMealPeriods, resolveServiceDate } from "@/lib/canteen";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess } from "@/lib/auth";
 import { MenuBoard } from "./_components/menu-board";
 
 export default async function CanteenPage({
@@ -10,13 +10,15 @@ export default async function CanteenPage({
   searchParams: { date?: string };
 }) {
   const serviceDate = resolveServiceDate(searchParams.date);
-  const [dishes, bookings, role, mealPeriods] = await Promise.all([
+  const [dishes, bookings, access, mealPeriods] = await Promise.all([
     getMenu(serviceDate),
     getMyBookings(serviceDate),
-    getCurrentRole(),
+    getAccess(),
     getServedMealPeriods(),
   ]);
-  const isAdmin = isAdminRole(role);
+  const canManage = access.isCanteenManager;
+  const canServe = access.isCanteenStaff;
+  const canReport = access.isFinance || access.isCanteenManager;
 
   const prettyDate = new Date(serviceDate + "T00:00:00").toLocaleDateString(
     undefined,
@@ -45,15 +47,17 @@ export default async function CanteenPage({
             <MessageSquare className="h-4 w-4" />
             Feedback
           </Link>
-          {isAdmin && (
+          {canServe && (
+            <Link
+              href="/canteen/serving"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <ScanLine className="h-4 w-4" />
+              Serving point
+            </Link>
+          )}
+          {canManage && (
             <>
-              <Link
-                href="/canteen/serving"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-              >
-                <ScanLine className="h-4 w-4" />
-                Serving point
-              </Link>
               <Link
                 href="/canteen/manage"
                 className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
@@ -68,14 +72,16 @@ export default async function CanteenPage({
                 <LayoutDashboard className="h-4 w-4" />
                 Campboss dashboard
               </Link>
-              <Link
-                href="/canteen/reports"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-              >
-                <BarChart3 className="h-4 w-4" />
-                Reports
-              </Link>
             </>
+          )}
+          {canReport && (
+            <Link
+              href="/canteen/reports"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Reports
+            </Link>
           )}
         </div>
       </div>

@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess } from "@/lib/auth";
 import { getAllFeedback, getMyFeedback } from "@/lib/canteen-feedback";
 import { FeedbackBoard } from "./_components/feedback-board";
 
 export default async function FeedbackPage() {
-  const isAdmin = isAdminRole(await getCurrentRole());
+  const isAdmin = (await getAccess()).isCanteenManager;
   const [mine, all] = await Promise.all([
     getMyFeedback(),
     isAdmin ? getAllFeedback() : Promise.resolve([]),

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess } from "@/lib/auth";
 import type { IssueType } from "@/types/feedback";
 
 export interface ActionResult {
@@ -38,7 +38,7 @@ export async function submitFeedback(input: {
 }
 
 export async function resolveFeedback(id: string, resolved: boolean): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
   const {
     data: { user },

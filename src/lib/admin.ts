@@ -14,6 +14,7 @@ export interface TenantUser {
   department: string | null;
   lunch_eligible: boolean;
   employee_type: EmployeeType;
+  functional_roles: string[];
 }
 
 export interface TenantModule {
@@ -30,13 +31,16 @@ export async function getTenantUsers(): Promise<TenantUser[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type")
+    .select("id, full_name, email, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type, profile_roles(role)")
     .order("full_name");
   if (error) {
     console.error("getTenantUsers:", error.message);
     return [];
   }
-  return (data ?? []) as TenantUser[];
+  return (data ?? []).map((u: Record<string, any>) => ({
+    ...(u as TenantUser),
+    functional_roles: (u.profile_roles ?? []).map((r: { role: string }) => r.role),
+  }));
 }
 
 /** Catalog of modules with whether the current tenant has each one active. */

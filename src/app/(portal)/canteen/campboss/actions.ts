@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess } from "@/lib/auth";
 
 export interface ActionResult {
   ok: boolean;
@@ -14,7 +14,7 @@ export async function setReservationPrepared(
   bookingId: string,
   prepared: boolean,
 ): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) {
+  if (!(await getAccess()).isCanteenStaff) {
     return { ok: false, error: "Not authorized." };
   }
   const supabase = createClient();
@@ -34,7 +34,7 @@ export async function setReservationCollected(
   bookingId: string,
   collected: boolean,
 ): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) {
+  if (!(await getAccess()).isCanteenStaff) {
     return { ok: false, error: "Not authorized." };
   }
   const supabase = createClient();
