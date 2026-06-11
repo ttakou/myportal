@@ -250,6 +250,50 @@ function projectCmr(lat: number, lng: number) {
   };
 }
 
+// Broader gazetteer for resolving *typed* location descriptions to a coordinate
+// (e.g. an SOS where GPS was blocked but the reporter typed "Douala"). Includes
+// the reference cities plus other Cameroon towns. Kept local + offline to match
+// the stylized map (no external geocoding service).
+const CMR_GAZETTEER: { name: string; lat: number; lng: number }[] = [
+  ...CMR_CITIES,
+  { name: "Limbe", lat: 4.02, lng: 9.21 },
+  { name: "Edéa", lat: 3.8, lng: 10.13 },
+  { name: "Kumba", lat: 4.64, lng: 9.45 },
+  { name: "Nkongsamba", lat: 4.95, lng: 9.93 },
+  { name: "Ebolowa", lat: 2.9, lng: 11.15 },
+  { name: "Sangmélima", lat: 2.93, lng: 11.98 },
+  { name: "Dschang", lat: 5.45, lng: 10.05 },
+  { name: "Foumban", lat: 5.73, lng: 10.9 },
+  { name: "Kousséri", lat: 12.08, lng: 15.03 },
+  { name: "Tiko", lat: 4.08, lng: 9.36 },
+  { name: "Mbalmayo", lat: 3.52, lng: 11.5 },
+  { name: "Bafia", lat: 4.75, lng: 11.23 },
+  { name: "Kumbo", lat: 6.2, lng: 10.67 },
+  { name: "Wum", lat: 6.38, lng: 10.07 },
+];
+
+const stripAccents = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+// Longest names first so a town wins over an accidental shorter substring.
+const GAZETTEER_BY_LEN = [...CMR_GAZETTEER].sort(
+  (a, b) => b.name.length - a.name.length,
+);
+
+/** Best-effort resolution of a free-text location to a known place's coords. */
+function geocodeText(
+  text: string | null,
+): { lat: number; lng: number; name: string } | null {
+  if (!text) return null;
+  const t = stripAccents(text);
+  for (const c of GAZETTEER_BY_LEN) {
+    if (t.includes(stripAccents(c.name))) {
+      return { lat: c.lat, lng: c.lng, name: c.name };
+    }
+  }
+  return null;
+}
+
 function GeoMap({
   incidents,
   helpRequests,
@@ -264,13 +308,33 @@ function GeoMap({
         .map((h) => ({ ...h, ...projectCmr(h.lat as number, h.lng as number) })),
     [helpRequests],
   );
-  const incidentPins = useMemo(
-    () =>
-      incidents
-        .filter((i) => i.status !== "resolved" && i.lat != null && i.lng != null)
-        .map((i) => ({ ...i, ...projectCmr(i.lat as number, i.lng as number) })),
-    [incidents],
-  );
+  // Resolve each active incident to a coordinate: a real GPS fix when present,
+  // otherwise a best-effort geocode of the typed location ("Douala"). Incidents
+  // whose description can't be placed are surfaced in a separate list so a
+  // keyed-in location is never silently dropped from the command center.
+  const { incidentPins, describedOnly } = useMemo(() => {
+    const pins: (Incident & {
+      x: number;
+      y: number;
+      approx: boolean;
+      place: string | null;
+    })[] = [];
+    const described: Incident[] = [];
+    for (const i of incidents) {
+      if (i.status === "resolved") continue;
+      if (i.lat != null && i.lng != null) {
+        pins.push({ ...i, approx: false, place: null, ...projectCmr(i.lat, i.lng) });
+        continue;
+      }
+      const g = geocodeText(i.location_text);
+      if (g) {
+        pins.push({ ...i, approx: true, place: g.name, ...projectCmr(g.lat, g.lng) });
+      } else if (i.location_text) {
+        described.push(i);
+      }
+    }
+    return { incidentPins: pins, describedOnly: described };
+  }, [incidents]);
   const located = helpPins.length + incidentPins.length;
 
   return (
@@ -320,15 +384,26 @@ function GeoMap({
             </div>
           ))}
 
-          {/* Active incidents with a location */}
+          {/* Active incidents with a location (exact GPS, or geocoded from text) */}
           {incidentPins.map((p) => (
             <div
               key={`i-${p.id}`}
               className="absolute -translate-x-1/2 -translate-y-1/2"
               style={{ left: `${p.x}%`, top: `${p.y}%` }}
-              title={`${INCIDENT_LABEL[p.incident_type]}${p.reporter_name ? ` — ${p.reporter_name}` : ""}`}
+              title={
+                `${INCIDENT_LABEL[p.incident_type]}` +
+                (p.reporter_name ? ` — ${p.reporter_name}` : "") +
+                (p.approx ? ` · approx: ${p.place}` : "")
+              }
             >
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white ring-2 ring-white">
+              <span
+                className={cn(
+                  "flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white",
+                  p.approx
+                    ? "ring-2 ring-dashed ring-destructive/60"
+                    : "ring-2 ring-white",
+                )}
+              >
                 <Siren className="h-3 w-3" />
               </span>
             </div>
@@ -356,6 +431,31 @@ function GeoMap({
             </li>
           ))}
         </ul>
+
+        {/* Keyed-in locations we couldn't place on the map (unknown place name) */}
+        {describedOnly.length > 0 && (
+          <div className="mt-3">
+            <p className="mb-1 text-xs font-medium text-muted-foreground">
+              Described locations (not on map)
+            </p>
+            <ul className="space-y-1.5">
+              {describedOnly.map((i) => (
+                <li key={i.id} className="rounded-md bg-amber-50 px-3 py-2 text-sm">
+                  <span className="font-medium text-amber-900">
+                    {INCIDENT_LABEL[i.incident_type]}
+                  </span>
+                  {i.reporter_name && (
+                    <span className="text-amber-800"> · {i.reporter_name}</span>
+                  )}
+                  <span className="inline-flex items-center gap-1 text-xs text-amber-700">
+                    <MapPin className="ml-1 h-3 w-3" />
+                    {i.location_text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </section>
   );
