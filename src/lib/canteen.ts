@@ -243,3 +243,15 @@ export async function getMyLunchHistory(): Promise<LunchHistoryRow[]> {
   }
   return (data ?? []) as LunchHistoryRow[];
 }
+
+/** Same-day booking cutoff hour (0-23) from canteen settings, or null. */
+export async function getCanteenCutoff(): Promise<number | null> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("tenant_services")
+    .select("settings, services_catalog!inner(slug)")
+    .eq("services_catalog.slug", "canteen")
+    .maybeSingle();
+  const v = (data?.settings as { cutoff_hour?: unknown })?.cutoff_hour;
+  return v === null || v === undefined || v === "" ? null : Number(v);
+}

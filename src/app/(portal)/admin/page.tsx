@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getTenantUsers, getTenantModules } from "@/lib/admin";
-import { getServedMealPeriods } from "@/lib/canteen";
+import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
 import { UsersPanel } from "./_components/users-panel";
 import { ModulesPanel } from "./_components/modules-panel";
 import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
@@ -30,8 +30,9 @@ export default async function AdminPage() {
     getTenantModules(),
   ]);
   const canteenActive = modules.some((m) => m.slug === "canteen" && m.is_active);
-  const servedMeals =
-    canteenActive && access.isCanteenManager ? await getServedMealPeriods() : [];
+  const showCanteen = canteenActive && access.isCanteenManager;
+  const servedMeals = showCanteen ? await getServedMealPeriods() : [];
+  const cutoffHour = showCanteen ? await getCanteenCutoff() : null;
 
   return (
     <div className="space-y-10">
@@ -43,9 +44,7 @@ export default async function AdminPage() {
       </div>
 
       {access.isSystemAdmin && <ModulesPanel modules={modules} />}
-      {canteenActive && access.isCanteenManager && (
-        <CanteenSettingsPanel served={servedMeals} />
-      )}
+      {showCanteen && <CanteenSettingsPanel served={servedMeals} cutoffHour={cutoffHour} />}
       <UsersPanel users={users} canAssignRoles={access.isHr} />
     </div>
   );

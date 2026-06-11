@@ -8,17 +8,20 @@ import {
   MEAL_PERIOD_LABEL,
   type MealPeriod,
 } from "@/types/canteen";
-import { setCanteenMealPeriods } from "../actions";
+import { setCanteenCutoff, setCanteenMealPeriods } from "../actions";
 
 export function CanteenSettingsPanel({
   served,
+  cutoffHour,
 }: {
   served: MealPeriod[];
+  cutoffHour: number | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [selected, setSelected] = useState<Set<MealPeriod>>(new Set(served));
+  const [cutoff, setCutoff] = useState(cutoffHour == null ? "" : String(cutoffHour));
 
   function toggle(m: MealPeriod) {
     setSaved(false);
@@ -83,6 +86,37 @@ export function CanteenSettingsPanel({
             Save
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-4">
+        <span className="text-sm font-medium">Same-day booking cut-off:</span>
+        <select
+          value={cutoff}
+          onChange={(e) => setCutoff(e.target.value)}
+          className="rounded-md border bg-background px-2 py-1.5 text-sm"
+        >
+          <option value="">No cut-off</option>
+          {Array.from({ length: 24 }, (_, h) => (
+            <option key={h} value={h}>{`${h}:00`}</option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending}
+          onClick={() =>
+            startTransition(async () => {
+              setError(null);
+              const res = await setCanteenCutoff(cutoff === "" ? null : Number(cutoff));
+              if (!res.ok) setError(res.error ?? "Failed to save.");
+            })
+          }
+        >
+          Save cut-off
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          After this hour, employees can&apos;t book today&apos;s lunch.
+        </span>
       </div>
     </section>
   );

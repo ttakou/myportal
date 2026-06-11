@@ -195,6 +195,26 @@ export async function setCanteenMealPeriods(
   return { ok: true };
 }
 
+/** Set the same-day booking cutoff hour (0-23) or clear it (null). */
+export async function setCanteenCutoff(hour: number | null): Promise<ActionResult> {
+  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const clean =
+    hour === null || Number.isNaN(hour) ? null : Math.max(0, Math.min(23, Math.floor(hour)));
+  const supabase = createClient();
+  const { data: row } = await supabase
+    .from("tenant_services")
+    .select("id, settings, services_catalog!inner(slug)")
+    .eq("services_catalog.slug", "canteen")
+    .maybeSingle();
+  if (!row) return { ok: false, error: "Canteen module is not enabled." };
+  const settings = { ...((row.settings as Record<string, unknown>) ?? {}), cutoff_hour: clean };
+  const { error } = await supabase.from("tenant_services").update({ settings }).eq("id", row.id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
 /** Enable/disable a module for the current tenant (upsert tenant_services). */
 export async function setModuleActive(
   serviceId: string,

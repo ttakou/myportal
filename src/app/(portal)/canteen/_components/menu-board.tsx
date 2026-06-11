@@ -17,11 +17,15 @@ export function MenuBoard({
   dishes,
   bookings,
   mealPeriods,
+  bookingClosed = false,
+  cutoffHour = null,
 }: {
   serviceDate: string;
   dishes: CanteenDish[];
   bookings: CanteenBooking[];
   mealPeriods: MealPeriod[];
+  bookingClosed?: boolean;
+  cutoffHour?: number | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +77,11 @@ export function MenuBoard({
       {error && (
         <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">
           {error}
+        </p>
+      )}
+      {bookingClosed && (
+        <p className="rounded-md bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700">
+          Booking for today is closed{cutoffHour != null ? ` (cut-off ${cutoffHour}:00)` : ""}.
         </p>
       )}
 
@@ -266,6 +275,7 @@ export function MenuBoard({
                           disabled={
                             pending ||
                             mealLocked ||
+                            bookingClosed ||
                             !dish.available ||
                             (hasOptions && !selectionValid(dish))
                           }
