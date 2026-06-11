@@ -62,6 +62,7 @@ export function MenuBoard({
   function selectionValid(dish: CanteenDish): boolean {
     const sel = selections[dish.id] ?? new Set<string>();
     return dish.option_groups.every((g) => {
+      if (g.options.length === 0) return true; // empty group imposes no rule
       const n = g.options.filter((o) => sel.has(o.id)).length;
       return n >= g.min_select && n <= g.max_select;
     });
@@ -107,7 +108,9 @@ export function MenuBoard({
               {mealDishes.map((dish) => {
                 const isBooked = booking?.dish_id === dish.id;
                 const sel = selections[dish.id] ?? new Set<string>();
-                const hasOptions = dish.option_groups.length > 0;
+                // Only groups that actually have options are selectable.
+                const groups = dish.option_groups.filter((g) => g.options.length > 0);
+                const hasOptions = groups.length > 0;
                 return (
                   <div
                     key={dish.id}
@@ -188,7 +191,7 @@ export function MenuBoard({
                       <div className="mt-3 flex flex-1 flex-col">
                         {hasOptions && (
                           <div className="mb-3 space-y-3">
-                            {dish.option_groups.map((g) => (
+                            {groups.map((g) => (
                               <fieldset key={g.id}>
                                 <legend className="mb-1 text-xs font-medium text-muted-foreground">
                                   {g.name}

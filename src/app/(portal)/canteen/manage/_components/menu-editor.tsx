@@ -277,6 +277,9 @@ function OptionGroupRow({
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <span className="font-medium">{group.name}</span>
       <span className="text-xs text-muted-foreground">({rule})</span>
+      {group.options.length === 0 && (
+        <span className="text-xs text-amber-600">⚠ add options →</span>
+      )}
       {group.options.map((o) => (
         <span
           key={o.id}
