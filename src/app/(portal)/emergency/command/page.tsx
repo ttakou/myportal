@@ -10,6 +10,7 @@ import {
   getRecentDeliveries,
 } from "@/lib/emergency";
 import { CommandCenter } from "./_components/command-center";
+import { LiveRefresh } from "./_components/live-refresh";
 
 export default async function CommandCenterPage() {
   // Safety coordinators only — everyone else is bounced to the employee view.
@@ -45,13 +46,16 @@ export default async function CommandCenterPage() {
             Live incidents, accountability and mass alerts.
           </p>
         </div>
-        <Link
-          href="/emergency/command/history"
-          className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-        >
-          <History className="h-4 w-4" />
-          Incident history
-        </Link>
+        <div className="flex items-center gap-2">
+          <LiveRefresh />
+          <Link
+            href="/emergency/command/history"
+            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+          >
+            <History className="h-4 w-4" />
+            Incident history
+          </Link>
+        </div>
       </div>
 
       <CommandCenter
