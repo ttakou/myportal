@@ -3,10 +3,18 @@
 import { useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
-import type { TenantUser } from "@/lib/admin";
-import { setUserActive, setUserManager, setUserRole } from "../actions";
+import type { EmployeeType, TenantUser } from "@/lib/admin";
+import {
+  setUserActive,
+  setUserDepartment,
+  setUserLunchEligible,
+  setUserManager,
+  setUserRole,
+  setUserType,
+} from "../actions";
 
 const ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
+const TYPES: EmployeeType[] = ["employee", "contractor", "guest"];
 
 export function UsersPanel({ users }: { users: TenantUser[] }) {
   const [pending, startTransition] = useTransition();
@@ -38,8 +46,11 @@ export function UsersPanel({ users }: { users: TenantUser[] }) {
           <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
+              <th className="px-4 py-3 font-medium">Department</th>
+              <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Role</th>
               <th className="px-4 py-3 font-medium">Manager</th>
+              <th className="px-4 py-3 font-medium">Lunch</th>
               <th className="px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
@@ -49,6 +60,25 @@ export function UsersPanel({ users }: { users: TenantUser[] }) {
                 <td className="px-4 py-3">
                   <div className="font-medium">{u.full_name || "—"}</div>
                   <div className="text-xs text-muted-foreground">{u.email}</div>
+                </td>
+                <td className="px-4 py-3">
+                  <input
+                    defaultValue={u.department ?? ""}
+                    disabled={pending}
+                    placeholder="—"
+                    onBlur={(e) => { if (e.target.value !== (u.department ?? "")) run(() => setUserDepartment(u.id, e.target.value)); }}
+                    className="w-28 rounded-md border bg-background px-2 py-1 text-sm"
+                  />
+                </td>
+                <td className="px-4 py-3">
+                  <select
+                    value={u.employee_type}
+                    disabled={pending}
+                    onChange={(e) => run(() => setUserType(u.id, e.target.value as EmployeeType))}
+                    className="rounded-md border bg-background px-2 py-1 text-sm capitalize"
+                  >
+                    {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 </td>
                 <td className="px-4 py-3">
                   <select
@@ -92,6 +122,21 @@ export function UsersPanel({ users }: { users: TenantUser[] }) {
                   <button
                     type="button"
                     disabled={pending}
+                    onClick={() => run(() => setUserLunchEligible(u.id, !u.lunch_eligible))}
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-xs font-medium",
+                      u.lunch_eligible
+                        ? "bg-green-100 text-green-700"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {u.lunch_eligible ? "Eligible" : "Not eligible"}
+                  </button>
+                </td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    disabled={pending}
                     onClick={() => run(() => setUserActive(u.id, !u.is_active))}
                     className={cn(
                       "rounded-full px-2.5 py-1 text-xs font-medium",
@@ -107,7 +152,7 @@ export function UsersPanel({ users }: { users: TenantUser[] }) {
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                   No users yet.
                 </td>
               </tr>

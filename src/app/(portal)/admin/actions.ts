@@ -56,6 +56,54 @@ export async function setUserManager(
   return { ok: true };
 }
 
+export async function setUserDepartment(
+  userId: string,
+  department: string,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ department: department.trim() || null })
+    .eq("id", userId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+export async function setUserLunchEligible(
+  userId: string,
+  eligible: boolean,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ lunch_eligible: eligible })
+    .eq("id", userId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+export async function setUserType(
+  userId: string,
+  employeeType: "employee" | "contractor" | "guest",
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ employee_type: employeeType })
+    .eq("id", userId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
 export async function setUserActive(
   userId: string,
   isActive: boolean,

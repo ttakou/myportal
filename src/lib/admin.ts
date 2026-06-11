@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import type { UserRole } from "@/types/database";
 
+export type EmployeeType = "employee" | "contractor" | "guest";
+
 export interface TenantUser {
   id: string;
   full_name: string | null;
@@ -9,6 +11,9 @@ export interface TenantUser {
   job_title: string | null;
   manager_id: string | null;
   is_active: boolean;
+  department: string | null;
+  lunch_eligible: boolean;
+  employee_type: EmployeeType;
 }
 
 export interface TenantModule {
@@ -25,7 +30,7 @@ export async function getTenantUsers(): Promise<TenantUser[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, role, job_title, manager_id, is_active")
+    .select("id, full_name, email, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type")
     .order("full_name");
   if (error) {
     console.error("getTenantUsers:", error.message);
