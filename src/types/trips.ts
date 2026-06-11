@@ -97,9 +97,93 @@ export interface Trip {
   returned_at: string | null;
   last_checkin_at: string | null;
   checkins: TripCheckin[];
+  // Flight + meet & greet
+  traveler_type: TravelerType;
+  airline: string | null;
+  flight_number: string | null;
+  terminal: string | null;
+  flight_arrival_at: string | null;
+  flight_status: FlightStatus;
+  assistance: AirportAssistance | null;
   // Expenses (legacy reconciliation)
   expenses: TripExpense[];
   expense_total: number;
+}
+
+// --- Meet & greet / airport assistance ---------------------------------------
+
+export type TravelerType =
+  | "employee"
+  | "executive"
+  | "visitor"
+  | "contractor"
+  | "consultant"
+  | "expatriate"
+  | "vip";
+
+export const TRAVELER_TYPE_LABEL: Record<TravelerType, string> = {
+  employee: "Employee",
+  executive: "Executive",
+  visitor: "Visitor",
+  contractor: "Contractor",
+  consultant: "Consultant",
+  expatriate: "Expatriate",
+  vip: "VIP",
+};
+
+export type FlightStatus = "scheduled" | "delayed" | "landed" | "missed" | "rescheduled";
+
+export const FLIGHT_STATUS_LABEL: Record<FlightStatus, string> = {
+  scheduled: "Scheduled",
+  delayed: "Delayed",
+  landed: "Landed",
+  missed: "Missed flight",
+  rescheduled: "Rescheduled",
+};
+
+export type AirportServiceType = "arrival" | "departure" | "both";
+
+export const AIRPORT_SERVICE_LABEL: Record<AirportServiceType, string> = {
+  arrival: "Arrival",
+  departure: "Departure",
+  both: "Arrival & departure",
+};
+
+export type AirportAssistStatus =
+  | "requested"
+  | "assigned"
+  | "arrived"
+  | "met"
+  | "picked_up"
+  | "dropped_off"
+  | "closed";
+
+export const AIRPORT_STATUS_LABEL: Record<AirportAssistStatus, string> = {
+  requested: "Requested",
+  assigned: "Greeter & driver assigned",
+  arrived: "Greeter at airport",
+  met: "Traveller met",
+  picked_up: "Picked up",
+  dropped_off: "Dropped off",
+  closed: "Closed",
+};
+
+export interface AirportAssistance {
+  id: string;
+  trip_id: string;
+  service_type: AirportServiceType;
+  status: AirportAssistStatus;
+  greeter_name: string | null;
+  greeter_phone: string | null;
+  driver_name: string | null;
+  driver_phone: string | null;
+  vehicle: string | null;
+  pickup_point: string | null;
+  meeting_point: string | null;
+  name_board: boolean;
+  vip: boolean;
+  language: string | null;
+  notes: string | null;
 }
 
 export type ContactCategory = "hospital" | "police" | "embassy" | "company" | "other";

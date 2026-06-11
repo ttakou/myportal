@@ -5,23 +5,34 @@ import {
   CheckCircle2,
   MapPin,
   Plane,
+  PlaneLanding,
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
+  AIRPORT_STATUS_LABEL,
   APPROVAL_TRAVEL_TYPES,
   CHECKIN_KIND_LABEL,
+  FLIGHT_STATUS_LABEL,
   TRAVEL_TYPE_LABEL,
+  TRAVELER_TYPE_LABEL,
   TRIP_PHASE_LABEL,
   TRIP_STATUS_LABEL,
+  type TravelerType,
   type TravelType,
   type Trip,
   type TripPhase,
   type TripStatus,
 } from "@/types/trips";
-import { createTrip, managerApproveTrip, rejectTrip, tripCheckin } from "../actions";
+import {
+  createTrip,
+  managerApproveTrip,
+  rejectTrip,
+  requestAirportAssistance,
+  tripCheckin,
+} from "../actions";
 
 const STATUS_STYLE: Record<TripStatus, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -54,6 +65,7 @@ export function TripsBoard({
   const [error, setError] = useState<string | null>(null);
 
   const [travelType, setTravelType] = useState<TravelType>("business");
+  const [travelerType, setTravelerType] = useState<TravelerType>("employee");
   const [destination, setDestination] = useState("");
   const [purpose, setPurpose] = useState("");
   const [route, setRoute] = useState("");
@@ -63,6 +75,10 @@ export function TripsBoard({
   const [destContact, setDestContact] = useState("");
   const [departDate, setDepartDate] = useState("");
   const [returnDate, setReturnDate] = useState("");
+  const [airline, setAirline] = useState("");
+  const [flightNumber, setFlightNumber] = useState("");
+  const [terminal, setTerminal] = useState("");
+  const [flightArrival, setFlightArrival] = useState("");
 
   const needsApproval = APPROVAL_TRAVEL_TYPES.includes(travelType);
 
@@ -91,6 +107,7 @@ export function TripsBoard({
               () =>
                 createTrip({
                   travelType,
+                  travelerType,
                   destination,
                   purpose,
                   route,
@@ -100,6 +117,12 @@ export function TripsBoard({
                   destEmergencyContact: destContact,
                   departDate,
                   returnDate,
+                  airline,
+                  flightNumber,
+                  terminal,
+                  flightArrivalAt: flightArrival
+                    ? new Date(flightArrival).toISOString()
+                    : undefined,
                 }),
               () => {
                 setDestination("");
@@ -111,6 +134,11 @@ export function TripsBoard({
                 setDestContact("");
                 setDepartDate("");
                 setReturnDate("");
+                setAirline("");
+                setFlightNumber("");
+                setTerminal("");
+                setFlightArrival("");
+                setTravelerType("employee");
               },
             );
           }}
@@ -130,6 +158,20 @@ export function TripsBoard({
               ))}
             </select>
           </label>
+          <label className="text-xs text-muted-foreground">
+            Traveller
+            <select
+              value={travelerType}
+              onChange={(e) => setTravelerType(e.target.value as TravelerType)}
+              className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              {(Object.keys(TRAVELER_TYPE_LABEL) as TravelerType[]).map((t) => (
+                <option key={t} value={t}>
+                  {TRAVELER_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </select>
+          </label>
           <input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Destination (city/country)" required className="rounded-md border bg-background px-3 py-2 text-sm" />
           <input value={route} onChange={(e) => setRoute(e.target.value)} placeholder="Route (e.g. Douala → Kribi)" className="rounded-md border bg-background px-3 py-2 text-sm" />
           <input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="Transport (car, flight, boat…)" className="rounded-md border bg-background px-3 py-2 text-sm" />
@@ -144,6 +186,13 @@ export function TripsBoard({
           <label className="text-xs text-muted-foreground">
             Return
             <input value={returnDate} onChange={(e) => setReturnDate(e.target.value)} type="date" className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
+          </label>
+          <input value={airline} onChange={(e) => setAirline(e.target.value)} placeholder="Airline (optional)" className="rounded-md border bg-background px-3 py-2 text-sm" />
+          <input value={flightNumber} onChange={(e) => setFlightNumber(e.target.value)} placeholder="Flight no. (e.g. ET925)" className="rounded-md border bg-background px-3 py-2 text-sm" />
+          <input value={terminal} onChange={(e) => setTerminal(e.target.value)} placeholder="Terminal" className="rounded-md border bg-background px-3 py-2 text-sm" />
+          <label className="text-xs text-muted-foreground">
+            Flight arrival
+            <input value={flightArrival} onChange={(e) => setFlightArrival(e.target.value)} type="datetime-local" className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
           </label>
           <div className="flex items-end">
             <Button type="submit" disabled={pending} className="w-full">
@@ -313,6 +362,68 @@ function TripCard({
             </Button>
           )}
         </div>
+      )}
+
+      {/* Meet & greet / airport assistance */}
+      {trip.assistance ? (
+        <div className="mt-3 rounded-md bg-primary/5 p-3 text-sm">
+          <p className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <PlaneLanding className="h-3.5 w-3.5" /> Airport assistance ·{" "}
+            <span className="font-semibold normal-case text-foreground">
+              {AIRPORT_STATUS_LABEL[trip.assistance.status]}
+            </span>
+            {trip.assistance.vip && (
+              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                VIP
+              </span>
+            )}
+          </p>
+          {(trip.airline || trip.flight_number) && (
+            <p className="text-xs text-muted-foreground">
+              Flight: {[trip.airline, trip.flight_number].filter(Boolean).join(" ")}
+              {trip.terminal ? ` · Terminal ${trip.terminal}` : ""} ·{" "}
+              {FLIGHT_STATUS_LABEL[trip.flight_status]}
+              {trip.flight_arrival_at
+                ? ` · ${new Date(trip.flight_arrival_at).toLocaleString()}`
+                : ""}
+            </p>
+          )}
+          {trip.assistance.greeter_name && (
+            <p>
+              Greeter: <span className="font-medium">{trip.assistance.greeter_name}</span>
+              {trip.assistance.greeter_phone ? ` · ${trip.assistance.greeter_phone}` : ""}
+            </p>
+          )}
+          {trip.assistance.driver_name && (
+            <p>
+              Driver: <span className="font-medium">{trip.assistance.driver_name}</span>
+              {trip.assistance.driver_phone ? ` · ${trip.assistance.driver_phone}` : ""}
+              {trip.assistance.vehicle ? ` · ${trip.assistance.vehicle}` : ""}
+            </p>
+          )}
+          {trip.assistance.meeting_point && (
+            <p className="text-muted-foreground">Meet at: {trip.assistance.meeting_point}</p>
+          )}
+          {!trip.assistance.greeter_name && !trip.assistance.driver_name && (
+            <p className="text-xs text-muted-foreground">
+              Requested — the travel desk will assign a greeter and driver.
+            </p>
+          )}
+        </div>
+      ) : (
+        trip.status !== "rejected" &&
+        trip.phase !== "returned" && (
+          <div className="mt-3">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() => run(() => requestAirportAssistance({ tripId: trip.id }))}
+            >
+              <PlaneLanding className="h-4 w-4" /> Request meet &amp; greet
+            </Button>
+          </div>
+        )
       )}
 
       {trip.checkins.length > 0 && (
