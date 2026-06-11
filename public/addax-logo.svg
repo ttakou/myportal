@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Addax Petroleum brand lockup (vector recreation).
+
+  This is a hand-built approximation: the official raster could not be fetched in
+  this environment (outbound network is restricted by the workspace policy).
+  Drop the official asset in at public/addax-logo.svg (or .png and update the
+  tenant branding logoUrl) to replace it 1:1.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" role="img" aria-label="Addax Petroleum">
+  <title>Addax Petroleum</title>
+
+  <!-- Red forward-leaning parallelogram -->
+  <polygon points="52,16 205,16 171,184 18,184" fill="#E2001A"/>
+
+  <!-- Sinopec-style white sun emblem (stylized) -->
+  <g transform="translate(110,86)" fill="#FFFFFF">
+    <g>
+      <ellipse cx="0" cy="-34" rx="8" ry="24"/>
+      <ellipse cx="0" cy="-34" rx="8" ry="24" transform="rotate(45)"/>
+      <ellipse cx="0" cy="-34" rx="8" ry="24" transform="rotate(90)"/>
+      <ellipse cx="0" cy="-34" rx="8" ry="24" transform="rotate(135)"/>
+      <ellipse cx="0" cy="-34" rx="8" ry="24" transform="rotate(180)"/>
+      <ellipse cx="0" cy="-34" rx="8" ry="24" transform="rotate(225)"/>
+      <ellipse cx="0" cy="-34" rx="8" ry="24" transform="rotate(270)"/>
+      <ellipse cx="0" cy="-34" rx="8" ry="24" transform="rotate(315)"/>
+    </g>
+    <circle cx="0" cy="0" r="20"/>
+    <circle cx="0" cy="0" r="11" fill="#E2001A"/>
+  </g>
+
+  <!-- 中国石化 wordmark inside the tile -->
+  <text x="110" y="166" text-anchor="middle" fill="#FFFFFF"
+        font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif"
+        font-size="22" font-weight="700" letter-spacing="1">中国石化</text>
+
+  <!-- ADDAX PETROLEUM wordmark -->
+  <text x="235" y="92" fill="#111111"
+        font-family="'Arial Black','Helvetica Neue',Arial,sans-serif"
+        font-size="62" font-weight="900" letter-spacing="1">ADDAX</text>
+  <text x="235" y="158" fill="#111111"
+        font-family="'Arial Black','Helvetica Neue',Arial,sans-serif"
+        font-size="62" font-weight="900" letter-spacing="1">PETROLEUM</text>
+</svg>
