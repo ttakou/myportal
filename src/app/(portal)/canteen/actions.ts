@@ -39,6 +39,18 @@ export async function bookDish(
   return { ok: true };
 }
 
+/** Finalise the current user's booking — locks it (no further changes). */
+export async function finalizeBooking(bookingId: string): Promise<ActionResult> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("canteen_bookings")
+    .update({ finalized_at: new Date().toISOString() })
+    .eq("id", bookingId);
+  if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, "") };
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
 /** Cancel one of the current user's bookings. */
 export async function cancelBooking(bookingId: string): Promise<ActionResult> {
   const supabase = createClient();

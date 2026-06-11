@@ -11,7 +11,7 @@ import {
   type DishOptionGroup,
   type MealPeriod,
 } from "@/types/canteen";
-import { bookDish, cancelBooking, updateGuests } from "../actions";
+import { bookDish, cancelBooking, finalizeBooking, updateGuests } from "../actions";
 
 export function MenuBoard({
   dishes,
@@ -80,6 +80,8 @@ export function MenuBoard({
         if (mealDishes.length === 0) return null;
         const booking = bookingByMeal.get(meal);
         const mealReady = !!booking?.prepared_at;
+        const mealFinal = !!booking?.finalized_at;
+        const mealLocked = mealReady || mealFinal;
 
         return (
           <section key={meal} className="space-y-3">
@@ -90,9 +92,13 @@ export function MenuBoard({
                   <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
                     <CheckCircle2 className="h-3 w-3" /> Ready for collection
                   </span>
+                ) : mealFinal ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                    <CheckCircle2 className="h-3 w-3" /> Finalised
+                  </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
-                    <Check className="h-3 w-3" /> Booked
+                    <Check className="h-3 w-3" /> Selected (not final)
                   </span>
                 ))}
             </div>
@@ -107,7 +113,7 @@ export function MenuBoard({
                     key={dish.id}
                     className={cn(
                       "flex flex-col rounded-lg border p-4",
-                      isBooked && mealReady
+                      isBooked && mealLocked
                         ? "border-green-500 ring-2 ring-green-500"
                         : isBooked
                           ? "border-primary ring-1 ring-primary"
@@ -138,6 +144,11 @@ export function MenuBoard({
                             <CheckCircle2 className="h-4 w-4" />
                             Ready for collection
                           </p>
+                        ) : mealFinal ? (
+                          <p className="inline-flex items-center gap-1.5 rounded-md bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Finalised — choice locked
+                          </p>
                         ) : (
                           <>
                             <GuestStepper
@@ -145,6 +156,22 @@ export function MenuBoard({
                               disabled={pending}
                               onChange={(n) => run(() => updateGuests(booking!.id, n))}
                             />
+                            <Button
+                              size="sm"
+                              className="w-full"
+                              disabled={pending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Finalise your choice? Once finalised you cannot change it.",
+                                  )
+                                ) {
+                                  run(() => finalizeBooking(booking!.id));
+                                }
+                              }}
+                            >
+                              Finalise choice
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"
@@ -203,7 +230,7 @@ export function MenuBoard({
                           className="mt-auto"
                           disabled={
                             pending ||
-                            mealReady ||
+                            mealLocked ||
                             (hasOptions && !selectionValid(dish))
                           }
                           onClick={() =>

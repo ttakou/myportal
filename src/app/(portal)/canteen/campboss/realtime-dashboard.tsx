@@ -191,6 +191,11 @@ export function RealtimeDashboard({
                     <tr key={r.booking_id} className={cn(packed && "bg-primary/5")}>
                       <td className="px-4 py-3 font-medium">
                         {r.person_name || r.person_email}
+                        {r.finalized_at ? (
+                          <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">FINAL</span>
+                        ) : (
+                          <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">tentative</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{r.kitchen_name}</td>
                       <td className="px-4 py-3">

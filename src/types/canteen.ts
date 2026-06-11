@@ -51,6 +51,8 @@ export interface CanteenBooking {
   guest_count: number;
   guest_names: string[];
   status: BookingStatus;
+  /** Set when the employee finalises their choice (then locked & green). */
+  finalized_at: string | null;
   /** Set by the campboss when the meal is ready for collection. */
   prepared_at: string | null;
   selected_options: DishOption[];
@@ -75,6 +77,7 @@ export interface Reservation {
   meal_period: MealPeriod;
   guest_count: number;
   prepared_at: string | null;
+  finalized_at: string | null;
   person_name: string | null;
   person_email: string;
   dish_name: string;
