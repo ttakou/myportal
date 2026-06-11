@@ -25,6 +25,7 @@ export async function setReservationPrepared(
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/canteen/campboss");
+  revalidatePath("/canteen/serving");
   return { ok: true };
 }
 
