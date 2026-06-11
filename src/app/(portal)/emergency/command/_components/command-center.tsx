@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState, useTransition, type ComponentType } from "react";
 import {
   BellRing,
@@ -28,6 +29,17 @@ import {
   type Severity,
 } from "@/types/emergency";
 import { sendBroadcast, setBroadcastActive, setIncidentStatus } from "../../actions";
+import type { MapHelp, MapIncident } from "./live-map";
+
+// Leaflet touches `window`, so the map is client-only (no SSR).
+const LiveMap = dynamic(() => import("./live-map"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-muted text-sm text-muted-foreground">
+      Loading map…
+    </div>
+  ),
+});
 
 const TYPE_ICON: Record<IncidentType, ComponentType<{ className?: string }>> = {
   medical: HeartPulse,
@@ -221,12 +233,9 @@ function IncidentStream({
   );
 }
 
-// --- Center: geo-map of located alerts (defaults to a Cameroon map) ---------
+// --- Center: live (Leaflet) assistance map, default view Douala -------------
 
-// Cameroon bounding box, used to project lat/lng into the map's 0..100 box.
-const CMR = { minLng: 8.4, maxLng: 16.2, minLat: 1.6, maxLat: 13.1 };
-
-// Reference cities so the map reads as Cameroon even with no active pins.
+// Reference Cameroon cities, reused as the seed for the geocoding gazetteer.
 const CMR_CITIES: { name: string; lat: number; lng: number }[] = [
   { name: "Yaoundé", lat: 3.87, lng: 11.52 },
   { name: "Douala", lat: 4.05, lng: 9.77 },
@@ -240,20 +249,10 @@ const CMR_CITIES: { name: string; lat: number; lng: number }[] = [
   { name: "Maroua", lat: 10.59, lng: 14.32 },
 ];
 
-/** Project a coordinate to a clamped 0..100 position within the Cameroon box. */
-function projectCmr(lat: number, lng: number) {
-  const x = ((lng - CMR.minLng) / (CMR.maxLng - CMR.minLng)) * 100;
-  const y = (1 - (lat - CMR.minLat) / (CMR.maxLat - CMR.minLat)) * 100;
-  return {
-    x: Math.max(1.5, Math.min(98.5, x)),
-    y: Math.max(1.5, Math.min(98.5, y)),
-  };
-}
-
 // Broader gazetteer for resolving *typed* location descriptions to a coordinate
 // (e.g. an SOS where GPS was blocked but the reporter typed "Douala"). Includes
-// the reference cities plus other Cameroon towns. Kept local + offline to match
-// the stylized map (no external geocoding service).
+// the reference cities plus other Cameroon towns. Kept local + offline (no
+// external geocoding service).
 const CMR_GAZETTEER: { name: string; lat: number; lng: number }[] = [
   ...CMR_CITIES,
   { name: "Limbe", lat: 4.02, lng: 9.21 },
@@ -301,41 +300,33 @@ function GeoMap({
   incidents: Incident[];
   helpRequests: Checkin[];
 }) {
-  const helpPins = useMemo(
-    () =>
-      helpRequests
-        .filter((h) => h.lat != null && h.lng != null)
-        .map((h) => ({ ...h, ...projectCmr(h.lat as number, h.lng as number) })),
+  const helpMarkers = useMemo<MapHelp[]>(
+    () => helpRequests.filter((h): h is MapHelp => h.lat != null && h.lng != null),
     [helpRequests],
   );
   // Resolve each active incident to a coordinate: a real GPS fix when present,
   // otherwise a best-effort geocode of the typed location ("Douala"). Incidents
   // whose description can't be placed are surfaced in a separate list so a
   // keyed-in location is never silently dropped from the command center.
-  const { incidentPins, describedOnly } = useMemo(() => {
-    const pins: (Incident & {
-      x: number;
-      y: number;
-      approx: boolean;
-      place: string | null;
-    })[] = [];
+  const { incidentMarkers, describedOnly } = useMemo(() => {
+    const markers: MapIncident[] = [];
     const described: Incident[] = [];
     for (const i of incidents) {
       if (i.status === "resolved") continue;
       if (i.lat != null && i.lng != null) {
-        pins.push({ ...i, approx: false, place: null, ...projectCmr(i.lat, i.lng) });
+        markers.push({ ...i, resolvedLat: i.lat, resolvedLng: i.lng, approx: false, place: null });
         continue;
       }
       const g = geocodeText(i.location_text);
       if (g) {
-        pins.push({ ...i, approx: true, place: g.name, ...projectCmr(g.lat, g.lng) });
+        markers.push({ ...i, resolvedLat: g.lat, resolvedLng: g.lng, approx: true, place: g.name });
       } else if (i.location_text) {
         described.push(i);
       }
     }
-    return { incidentPins: pins, describedOnly: described };
+    return { incidentMarkers: markers, describedOnly: described };
   }, [incidents]);
-  const located = helpPins.length + incidentPins.length;
+  const located = helpMarkers.length + incidentMarkers.length;
 
   return (
     <section className="rounded-xl border bg-card">
@@ -346,72 +337,11 @@ function GeoMap({
         </span>
       </header>
       <div className="p-3">
-        <div className="relative aspect-[68/100] w-full overflow-hidden rounded-lg border bg-emerald-50/40 bg-[linear-gradient(0deg,transparent_19%,rgba(0,0,0,0.04)_20%,transparent_21%),linear-gradient(90deg,transparent_19%,rgba(0,0,0,0.04)_20%,transparent_21%)] bg-[length:20%_20%]">
-          {/* Country label */}
-          <span className="absolute left-2 top-2 rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-            Cameroon
-          </span>
-
-          {/* Reference cities */}
-          {CMR_CITIES.map((c) => {
-            const { x, y } = projectCmr(c.lat, c.lng);
-            return (
-              <div
-                key={c.name}
-                className="absolute -translate-x-1/2 -translate-y-1/2"
-                style={{ left: `${x}%`, top: `${y}%` }}
-              >
-                <span className="block h-1.5 w-1.5 rounded-full bg-gray-400" />
-                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 whitespace-nowrap text-[8px] text-gray-500">
-                  {c.name}
-                </span>
-              </div>
-            );
-          })}
-
-          {/* Help requests (people who need assistance) */}
-          {helpPins.map((p) => (
-            <div
-              key={`h-${p.id}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${p.x}%`, top: `${p.y}%` }}
-              title={`${p.person_name ?? "Unknown"}${p.note ? ` — ${p.note}` : ""}`}
-            >
-              <span className="relative flex h-3.5 w-3.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
-                <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-red-600 ring-2 ring-white" />
-              </span>
-            </div>
-          ))}
-
-          {/* Active incidents with a location (exact GPS, or geocoded from text) */}
-          {incidentPins.map((p) => (
-            <div
-              key={`i-${p.id}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${p.x}%`, top: `${p.y}%` }}
-              title={
-                `${INCIDENT_LABEL[p.incident_type]}` +
-                (p.reporter_name ? ` — ${p.reporter_name}` : "") +
-                (p.approx ? ` · approx: ${p.place}` : "")
-              }
-            >
-              <span
-                className={cn(
-                  "flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white",
-                  p.approx
-                    ? "ring-2 ring-dashed ring-destructive/60"
-                    : "ring-2 ring-white",
-                )}
-              >
-                <Siren className="h-3 w-3" />
-              </span>
-            </div>
-          ))}
-
+        <div className="relative h-[420px] w-full overflow-hidden rounded-lg border">
+          <LiveMap incidents={incidentMarkers} helpRequests={helpMarkers} />
           {located === 0 && (
-            <p className="absolute inset-x-0 bottom-2 text-center text-[11px] text-muted-foreground">
-              No located alerts yet.
+            <p className="pointer-events-none absolute inset-x-0 bottom-1 z-[500] text-center text-[11px] text-muted-foreground">
+              No located alerts yet — showing Douala.
             </p>
           )}
         </div>
