@@ -97,5 +97,9 @@ begin
          updated_at = now()
    where id = p_id and reporter_id = auth.uid();
 end; $$;
+-- Lock down: revoke from PUBLIC *and* the anon role (Supabase grants EXECUTE to
+-- anon directly via default privileges, so a bare `revoke ... from public` does
+-- not remove it). Only signed-in users may enrich their own incident's location.
 revoke all on function public.eess_set_incident_location(uuid, double precision, double precision, text) from public;
+revoke all on function public.eess_set_incident_location(uuid, double precision, double precision, text) from anon;
 grant execute on function public.eess_set_incident_location(uuid, double precision, double precision, text) to authenticated;
