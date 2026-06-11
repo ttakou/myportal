@@ -95,6 +95,10 @@ export interface Incident {
   reporter_name: string | null;
   reporter_department: string | null;
   created_at: string;
+  // Resolution trail — only populated by the history read.
+  acknowledged_at?: string | null;
+  resolved_at?: string | null;
+  resolved_by_name?: string | null;
 }
 
 export interface Broadcast {

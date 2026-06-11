@@ -40,6 +40,22 @@ function mapIncident(row: Record<string, any>): Incident {
   };
 }
 
+// History adds the resolution trail (timestamps + who resolved it).
+const INCIDENT_HISTORY_SELECT =
+  INCIDENT_SELECT +
+  ", acknowledged_at, resolved_at," +
+  " resolver:profiles!eess_incidents_resolved_by_fkey(full_name)";
+
+function mapIncidentHistory(row: Record<string, any>): Incident {
+  const resolver = one<{ full_name: string | null }>(row.resolver);
+  return {
+    ...mapIncident(row),
+    acknowledged_at: row.acknowledged_at ?? null,
+    resolved_at: row.resolved_at ?? null,
+    resolved_by_name: resolver?.full_name ?? null,
+  };
+}
+
 const BROADCAST_SELECT =
   "id, title, message, severity, channels, location_label, center_lat, center_lng," +
   " radius_m, requires_checkin, is_active, created_at," +
@@ -134,6 +150,24 @@ export async function getAllIncidents(): Promise<Incident[]> {
     return [];
   }
   return (data ?? []).map((r) => mapIncident(r as Record<string, any>));
+}
+
+/**
+ * Full incident history for the tenant, newest first, with the resolution trail.
+ * RLS gates this to safety admins (eess_incidents_select_admin).
+ */
+export async function getIncidentHistory(): Promise<Incident[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("eess_incidents")
+    .select(INCIDENT_HISTORY_SELECT)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) {
+    console.error("getIncidentHistory:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => mapIncidentHistory(r as Record<string, any>));
 }
 
 /**
