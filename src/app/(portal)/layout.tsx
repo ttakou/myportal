@@ -44,7 +44,7 @@ export default async function PortalLayout({
   return (
     <div style={brandingToCssVars(branding)}>
       <PortalShell
-        sidebar={<Sidebar brandName={branding.name} />}
+        sidebar={<Sidebar brandName={branding.name} logoUrl={branding.logoUrl} />}
         header={<UserMenu name={displayName} role={role} />}
       >
         {children}

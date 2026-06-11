@@ -11,7 +11,13 @@ import { NavLinks, type NavLink } from "./nav-links";
  * is a pure data change — no code edits required. The brand name is passed in by
  * the layout from the tenant's resolved branding.
  */
-export async function Sidebar({ brandName }: { brandName?: string }) {
+export async function Sidebar({
+  brandName,
+  logoUrl,
+}: {
+  brandName?: string;
+  logoUrl?: string | null;
+}) {
   const services = await getActiveServices();
 
   const links: NavLink[] = services.map((s) => ({
@@ -22,14 +28,25 @@ export async function Sidebar({ brandName }: { brandName?: string }) {
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-card">
-      <div className="flex h-16 flex-col justify-center border-b px-6">
-        <span className="truncate text-lg font-semibold tracking-tight text-brand">
-          {brandName ?? "MyEnterprisePortal"}
-        </span>
-        {brandName && (
-          <span className="text-xs text-muted-foreground">
-            Employee Self-Service
-          </span>
+      <div className="flex h-16 items-center gap-3 border-b px-6">
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt={brandName ?? "Logo"}
+            className="h-9 w-auto max-w-[180px] object-contain"
+          />
+        ) : (
+          <div className="flex flex-col justify-center">
+            <span className="truncate text-lg font-semibold tracking-tight text-brand">
+              {brandName ?? "MyEnterprisePortal"}
+            </span>
+            {brandName && (
+              <span className="text-xs text-muted-foreground">
+                Employee Self-Service
+              </span>
+            )}
+          </div>
         )}
       </div>
 

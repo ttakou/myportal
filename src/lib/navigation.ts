@@ -12,6 +12,7 @@
 
 export type ServiceSlug =
   | "core"
+  | "emergency"
   | "canteen"
   | "transportation"
   | "out-of-town"
@@ -35,6 +36,7 @@ export interface ModuleRoute {
  */
 export const MODULE_ROUTES: ModuleRoute[] = [
   { slug: "core", routePath: "/admin", isCore: true },
+  { slug: "emergency", routePath: "/emergency", isCore: false },
   { slug: "canteen", routePath: "/canteen", isCore: false },
   { slug: "transportation", routePath: "/transportation", isCore: false },
   { slug: "out-of-town", routePath: "/out-of-town", isCore: false },

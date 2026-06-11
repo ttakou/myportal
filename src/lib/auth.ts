@@ -6,6 +6,7 @@ export type FunctionalRole =
   | "canteen_manager"
   | "hr_admin"
   | "finance"
+  | "safety_admin"
   | "system_admin";
 
 /**
@@ -42,6 +43,7 @@ export interface Access {
   isCanteenStaff: boolean;
   isHr: boolean;
   isFinance: boolean;
+  isSafetyAdmin: boolean;
 }
 
 /** Resolve the current user's base role + functional roles into capability flags. */
@@ -72,5 +74,6 @@ export async function getAccess(): Promise<Access> {
     isCanteenStaff: isCanteenManager || has("canteen_staff"),
     isHr: isSystemAdmin || has("hr_admin"),
     isFinance: isSystemAdmin || has("finance"),
+    isSafetyAdmin: isSystemAdmin || has("safety_admin"),
   };
 }

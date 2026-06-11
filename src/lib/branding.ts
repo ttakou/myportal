@@ -20,6 +20,8 @@ export interface TenantBranding {
   primaryDark: string;
   /** Neutral charcoal as hex. */
   charcoal: string;
+  /** Optional logo image URL (static asset path or uploaded URL). */
+  logoUrl: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +95,7 @@ export async function getTenantBranding(): Promise<TenantBranding> {
     primary: DEFAULT_BRAND.red,
     primaryDark: DEFAULT_BRAND.redDark,
     charcoal: DEFAULT_BRAND.charcoal,
+    logoUrl: null,
   };
 
   try {
@@ -114,6 +117,7 @@ export async function getTenantBranding(): Promise<TenantBranding> {
       primary: branding?.primary ?? fallback.primary,
       primaryDark: branding?.primaryDark ?? fallback.primaryDark,
       charcoal: branding?.charcoal ?? fallback.charcoal,
+      logoUrl: branding?.logoUrl ?? fallback.logoUrl,
     };
   } catch {
     return fallback;
