@@ -5,6 +5,7 @@ import type {
   Broadcast,
   Checkin,
   CheckinStatus,
+  DeliveryLog,
   Incident,
 } from "@/types/emergency";
 
@@ -36,6 +37,22 @@ function mapIncident(row: Record<string, any>): Incident {
     reporter_name: r?.full_name ?? null,
     reporter_department: r?.department ?? null,
     created_at: row.created_at,
+  };
+}
+
+// History adds the resolution trail (timestamps + who resolved it).
+const INCIDENT_HISTORY_SELECT =
+  INCIDENT_SELECT +
+  ", acknowledged_at, resolved_at," +
+  " resolver:profiles!eess_incidents_resolved_by_fkey(full_name)";
+
+function mapIncidentHistory(row: Record<string, any>): Incident {
+  const resolver = one<{ full_name: string | null }>(row.resolver);
+  return {
+    ...mapIncident(row),
+    acknowledged_at: row.acknowledged_at ?? null,
+    resolved_at: row.resolved_at ?? null,
+    resolved_by_name: resolver?.full_name ?? null,
   };
 }
 
@@ -136,6 +153,24 @@ export async function getAllIncidents(): Promise<Incident[]> {
 }
 
 /**
+ * Full incident history for the tenant, newest first, with the resolution trail.
+ * RLS gates this to safety admins (eess_incidents_select_admin).
+ */
+export async function getIncidentHistory(): Promise<Incident[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("eess_incidents")
+    .select(INCIDENT_HISTORY_SELECT)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) {
+    console.error("getIncidentHistory:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => mapIncidentHistory(r as Record<string, any>));
+}
+
+/**
  * Roster accountability for an event. `total` is the tenant's active headcount;
  * each person is Safe, Needs assistance, or Unaccounted-for. When `broadcastId`
  * is null we count standalone (non-event) check-ins.
@@ -191,6 +226,17 @@ export async function getAccountability(
   const unaccounted = rows.filter((r) => r.status === "unaccounted").length;
 
   return { total: rows.length, safe, needHelp, unaccounted, rows };
+}
+
+/** Recent notification fan-outs for the tenant (RLS gates this to safety admins). */
+export async function getRecentDeliveries(limit = 10): Promise<DeliveryLog[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("eess_delivery_log")
+    .select("id, source_type, audience, channel, recipients, sent, delivered, failed, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as DeliveryLog[];
 }
 
 /** People who selected "I need assistance" for the given event, with locations. */

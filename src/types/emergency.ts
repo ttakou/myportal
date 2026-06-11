@@ -95,6 +95,10 @@ export interface Incident {
   reporter_name: string | null;
   reporter_department: string | null;
   created_at: string;
+  // Resolution trail — only populated by the history read.
+  acknowledged_at?: string | null;
+  resolved_at?: string | null;
+  resolved_by_name?: string | null;
 }
 
 export interface Broadcast {
@@ -142,4 +146,17 @@ export interface Accountability {
   needHelp: number;
   unaccounted: number;
   rows: AccountabilityRow[];
+}
+
+/** One push fan-out, recorded for the command center's delivery audit trail. */
+export interface DeliveryLog {
+  id: string;
+  source_type: "incident" | "broadcast";
+  audience: "responders" | "all";
+  channel: string;
+  recipients: number;
+  sent: number;
+  delivered: number;
+  failed: number;
+  created_at: string;
 }
