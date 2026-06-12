@@ -170,6 +170,7 @@ export async function upsertRoom(input: {
   id?: string;
   installationId: string;
   block?: string;
+  floor?: string;
   roomNumber: string;
   roomType?: string;
   bedCount?: number;
@@ -190,6 +191,7 @@ export async function upsertRoom(input: {
     tenant_id: tenant,
     installation_id: input.installationId,
     block: input.block?.trim() || null,
+    floor: input.floor?.trim() || null,
     room_number: input.roomNumber.trim(),
     room_type: input.roomType?.trim() || "shared",
     bed_count: bed,

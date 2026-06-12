@@ -890,6 +890,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
   const { pending, error, run } = useRun();
   const [installationId, setInstallationId] = useState("");
   const [block, setBlock] = useState("");
+  const [floor, setFloor] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
   const [roomType, setRoomType] = useState("shared");
   const [beds, setBeds] = useState("2");
@@ -904,6 +905,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
             <tr>
               <th className="px-3 py-2 font-medium">Room</th>
               <th className="px-3 py-2 font-medium">Installation</th>
+              <th className="px-3 py-2 font-medium">Floor</th>
               <th className="px-3 py-2 font-medium">Type</th>
               <th className="px-3 py-2 font-medium">Beds</th>
               <th className="px-3 py-2 font-medium">Gender</th>
@@ -920,6 +922,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
                   )}
                 </td>
                 <td className="px-3 py-2 text-muted-foreground">{r.installation_name}</td>
+                <td className="px-3 py-2 text-muted-foreground">{r.floor ?? "—"}</td>
                 <td className="px-3 py-2 capitalize text-muted-foreground">{r.room_type}</td>
                 <td className="px-3 py-2 text-muted-foreground">
                   {r.bed_count}
@@ -941,7 +944,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
               </tr>
             ))}
             {rooms.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">No rooms yet.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">No rooms yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -956,6 +959,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
               upsertRoom({
                 installationId,
                 block,
+                floor,
                 roomNumber,
                 roomType,
                 bedCount: Number(beds),
@@ -965,6 +969,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
             () => {
               setRoomNumber("");
               setBlock("");
+              setFloor("");
             },
           );
         }}
@@ -976,6 +981,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
           ))}
         </select>
         <input value={block} onChange={(e) => setBlock(e.target.value)} placeholder="Block (optional)" className={field} />
+        <input value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="Floor / location" className={field} />
         <input value={roomNumber} onChange={(e) => setRoomNumber(e.target.value)} placeholder="Room no. (A-203)" required className={field} />
         <select value={roomType} onChange={(e) => setRoomType(e.target.value)} className={`${field} capitalize`}>
           {["single", "double", "shared", "vip", "medic"].map((t) => (

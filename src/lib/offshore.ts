@@ -213,7 +213,7 @@ export async function getRooms(): Promise<Room[]> {
   const { data, error } = await supabase
     .from("offshore_rooms")
     .select(
-      "id, installation_id, block, room_number, room_type, bed_count, max_bed_count," +
+      "id, installation_id, block, floor, room_number, room_type, bed_count, max_bed_count," +
         " gender_restriction, status, special_flag, notes," +
         " installation:offshore_installations(name), offshore_staff(count)",
     )
@@ -228,6 +228,7 @@ export async function getRooms(): Promise<Room[]> {
     installation_id: r.installation_id,
     installation_name: one2<{ name?: string }>(r.installation)?.name ?? null,
     block: r.block,
+    floor: r.floor,
     room_number: r.room_number,
     room_type: r.room_type,
     bed_count: r.bed_count,
