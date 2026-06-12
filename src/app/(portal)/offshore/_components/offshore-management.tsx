@@ -6,6 +6,7 @@ import {
   BedDouble,
   CalendarClock,
   LayoutGrid,
+  Plane,
   Trash2,
   Users,
 } from "lucide-react";
@@ -15,27 +16,36 @@ import type { Installation } from "@/types/offshore";
 import {
   GENDER_LABEL,
   ROOM_STATUS_LABEL,
+  VISIT_STATUS_LABEL,
+  VISITOR_TYPE_LABEL,
   type AccommodationSummary,
   type CertAlert,
   type Crew,
   type GenderRestriction,
   type PobBreakdown,
   type Room,
+  type RoomAvailability,
   type RoomStatus,
   type RosterEntry,
+  type VisitRequest,
+  type VisitStatus,
 } from "@/types/offshore";
 import {
   addRosterMember,
+  allocateVisitorBed,
+  decideVisitRequest,
   deleteCrew,
+  findAvailableBeds,
   removeRosterMember,
   setRoomStatus,
+  setVisitorMovement,
   updateRosterMember,
   upsertCrew,
   upsertRoom,
 } from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
-type Tab = "dashboard" | "crews" | "rooms" | "roster";
+type Tab = "dashboard" | "crews" | "rooms" | "roster" | "visitors";
 
 export function OffshoreManagement(props: {
   crews: Crew[];
@@ -46,13 +56,16 @@ export function OffshoreManagement(props: {
   pob: PobBreakdown;
   accommodation: AccommodationSummary;
   certAlerts: CertAlert[];
+  visits: VisitRequest[];
 }) {
   const [tab, setTab] = useState<Tab>("dashboard");
-  const tabs: { key: Tab; label: string; icon: typeof Users }[] = [
+  const pendingVisits = props.visits.filter((v) => v.status === "requested").length;
+  const tabs: { key: Tab; label: string; icon: typeof Users; badge?: number }[] = [
     { key: "dashboard", label: "POB & dashboards", icon: LayoutGrid },
     { key: "crews", label: "Crew change", icon: CalendarClock },
     { key: "rooms", label: "Accommodation", icon: BedDouble },
     { key: "roster", label: "Offshore staff", icon: Users },
+    { key: "visitors", label: "Visitors", icon: Plane, badge: pendingVisits },
   ];
 
   return (
@@ -71,6 +84,11 @@ export function OffshoreManagement(props: {
           >
             <t.icon className="h-4 w-4" />
             {t.label}
+            {t.badge ? (
+              <span className="rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-destructive-foreground">
+                {t.badge}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -87,6 +105,174 @@ export function OffshoreManagement(props: {
           rooms={props.rooms}
           addable={props.addable}
         />
+      )}
+      {tab === "visitors" && <VisitorsPanel visits={props.visits} />}
+    </div>
+  );
+}
+
+const VISIT_STYLE: Record<VisitStatus, string> = {
+  requested: "bg-muted text-muted-foreground",
+  approved: "bg-accent text-accent-foreground",
+  rejected: "bg-destructive/10 text-destructive line-through",
+  onboard: "bg-primary/10 text-primary",
+  returned: "bg-green-100 text-green-700",
+  cancelled: "bg-destructive/10 text-destructive line-through",
+};
+
+function VisitorsPanel({ visits }: { visits: VisitRequest[] }) {
+  const { pending, error, run } = useRun();
+  const open = visits.filter((v) => !["returned", "rejected", "cancelled"].includes(v.status));
+  const closed = visits.filter((v) => ["returned", "rejected", "cancelled"].includes(v.status));
+
+  return (
+    <div className="space-y-3">
+      {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+      {open.length === 0 && (
+        <p className="text-sm text-muted-foreground">No active visitor requests.</p>
+      )}
+      <div className="space-y-3">
+        {open.map((v) => (
+          <VisitorCard key={v.id} v={v} pending={pending} run={run} />
+        ))}
+      </div>
+      {closed.length > 0 && (
+        <details className="rounded-lg border bg-card p-3">
+          <summary className="cursor-pointer text-sm font-medium">History ({closed.length})</summary>
+          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+            {closed.map((v) => (
+              <li key={v.id}>
+                {v.visitor_name} · {v.installation_name ?? "—"} · {VISIT_STATUS_LABEL[v.status]}
+                {v.depart_date ? ` · ${v.depart_date}` : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function VisitorCard({
+  v,
+  pending,
+  run,
+}: {
+  v: VisitRequest;
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const [rooms, setRooms] = useState<RoomAvailability[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  async function search() {
+    setSearchError(null);
+    setSearching(true);
+    const res = await findAvailableBeds({
+      installationId: v.installation_id ?? "",
+      from: v.depart_date,
+      to: v.return_date || v.depart_date,
+      gender: v.gender,
+    });
+    setSearching(false);
+    if (!res.ok) setSearchError(res.error ?? "Search failed.");
+    else setRooms(res.rooms ?? []);
+  }
+
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", VISIT_STYLE[v.status])}>
+          {VISIT_STATUS_LABEL[v.status]}
+        </span>
+        <span className="font-medium">{v.visitor_name}</span>
+        <span className="text-xs text-muted-foreground">
+          {VISITOR_TYPE_LABEL[v.visitor_type]}
+          {v.visitor_company ? ` · ${v.visitor_company}` : ""}
+        </span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {v.installation_name ?? "—"} · {v.depart_date}
+          {v.return_date ? ` → ${v.return_date}` : ""}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {v.purpose ? `${v.purpose} · ` : ""}
+        {v.host_name ? `Host ${v.host_name} ` : ""}
+        {v.host_department ? `(${v.host_department}) · ` : ""}
+        {v.accommodation_required ? "Overnight" : "Day trip"}
+        {v.emergency_contact ? ` · ICE ${v.emergency_contact}` : ""}
+      </p>
+      {v.allocation && (
+        <p className="mt-1 text-sm">
+          Room: <span className="font-medium">{v.allocation.room_label}</span> ·{" "}
+          {v.allocation.from_date} → {v.allocation.to_date} ({v.allocation.status})
+        </p>
+      )}
+      {v.status === "rejected" && v.reject_reason && (
+        <p className="mt-1 text-xs text-destructive">{v.reject_reason}</p>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {v.status === "requested" && (
+          <>
+            <Button size="sm" disabled={pending} onClick={() => run(() => decideVisitRequest(v.id, "approved"))}>
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                const reason = prompt("Reason for rejection?") ?? undefined;
+                run(() => decideVisitRequest(v.id, "rejected", reason));
+              }}
+            >
+              Reject
+            </Button>
+          </>
+        )}
+        {(v.status === "approved" || v.status === "onboard") && v.accommodation_required && (
+          <Button size="sm" variant="outline" disabled={searching} onClick={search}>
+            {searching ? "Searching…" : v.allocation ? "Change room" : "Find a bed"}
+          </Button>
+        )}
+        {v.status === "approved" && (
+          <Button size="sm" disabled={pending} onClick={() => run(() => setVisitorMovement(v.id, "onboard"))}>
+            Confirm offshore arrival
+          </Button>
+        )}
+        {v.status === "onboard" && (
+          <Button size="sm" disabled={pending} onClick={() => run(() => setVisitorMovement(v.id, "returned"))}>
+            Confirm return onshore
+          </Button>
+        )}
+      </div>
+
+      {searchError && <p className="mt-2 text-xs text-destructive">{searchError}</p>}
+      {rooms && (
+        <div className="mt-2 rounded-md border p-2">
+          {rooms.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No free beds for the full stay.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {rooms.map((r) => (
+                <button
+                  key={r.room_id}
+                  disabled={pending}
+                  onClick={() =>
+                    run(() => allocateVisitorBed({ visitRequestId: v.id, roomId: r.room_id }), () =>
+                      setRooms(null),
+                    )
+                  }
+                  className="rounded-md border px-2 py-1 text-xs hover:bg-accent"
+                >
+                  {r.label} · {r.free_beds} free
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

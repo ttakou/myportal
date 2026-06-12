@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type {
   AccommodationSummary,
+  BedAllocation,
   CertAlert,
   Crew,
   Flight,
@@ -9,7 +10,9 @@ import type {
   Pob,
   PobBreakdown,
   Room,
+  RoomAvailability,
   RosterEntry,
+  VisitRequest,
 } from "@/types/offshore";
 
 function one2<T>(v: T | T[] | null): T | null {
@@ -214,27 +217,34 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
 
-  const [{ data: onboard }, { data: pob }, { data: arrivals }] = await Promise.all([
-    supabase
-      .from("offshore_trips")
-      .select(
-        "category, demob_date, installation:offshore_installations(name), crew:offshore_crews(name)," +
-          " person:profiles!offshore_trips_profile_id_fkey(full_name)",
-      )
-      .eq("status", "onboard"),
-    supabase.from("offshore_pob").select("name, pob, pob_capacity").order("name"),
-    supabase
-      .from("offshore_trips")
-      .select("id")
-      .eq("mobilize_date", today)
-      .in("status", ["manifested", "hse_cleared"]),
-  ]);
+  const [{ data: onboard }, { data: pob }, { data: arrivals }, { data: visitors }] =
+    await Promise.all([
+      supabase
+        .from("offshore_trips")
+        .select(
+          "category, demob_date, installation:offshore_installations(name), crew:offshore_crews(name)," +
+            " person:profiles!offshore_trips_profile_id_fkey(full_name)",
+        )
+        .eq("status", "onboard"),
+      supabase.from("offshore_pob").select("name, pob, pob_capacity").order("name"),
+      supabase
+        .from("offshore_trips")
+        .select("id")
+        .eq("mobilize_date", today)
+        .in("status", ["manifested", "hse_cleared"]),
+      supabase
+        .from("offshore_visit_requests")
+        .select("visitor_name, return_date, depart_date, installation:offshore_installations(name)")
+        .eq("status", "onboard"),
+    ]);
 
   const rows = onboard ?? [];
   const byCrewMap = new Map<string, number>();
+  const byInstMap = new Map<string, number>(); // visitor counts per installation
   let staff = 0;
   let visitor = 0;
   let departuresToday = 0;
+  let arrivalsToday = arrivals?.length ?? 0;
   const overstayers: PobBreakdown["overstayers"] = [];
 
   for (const r of rows as Record<string, any>[]) {
@@ -254,16 +264,29 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     }
   }
 
+  // Onboard visitors count toward POB too (they aren't offshore_trips rows).
+  for (const v of (visitors ?? []) as Record<string, any>[]) {
+    visitor++;
+    const instName = one2<{ name?: string }>(v.installation)?.name ?? null;
+    if (instName) byInstMap.set(instName, (byInstMap.get(instName) ?? 0) + 1);
+    if (v.return_date) {
+      if (v.return_date === today) departuresToday++;
+      if (v.return_date < today) {
+        overstayers.push({ name: v.visitor_name, installation: instName, demob_date: v.return_date });
+      }
+    }
+  }
+
   return {
-    total: rows.length,
+    total: rows.length + (visitors?.length ?? 0),
     byInstallation: (pob ?? []).map((p) => ({
       name: p.name as string,
-      pob: (p.pob as number) ?? 0,
+      pob: ((p.pob as number) ?? 0) + (byInstMap.get(p.name as string) ?? 0),
       capacity: (p.pob_capacity as number) ?? 0,
     })),
     byCrew: [...byCrewMap.entries()].map(([name, n]) => ({ name, pob: n })),
     byCategory: { staff, visitor },
-    arrivalsToday: arrivals?.length ?? 0,
+    arrivalsToday,
     departuresToday,
     overstayers,
   };
@@ -301,6 +324,127 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
     blockedRooms,
     availableBeds: Math.max(0, totalBeds - occupiedBeds),
   };
+}
+
+// --- Visitor requests & accommodation allocation (Phase 2) -------------------
+
+function mapVisit(row: Record<string, any>): VisitRequest {
+  const alloc = (row.offshore_bed_allocations as any[])?.find((a) => a.status !== "checked_out");
+  const room = alloc && (Array.isArray(alloc.room) ? alloc.room[0] : alloc.room);
+  return {
+    id: row.id,
+    requester_name: one2<{ full_name?: string }>(row.requester)?.full_name ?? null,
+    visitor_name: row.visitor_name,
+    visitor_company: row.visitor_company,
+    visitor_type: row.visitor_type,
+    gender: row.gender,
+    host_department: row.host_department,
+    host_name: row.host_name,
+    purpose: row.purpose,
+    installation_id: row.installation_id,
+    installation_name: one2<{ name?: string }>(row.installation)?.name ?? null,
+    depart_date: row.depart_date,
+    return_date: row.return_date,
+    overnight: row.overnight,
+    accommodation_required: row.accommodation_required,
+    emergency_contact: row.emergency_contact,
+    status: row.status,
+    reject_reason: row.reject_reason,
+    allocation: alloc
+      ? {
+          id: alloc.id,
+          room_id: alloc.room_id,
+          room_label: room ? [room.block, room.room_number].filter(Boolean).join(" ") : null,
+          from_date: alloc.from_date,
+          to_date: alloc.to_date,
+          status: alloc.status,
+        }
+      : null,
+  };
+}
+
+const VISIT_SELECT =
+  "id, visitor_name, visitor_company, visitor_type, gender, host_department, host_name, purpose," +
+  " installation_id, depart_date, return_date, overnight, accommodation_required, emergency_contact," +
+  " status, reject_reason," +
+  " requester:profiles!offshore_visit_requests_requester_id_fkey(full_name)," +
+  " installation:offshore_installations(name)," +
+  " offshore_bed_allocations(id, room_id, from_date, to_date, status, room:offshore_rooms(room_number, block))";
+
+export async function getMyVisitRequests(): Promise<VisitRequest[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("offshore_visit_requests")
+    .select(VISIT_SELECT)
+    .eq("requester_id", user.id)
+    .order("depart_date", { ascending: false });
+  return (data ?? []).map((r) => mapVisit(r as Record<string, any>));
+}
+
+export async function getAllVisitRequests(): Promise<VisitRequest[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("offshore_visit_requests")
+    .select(VISIT_SELECT)
+    .order("depart_date", { ascending: false });
+  return (data ?? []).map((r) => mapVisit(r as Record<string, any>));
+}
+
+/**
+ * Rooms with free beds across the full [from, to] stay on an installation.
+ * Free = bed_count − fixed staff reservations − overlapping active allocations.
+ * Blocked/maintenance rooms and incompatible gender rooms are excluded.
+ */
+export async function searchBedAvailability(input: {
+  installationId: string;
+  from: string;
+  to: string;
+  gender?: string;
+}): Promise<RoomAvailability[]> {
+  const supabase = createClient();
+  const { data: rooms } = await supabase
+    .from("offshore_rooms")
+    .select(
+      "id, room_number, block, room_type, bed_count, gender_restriction, status," +
+        " offshore_staff(count)," +
+        " offshore_bed_allocations(id, from_date, to_date, status)",
+    )
+    .eq("installation_id", input.installationId)
+    .eq("is_active", true);
+
+  const out: RoomAvailability[] = [];
+  for (const r of (rooms ?? []) as Record<string, any>[]) {
+    if (["blocked", "maintenance"].includes(r.status)) continue;
+    // Gender compatibility: room "any" fits anyone; otherwise must match request.
+    if (
+      r.gender_restriction !== "any" &&
+      input.gender &&
+      input.gender !== "any" &&
+      r.gender_restriction !== input.gender
+    ) {
+      continue;
+    }
+    const fixed = r.offshore_staff?.[0]?.count ?? 0;
+    const overlapping = ((r.offshore_bed_allocations as any[]) ?? []).filter(
+      (a) =>
+        a.status !== "checked_out" && a.from_date <= input.to && a.to_date >= input.from,
+    ).length;
+    const free = (r.bed_count ?? 0) - fixed - overlapping;
+    if (free > 0) {
+      out.push({
+        room_id: r.id,
+        label: [r.block, r.room_number].filter(Boolean).join(" "),
+        room_type: r.room_type,
+        gender_restriction: r.gender_restriction,
+        free_beds: free,
+      });
+    }
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Expired / soon-to-expire certifications across the roster. */
