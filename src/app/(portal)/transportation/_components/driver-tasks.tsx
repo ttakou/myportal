@@ -1,16 +1,18 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Navigation } from "lucide-react";
+import { Navigation, Power } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { Driver, TransportRequest } from "@/types/transport";
-import { setTransportStatus } from "../actions";
+import { setMyDuty, setTransportStatus } from "../actions";
 import { FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
 
 /** The signed-in driver's live task list: start, complete, follow up. */
 export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: TransportRequest[] }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [onDuty, setOnDuty] = useState(driver.on_duty);
 
   const open = tasks.filter((t) => t.status === "assigned" || t.status === "in_progress");
   const done = tasks.filter((t) => t.status === "completed" || t.status === "cancelled");
@@ -23,6 +25,19 @@ export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: Transpor
     });
   }
 
+  function toggleDuty() {
+    setError(null);
+    const next = !onDuty;
+    setOnDuty(next);
+    startTransition(async () => {
+      const res = await setMyDuty(next);
+      if (!res.ok) {
+        setError(res.error ?? "Could not update duty status.");
+        setOnDuty(!next);
+      }
+    });
+  }
+
   return (
     <section className="space-y-3 rounded-lg border bg-primary/5 p-4">
       <div className="flex items-center gap-2">
@@ -31,6 +46,16 @@ export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: Transpor
         <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
           {driver.full_name} · {open.length} open
         </span>
+        <Button
+          size="sm"
+          variant={onDuty ? "outline" : "default"}
+          disabled={pending}
+          onClick={toggleDuty}
+          className="ml-auto"
+        >
+          <Power className={cn("h-4 w-4", onDuty ? "text-green-600" : "text-muted-foreground")} />
+          {onDuty ? "On duty" : "Off duty"}
+        </Button>
       </div>
       {error && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>

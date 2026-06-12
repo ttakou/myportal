@@ -1,50 +1,67 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ClipboardList, UserPlus } from "lucide-react";
+import { ClipboardList, Truck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   PRIORITY_LABEL,
   TASK_TYPE_LABEL,
+  VEHICLE_STATUS_LABEL,
   type Driver,
   type TransportPriority,
   type TransportRequest,
   type TransportTaskType,
   type Vehicle,
+  type VehicleStatus,
 } from "@/types/transport";
 import {
   addDriver,
+  addVehicle,
   assignTransport,
   createTransportTask,
   linkDriverProfile,
   setTransportStatus,
+  setVehicleStatus,
 } from "../actions";
 import { FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
+import { TransportAnalytics } from "./transport-analytics";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
+
+type Runner = (
+  fn: () => Promise<{ ok: boolean; error?: string; warning?: string }>,
+  onOk?: () => void,
+) => void;
 
 export function DispatchBoard({
   all,
   drivers,
   vehicles,
+  allVehicles,
   profiles,
 }: {
   all: TransportRequest[];
   drivers: Driver[];
   vehicles: Vehicle[];
+  allVehicles: Vehicle[];
   profiles: { id: string; full_name: string }[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
+  const run: Runner = (fn, onOk) => {
     setError(null);
+    setNotice(null);
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) setError(res.error ?? "Action failed.");
-      else onOk?.();
+      else {
+        if (res.warning) setNotice(res.warning);
+        onOk?.();
+      }
     });
-  }
+  };
 
   const active = all.filter((r) => !["completed", "cancelled"].includes(r.status));
   const closed = all.filter((r) => ["completed", "cancelled"].includes(r.status));
@@ -67,6 +84,13 @@ export function DispatchBoard({
       {error && (
         <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
       )}
+      {notice && (
+        <p className="rounded-md bg-amber-100 px-4 py-2 text-sm text-amber-800">
+          ⚠ Assigned, but heads-up: {notice}
+        </p>
+      )}
+
+      <TransportAnalytics all={all} drivers={drivers} />
 
       <NewTaskForm drivers={drivers} vehicles={vehicles} pending={pending} run={run} />
 
@@ -103,7 +127,79 @@ export function DispatchBoard({
       )}
 
       <DriversPanel drivers={drivers} profiles={profiles} pending={pending} run={run} />
+      <VehiclesPanel vehicles={allVehicles} pending={pending} run={run} />
     </section>
+  );
+}
+
+function VehiclesPanel({
+  vehicles,
+  pending,
+  run,
+}: {
+  vehicles: Vehicle[];
+  pending: boolean;
+  run: Runner;
+}) {
+  const [name, setName] = useState("");
+  const [plate, setPlate] = useState("");
+  const [capacity, setCapacity] = useState("4");
+
+  return (
+    <details className="rounded-lg border bg-card p-4">
+      <summary className="cursor-pointer text-sm font-medium">
+        <span className="inline-flex items-center gap-1">
+          <Truck className="h-4 w-4" /> Vehicles ({vehicles.length})
+        </span>
+      </summary>
+
+      <div className="mt-2 space-y-2">
+        {vehicles.map((v) => (
+          <div key={v.id} className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">{v.name}</span>
+            {v.plate && <span className="text-xs text-muted-foreground">{v.plate}</span>}
+            <span className="text-xs text-muted-foreground">· {v.capacity} seats</span>
+            <select
+              value={v.status}
+              disabled={pending}
+              onChange={(e) => run(() => setVehicleStatus(v.id, e.target.value as VehicleStatus))}
+              className="ml-auto rounded-md border bg-background px-1.5 py-1 text-xs"
+            >
+              {(Object.keys(VEHICLE_STATUS_LABEL) as VehicleStatus[]).map((s) => (
+                <option key={s} value={s}>
+                  {VEHICLE_STATUS_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+        {vehicles.length === 0 && (
+          <p className="text-xs text-muted-foreground">No vehicles yet.</p>
+        )}
+      </div>
+
+      <form
+        className="mt-3 flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(
+            () => addVehicle({ name, plate, capacity: Number(capacity) }),
+            () => {
+              setName("");
+              setPlate("");
+              setCapacity("4");
+            },
+          );
+        }}
+      >
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New vehicle (e.g. Toyota Hiace)" required className={field} />
+        <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Plate" className={field} />
+        <input value={capacity} onChange={(e) => setCapacity(e.target.value)} type="number" min={1} placeholder="Seats" className={`${field} w-24`} />
+        <Button type="submit" variant="outline" disabled={pending}>
+          Add vehicle
+        </Button>
+      </form>
+    </details>
   );
 }
 
@@ -118,7 +214,7 @@ function TaskRow({
   drivers: Driver[];
   vehicles: Vehicle[];
   pending: boolean;
-  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+  run: Runner;
 }) {
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -149,7 +245,7 @@ function TaskRow({
           <option value="">Driver…</option>
           {drivers.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.full_name}
+              {d.full_name}{d.on_duty ? "" : " (off duty)"}
             </option>
           ))}
         </select>
@@ -198,7 +294,7 @@ function NewTaskForm({
   drivers: Driver[];
   vehicles: Vehicle[];
   pending: boolean;
-  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+  run: Runner;
 }) {
   const [taskType, setTaskType] = useState<TransportTaskType>("passenger");
   const [priority, setPriority] = useState<TransportPriority>("normal");
@@ -264,7 +360,7 @@ function NewTaskForm({
           <option value="">Driver (assign later)</option>
           {drivers.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.full_name}
+              {d.full_name}{d.on_duty ? "" : " (off duty)"}
             </option>
           ))}
         </select>
@@ -294,7 +390,7 @@ function DriversPanel({
   drivers: Driver[];
   profiles: { id: string; full_name: string }[];
   pending: boolean;
-  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+  run: Runner;
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");

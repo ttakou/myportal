@@ -38,11 +38,20 @@ export const PRIORITY_LABEL: Record<TransportPriority, string> = {
   urgent: "Urgent",
 };
 
+export type VehicleStatus = "active" | "maintenance" | "retired";
+
+export const VEHICLE_STATUS_LABEL: Record<VehicleStatus, string> = {
+  active: "Active",
+  maintenance: "In maintenance",
+  retired: "Retired",
+};
+
 export interface Vehicle {
   id: string;
   name: string;
   plate: string | null;
   capacity: number;
+  status: VehicleStatus;
 }
 
 export interface Driver {
@@ -50,6 +59,7 @@ export interface Driver {
   full_name: string;
   phone: string | null;
   profile_id: string | null;
+  on_duty: boolean;
 }
 
 export interface TaskUpdate {
