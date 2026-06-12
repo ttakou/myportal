@@ -545,6 +545,91 @@ export async function bulkRegisterStaff(input: {
   return { ok: created > 0, results, error: created === 0 ? "No new staff were created." : undefined };
 }
 
+// --- Tenant branding ---------------------------------------------------------
+
+async function tenantForBranding(): Promise<string | null> {
+  const supabase = createClient();
+  const { data } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  return data?.id ?? null;
+}
+
+/** Merge a patch into tenants.settings.branding (system admin, service role). */
+export async function updateTenantBranding(patch: {
+  name?: string;
+  primary?: string;
+  primaryDark?: string;
+  charcoal?: string;
+  logoUrl?: string | null;
+}): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const tenantId = await tenantForBranding();
+  if (!tenantId) return { ok: false, error: "No tenant in scope." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  const hex = /^#[0-9a-fA-F]{6}$/;
+  for (const [k, v] of Object.entries(patch)) {
+    if (["primary", "primaryDark", "charcoal"].includes(k) && v && !hex.test(v as string)) {
+      return { ok: false, error: `${k} must be a hex colour like #E2001A.` };
+    }
+  }
+
+  const { data: row } = await admin.from("tenants").select("settings").eq("id", tenantId).maybeSingle();
+  const settings = (row?.settings as Record<string, unknown>) ?? {};
+  const branding = { ...((settings.branding as Record<string, unknown>) ?? {}) };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    if (v === null || v === "") delete branding[k];
+    else branding[k] = typeof v === "string" ? v.trim() : v;
+  }
+  const { error } = await admin
+    .from("tenants")
+    .update({ settings: { ...settings, branding } })
+    .eq("id", tenantId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/** Upload a logo image (data URL) to the branding bucket and set it. */
+export async function uploadTenantLogo(input: {
+  dataUrl: string;
+  contentType: string;
+}): Promise<ActionResult & { url?: string }> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const tenantId = await tenantForBranding();
+  if (!tenantId) return { ok: false, error: "No tenant in scope." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  const allowed: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/svg+xml": "svg",
+    "image/webp": "webp",
+  };
+  const ext = allowed[input.contentType];
+  if (!ext) return { ok: false, error: "Use a PNG, JPG, SVG or WebP image." };
+
+  const base64 = input.dataUrl.split(",")[1] ?? "";
+  const buffer = Buffer.from(base64, "base64");
+  if (buffer.length === 0) return { ok: false, error: "Empty image." };
+  if (buffer.length > 2_000_000) return { ok: false, error: "Logo must be under 2 MB." };
+
+  const path = `${tenantId}/logo-${Date.now()}.${ext}`;
+  const { error: upErr } = await admin.storage
+    .from("branding")
+    .upload(path, buffer, { contentType: input.contentType, upsert: true });
+  if (upErr) return { ok: false, error: upErr.message };
+
+  const { data: pub } = admin.storage.from("branding").getPublicUrl(path);
+  const set = await updateTenantBranding({ logoUrl: pub.publicUrl });
+  if (!set.ok) return set;
+  return { ok: true, url: pub.publicUrl };
+}
+
 // --- Access roles (role-based module access) ---------------------------------
 
 const ASSIGNABLE_MODULE_SLUGS = MODULE_ROUTES.filter((m) => !m.isCore).map((m) => m.slug);

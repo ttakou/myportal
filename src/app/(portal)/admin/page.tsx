@@ -3,6 +3,7 @@ import { ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getTenantUsers, getTenantModules } from "@/lib/admin";
 import { getAccessRoles } from "@/lib/access-roles";
+import { getTenantBranding } from "@/lib/branding";
 import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
 import { UsersPanel } from "./_components/users-panel";
 import { ModulesPanel } from "./_components/modules-panel";
@@ -10,6 +11,7 @@ import { ModuleParamsPanel } from "./_components/module-params-panel";
 import { RolesPanel } from "./_components/roles-panel";
 import { RegisterStaffPanel } from "./_components/register-staff-panel";
 import { BulkImportPanel } from "./_components/bulk-import-panel";
+import { BrandingPanel } from "./_components/branding-panel";
 import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
 
 export default async function AdminPage() {
@@ -30,10 +32,11 @@ export default async function AdminPage() {
     );
   }
 
-  const [users, modules, accessRoles] = await Promise.all([
+  const [users, modules, accessRoles, branding] = await Promise.all([
     getTenantUsers(),
     getTenantModules(),
     getAccessRoles(),
+    getTenantBranding(),
   ]);
   const canteenActive = modules.some((m) => m.slug === "canteen" && m.is_active);
   const showCanteen = canteenActive && access.isCanteenManager;
@@ -49,6 +52,7 @@ export default async function AdminPage() {
         </p>
       </div>
 
+      {access.isSystemAdmin && <BrandingPanel branding={branding} />}
       {access.isSystemAdmin && <ModulesPanel modules={modules} />}
       {access.isSystemAdmin && <RolesPanel roles={accessRoles} modules={modules} />}
       {access.isSystemAdmin && <ModuleParamsPanel modules={modules} />}
