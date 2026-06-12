@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   BedDouble,
   CalendarClock,
+  ClipboardList,
   LayoutGrid,
   Plane,
   Trash2,
@@ -15,13 +16,17 @@ import { Button } from "@/components/ui/button";
 import type { Installation } from "@/types/offshore";
 import {
   GENDER_LABEL,
+  MANIFEST_STATUS_LABEL,
   ROOM_STATUS_LABEL,
+  TRIP_TYPE_LABEL,
   VISIT_STATUS_LABEL,
   VISITOR_TYPE_LABEL,
   type AccommodationSummary,
   type CertAlert,
   type Crew,
   type GenderRestriction,
+  type Manifest,
+  type ManifestStatus,
   type PobBreakdown,
   type Room,
   type RoomAvailability,
@@ -33,19 +38,24 @@ import {
 import {
   addRosterMember,
   allocateVisitorBed,
+  confirmManifestMovement,
   decideVisitRequest,
   deleteCrew,
   findAvailableBeds,
+  generateCrewManifest,
+  removeManifestPax,
   removeRosterMember,
+  setManifestStatus,
   setRoomStatus,
   setVisitorMovement,
+  togglePaxNoShow,
   updateRosterMember,
   upsertCrew,
   upsertRoom,
 } from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
-type Tab = "dashboard" | "crews" | "rooms" | "roster" | "visitors";
+type Tab = "dashboard" | "crews" | "rooms" | "roster" | "visitors" | "manifests";
 
 export function OffshoreManagement(props: {
   crews: Crew[];
@@ -57,12 +67,14 @@ export function OffshoreManagement(props: {
   accommodation: AccommodationSummary;
   certAlerts: CertAlert[];
   visits: VisitRequest[];
+  manifests: Manifest[];
 }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const pendingVisits = props.visits.filter((v) => v.status === "requested").length;
   const tabs: { key: Tab; label: string; icon: typeof Users; badge?: number }[] = [
     { key: "dashboard", label: "POB & dashboards", icon: LayoutGrid },
     { key: "crews", label: "Crew change", icon: CalendarClock },
+    { key: "manifests", label: "Manifests", icon: ClipboardList },
     { key: "rooms", label: "Accommodation", icon: BedDouble },
     { key: "roster", label: "Offshore staff", icon: Users },
     { key: "visitors", label: "Visitors", icon: Plane, badge: pendingVisits },
@@ -107,6 +119,162 @@ export function OffshoreManagement(props: {
         />
       )}
       {tab === "visitors" && <VisitorsPanel visits={props.visits} />}
+      {tab === "manifests" && <ManifestsPanel manifests={props.manifests} crews={props.crews} />}
+    </div>
+  );
+}
+
+const MANIFEST_STYLE: Record<ManifestStatus, string> = {
+  draft: "bg-muted text-muted-foreground",
+  approved: "bg-accent text-accent-foreground",
+  locked: "bg-amber-100 text-amber-700",
+  completed: "bg-green-100 text-green-700",
+  cancelled: "bg-destructive/10 text-destructive line-through",
+};
+
+function ManifestsPanel({ manifests, crews }: { manifests: Manifest[]; crews: Crew[] }) {
+  const { pending, error, run } = useRun();
+  const [crewId, setCrewId] = useState("");
+  const [direction, setDirection] = useState<"out" | "in">("out");
+  const [date, setDate] = useState("");
+
+  return (
+    <div className="space-y-3">
+      {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+
+      <form
+        className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed bg-card/50 p-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(
+            () => generateCrewManifest({ crewId, direction, scheduledDate: date }),
+            () => setDate(""),
+          );
+        }}
+      >
+        <span className="text-sm font-medium">Generate crew manifest:</span>
+        <select value={crewId} onChange={(e) => setCrewId(e.target.value)} required className={field}>
+          <option value="">Crew…</option>
+          {crews.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <select value={direction} onChange={(e) => setDirection(e.target.value as "out" | "in")} className={field}>
+          <option value="out">Outbound</option>
+          <option value="in">Inbound</option>
+        </select>
+        <input value={date} onChange={(e) => setDate(e.target.value)} type="date" required className={field} />
+        <Button type="submit" size="sm" disabled={pending || !crewId}>Generate</Button>
+      </form>
+
+      <div className="space-y-3">
+        {manifests.map((m) => (
+          <ManifestCard key={m.id} m={m} pending={pending} run={run} />
+        ))}
+        {manifests.length === 0 && (
+          <p className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
+            No manifests yet.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ManifestCard({
+  m,
+  pending,
+  run,
+}: {
+  m: Manifest;
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const travelling = m.pax.filter((p) => !p.no_show);
+  const overCapacity = travelling.length > m.seat_capacity;
+  const issues = travelling.filter((p) => p.issues.length > 0).length;
+  const editable = m.status === "draft" || m.status === "approved";
+
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", MANIFEST_STYLE[m.status])}>
+          {MANIFEST_STATUS_LABEL[m.status]}
+        </span>
+        <span className="font-medium">{m.title}</span>
+        <span className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[m.trip_type] ?? m.trip_type}</span>
+        <span className={cn("ml-auto text-xs", overCapacity ? "font-medium text-destructive" : "text-muted-foreground")}>
+          {travelling.length}/{m.seat_capacity} seats
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {m.installation_name ?? "—"} · {m.scheduled_date}
+        {m.transport_mode ? ` · ${m.transport_mode}` : ""}
+        {issues > 0 ? ` · ${issues} eligibility issue(s)` : ""}
+      </p>
+
+      <div className="mt-2 space-y-1">
+        {m.pax.map((p) => (
+          <div
+            key={p.id}
+            className={cn(
+              "flex flex-wrap items-center gap-2 rounded-md border px-2 py-1 text-sm",
+              p.no_show && "opacity-50",
+            )}
+          >
+            <span className={cn(p.no_show && "line-through")}>{p.person_name}</span>
+            {p.position && <span className="text-xs text-muted-foreground">{p.position}</span>}
+            {p.boarded && <span className="text-[11px] text-green-700">boarded</span>}
+            {p.issues.length > 0 && (
+              <span className="rounded bg-destructive/10 px-1.5 text-[11px] text-destructive">
+                {p.issues.join(", ")}
+              </span>
+            )}
+            {editable && (
+              <span className="ml-auto flex gap-1">
+                <button
+                  disabled={pending}
+                  onClick={() => run(() => togglePaxNoShow(p.id, !p.no_show))}
+                  className="rounded border px-1.5 py-0.5 text-[11px] hover:bg-accent"
+                >
+                  {p.no_show ? "Travelling" : "No-show"}
+                </button>
+                <button
+                  disabled={pending}
+                  onClick={() => run(() => removeManifestPax(p.id))}
+                  className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            )}
+          </div>
+        ))}
+        {m.pax.length === 0 && <p className="text-xs text-muted-foreground">No passengers.</p>}
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        {m.status === "draft" && (
+          <Button size="sm" disabled={pending} onClick={() => run(() => setManifestStatus(m.id, "approved"))}>
+            Approve
+          </Button>
+        )}
+        {m.status === "approved" && (
+          <Button size="sm" disabled={pending} onClick={() => run(() => setManifestStatus(m.id, "locked"))}>
+            Lock
+          </Button>
+        )}
+        {m.status === "locked" && (
+          <Button size="sm" disabled={pending} onClick={() => run(() => confirmManifestMovement(m.id))}>
+            Confirm {m.direction === "out" ? "departure (board)" : "arrival onshore"}
+          </Button>
+        )}
+        {editable && (
+          <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => setManifestStatus(m.id, "cancelled"))}>
+            Cancel
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

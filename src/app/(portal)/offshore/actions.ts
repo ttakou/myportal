@@ -433,3 +433,174 @@ export async function setVisitorMovement(
   rev();
   return { ok: true };
 }
+
+// --- Trip manifests (Phase 3) ------------------------------------------------
+
+export async function generateCrewManifest(input: {
+  crewId: string;
+  direction: "out" | "in";
+  scheduledDate: string;
+}): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (!input.scheduledDate) return { ok: false, error: "Scheduled date is required." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const { data: crew } = await supabase
+    .from("offshore_crews")
+    .select("name, installation_id, transport_mode")
+    .eq("id", input.crewId)
+    .maybeSingle();
+  if (!crew) return { ok: false, error: "Crew not found." };
+
+  const { data: members } = await supabase
+    .from("offshore_staff")
+    .select("profile_id, position, profile:profiles!offshore_staff_profile_id_fkey(full_name, email)")
+    .eq("crew_id", input.crewId);
+  if (!members || members.length === 0) return { ok: false, error: "This crew has no members." };
+
+  const { data: manifest, error } = await supabase
+    .from("offshore_manifests")
+    .insert({
+      tenant_id: tenant,
+      title: `${crew.name} · ${input.direction === "out" ? "outbound" : "inbound"} · ${input.scheduledDate}`,
+      crew_id: input.crewId,
+      installation_id: crew.installation_id,
+      trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
+      direction: input.direction,
+      transport_mode: crew.transport_mode,
+      scheduled_date: input.scheduledDate,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !manifest) return { ok: false, error: error?.message ?? "Could not create manifest." };
+
+  const pax = members.map((m: Record<string, any>) => {
+    const p = Array.isArray(m.profile) ? m.profile[0] : m.profile;
+    return {
+      tenant_id: tenant,
+      manifest_id: manifest.id,
+      profile_id: m.profile_id,
+      person_name: p?.full_name || p?.email || "Crew member",
+      position: m.position,
+    };
+  });
+  await supabase.from("offshore_manifest_pax").insert(pax);
+  rev();
+  return { ok: true };
+}
+
+export async function setManifestStatus(
+  id: string,
+  status: "draft" | "approved" | "locked" | "cancelled",
+): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { error } = await supabase.from("offshore_manifests").update({ status }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function togglePaxNoShow(id: string, noShow: boolean): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("offshore_manifest_pax")
+    .update({ no_show: noShow })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function removeManifestPax(id: string): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { error } = await supabase.from("offshore_manifest_pax").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Confirm the movement: outbound puts each (non-no-show) staff passenger on
+ * board (POB up, fixed room assigned); inbound demobilises them (POB down).
+ * Seat capacity is enforced. Manifest must be locked first.
+ */
+export async function confirmManifestMovement(id: string): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const { data: m } = await supabase
+    .from("offshore_manifests")
+    .select("id, direction, installation_id, crew_id, scheduled_date, seat_capacity, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!m) return { ok: false, error: "Manifest not found." };
+  if (m.status !== "locked")
+    return { ok: false, error: "Lock the manifest before confirming the movement." };
+
+  const { data: pax } = await supabase
+    .from("offshore_manifest_pax")
+    .select("id, profile_id, no_show")
+    .eq("manifest_id", id);
+  const travelling = (pax ?? []).filter((p) => !p.no_show && p.profile_id);
+  if (travelling.length > (m.seat_capacity as number)) {
+    return { ok: false, error: `Over seat capacity (${travelling.length}/${m.seat_capacity}).` };
+  }
+
+  if (m.direction === "out") {
+    // Fixed-room lookup for each member.
+    const ids = travelling.map((p) => p.profile_id as string);
+    const { data: staff } = await supabase
+      .from("offshore_staff")
+      .select("profile_id, fixed_room_id, fixed_bed")
+      .in("profile_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
+    const roomByProfile = new Map<string, { room: string | null; bed: string | null }>();
+    for (const s of staff ?? [])
+      roomByProfile.set(s.profile_id as string, {
+        room: (s.fixed_room_id as string) ?? null,
+        bed: (s.fixed_bed as string) ?? null,
+      });
+
+    const nowIso = new Date().toISOString();
+    for (const p of travelling) {
+      const fixed = roomByProfile.get(p.profile_id as string);
+      await supabase.from("offshore_trips").insert({
+        tenant_id: tenant,
+        profile_id: p.profile_id,
+        installation_id: m.installation_id,
+        crew_id: m.crew_id,
+        category: "staff",
+        trip_type: "crew_change_out",
+        mobilize_date: m.scheduled_date,
+        status: "onboard",
+        hse_cleared_at: nowIso, // manifest approval is the HSE gate
+        room_id: fixed?.room ?? null,
+        bed_no: fixed?.bed ?? null,
+      });
+    }
+  } else {
+    // Inbound: demobilise the active onboard trip for each passenger.
+    for (const p of travelling) {
+      await supabase
+        .from("offshore_trips")
+        .update({ status: "demobilised", demob_date: m.scheduled_date })
+        .eq("profile_id", p.profile_id)
+        .eq("status", "onboard");
+    }
+  }
+
+  await supabase
+    .from("offshore_manifest_pax")
+    .update({ boarded: true })
+    .eq("manifest_id", id)
+    .eq("no_show", false);
+  await supabase.from("offshore_manifests").update({ status: "completed" }).eq("id", id);
+  rev();
+  return { ok: true };
+}
