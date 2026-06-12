@@ -2,10 +2,12 @@ import Link from "next/link";
 import { ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getTenantUsers, getTenantModules } from "@/lib/admin";
+import { getAccessRoles } from "@/lib/access-roles";
 import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
 import { UsersPanel } from "./_components/users-panel";
 import { ModulesPanel } from "./_components/modules-panel";
 import { ModuleParamsPanel } from "./_components/module-params-panel";
+import { RolesPanel } from "./_components/roles-panel";
 import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
 
 export default async function AdminPage() {
@@ -26,9 +28,10 @@ export default async function AdminPage() {
     );
   }
 
-  const [users, modules] = await Promise.all([
+  const [users, modules, accessRoles] = await Promise.all([
     getTenantUsers(),
     getTenantModules(),
+    getAccessRoles(),
   ]);
   const canteenActive = modules.some((m) => m.slug === "canteen" && m.is_active);
   const showCanteen = canteenActive && access.isCanteenManager;
@@ -45,9 +48,14 @@ export default async function AdminPage() {
       </div>
 
       {access.isSystemAdmin && <ModulesPanel modules={modules} />}
+      {access.isSystemAdmin && <RolesPanel roles={accessRoles} modules={modules} />}
       {access.isSystemAdmin && <ModuleParamsPanel modules={modules} />}
       {showCanteen && <CanteenSettingsPanel served={servedMeals} cutoffHour={cutoffHour} />}
-      <UsersPanel users={users} canAssignRoles={access.isHr} />
+      <UsersPanel
+        users={users}
+        canAssignRoles={access.isHr}
+        accessRoles={access.isSystemAdmin ? accessRoles : []}
+      />
     </div>
   );
 }

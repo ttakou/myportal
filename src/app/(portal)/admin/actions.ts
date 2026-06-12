@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess, type FunctionalRole } from "@/lib/auth";
 import { MODULE_PARAMS } from "@/lib/module-params";
+import { MODULE_ROUTES } from "@/lib/navigation";
 import type { UserRole } from "@/types/database";
 
 export interface ActionResult {
@@ -214,6 +215,112 @@ export async function setCanteenCutoff(hour: number | null): Promise<ActionResul
   if (error) return { ok: false, error: error.message };
   revalidatePath("/admin");
   revalidatePath("/canteen");
+  return { ok: true };
+}
+
+// --- Access roles (role-based module access) ---------------------------------
+
+const ASSIGNABLE_MODULE_SLUGS = MODULE_ROUTES.filter((m) => !m.isCore).map((m) => m.slug);
+
+function cleanModuleSlugs(slugs: string[]): string[] {
+  return [...new Set(slugs)].filter((s) =>
+    (ASSIGNABLE_MODULE_SLUGS as string[]).includes(s),
+  );
+}
+
+/** Create a named access role granting a set of modules. */
+export async function createAccessRole(input: {
+  name: string;
+  description?: string;
+  moduleSlugs: string[];
+}): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  if (!input.name.trim()) return { ok: false, error: "Role name is required." };
+
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const { error } = await supabase.from("tenant_roles").insert({
+    tenant_id: tenant.id,
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+    module_slugs: cleanModuleSlugs(input.moduleSlugs),
+  });
+  if (error)
+    return {
+      ok: false,
+      error: error.message.includes("duplicate")
+        ? "A role with that name already exists."
+        : error.message,
+    };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+export async function updateAccessRole(input: {
+  id: string;
+  name?: string;
+  description?: string;
+  moduleSlugs?: string[];
+}): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const patch: Record<string, unknown> = {};
+  if (input.name !== undefined) {
+    if (!input.name.trim()) return { ok: false, error: "Role name is required." };
+    patch.name = input.name.trim();
+  }
+  if (input.description !== undefined) patch.description = input.description.trim() || null;
+  if (input.moduleSlugs !== undefined) patch.module_slugs = cleanModuleSlugs(input.moduleSlugs);
+
+  const supabase = createClient();
+  const { error } = await supabase.from("tenant_roles").update(patch).eq("id", input.id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+/** Delete a role; assignments cascade, affected users fall back to unrestricted-or-other-roles. */
+export async function deleteAccessRole(id: string): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase.from("tenant_roles").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+/** Assign or remove an access role for a user. */
+export async function setUserAccessRole(
+  userId: string,
+  roleId: string,
+  assigned: boolean,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const supabase = createClient();
+
+  if (assigned) {
+    const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+    if (!tenant) return { ok: false, error: "No tenant in scope." };
+    const { error } = await supabase.from("profile_access_roles").insert({
+      profile_id: userId,
+      role_id: roleId,
+      tenant_id: tenant.id,
+    });
+    if (error && !error.message.includes("duplicate")) return { ok: false, error: error.message };
+  } else {
+    const { error } = await supabase
+      .from("profile_access_roles")
+      .delete()
+      .eq("profile_id", userId)
+      .eq("role_id", roleId);
+    if (error) return { ok: false, error: error.message };
+  }
+  revalidatePath("/admin");
   return { ok: true };
 }
 
