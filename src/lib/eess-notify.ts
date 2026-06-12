@@ -10,6 +10,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Audience = "responders" | "all";
 type SourceType = "incident" | "broadcast";
+
+/** Map a push source type to an in-app notification category. */
+const NOTIFICATION_CATEGORY: Record<string, string> = {
+  incident: "emergency",
+  broadcast: "emergency",
+  transport_task: "transport",
+  flight_update: "flight",
+  approval: "approval",
+};
 /** Profile ids of the tenant's emergency responders (mirrors getAccess().isSafetyAdmin). */
 async function responderIds(
   admin: SupabaseClient,
@@ -122,6 +131,22 @@ async function fanOut(
 ): Promise<void> {
   const { tenantId, audience, sourceType, sourceId, payload, profileIds } =
     opts;
+
+  // Every push also lands in the in-app notification bell — so recipients with
+  // push off still see it. Best-effort, like the rest of the pipeline.
+  if (profileIds.length > 0) {
+    const category = NOTIFICATION_CATEGORY[sourceType] ?? "general";
+    await admin.from("notifications").insert(
+      profileIds.map((pid) => ({
+        tenant_id: tenantId,
+        profile_id: pid,
+        category,
+        title: payload.title,
+        body: payload.body,
+        url: payload.url ?? null,
+      })),
+    );
+  }
 
   let delivered = 0;
   let failed = 0;

@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { createClient } from "@/lib/supabase/server";
 import { getTenantBranding, brandingToCssVars } from "@/lib/branding";
+import { getMyNotifications } from "@/lib/notifications";
 import { UserMenu } from "./_components/user-menu";
+import { NotificationBell } from "./_components/notification-bell";
 import { PortalShell } from "./_components/portal-shell";
 
 /**
@@ -28,7 +30,7 @@ export default async function PortalLayout({
     redirect("/login");
   }
 
-  const [branding, profile] = await Promise.all([
+  const [branding, profile, notifications] = await Promise.all([
     getTenantBranding(),
     supabase
       .from("profiles")
@@ -36,6 +38,7 @@ export default async function PortalLayout({
       .eq("id", user.id)
       .maybeSingle()
       .then((r) => r.data),
+    getMyNotifications(),
   ]);
 
   const displayName = profile?.full_name || profile?.email || "User";
@@ -45,7 +48,12 @@ export default async function PortalLayout({
     <div style={brandingToCssVars(branding)}>
       <PortalShell
         sidebar={<Sidebar brandName={branding.name} logoUrl={branding.logoUrl} />}
-        header={<UserMenu name={displayName} role={role} />}
+        header={
+          <div className="flex items-center gap-1">
+            <NotificationBell initial={notifications} />
+            <UserMenu name={displayName} role={role} />
+          </div>
+        }
       >
         {children}
       </PortalShell>
