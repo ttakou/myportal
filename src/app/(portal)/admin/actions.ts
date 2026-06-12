@@ -1,10 +1,13 @@
 "use server";
 
+import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getAccess, type FunctionalRole } from "@/lib/auth";
 import { MODULE_PARAMS } from "@/lib/module-params";
 import { MODULE_ROUTES } from "@/lib/navigation";
+import type { EmployeeType } from "@/lib/admin";
 import type { UserRole } from "@/types/database";
 
 export interface ActionResult {
@@ -216,6 +219,155 @@ export async function setCanteenCutoff(hour: number | null): Promise<ActionResul
   revalidatePath("/admin");
   revalidatePath("/canteen");
   return { ok: true };
+}
+
+// --- Staff registration -------------------------------------------------------
+
+function generateTempPassword(): string {
+  // 14 chars, unambiguous alphabet, guaranteed digit + upper + lower.
+  const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(14);
+  let pw = "";
+  for (const b of bytes) pw += alphabet[b % alphabet.length];
+  return pw.slice(0, 5) + "A" + pw.slice(5, 9) + "7" + pw.slice(9, 12) + "x";
+}
+
+export interface RegisterStaffResult extends ActionResult {
+  /** Returned once when mode = "password"; the admin shares it with the hire. */
+  tempPassword?: string;
+}
+
+/**
+ * Register a new staff member end-to-end: create the auth account (invitation
+ * email or temporary password), attach the profile to the caller's tenant, and
+ * pre-assign role, manager, department and access/functional roles — no
+ * Supabase dashboard required.
+ *
+ * Caller must be HR/system admin; the privileged steps run on the service-role
+ * client, with every input validated against the caller's tenant first.
+ */
+export async function registerStaff(input: {
+  fullName: string;
+  email: string;
+  mode: "invite" | "password";
+  role?: UserRole;
+  managerId?: string;
+  department?: string;
+  employeeType?: EmployeeType;
+  lunchEligible?: boolean;
+  functionalRoles?: FunctionalRole[];
+  accessRoleIds?: string[];
+}): Promise<RegisterStaffResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+
+  const fullName = input.fullName.trim();
+  const email = input.email.trim().toLowerCase();
+  if (!fullName) return { ok: false, error: "Full name is required." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "Enter a valid email." };
+  const role: UserRole = input.role && ASSIGNABLE_ROLES.includes(input.role) ? input.role : "employee";
+
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  // Validate the manager and access roles belong to this tenant before using
+  // the service-role client to write them.
+  if (input.managerId) {
+    const { data: mgr } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", input.managerId)
+      .maybeSingle();
+    if (!mgr) return { ok: false, error: "Manager not found in your organisation." };
+  }
+  let accessRoleIds: string[] = [];
+  if (input.accessRoleIds?.length) {
+    const { data: roles } = await supabase
+      .from("tenant_roles")
+      .select("id")
+      .in("id", input.accessRoleIds);
+    accessRoleIds = (roles ?? []).map((r) => r.id as string);
+  }
+
+  // 1. Create the auth account. The handle_new_user trigger creates a pending
+  //    profile alongside it.
+  let userId: string;
+  let tempPassword: string | undefined;
+  if (input.mode === "invite") {
+    const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+      data: { full_name: fullName },
+    });
+    if (error) {
+      return {
+        ok: false,
+        error: error.message.includes("already")
+          ? "An account with that email already exists."
+          : `Could not send invitation: ${error.message}`,
+      };
+    }
+    userId = data.user.id;
+  } else {
+    tempPassword = generateTempPassword();
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+    if (error) {
+      return {
+        ok: false,
+        error: error.message.includes("already")
+          ? "An account with that email already exists."
+          : error.message,
+      };
+    }
+    userId = data.user.id;
+  }
+
+  // 2. Attach the profile to the tenant with the chosen attributes.
+  const employeeType: EmployeeType =
+    input.employeeType && ["employee", "contractor", "guest"].includes(input.employeeType)
+      ? input.employeeType
+      : "employee";
+  const { error: profileError } = await admin.from("profiles").upsert(
+    {
+      id: userId,
+      email,
+      full_name: fullName,
+      tenant_id: tenant.id,
+      role,
+      manager_id: input.managerId || null,
+      department: input.department?.trim() || null,
+      employee_type: employeeType,
+      lunch_eligible: input.lunchEligible ?? true,
+      is_active: true,
+    },
+    { onConflict: "id" },
+  );
+  if (profileError) return { ok: false, error: `Account created but profile setup failed: ${profileError.message}` };
+
+  // 3. Pre-assign functional + access roles.
+  const functional = (input.functionalRoles ?? []).filter((r) =>
+    ASSIGNABLE_FUNCTIONAL.includes(r),
+  );
+  if (functional.length > 0) {
+    await admin.from("profile_roles").insert(
+      functional.map((r) => ({ profile_id: userId, role: r, tenant_id: tenant.id })),
+    );
+  }
+  if (accessRoleIds.length > 0) {
+    await admin.from("profile_access_roles").insert(
+      accessRoleIds.map((rid) => ({ profile_id: userId, role_id: rid, tenant_id: tenant.id })),
+    );
+  }
+
+  revalidatePath("/admin");
+  return { ok: true, tempPassword };
 }
 
 // --- Access roles (role-based module access) ---------------------------------

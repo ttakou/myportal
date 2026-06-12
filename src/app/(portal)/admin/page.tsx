@@ -8,6 +8,7 @@ import { UsersPanel } from "./_components/users-panel";
 import { ModulesPanel } from "./_components/modules-panel";
 import { ModuleParamsPanel } from "./_components/module-params-panel";
 import { RolesPanel } from "./_components/roles-panel";
+import { RegisterStaffPanel } from "./_components/register-staff-panel";
 import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
 
 export default async function AdminPage() {
@@ -51,6 +52,14 @@ export default async function AdminPage() {
       {access.isSystemAdmin && <RolesPanel roles={accessRoles} modules={modules} />}
       {access.isSystemAdmin && <ModuleParamsPanel modules={modules} />}
       {showCanteen && <CanteenSettingsPanel served={servedMeals} cutoffHour={cutoffHour} />}
+      {access.isHr && (
+        <RegisterStaffPanel
+          managers={users.filter(
+            (u) => u.is_active && (u.role === "manager" || u.role === "tenant_admin"),
+          )}
+          accessRoles={accessRoles}
+        />
+      )}
       <UsersPanel
         users={users}
         canAssignRoles={access.isHr}
