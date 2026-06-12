@@ -11,9 +11,12 @@ import type {
   MealEntry,
   OffshoreTrip,
   Pob,
+  PobAsOf,
   PobBreakdown,
+  PobPerson,
   Room,
   RoomAvailability,
+  RoomHistoryRow,
   RosterEntry,
   RotationCalendar,
   RotationDay,
@@ -597,6 +600,123 @@ export async function getManifests(): Promise<Manifest[]> {
       )
       .sort((a, b) => a.person_name.localeCompare(b.person_name)),
   }));
+}
+
+// --- History: POB as-of a date + room occupancy over a period ----------------
+
+/** Reconstruct who was on board on a past (or current) date, from trips + visits. */
+export async function getPobAsOf(date: string): Promise<PobAsOf> {
+  const supabase = createClient();
+  const [{ data: trips }, { data: visits }] = await Promise.all([
+    supabase
+      .from("offshore_trips")
+      .select(
+        "mobilize_date, demob_date, status," +
+          " person:profiles!offshore_trips_profile_id_fkey(full_name, email)," +
+          " installation:offshore_installations(name), crew:offshore_crews(name)",
+      )
+      .in("status", ["onboard", "demobilised"])
+      .lte("mobilize_date", date),
+    supabase
+      .from("offshore_visit_requests")
+      .select("visitor_name, depart_date, return_date, status, installation:offshore_installations(name)")
+      .in("status", ["onboard", "returned"])
+      .lte("depart_date", date),
+  ]);
+
+  const people: PobPerson[] = [];
+  for (const t of (trips ?? []) as Record<string, any>[]) {
+    if (t.demob_date && (t.demob_date as string) < date) continue; // left before this date
+    const p = one2<{ full_name?: string; email?: string }>(t.person);
+    people.push({
+      name: p?.full_name || p?.email || "Crew",
+      category: "staff",
+      installation: one2<{ name?: string }>(t.installation)?.name ?? null,
+      crew: one2<{ name?: string }>(t.crew)?.name ?? null,
+      from: t.mobilize_date as string,
+      to: (t.demob_date as string) ?? null,
+    });
+  }
+  for (const v of (visits ?? []) as Record<string, any>[]) {
+    if (v.return_date && (v.return_date as string) < date) continue;
+    people.push({
+      name: v.visitor_name as string,
+      category: "visitor",
+      installation: one2<{ name?: string }>(v.installation)?.name ?? null,
+      crew: null,
+      from: v.depart_date as string,
+      to: (v.return_date as string) ?? null,
+    });
+  }
+  people.sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    date,
+    total: people.length,
+    staff: people.filter((p) => p.category === "staff").length,
+    visitor: people.filter((p) => p.category === "visitor").length,
+    people,
+  };
+}
+
+/** Who occupied which room over [from, to] — staff (fixed room on trips) + visitors (allocations). */
+export async function getRoomHistory(from: string, to: string): Promise<RoomHistoryRow[]> {
+  const supabase = createClient();
+  const today = todayIso();
+  const [{ data: trips }, { data: allocs }] = await Promise.all([
+    supabase
+      .from("offshore_trips")
+      .select(
+        "mobilize_date, demob_date, status," +
+          " person:profiles!offshore_trips_profile_id_fkey(full_name, email)," +
+          " room:offshore_rooms(room_number, block)," +
+          " installation:offshore_installations(name)",
+      )
+      .in("status", ["onboard", "demobilised"])
+      .not("room_id", "is", null)
+      .lte("mobilize_date", to),
+    supabase
+      .from("offshore_bed_allocations")
+      .select(
+        "occupant_name, from_date, to_date, status," +
+          " room:offshore_rooms(room_number, block, installation:offshore_installations(name))",
+      )
+      .lte("from_date", to),
+  ]);
+
+  const rows: RoomHistoryRow[] = [];
+  for (const t of (trips ?? []) as Record<string, any>[]) {
+    if (t.demob_date && (t.demob_date as string) < from) continue;
+    const room = one2<{ room_number?: string; block?: string }>(t.room);
+    if (!room) continue;
+    const p = one2<{ full_name?: string; email?: string }>(t.person);
+    rows.push({
+      room_label: [room.block, room.room_number].filter(Boolean).join(" "),
+      installation: one2<{ name?: string }>(t.installation)?.name ?? null,
+      occupant: p?.full_name || p?.email || "Crew",
+      category: "staff",
+      from: t.mobilize_date as string,
+      to: (t.demob_date as string) ?? null,
+      current: !t.demob_date || (t.demob_date as string) >= today,
+    });
+  }
+  for (const a of (allocs ?? []) as Record<string, any>[]) {
+    if ((a.to_date as string) < from) continue;
+    const room = one2<{ room_number?: string; block?: string; installation?: unknown }>(a.room);
+    rows.push({
+      room_label: room ? [room.block, room.room_number].filter(Boolean).join(" ") : "—",
+      installation: room
+        ? one2<{ name?: string }>(room.installation as any)?.name ?? null
+        : null,
+      occupant: a.occupant_name as string,
+      category: "visitor",
+      from: a.from_date as string,
+      to: a.to_date as string,
+      current: a.status !== "checked_out",
+    });
+  }
+  return rows.sort(
+    (a, b) => a.room_label.localeCompare(b.room_label) || a.from.localeCompare(b.from),
+  );
 }
 
 // --- Catering / Daily Meal Sheet ---------------------------------------------

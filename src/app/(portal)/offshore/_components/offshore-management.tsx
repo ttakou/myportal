@@ -8,6 +8,7 @@ import {
   CalendarClock,
   CalendarRange,
   ClipboardList,
+  History,
   LayoutGrid,
   Plane,
   Trash2,
@@ -65,6 +66,7 @@ import {
 import { BulkRoomImport } from "./bulk-room-import";
 import { BulkRosterImport } from "./bulk-roster-import";
 import { CateringPanel } from "./catering-panel";
+import { HistoryPanel } from "./history-panel";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
@@ -76,7 +78,8 @@ type Tab =
   | "roster"
   | "visitors"
   | "manifests"
-  | "catering";
+  | "catering"
+  | "history";
 
 export function OffshoreManagement(props: {
   crews: Crew[];
@@ -104,6 +107,7 @@ export function OffshoreManagement(props: {
     { key: "catering", label: "Catering", icon: UtensilsCrossed },
     { key: "roster", label: "Offshore staff", icon: Users },
     { key: "visitors", label: "Visitors", icon: Plane, badge: pendingVisits },
+    { key: "history", label: "History", icon: History },
   ];
 
   return (
@@ -149,6 +153,7 @@ export function OffshoreManagement(props: {
       {tab === "visitors" && <VisitorsPanel visits={props.visits} />}
       {tab === "manifests" && <ManifestsPanel manifests={props.manifests} crews={props.crews} />}
       {tab === "catering" && <CateringPanel installations={props.installations} />}
+      {tab === "history" && <HistoryPanel />}
     </div>
   );
 }
