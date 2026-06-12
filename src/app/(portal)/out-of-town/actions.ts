@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { lookupFlight } from "@/lib/flight-api";
 import { notify, notifyProfiles } from "@/lib/eess-notify";
+import { seedTaskChecklist } from "@/lib/task-checklist";
 import {
   APPROVAL_TRAVEL_TYPES,
   TRAVEL_TYPE_LABEL,
@@ -146,6 +147,9 @@ export async function requestAirportAssistance(input: {
       .select("id")
       .maybeSingle();
     transportRequestId = task?.id ?? null;
+    if (transportRequestId) {
+      await seedTaskChecklist(supabase, tenant.id, transportRequestId, "airport_pickup");
+    }
   }
 
   const { error } = await supabase.from("airport_assistance").insert({

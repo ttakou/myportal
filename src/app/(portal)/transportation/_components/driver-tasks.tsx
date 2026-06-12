@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { Driver, TransportRequest } from "@/types/transport";
 import { setMyDuty, setTransportStatus } from "../actions";
-import { FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
+import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
 
 /** The signed-in driver's live task list: start, complete, follow up. */
 export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: TransportRequest[] }) {
@@ -95,6 +95,7 @@ export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: Transpor
                 </Button>
               )}
             </div>
+            <Checklist task={t} canTick />
             <FollowUps task={t} canPost />
           </div>
         ))}

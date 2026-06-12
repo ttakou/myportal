@@ -12,7 +12,7 @@ import {
   type TransportStatus,
   type TransportTaskType,
 } from "@/types/transport";
-import { addTaskFollowUp } from "../actions";
+import { addChecklistItem, addTaskFollowUp, toggleChecklistItem } from "../actions";
 
 export const STATUS_STYLE: Record<TransportStatus, string> = {
   pending: "bg-muted text-muted-foreground",
@@ -62,7 +62,88 @@ export function fmt(dt: string) {
   });
 }
 
-/** Collapsible follow-up trail plus an "add note" box. */
+/**
+ * Per-task checklist. The driver/dispatcher tick items (canTick); the
+ * dispatcher can also append custom steps (canAdd). Read-only for everyone
+ * else (e.g. the requester watching progress).
+ */
+export function Checklist({
+  task,
+  canTick,
+  canAdd = false,
+}: {
+  task: TransportRequest;
+  canTick: boolean;
+  canAdd?: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [label, setLabel] = useState("");
+  const items = task.checklist;
+  if (items.length === 0 && !canAdd) return null;
+  const done = items.filter((i) => i.done).length;
+
+  return (
+    <details className="mt-1" open={canTick && done < items.length}>
+      <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+        Checklist {items.length > 0 ? `(${done}/${items.length})` : ""}
+      </summary>
+      <div className="mt-2 space-y-1 border-l pl-3">
+        {items.map((item) => (
+          <label
+            key={item.id}
+            className={cn(
+              "flex items-center gap-2 text-sm",
+              !canTick && "pointer-events-none",
+              item.done && "text-muted-foreground line-through",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={item.done}
+              disabled={pending || !canTick}
+              onChange={(e) => {
+                setError(null);
+                startTransition(async () => {
+                  const res = await toggleChecklistItem(item.id, e.target.checked);
+                  if (!res.ok) setError(res.error ?? "Could not update item.");
+                });
+              }}
+            />
+            {item.label}
+          </label>
+        ))}
+        {canAdd && (
+          <form
+            className="flex gap-2 pt-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setError(null);
+              startTransition(async () => {
+                const res = await addChecklistItem(task.id, label);
+                if (!res.ok) setError(res.error ?? "Could not add item.");
+                else setLabel("");
+              });
+            }}
+          >
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Add a step…"
+              className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+            />
+            <Button size="sm" variant="outline" type="submit" disabled={pending || !label.trim()}>
+              Add
+            </Button>
+          </form>
+        )}
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    </details>
+  );
+}
+
+/** Collapsible two-way message thread plus an "add message" box. */
 export function FollowUps({ task, canPost }: { task: TransportRequest; canPost: boolean }) {
   const [note, setNote] = useState("");
   const [pending, startTransition] = useTransition();
@@ -72,7 +153,7 @@ export function FollowUps({ task, canPost }: { task: TransportRequest; canPost: 
   return (
     <details className="mt-1">
       <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-        Follow-up {count > 0 ? `(${count})` : ""}
+        Messages {count > 0 ? `(${count})` : ""}
       </summary>
       <div className="mt-2 space-y-2 border-l pl-3">
         {task.updates.map((u) => (
@@ -87,7 +168,7 @@ export function FollowUps({ task, canPost }: { task: TransportRequest; canPost: 
             {u.note && <p className="text-foreground">{u.note}</p>}
           </div>
         ))}
-        {count === 0 && <p className="text-xs text-muted-foreground">No follow-ups yet.</p>}
+        {count === 0 && <p className="text-xs text-muted-foreground">No messages yet.</p>}
         {canPost && (
           <form
             className="flex gap-2 pt-1"
@@ -104,7 +185,7 @@ export function FollowUps({ task, canPost }: { task: TransportRequest; canPost: 
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Add a follow-up note…"
+              placeholder="Write a message…"
               className="w-full rounded-md border bg-background px-2 py-1 text-xs"
             />
             <Button size="sm" variant="outline" type="submit" disabled={pending || !note.trim()}>

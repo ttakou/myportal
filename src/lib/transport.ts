@@ -1,12 +1,19 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Driver, TaskUpdate, TransportRequest, Vehicle } from "@/types/transport";
+import type {
+  ChecklistItem,
+  Driver,
+  TaskUpdate,
+  TransportRequest,
+  Vehicle,
+} from "@/types/transport";
 
 const REQ_SELECT =
   "id, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
   " task_type, priority, notes," +
   " requester:profiles!transport_requests_requester_id_fkey(full_name)," +
   " driver:transport_drivers(full_name, phone), vehicle:transport_vehicles(name)," +
-  " transport_task_updates(id, note, new_status, created_at, author:profiles(full_name))";
+  " transport_task_updates(id, note, new_status, created_at, author:profiles(full_name))," +
+  " transport_task_checklist(id, label, sort_order, done, done_at)";
 
 function one<T>(v: T | T[] | null): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
@@ -44,6 +51,9 @@ function mapReq(row: Record<string, any>): TransportRequest {
     updates: ((row.transport_task_updates as any[]) ?? [])
       .map(mapUpdate)
       .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    checklist: (((row.transport_task_checklist as any[]) ?? []) as ChecklistItem[])
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order),
   };
 }
 

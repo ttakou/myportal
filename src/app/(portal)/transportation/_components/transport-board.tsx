@@ -5,7 +5,7 @@ import { Car } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { TransportRequest } from "@/types/transport";
 import { cancelTransportRequest, createTransportRequest } from "../actions";
-import { FollowUps, StatusBadge, fmt } from "./task-bits";
+import { Checklist, FollowUps, StatusBadge, fmt } from "./task-bits";
 
 /** Employee view: request a ride and follow your requests. */
 export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
@@ -100,6 +100,7 @@ export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
                   {r.vehicle_name ? ` · ${r.vehicle_name}` : ""}
                 </p>
               )}
+              <Checklist task={r} canTick={false} />
               <FollowUps task={r} canPost />
             </div>
           ))}
