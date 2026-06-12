@@ -55,9 +55,7 @@ export default async function AdminPage() {
       {showCanteen && <CanteenSettingsPanel served={servedMeals} cutoffHour={cutoffHour} />}
       {access.isHr && (
         <RegisterStaffPanel
-          managers={users.filter(
-            (u) => u.is_active && (u.role === "manager" || u.role === "tenant_admin"),
-          )}
+          managers={users.filter((u) => u.is_active)}
           accessRoles={accessRoles}
         />
       )}

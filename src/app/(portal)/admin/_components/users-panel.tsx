@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Check, Copy, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
 import type { FunctionalRole } from "@/lib/auth";
@@ -14,6 +15,7 @@ import {
   setUserDepartment,
   setUserLunchEligible,
   setUserManager,
+  setUserPassword,
   setUserRole,
   setUserType,
 } from "../actions";
@@ -49,10 +51,8 @@ export function UsersPanel({
     });
   }
 
-  // Managers are users with role manager or tenant_admin.
-  const managerOptions = users.filter(
-    (u) => u.role === "manager" || u.role === "tenant_admin",
-  );
+  // Any active staff member can be selected as a manager.
+  const managerOptions = users.filter((u) => u.is_active);
 
   return (
     <section className="space-y-3">
@@ -77,6 +77,7 @@ export function UsersPanel({
                 <th className="px-4 py-3 font-medium">Module access</th>
               )}
               {canAssignRoles && <th className="px-4 py-3 font-medium">Access roles</th>}
+              {canAssignRoles && <th className="px-4 py-3 font-medium">Password</th>}
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -234,11 +235,16 @@ export function UsersPanel({
                     </div>
                   </td>
                 )}
+                {canAssignRoles && (
+                  <td className="px-4 py-3">
+                    <SetPasswordControl userId={u.id} />
+                  </td>
+                )}
               </tr>
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
                   No users yet.
                 </td>
               </tr>
@@ -247,5 +253,94 @@ export function UsersPanel({
         </table>
       </div>
     </section>
+  );
+}
+
+/** Inline control to set a chosen password or generate a temporary one. */
+function SetPasswordControl({ userId }: { userId: string }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [generated, setGenerated] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function save(generate: boolean) {
+    setError(null);
+    setGenerated(null);
+    setDone(false);
+    startTransition(async () => {
+      const res = await setUserPassword(userId, generate ? undefined : value);
+      if (!res.ok) {
+        setError(res.error ?? "Could not set password.");
+        return;
+      }
+      if (res.tempPassword) setGenerated(res.tempPassword);
+      else setDone(true);
+      setValue("");
+    });
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-accent"
+      >
+        <KeyRound className="h-3.5 w-3.5" /> Set password
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="New password"
+          className="w-32 rounded-md border bg-background px-2 py-1 text-xs"
+        />
+        <button
+          type="button"
+          disabled={pending || value.trim().length < 8}
+          onClick={() => save(false)}
+          className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+        >
+          Set
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => save(true)}
+          className="rounded-md border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
+        >
+          Generate
+        </button>
+      </div>
+      {value.trim().length > 0 && value.trim().length < 8 && (
+        <p className="text-[11px] text-muted-foreground">Min 8 characters.</p>
+      )}
+      {generated && (
+        <div className="flex items-center gap-1">
+          <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{generated}</code>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(generated);
+              setCopied(true);
+            }}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      )}
+      {done && <p className="text-[11px] text-green-600">Password updated.</p>}
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+    </div>
   );
 }

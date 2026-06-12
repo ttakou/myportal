@@ -238,6 +238,40 @@ export interface RegisterStaffResult extends ActionResult {
 }
 
 /**
+ * Set (or reset) a user's password. HR/system admin only; runs on the
+ * service-role client. If no password is supplied, a strong one is generated
+ * and returned once so the admin can share it.
+ */
+export async function setUserPassword(
+  userId: string,
+  password?: string,
+): Promise<RegisterStaffResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+
+  const pw = password?.trim() ? password.trim() : generateTempPassword();
+  if (pw.length < 8) return { ok: false, error: "Password must be at least 8 characters." };
+
+  const supabase = createClient();
+  // Stay within the caller's tenant — never touch users elsewhere.
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!target) return { ok: false, error: "User not found in your organisation." };
+
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+  const { error } = await admin.auth.admin.updateUserById(userId, { password: pw });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin");
+  // Only echo the password back when we generated it.
+  return { ok: true, tempPassword: password?.trim() ? undefined : pw };
+}
+
+/**
  * Register a new staff member end-to-end: create the auth account (invitation
  * email or temporary password), attach the profile to the caller's tenant, and
  * pre-assign role, manager, department and access/functional roles — no
