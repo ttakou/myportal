@@ -13,6 +13,31 @@ export const TRANSPORT_STATUS_LABEL: Record<TransportStatus, string> = {
   cancelled: "Cancelled",
 };
 
+export type TransportTaskType =
+  | "passenger"
+  | "airport_pickup"
+  | "airport_dropoff"
+  | "delivery"
+  | "errand"
+  | "other";
+
+export const TASK_TYPE_LABEL: Record<TransportTaskType, string> = {
+  passenger: "Passenger trip",
+  airport_pickup: "Airport pickup",
+  airport_dropoff: "Airport drop-off",
+  delivery: "Delivery",
+  errand: "Errand",
+  other: "Other",
+};
+
+export type TransportPriority = "normal" | "high" | "urgent";
+
+export const PRIORITY_LABEL: Record<TransportPriority, string> = {
+  normal: "Normal",
+  high: "High",
+  urgent: "Urgent",
+};
+
 export interface Vehicle {
   id: string;
   name: string;
@@ -24,6 +49,15 @@ export interface Driver {
   id: string;
   full_name: string;
   phone: string | null;
+  profile_id: string | null;
+}
+
+export interface TaskUpdate {
+  id: string;
+  author_name: string | null;
+  note: string | null;
+  new_status: TransportStatus | null;
+  created_at: string;
 }
 
 export interface TransportRequest {
@@ -35,8 +69,13 @@ export interface TransportRequest {
   passengers: number;
   purpose: string | null;
   status: TransportStatus;
+  task_type: TransportTaskType;
+  priority: TransportPriority;
+  notes: string | null;
   driver_id: string | null;
   vehicle_id: string | null;
   driver_name: string | null;
+  driver_phone: string | null;
   vehicle_name: string | null;
+  updates: TaskUpdate[];
 }

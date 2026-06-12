@@ -1,0 +1,367 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { ClipboardList, UserPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  PRIORITY_LABEL,
+  TASK_TYPE_LABEL,
+  type Driver,
+  type TransportPriority,
+  type TransportRequest,
+  type TransportTaskType,
+  type Vehicle,
+} from "@/types/transport";
+import {
+  addDriver,
+  assignTransport,
+  createTransportTask,
+  linkDriverProfile,
+  setTransportStatus,
+} from "../actions";
+import { FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
+
+const field = "rounded-md border bg-background px-3 py-2 text-sm";
+
+export function DispatchBoard({
+  all,
+  drivers,
+  vehicles,
+  profiles,
+}: {
+  all: TransportRequest[];
+  drivers: Driver[];
+  vehicles: Vehicle[];
+  profiles: { id: string; full_name: string }[];
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Action failed.");
+      else onOk?.();
+    });
+  }
+
+  const active = all.filter((r) => !["completed", "cancelled"].includes(r.status));
+  const closed = all.filter((r) => ["completed", "cancelled"].includes(r.status));
+  const stat = (s: string) => all.filter((r) => r.status === s).length;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <ClipboardList className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">Dispatch board</h2>
+        <div className="ml-auto flex gap-2 text-xs">
+          {(["pending", "assigned", "in_progress"] as const).map((s) => (
+            <span key={s} className="rounded-full bg-muted px-2 py-1 font-medium text-muted-foreground">
+              {stat(s)} {s.replace("_", " ")}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
+      )}
+
+      <NewTaskForm drivers={drivers} vehicles={vehicles} pending={pending} run={run} />
+
+      <div className="space-y-3">
+        {active.map((r) => (
+          <TaskRow key={r.id} r={r} drivers={drivers} vehicles={vehicles} pending={pending} run={run} />
+        ))}
+        {active.length === 0 && (
+          <p className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
+            No active tasks.
+          </p>
+        )}
+      </div>
+
+      {closed.length > 0 && (
+        <details className="rounded-lg border bg-card p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Completed / cancelled ({closed.length})
+          </summary>
+          <div className="mt-2 space-y-2">
+            {closed.slice(0, 20).map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center gap-2 text-sm">
+                <StatusBadge status={r.status} />
+                <span>
+                  {r.pickup} → {r.dropoff}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {fmt(r.depart_at)} · {r.driver_name ?? "no driver"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      <DriversPanel drivers={drivers} profiles={profiles} pending={pending} run={run} />
+    </section>
+  );
+}
+
+function TaskRow({
+  r,
+  drivers,
+  vehicles,
+  pending,
+  run,
+}: {
+  r: TransportRequest;
+  drivers: Driver[];
+  vehicles: Vehicle[];
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge status={r.status} />
+        <TypeBadge type={r.task_type} />
+        <PriorityBadge priority={r.priority} />
+        <span className="font-medium">
+          {r.pickup} → {r.dropoff}
+        </span>
+        <span className="ml-auto text-xs text-muted-foreground">{fmt(r.depart_at)}</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {r.requester_name ? `Requested by ${r.requester_name} · ` : "Dispatcher task · "}
+        {r.passengers} pax
+        {r.purpose ? ` · ${r.purpose}` : ""}
+        {r.driver_phone ? ` · driver ${r.driver_phone}` : ""}
+      </p>
+      {r.notes && <p className="mt-1 text-sm">{r.notes}</p>}
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <select
+          value={r.driver_id ?? ""}
+          disabled={pending || r.status === "in_progress"}
+          onChange={(e) => run(() => assignTransport(r.id, e.target.value || null, r.vehicle_id))}
+          className="rounded-md border bg-background px-1.5 py-1 text-xs"
+        >
+          <option value="">Driver…</option>
+          {drivers.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.full_name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={r.vehicle_id ?? ""}
+          disabled={pending || r.status === "in_progress"}
+          onChange={(e) => run(() => assignTransport(r.id, r.driver_id, e.target.value || null))}
+          className="rounded-md border bg-background px-1.5 py-1 text-xs"
+        >
+          <option value="">Vehicle…</option>
+          {vehicles.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+        <div className="ml-auto flex gap-1">
+          {r.status === "assigned" && (
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setTransportStatus(r.id, "in_progress"))}>
+              Start
+            </Button>
+          )}
+          {r.status === "in_progress" && (
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setTransportStatus(r.id, "completed"))}>
+              Complete
+            </Button>
+          )}
+          {(r.status === "pending" || r.status === "assigned") && (
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setTransportStatus(r.id, "cancelled"))}>
+              Cancel
+            </Button>
+          )}
+        </div>
+      </div>
+      <FollowUps task={r} canPost />
+    </div>
+  );
+}
+
+function NewTaskForm({
+  drivers,
+  vehicles,
+  pending,
+  run,
+}: {
+  drivers: Driver[];
+  vehicles: Vehicle[];
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const [taskType, setTaskType] = useState<TransportTaskType>("passenger");
+  const [priority, setPriority] = useState<TransportPriority>("normal");
+  const [pickup, setPickup] = useState("");
+  const [dropoff, setDropoff] = useState("");
+  const [departAt, setDepartAt] = useState("");
+  const [passengers, setPassengers] = useState("1");
+  const [notes, setNotes] = useState("");
+  const [driverId, setDriverId] = useState("");
+  const [vehicleId, setVehicleId] = useState("");
+
+  return (
+    <details className="rounded-lg border bg-card p-4">
+      <summary className="cursor-pointer text-sm font-medium">New task (assign directly)</summary>
+      <form
+        className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(
+            () =>
+              createTransportTask({
+                taskType,
+                priority,
+                pickup,
+                dropoff,
+                departAt,
+                passengers: Number(passengers),
+                notes,
+                driverId: driverId || undefined,
+                vehicleId: vehicleId || undefined,
+              }),
+            () => {
+              setPickup("");
+              setDropoff("");
+              setDepartAt("");
+              setPassengers("1");
+              setNotes("");
+              setDriverId("");
+              setVehicleId("");
+            },
+          );
+        }}
+      >
+        <select value={taskType} onChange={(e) => setTaskType(e.target.value as TransportTaskType)} className={field}>
+          {(Object.keys(TASK_TYPE_LABEL) as TransportTaskType[]).map((t) => (
+            <option key={t} value={t}>
+              {TASK_TYPE_LABEL[t]}
+            </option>
+          ))}
+        </select>
+        <select value={priority} onChange={(e) => setPriority(e.target.value as TransportPriority)} className={field}>
+          {(Object.keys(PRIORITY_LABEL) as TransportPriority[]).map((p) => (
+            <option key={p} value={p}>
+              {PRIORITY_LABEL[p]} priority
+            </option>
+          ))}
+        </select>
+        <input value={departAt} onChange={(e) => setDepartAt(e.target.value)} type="datetime-local" required className={field} />
+        <input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Pickup" required className={field} />
+        <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} placeholder="Drop-off" required className={field} />
+        <input value={passengers} onChange={(e) => setPassengers(e.target.value)} type="number" min={1} placeholder="Passengers" className={field} />
+        <select value={driverId} onChange={(e) => setDriverId(e.target.value)} className={field}>
+          <option value="">Driver (assign later)</option>
+          {drivers.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.full_name}
+            </option>
+          ))}
+        </select>
+        <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} className={field}>
+          <option value="">Vehicle…</option>
+          {vehicles.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+        <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instructions for the driver" className={field} />
+        <Button type="submit" disabled={pending}>
+          Create task
+        </Button>
+      </form>
+    </details>
+  );
+}
+
+function DriversPanel({
+  drivers,
+  profiles,
+  pending,
+  run,
+}: {
+  drivers: Driver[];
+  profiles: { id: string; full_name: string }[];
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [profileId, setProfileId] = useState("");
+
+  return (
+    <details className="rounded-lg border bg-card p-4">
+      <summary className="cursor-pointer text-sm font-medium">
+        <span className="inline-flex items-center gap-1">
+          <UserPlus className="h-4 w-4" /> Drivers ({drivers.length})
+        </span>
+      </summary>
+
+      <p className="mt-2 text-xs text-muted-foreground">
+        Link a driver to a portal account so they can see and update their own tasks live.
+      </p>
+
+      <div className="mt-2 space-y-2">
+        {drivers.map((d) => (
+          <div key={d.id} className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">{d.full_name}</span>
+            {d.phone && <span className="text-xs text-muted-foreground">{d.phone}</span>}
+            <select
+              value={d.profile_id ?? ""}
+              disabled={pending}
+              onChange={(e) => run(() => linkDriverProfile(d.id, e.target.value || null))}
+              className="ml-auto rounded-md border bg-background px-1.5 py-1 text-xs"
+            >
+              <option value="">No portal account</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+
+      <form
+        className="mt-3 flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(
+            () => addDriver({ fullName: name, phone, profileId: profileId || undefined }),
+            () => {
+              setName("");
+              setPhone("");
+              setProfileId("");
+            },
+          );
+        }}
+      >
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New driver name" required className={field} />
+        <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" className={field} />
+        <select value={profileId} onChange={(e) => setProfileId(e.target.value)} className={field}>
+          <option value="">Portal account (optional)</option>
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.full_name}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" variant="outline" disabled={pending}>
+          Add driver
+        </Button>
+      </form>
+    </details>
+  );
+}

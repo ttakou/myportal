@@ -10,7 +10,7 @@ import {
   getRecentDeliveries,
 } from "@/lib/emergency";
 import { CommandCenter } from "./_components/command-center";
-import { LiveRefresh } from "./_components/live-refresh";
+import { LiveRefresh } from "@/components/live-refresh";
 
 export default async function CommandCenterPage() {
   // Safety coordinators only — everyone else is bounced to the employee view.
