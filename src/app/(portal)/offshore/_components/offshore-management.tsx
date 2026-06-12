@@ -62,6 +62,7 @@ import {
   upsertRoom,
 } from "../actions";
 import { BulkRoomImport } from "./bulk-room-import";
+import { BulkRosterImport } from "./bulk-roster-import";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
@@ -1105,6 +1106,8 @@ function RosterPanel({
         </select>
         <Button type="submit" size="sm" disabled={pending || !newId}>Add</Button>
       </form>
+
+      <BulkRosterImport />
 
       <div className="space-y-3">
         {roster.map((m) => (
