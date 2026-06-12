@@ -198,7 +198,31 @@ export interface AirportAssistance {
   vip: boolean;
   language: string | null;
   notes: string | null;
+  /** The linked dispatch-board pickup task, if meet & greet created one. */
+  pickup_task: {
+    id: string;
+    status: TransportStatusLite;
+    driver_name: string | null;
+    driver_phone: string | null;
+    vehicle_name: string | null;
+  } | null;
 }
+
+/** Mirror of transport status labels we surface in the travel briefing. */
+export type TransportStatusLite =
+  | "pending"
+  | "assigned"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+
+export const PICKUP_STATUS_LABEL: Record<TransportStatusLite, string> = {
+  pending: "Awaiting driver",
+  assigned: "Driver assigned",
+  in_progress: "On the way",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
 
 export type ContactCategory = "hospital" | "police" | "embassy" | "company" | "other";
 

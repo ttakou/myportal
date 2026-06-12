@@ -90,10 +90,40 @@ export async function requestAirportAssistance(input: {
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  // Pull trip details so we can spin up a matching dispatch task.
+  const { data: trip } = await supabase
+    .from("out_of_town_trips")
+    .select("destination, accommodation, terminal, flight_arrival_at, depart_date")
+    .eq("id", input.tripId)
+    .maybeSingle();
+
+  // Create the airport-pickup task on the transport dispatch board. Best-effort:
+  // if the tenant doesn't run the transport module this simply yields no link.
+  let transportRequestId: string | null = null;
+  if (trip) {
+    const { data: task } = await supabase
+      .from("transport_requests")
+      .insert({
+        tenant_id: tenant.id,
+        pickup: trip.terminal ? `Airport — Terminal ${trip.terminal}` : "Airport arrivals",
+        dropoff: trip.accommodation || trip.destination || "Destination",
+        depart_at: trip.flight_arrival_at || `${trip.depart_date}T12:00:00Z`,
+        passengers: 1,
+        purpose: "Airport meet & greet",
+        task_type: "airport_pickup",
+        priority: "high",
+      })
+      .select("id")
+      .maybeSingle();
+    transportRequestId = task?.id ?? null;
+  }
+
   const { error } = await supabase.from("airport_assistance").insert({
     tenant_id: tenant.id,
     trip_id: input.tripId,
     service_type: input.serviceType ?? "arrival",
+    transport_request_id: transportRequestId,
   });
   if (error) return { ok: false, error: clean(error.message) };
   rev();

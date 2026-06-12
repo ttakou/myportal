@@ -16,11 +16,16 @@ const SELECT =
   " trip_expenses(id, category, amount, note)," +
   " trip_checkins(id, kind, note, created_at)," +
   " airport_assistance(id, trip_id, service_type, status, greeter_name, greeter_phone," +
-  " driver_name, driver_phone, vehicle, pickup_point, meeting_point, name_board, vip, language, notes)";
+  " driver_name, driver_phone, vehicle, pickup_point, meeting_point, name_board, vip, language, notes," +
+  " transport_request:transport_requests(id, status," +
+  " driver:transport_drivers(full_name, phone), vehicle_ref:transport_vehicles(name)))";
 
 function mapAssistance(rel: any): AirportAssistance | null {
   const a = Array.isArray(rel) ? rel[0] : rel;
   if (!a) return null;
+  const t = Array.isArray(a.transport_request) ? a.transport_request[0] : a.transport_request;
+  const td = t && (Array.isArray(t.driver) ? t.driver[0] : t.driver);
+  const tv = t && (Array.isArray(t.vehicle_ref) ? t.vehicle_ref[0] : t.vehicle_ref);
   return {
     id: a.id,
     trip_id: a.trip_id,
@@ -37,6 +42,15 @@ function mapAssistance(rel: any): AirportAssistance | null {
     vip: a.vip,
     language: a.language,
     notes: a.notes,
+    pickup_task: t
+      ? {
+          id: t.id,
+          status: t.status,
+          driver_name: td?.full_name ?? null,
+          driver_phone: td?.phone ?? null,
+          vehicle_name: tv?.name ?? null,
+        }
+      : null,
   };
 }
 

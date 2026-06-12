@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   AIRPORT_STATUS_LABEL,
+  PICKUP_STATUS_LABEL,
   APPROVAL_TRAVEL_TYPES,
   CHECKIN_KIND_LABEL,
   FLIGHT_STATUS_LABEL,
@@ -413,11 +414,29 @@ function TripCard({
           {trip.assistance.meeting_point && (
             <p className="text-muted-foreground">Meet at: {trip.assistance.meeting_point}</p>
           )}
-          {!trip.assistance.greeter_name && !trip.assistance.driver_name && (
-            <p className="text-xs text-muted-foreground">
-              Requested — the travel desk will assign a greeter and driver.
+          {trip.assistance.pickup_task && (
+            <p>
+              Pickup ({PICKUP_STATUS_LABEL[trip.assistance.pickup_task.status]})
+              {trip.assistance.pickup_task.driver_name ? (
+                <>
+                  : <span className="font-medium">{trip.assistance.pickup_task.driver_name}</span>
+                  {trip.assistance.pickup_task.driver_phone
+                    ? ` · ${trip.assistance.pickup_task.driver_phone}`
+                    : ""}
+                  {trip.assistance.pickup_task.vehicle_name
+                    ? ` · ${trip.assistance.pickup_task.vehicle_name}`
+                    : ""}
+                </>
+              ) : null}
             </p>
           )}
+          {!trip.assistance.greeter_name &&
+            !trip.assistance.driver_name &&
+            !trip.assistance.pickup_task?.driver_name && (
+              <p className="text-xs text-muted-foreground">
+                Requested — the travel desk will assign a greeter and driver.
+              </p>
+            )}
         </div>
       ) : (
         trip.status !== "rejected" &&
