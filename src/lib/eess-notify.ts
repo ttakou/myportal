@@ -7,6 +7,7 @@ import {
   type PushSubscriptionRecord,
 } from "@/lib/webpush";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { filterByPreference } from "@/lib/notification-prefs";
 
 type Audience = "responders" | "all";
 type SourceType = "incident" | "broadcast";
@@ -132,12 +133,16 @@ async function fanOut(
   const { tenantId, audience, sourceType, sourceId, payload, profileIds } =
     opts;
 
+  // Respect per-user preferences: split recipients into who wants this category
+  // in-app vs over push. Emergency bypasses (filterByPreference returns all).
+  const category = NOTIFICATION_CATEGORY[sourceType] ?? "general";
+  const { inApp, push } = await filterByPreference(admin, profileIds, category);
+
   // Every push also lands in the in-app notification bell — so recipients with
   // push off still see it. Best-effort, like the rest of the pipeline.
-  if (profileIds.length > 0) {
-    const category = NOTIFICATION_CATEGORY[sourceType] ?? "general";
+  if (inApp.length > 0) {
     await admin.from("notifications").insert(
-      profileIds.map((pid) => ({
+      inApp.map((pid) => ({
         tenant_id: tenantId,
         profile_id: pid,
         category,
@@ -152,13 +157,13 @@ async function fanOut(
   let failed = 0;
   let sent = 0;
 
-  if (profileIds.length > 0) {
+  if (push.length > 0) {
     const { data: subs } = await admin
       .from("eess_push_subscriptions")
       .select("endpoint, p256dh, auth")
       .eq("tenant_id", tenantId)
       .eq("is_active", true)
-      .in("profile_id", profileIds);
+      .in("profile_id", push);
 
     sent = subs?.length ?? 0;
     const nowIso = new Date().toISOString();
