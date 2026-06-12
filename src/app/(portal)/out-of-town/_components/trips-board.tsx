@@ -364,6 +364,15 @@ function TripCard({
         </div>
       )}
 
+      {(trip.assigned_driver_name || trip.assigned_vehicle) && (
+        <p className="mt-2 text-sm">
+          <span className="text-muted-foreground">Driver:</span>{" "}
+          <span className="font-medium">{trip.assigned_driver_name ?? "TBC"}</span>
+          {trip.assigned_driver_phone ? ` · ${trip.assigned_driver_phone}` : ""}
+          {trip.assigned_vehicle ? ` · ${trip.assigned_vehicle}` : ""}
+        </p>
+      )}
+
       {/* Meet & greet / airport assistance */}
       {trip.assistance ? (
         <div className="mt-3 rounded-md bg-primary/5 p-3 text-sm">

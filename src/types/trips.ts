@@ -104,6 +104,11 @@ export interface Trip {
   terminal: string | null;
   flight_arrival_at: string | null;
   flight_status: FlightStatus;
+  flight_checked_at: string | null;
+  // Ground logistics assigned by the travel desk
+  assigned_driver_name: string | null;
+  assigned_driver_phone: string | null;
+  assigned_vehicle: string | null;
   assistance: AirportAssistance | null;
   // Expenses (legacy reconciliation)
   expenses: TripExpense[];
@@ -131,7 +136,14 @@ export const TRAVELER_TYPE_LABEL: Record<TravelerType, string> = {
   vip: "VIP",
 };
 
-export type FlightStatus = "scheduled" | "delayed" | "landed" | "missed" | "rescheduled";
+export type FlightStatus =
+  | "scheduled"
+  | "delayed"
+  | "landed"
+  | "missed"
+  | "rescheduled"
+  | "cancelled"
+  | "diverted";
 
 export const FLIGHT_STATUS_LABEL: Record<FlightStatus, string> = {
   scheduled: "Scheduled",
@@ -139,6 +151,8 @@ export const FLIGHT_STATUS_LABEL: Record<FlightStatus, string> = {
   landed: "Landed",
   missed: "Missed flight",
   rescheduled: "Rescheduled",
+  cancelled: "Cancelled",
+  diverted: "Diverted",
 };
 
 export type AirportServiceType = "arrival" | "departure" | "both";

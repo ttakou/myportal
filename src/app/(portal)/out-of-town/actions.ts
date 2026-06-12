@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { lookupFlight } from "@/lib/flight-api";
 import { notify } from "@/lib/eess-notify";
 import {
   APPROVAL_TRAVEL_TYPES,
@@ -133,6 +134,63 @@ export async function updateAirportAssistance(input: {
   if (input.notes !== undefined) patch.notes = input.notes.trim() || null;
 
   const { error } = await supabase.from("airport_assistance").update(patch).eq("id", input.id);
+  if (error) return { ok: false, error: clean(error.message) };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Pull live status for the trip's flight number from the flight-data API and
+ * write it back (status, arrival estimate, terminal, airline if missing).
+ */
+export async function refreshFlightStatus(tripId: string): Promise<ActionResult> {
+  const supabase = createClient();
+  const { data: trip, error: readError } = await supabase
+    .from("out_of_town_trips")
+    .select("id, flight_number, airline, terminal")
+    .eq("id", tripId)
+    .maybeSingle();
+  if (readError) return { ok: false, error: clean(readError.message) };
+  if (!trip) return { ok: false, error: "Trip not found." };
+  if (!trip.flight_number) {
+    return { ok: false, error: "Add a flight number first, then refresh." };
+  }
+
+  const result = await lookupFlight(trip.flight_number);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  const info = result.info;
+  const patch: Record<string, unknown> = {
+    flight_status: info.status,
+    flight_checked_at: new Date().toISOString(),
+  };
+  if (info.arrivalAt) patch.flight_arrival_at = info.arrivalAt;
+  // Fill in airline/terminal from the API only when the desk left them blank.
+  if (info.airline && !trip.airline) patch.airline = info.airline;
+  if (info.terminal && !trip.terminal) patch.terminal = info.terminal;
+
+  const { error } = await supabase.from("out_of_town_trips").update(patch).eq("id", tripId);
+  if (error) return { ok: false, error: clean(error.message) };
+  rev();
+  return { ok: true };
+}
+
+/** Travel desk updates accommodation and the assigned driver/car on a trip. */
+export async function updateTripLogistics(input: {
+  tripId: string;
+  accommodation?: string;
+  driverName?: string;
+  driverPhone?: string;
+  vehicle?: string;
+}): Promise<ActionResult> {
+  const supabase = createClient();
+  const patch: Record<string, unknown> = {};
+  if (input.accommodation !== undefined) patch.accommodation = input.accommodation.trim() || null;
+  if (input.driverName !== undefined) patch.assigned_driver_name = input.driverName.trim() || null;
+  if (input.driverPhone !== undefined) patch.assigned_driver_phone = input.driverPhone.trim() || null;
+  if (input.vehicle !== undefined) patch.assigned_vehicle = input.vehicle.trim() || null;
+
+  const { error } = await supabase.from("out_of_town_trips").update(patch).eq("id", input.tripId);
   if (error) return { ok: false, error: clean(error.message) };
   rev();
   return { ok: true };

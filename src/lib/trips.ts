@@ -10,7 +10,8 @@ const SELECT =
   "id, destination, purpose, depart_date, return_date, estimated_cost, status, rejection_reason," +
   " travel_type, transport_mode, route, accommodation, contact_number, dest_emergency_contact," +
   " phase, departed_at, arrived_at, returned_at, last_checkin_at," +
-  " traveler_type, airline, flight_number, terminal, flight_arrival_at, flight_status," +
+  " traveler_type, airline, flight_number, terminal, flight_arrival_at, flight_status, flight_checked_at," +
+  " assigned_driver_name, assigned_driver_phone, assigned_vehicle," +
   " requester:profiles!out_of_town_trips_requester_id_fkey(full_name)," +
   " trip_expenses(id, category, amount, note)," +
   " trip_checkins(id, kind, note, created_at)," +
@@ -85,6 +86,10 @@ function mapTrip(row: Record<string, any>): Trip {
     terminal: row.terminal,
     flight_arrival_at: row.flight_arrival_at,
     flight_status: row.flight_status,
+    flight_checked_at: row.flight_checked_at,
+    assigned_driver_name: row.assigned_driver_name,
+    assigned_driver_phone: row.assigned_driver_phone,
+    assigned_vehicle: row.assigned_vehicle,
     assistance: mapAssistance(row.airport_assistance),
     expenses,
     expense_total: expenses.reduce((s: number, e: { amount: number }) => s + e.amount, 0),
@@ -186,23 +191,25 @@ export async function getEmergencyContacts(): Promise<EmergencyContact[]> {
 }
 
 /**
- * Trips with an airport-assistance request, for the travel desk (admins).
- * RLS limits visibility to the tenant; open cases (not closed) come first.
+ * Trips for the travel-services desk (admins): every trip that is not yet
+ * returned/rejected — so the desk can update accommodation, assign a driver
+ * and car, manage flights, and handle meet & greet requests. RLS limits
+ * visibility to the tenant.
  */
 export async function getAirportDesk(): Promise<Trip[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("out_of_town_trips")
     .select(SELECT)
+    .neq("status", "rejected")
+    .neq("phase", "returned")
     .order("flight_arrival_at", { ascending: true, nullsFirst: false })
     .order("depart_date", { ascending: true });
   if (error) {
     console.error("getAirportDesk:", error.message);
     return [];
   }
-  return (data ?? [])
-    .map((r) => mapTrip(r as Record<string, any>))
-    .filter((t) => t.assistance !== null);
+  return (data ?? []).map((r) => mapTrip(r as Record<string, any>));
 }
 
 /** Whether the signed-in user is the line manager of at least one employee. */
