@@ -16,6 +16,7 @@ import {
   getPobBreakdown,
   getRooms,
   getRoster,
+  getRotationCalendar,
 } from "@/lib/offshore";
 import { OffshoreBoard } from "./_components/offshore-board";
 import { OffshoreManagement } from "./_components/offshore-management";
@@ -46,6 +47,7 @@ export default async function OffshorePage() {
     visits,
     manifests,
     manageInstallations,
+    calendar,
   ] = canManage
     ? await Promise.all([
         getCrews(),
@@ -58,8 +60,9 @@ export default async function OffshorePage() {
         getAllVisitRequests(),
         getManifests(),
         getAllInstallations(),
+        getRotationCalendar(8),
       ])
-    : [[], [], [], [], null, null, [], [], [], []];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }];
 
   return (
     <div className="space-y-8">
@@ -85,6 +88,7 @@ export default async function OffshorePage() {
           certAlerts={certAlerts}
           visits={visits}
           manifests={manifests}
+          calendar={calendar}
         />
       )}
 

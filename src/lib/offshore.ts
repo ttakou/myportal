@@ -14,6 +14,8 @@ import type {
   Room,
   RoomAvailability,
   RosterEntry,
+  RotationCalendar,
+  RotationDay,
   VisitRequest,
 } from "@/types/offshore";
 
@@ -108,13 +110,32 @@ export async function getPob(): Promise<Pob[]> {
 
 // --- Crew change, roster & accommodation (Phase 1) ---------------------------
 
+const DAY_MS = 86_400_000;
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/** Next date a crew starts an offshore period, on/after today, from its cycle. */
+function nextChangeDate(
+  cycleStart: string | null,
+  offshoreDays: number,
+  onshoreDays: number,
+): string | null {
+  if (!cycleStart) return null;
+  const period = offshoreDays + onshoreDays;
+  if (period <= 0) return null;
+  const start = new Date(cycleStart + "T00:00:00Z").getTime();
+  const now = new Date(todayIso() + "T00:00:00Z").getTime();
+  let n = 0;
+  if (now > start) n = Math.ceil((now - start) / (period * DAY_MS));
+  return new Date(start + n * period * DAY_MS).toISOString().slice(0, 10);
+}
+
 export async function getCrews(): Promise<Crew[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("offshore_crews")
     .select(
       "id, name, installation_id, rotation_pattern, offshore_days, onshore_days," +
-        " transport_mode, departure_location, color, is_active," +
+        " transport_mode, departure_location, color, is_active, cycle_start_date," +
         " installation:offshore_installations(name), offshore_staff(count)",
     )
     .order("name");
@@ -135,7 +156,56 @@ export async function getCrews(): Promise<Crew[]> {
     color: r.color,
     is_active: r.is_active,
     member_count: r.offshore_staff?.[0]?.count ?? 0,
+    cycle_start_date: r.cycle_start_date,
+    next_change_date: nextChangeDate(r.cycle_start_date, r.offshore_days, r.onshore_days),
   }));
+}
+
+/** Gantt-style rotation calendar for the next `weeks` weeks, per crew. */
+export async function getRotationCalendar(weeks = 8): Promise<RotationCalendar> {
+  const crews = await getCrews();
+  const roster = await getRoster();
+  const membersByCrew = new Map<string, string[]>();
+  for (const r of roster) {
+    if (!r.crew_id) continue;
+    const list = membersByCrew.get(r.crew_id) ?? [];
+    list.push(r.full_name || r.email);
+    membersByCrew.set(r.crew_id, list);
+  }
+
+  const start = new Date(todayIso() + "T00:00:00Z").getTime();
+  const n = weeks * 7;
+  const days: string[] = [];
+  for (let i = 0; i < n; i++) days.push(new Date(start + i * DAY_MS).toISOString().slice(0, 10));
+
+  return {
+    days,
+    crews: crews
+      .filter((c) => c.is_active)
+      .map((c) => {
+        const period = c.offshore_days + c.onshore_days;
+        const anchor = c.cycle_start_date
+          ? new Date(c.cycle_start_date + "T00:00:00Z").getTime()
+          : null;
+        const statuses = days.map((d): RotationDay | null => {
+          if (!anchor || period <= 0) return null;
+          const diff = Math.floor((new Date(d + "T00:00:00Z").getTime() - anchor) / DAY_MS);
+          const idx = ((diff % period) + period) % period;
+          if (idx === 0) return "change_out"; // crew goes offshore
+          if (idx === c.offshore_days) return "change_in"; // crew returns onshore
+          return idx < c.offshore_days ? "offshore" : "onshore";
+        });
+        return {
+          id: c.id,
+          name: c.name,
+          offshore_days: c.offshore_days,
+          onshore_days: c.onshore_days,
+          member_count: c.member_count,
+          statuses,
+          members: membersByCrew.get(c.id) ?? [],
+        };
+      }),
+  };
 }
 
 export async function getRooms(): Promise<Room[]> {
@@ -175,9 +245,10 @@ export async function getRoster(): Promise<RosterEntry[]> {
   const { data, error } = await supabase
     .from("offshore_staff")
     .select(
-      "id, profile_id, crew_id, position, fixed_room_id, fixed_bed, medical_expiry," +
-        " bosiet_expiry, huet_expiry, emergency_contact, travel_eligible," +
+      "id, profile_id, crew_id, position, company, back_to_back_id, fixed_room_id, fixed_bed," +
+        " medical_expiry, bosiet_expiry, huet_expiry, emergency_contact, travel_eligible," +
         " profile:profiles!offshore_staff_profile_id_fkey(full_name, email)," +
+        " b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)," +
         " crew:offshore_crews(name), room:offshore_rooms(room_number, block)",
     );
   if (error) {
@@ -196,6 +267,9 @@ export async function getRoster(): Promise<RosterEntry[]> {
         crew_id: r.crew_id,
         crew_name: one2<{ name?: string }>(r.crew)?.name ?? null,
         position: r.position,
+        company: r.company,
+        back_to_back_id: r.back_to_back_id,
+        back_to_back_name: one2<{ full_name?: string }>(r.b2b)?.full_name ?? null,
         fixed_room_id: r.fixed_room_id,
         fixed_room_label: room
           ? [room.block, room.room_number].filter(Boolean).join(" ")

@@ -65,6 +65,25 @@ export interface Crew {
   color: string | null;
   is_active: boolean;
   member_count: number;
+  cycle_start_date: string | null;
+  /** Next date this crew goes offshore, derived from the cycle (or null). */
+  next_change_date: string | null;
+}
+
+export type RotationDay = "offshore" | "onshore" | "change_out" | "change_in";
+
+export interface RotationCalendar {
+  days: string[]; // ISO dates spanning the window
+  crews: {
+    id: string;
+    name: string;
+    offshore_days: number;
+    onshore_days: number;
+    member_count: number;
+    /** Per-day status aligned with `days`; null when no cycle anchor set. */
+    statuses: (RotationDay | null)[];
+    members: string[];
+  }[];
 }
 
 export type RoomStatus =
@@ -116,6 +135,9 @@ export interface RosterEntry {
   crew_id: string | null;
   crew_name: string | null;
   position: string | null;
+  company: string | null;
+  back_to_back_id: string | null;
+  back_to_back_name: string | null;
   fixed_room_id: string | null;
   fixed_room_label: string | null;
   fixed_bed: string | null;

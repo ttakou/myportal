@@ -6,6 +6,7 @@ import {
   Anchor,
   BedDouble,
   CalendarClock,
+  CalendarRange,
   ClipboardList,
   LayoutGrid,
   Plane,
@@ -33,6 +34,8 @@ import {
   type RoomAvailability,
   type RoomStatus,
   type RosterEntry,
+  type RotationCalendar,
+  type RotationDay,
   type VisitRequest,
   type VisitStatus,
 } from "@/types/offshore";
@@ -44,6 +47,7 @@ import {
   deleteCrew,
   findAvailableBeds,
   generateCrewManifest,
+  generateNextCrewChange,
   removeManifestPax,
   removeRosterMember,
   setInstallationActive,
@@ -62,6 +66,7 @@ type Tab =
   | "dashboard"
   | "installations"
   | "crews"
+  | "calendar"
   | "rooms"
   | "roster"
   | "visitors"
@@ -79,6 +84,7 @@ export function OffshoreManagement(props: {
   certAlerts: CertAlert[];
   visits: VisitRequest[];
   manifests: Manifest[];
+  calendar: RotationCalendar;
 }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const pendingVisits = props.visits.filter((v) => v.status === "requested").length;
@@ -86,6 +92,7 @@ export function OffshoreManagement(props: {
     { key: "dashboard", label: "POB & dashboards", icon: LayoutGrid },
     { key: "installations", label: "Installations", icon: Anchor },
     { key: "crews", label: "Crew change", icon: CalendarClock },
+    { key: "calendar", label: "Rotation calendar", icon: CalendarRange },
     { key: "manifests", label: "Manifests", icon: ClipboardList },
     { key: "rooms", label: "Accommodation", icon: BedDouble },
     { key: "roster", label: "Offshore staff", icon: Users },
@@ -122,6 +129,7 @@ export function OffshoreManagement(props: {
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
       {tab === "crews" && <CrewsPanel crews={props.crews} installations={props.installations} />}
+      {tab === "calendar" && <RotationCalendarPanel calendar={props.calendar} />}
       {tab === "rooms" && <RoomsPanel rooms={props.rooms} installations={props.installations} />}
       {tab === "roster" && (
         <RosterPanel
@@ -697,6 +705,7 @@ function CrewsPanel({ crews, installations }: { crews: Crew[]; installations: In
   const [rotation, setRotation] = useState("14/14");
   const [transport, setTransport] = useState("");
   const [departure, setDeparture] = useState("");
+  const [cycleStart, setCycleStart] = useState("");
 
   return (
     <div className="space-y-3">
@@ -723,6 +732,44 @@ function CrewsPanel({ crews, installations }: { crews: Crew[]; installations: In
               {c.departure_location ? ` · from ${c.departure_location}` : ""}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">{c.member_count} member(s)</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <label className="text-xs text-muted-foreground">
+                Cycle start
+                <input
+                  type="date"
+                  defaultValue={c.cycle_start_date ?? ""}
+                  disabled={pending}
+                  onBlur={(e) => {
+                    if (e.target.value !== (c.cycle_start_date ?? ""))
+                      run(() =>
+                        upsertCrew({
+                          id: c.id,
+                          name: c.name,
+                          offshoreDays: c.offshore_days,
+                          onshoreDays: c.onshore_days,
+                          cycleStartDate: e.target.value || null,
+                        }),
+                      );
+                  }}
+                  className={`mt-1 block ${field}`}
+                />
+              </label>
+              {c.next_change_date && (
+                <span className="text-xs text-muted-foreground">
+                  Next change: <span className="font-medium text-foreground">{c.next_change_date}</span>
+                </span>
+              )}
+            </div>
+            {c.cycle_start_date && (
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => generateNextCrewChange(c.id, "out"))}>
+                  Generate outbound
+                </Button>
+                <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => generateNextCrewChange(c.id, "in"))}>
+                  Generate inbound
+                </Button>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -742,11 +789,13 @@ function CrewsPanel({ crews, installations }: { crews: Crew[]; installations: In
                 onshoreDays: on || off || 14,
                 transportMode: transport,
                 departureLocation: departure,
+                cycleStartDate: cycleStart || null,
               }),
             () => {
               setName("");
               setTransport("");
               setDeparture("");
+              setCycleStart("");
             },
           );
         }}
@@ -761,8 +810,78 @@ function CrewsPanel({ crews, installations }: { crews: Crew[]; installations: In
         <input value={rotation} onChange={(e) => setRotation(e.target.value)} placeholder="Rotation (14/14)" className={field} />
         <input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="Transport (helicopter)" className={field} />
         <input value={departure} onChange={(e) => setDeparture(e.target.value)} placeholder="Departure (Douala heliport)" className={field} />
+        <label className="text-xs text-muted-foreground">
+          Cycle start date
+          <input value={cycleStart} onChange={(e) => setCycleStart(e.target.value)} type="date" className={`mt-1 w-full ${field}`} />
+        </label>
         <Button type="submit" disabled={pending}>Add crew</Button>
       </form>
+    </div>
+  );
+}
+
+const ROTATION_CELL: Record<RotationDay, string> = {
+  offshore: "bg-primary",
+  onshore: "bg-muted",
+  change_out: "bg-amber-500",
+  change_in: "bg-green-500",
+};
+
+function RotationCalendarPanel({ calendar }: { calendar: RotationCalendar }) {
+  const fmt = (d: string) =>
+    new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+  // Label every 7th day to keep the header readable.
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-primary" /> Offshore</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-muted" /> Onshore</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-amber-500" /> Crew change (out)</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-green-500" /> Crew change (in)</span>
+      </div>
+
+      {calendar.crews.length === 0 && (
+        <p className="text-sm text-muted-foreground">No active crews to plot.</p>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="border-collapse text-xs">
+          <thead>
+            <tr>
+              <th className="sticky left-0 z-10 bg-card px-2 py-1 text-left">Crew</th>
+              {calendar.days.map((d, i) => (
+                <th key={d} className="px-0 py-1 text-center font-normal text-muted-foreground" style={{ minWidth: 10 }}>
+                  {i % 7 === 0 ? <span className="block -rotate-0 text-[9px]">{fmt(d)}</span> : ""}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {calendar.crews.map((c) => (
+              <tr key={c.id} className="border-t">
+                <td className="sticky left-0 z-10 bg-card px-2 py-1 align-top">
+                  <div className="font-medium">{c.name}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {c.offshore_days}/{c.onshore_days} · {c.member_count}
+                  </div>
+                </td>
+                {c.statuses.map((s, i) => (
+                  <td key={i} className="p-0">
+                    <div
+                      title={`${calendar.days[i]}${s ? ` · ${s.replace("_", " ")}` : ""}`}
+                      className={cn("h-6 w-[10px]", s ? ROTATION_CELL[s] : "bg-transparent")}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Bands are derived from each crew&apos;s rotation pattern and cycle start date. Set a cycle
+        start on the Crew change tab to plot a crew.
+      </p>
     </div>
   );
 }
@@ -929,11 +1048,19 @@ function RosterPanel({
                   {m.crew_name}
                 </span>
               )}
+              {m.company && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                  {m.company}
+                </span>
+              )}
               {m.fixed_room_label && (
                 <span className="text-xs text-muted-foreground">
                   Room {m.fixed_room_label}
                   {m.fixed_bed ? ` · ${m.fixed_bed}` : ""}
                 </span>
+              )}
+              {m.back_to_back_name && (
+                <span className="text-xs text-muted-foreground">B2B: {m.back_to_back_name}</span>
               )}
               <button
                 disabled={pending}
@@ -965,6 +1092,30 @@ function RosterPanel({
                 }}
                 className={field}
               />
+              <input
+                defaultValue={m.company ?? ""}
+                disabled={pending}
+                placeholder="Company (APCC, TEFON…)"
+                onBlur={(e) => {
+                  if (e.target.value !== (m.company ?? "")) run(() => updateRosterMember({ id: m.id, company: e.target.value }));
+                }}
+                className={field}
+              />
+              <select
+                value={m.back_to_back_id ?? ""}
+                disabled={pending}
+                onChange={(e) => run(() => updateRosterMember({ id: m.id, backToBackId: e.target.value || null }))}
+                className={field}
+              >
+                <option value="">Back-to-back…</option>
+                {roster
+                  .filter((o) => o.profile_id !== m.profile_id)
+                  .map((o) => (
+                    <option key={o.profile_id} value={o.profile_id}>
+                      {o.full_name || o.email}
+                    </option>
+                  ))}
+              </select>
               <select
                 value={m.fixed_room_id ?? ""}
                 disabled={pending}
