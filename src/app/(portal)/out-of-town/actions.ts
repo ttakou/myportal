@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { lookupFlight } from "@/lib/flight-api";
 import { notify, notifyProfiles } from "@/lib/eess-notify";
 import { seedTaskChecklist } from "@/lib/task-checklist";
+import { getModuleSettings } from "@/lib/module-settings";
 import {
   APPROVAL_TRAVEL_TYPES,
   TRAVEL_TYPE_LABEL,
@@ -83,7 +84,8 @@ export async function createTrip(input: {
   if (error) return { ok: false, error: error.message };
 
   // Ping the supervisor when a business trip is waiting on them.
-  if (needsApproval && trip) {
+  const cfg = await getModuleSettings("out-of-town");
+  if (needsApproval && trip && cfg.notify_manager_on_submission !== false) {
     const { data: me } = await supabase
       .from("profiles")
       .select("manager_id, full_name")
@@ -130,8 +132,9 @@ export async function requestAirportAssistance(input: {
 
   // Create the airport-pickup task on the transport dispatch board. Best-effort:
   // if the tenant doesn't run the transport module this simply yields no link.
+  const cfg = await getModuleSettings("out-of-town");
   let transportRequestId: string | null = null;
-  if (trip) {
+  if (trip && cfg.meetgreet_creates_pickup_task !== false) {
     const { data: task } = await supabase
       .from("transport_requests")
       .insert({

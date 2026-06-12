@@ -5,6 +5,7 @@ import { getTenantUsers, getTenantModules } from "@/lib/admin";
 import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
 import { UsersPanel } from "./_components/users-panel";
 import { ModulesPanel } from "./_components/modules-panel";
+import { ModuleParamsPanel } from "./_components/module-params-panel";
 import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
 
 export default async function AdminPage() {
@@ -44,6 +45,7 @@ export default async function AdminPage() {
       </div>
 
       {access.isSystemAdmin && <ModulesPanel modules={modules} />}
+      {access.isSystemAdmin && <ModuleParamsPanel modules={modules} />}
       {showCanteen && <CanteenSettingsPanel served={servedMeals} cutoffHour={cutoffHour} />}
       <UsersPanel users={users} canAssignRoles={access.isHr} />
     </div>

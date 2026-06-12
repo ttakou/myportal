@@ -24,6 +24,7 @@ export interface TenantModule {
   description: string | null;
   is_core: boolean;
   is_active: boolean;
+  settings: Record<string, unknown>;
 }
 
 /** All users in the current tenant (RLS-scoped). */
@@ -51,19 +52,23 @@ export async function getTenantModules(): Promise<TenantModule[]> {
       .from("services_catalog")
       .select("id, slug, name, description, is_core, sort_order")
       .order("sort_order"),
-    supabase.from("tenant_services").select("service_id, is_active"),
+    supabase.from("tenant_services").select("service_id, is_active, settings"),
   ]);
 
-  const activeMap = new Map(
-    (subs ?? []).map((s) => [s.service_id, s.is_active]),
+  const subMap = new Map(
+    (subs ?? []).map((s) => [s.service_id, s]),
   );
 
-  return (catalog ?? []).map((c) => ({
-    service_id: c.id,
-    slug: c.slug,
-    name: c.name,
-    description: c.description,
-    is_core: c.is_core,
-    is_active: c.is_core || activeMap.get(c.id) === true,
-  }));
+  return (catalog ?? []).map((c) => {
+    const sub = subMap.get(c.id);
+    return {
+      service_id: c.id,
+      slug: c.slug,
+      name: c.name,
+      description: c.description,
+      is_core: c.is_core,
+      is_active: c.is_core || sub?.is_active === true,
+      settings: (sub?.settings ?? {}) as Record<string, unknown>,
+    };
+  });
 }

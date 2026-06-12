@@ -3,6 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lookupFlight } from "@/lib/flight-api";
 import { notifyProfiles } from "@/lib/eess-notify";
+import { getModuleSettingsForTenant } from "@/lib/module-settings";
 import { FLIGHT_STATUS_LABEL, type FlightStatus } from "@/types/trips";
 
 /** Statuses worth pushing an alert about when a flight changes into them. */
@@ -54,6 +55,7 @@ export async function runFlightTracking(): Promise<FlightTrackingSummary> {
 
   let updated = 0;
   let alerted = 0;
+  const alertsEnabled = new Map<string, boolean>();
 
   for (const trip of trips ?? []) {
     const result = await lookupFlight(trip.flight_number as string);
@@ -70,8 +72,15 @@ export async function runFlightTracking(): Promise<FlightTrackingSummary> {
     await admin.from("out_of_town_trips").update(patch).eq("id", trip.id);
     updated++;
 
+    // Tenants can switch disruption alerts off in the module parameters.
+    const tid = trip.tenant_id as string;
+    if (!alertsEnabled.has(tid)) {
+      const cfg = await getModuleSettingsForTenant(admin, tid, "out-of-town");
+      alertsEnabled.set(tid, cfg.flight_disruption_alerts !== false);
+    }
+
     // Alert only on a *transition* into a disruption state — never repeatedly.
-    if (info.status !== prev && ALERT_STATUSES.includes(info.status)) {
+    if (alertsEnabled.get(tid) && info.status !== prev && ALERT_STATUSES.includes(info.status)) {
       const admins = await tenantAdminIds(admin, trip.tenant_id as string);
       const recipients = new Set<string>(admins);
       if (trip.requester_id) recipients.add(trip.requester_id as string);
