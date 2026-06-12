@@ -60,6 +60,7 @@ import {
   upsertInstallation,
   upsertRoom,
 } from "../actions";
+import { BulkRoomImport } from "./bulk-room-import";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
@@ -899,6 +900,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
   return (
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+      <BulkRoomImport />
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">

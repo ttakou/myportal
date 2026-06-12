@@ -681,3 +681,99 @@ export async function setInstallationActive(id: string, isActive: boolean): Prom
   rev();
   return { ok: true };
 }
+
+// --- Bulk room import --------------------------------------------------------
+
+export interface BulkRoomRow {
+  installation: string;
+  block?: string;
+  floor?: string;
+  roomNumber: string;
+  roomType?: string;
+  bedCount?: string;
+  maxBedCount?: string;
+  gender?: string;
+  status?: string;
+  specialFlag?: string;
+  notes?: string;
+}
+
+export interface BulkRoomResult {
+  room: string;
+  ok: boolean;
+  status: "created" | "updated" | "failed";
+  error?: string;
+}
+
+export async function bulkUpsertRooms(
+  rows: BulkRoomRow[],
+): Promise<ActionResult & { results?: BulkRoomResult[] }> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (!rows?.length) return { ok: false, error: "No rows to import." };
+  if (rows.length > 500) return { ok: false, error: "Import is limited to 500 rows." };
+
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  // Resolve installations by name (case-insensitive) within the tenant.
+  const { data: insts } = await supabase.from("offshore_installations").select("id, name");
+  const byName = new Map<string, string>();
+  for (const i of insts ?? []) byName.set((i.name as string).trim().toLowerCase(), i.id as string);
+
+  // Existing rooms keyed by installation+number, to decide insert vs update.
+  const { data: existing } = await supabase
+    .from("offshore_rooms")
+    .select("id, installation_id, room_number");
+  const existingKey = new Map<string, string>();
+  for (const r of existing ?? [])
+    existingKey.set(`${r.installation_id}|${(r.room_number as string).toLowerCase()}`, r.id as string);
+
+  const results: BulkRoomResult[] = [];
+  for (const raw of rows) {
+    const roomNumber = (raw.roomNumber ?? "").trim();
+    const instName = (raw.installation ?? "").trim();
+    if (!roomNumber && !instName) continue;
+    const label = `${instName} ${roomNumber}`.trim();
+    const installationId = byName.get(instName.toLowerCase());
+    if (!installationId) {
+      results.push({ room: label, ok: false, status: "failed", error: `Unknown installation "${instName}".` });
+      continue;
+    }
+    if (!roomNumber) {
+      results.push({ room: label, ok: false, status: "failed", error: "Missing room number." });
+      continue;
+    }
+    const bed = Math.max(0, Math.floor(Number(raw.bedCount) || 1));
+    const row = {
+      tenant_id: tenant,
+      installation_id: installationId,
+      block: raw.block?.trim() || null,
+      floor: raw.floor?.trim() || null,
+      room_number: roomNumber,
+      room_type: raw.roomType?.trim() || "shared",
+      bed_count: bed,
+      max_bed_count: Math.max(bed, Math.floor(Number(raw.maxBedCount) || bed)),
+      gender_restriction: ["any", "male", "female"].includes((raw.gender ?? "").trim())
+        ? raw.gender!.trim()
+        : "any",
+      status: ["available", "occupied", "reserved", "blocked", "maintenance", "cleaning"].includes(
+        (raw.status ?? "").trim(),
+      )
+        ? raw.status!.trim()
+        : "available",
+      special_flag: raw.specialFlag?.trim() || null,
+      notes: raw.notes?.trim() || null,
+    };
+    const existingId = existingKey.get(`${installationId}|${roomNumber.toLowerCase()}`);
+    const { error } = existingId
+      ? await supabase.from("offshore_rooms").update(row).eq("id", existingId)
+      : await supabase.from("offshore_rooms").insert(row);
+    if (error) results.push({ room: label, ok: false, status: "failed", error: error.message });
+    else results.push({ room: label, ok: true, status: existingId ? "updated" : "created" });
+  }
+
+  rev();
+  const ok = results.some((r) => r.ok);
+  return { ok, results, error: ok ? undefined : "No rooms were imported." };
+}
