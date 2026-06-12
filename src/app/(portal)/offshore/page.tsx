@@ -8,6 +8,7 @@ import {
   getCrews,
   getFlights,
   getInstallations,
+  getManifests,
   getMyOffshoreTrips,
   getMyVisitRequests,
   getPob,
@@ -33,19 +34,29 @@ export default async function OffshorePage() {
     getMyVisitRequests(),
   ]);
 
-  const [crews, rooms, roster, addable, pobBreakdown, accommodation, certAlerts, visits] =
-    canManage
-      ? await Promise.all([
-          getCrews(),
-          getRooms(),
-          getRoster(),
-          getAddableProfiles(),
-          getPobBreakdown(),
-          getAccommodationSummary(),
-          getCertAlerts(),
-          getAllVisitRequests(),
-        ])
-      : [[], [], [], [], null, null, [], []];
+  const [
+    crews,
+    rooms,
+    roster,
+    addable,
+    pobBreakdown,
+    accommodation,
+    certAlerts,
+    visits,
+    manifests,
+  ] = canManage
+    ? await Promise.all([
+        getCrews(),
+        getRooms(),
+        getRoster(),
+        getAddableProfiles(),
+        getPobBreakdown(),
+        getAccommodationSummary(),
+        getCertAlerts(),
+        getAllVisitRequests(),
+        getManifests(),
+      ])
+    : [[], [], [], [], null, null, [], [], []];
 
   return (
     <div className="space-y-8">
@@ -69,6 +80,7 @@ export default async function OffshorePage() {
           accommodation={accommodation}
           certAlerts={certAlerts}
           visits={visits}
+          manifests={manifests}
         />
       )}
 

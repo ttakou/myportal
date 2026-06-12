@@ -228,3 +228,51 @@ export interface RoomAvailability {
   gender_restriction: GenderRestriction;
   free_beds: number;
 }
+
+// --- Trip manifests (Phase 3) ------------------------------------------------
+
+export type ManifestStatus = "draft" | "approved" | "locked" | "completed" | "cancelled";
+
+export const MANIFEST_STATUS_LABEL: Record<ManifestStatus, string> = {
+  draft: "Draft",
+  approved: "Approved",
+  locked: "Locked",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+export const TRIP_TYPE_LABEL: Record<string, string> = {
+  crew_change_out: "Crew change · outbound",
+  crew_change_in: "Crew change · inbound",
+  visitor_out: "Visitor · outbound",
+  visitor_in: "Visitor · inbound",
+  medevac: "Medical evacuation",
+  adhoc: "Ad-hoc movement",
+};
+
+export interface ManifestPax {
+  id: string;
+  profile_id: string | null;
+  person_name: string;
+  position: string | null;
+  boarded: boolean;
+  no_show: boolean;
+  /** Live eligibility issues (expired cert / not eligible), computed on read. */
+  issues: string[];
+}
+
+export interface Manifest {
+  id: string;
+  title: string;
+  crew_id: string | null;
+  crew_name: string | null;
+  installation_id: string | null;
+  installation_name: string | null;
+  trip_type: string;
+  direction: "out" | "in";
+  transport_mode: string | null;
+  seat_capacity: number;
+  scheduled_date: string;
+  status: ManifestStatus;
+  pax: ManifestPax[];
+}
