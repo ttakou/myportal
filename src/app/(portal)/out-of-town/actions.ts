@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { lookupFlight } from "@/lib/flight-api";
-import { notify } from "@/lib/eess-notify";
+import { notify, notifyProfiles } from "@/lib/eess-notify";
 import {
   APPROVAL_TRAVEL_TYPES,
   TRAVEL_TYPE_LABEL,
@@ -55,27 +55,56 @@ export async function createTrip(input: {
   // are safety declarations that are recorded as approved immediately.
   const needsApproval = APPROVAL_TRAVEL_TYPES.includes(input.travelType);
 
-  const { error } = await supabase.from("out_of_town_trips").insert({
-    tenant_id: tenant.id,
-    travel_type: input.travelType,
-    traveler_type: input.travelerType ?? "employee",
-    destination: input.destination.trim(),
-    purpose: input.purpose?.trim() || null,
-    route: input.route?.trim() || null,
-    transport_mode: input.transportMode?.trim() || null,
-    accommodation: input.accommodation?.trim() || null,
-    contact_number: input.contactNumber?.trim() || null,
-    dest_emergency_contact: input.destEmergencyContact?.trim() || null,
-    depart_date: input.departDate,
-    return_date: input.returnDate || null,
-    estimated_cost: Math.max(0, input.estimatedCost || 0),
-    airline: input.airline?.trim() || null,
-    flight_number: input.flightNumber?.trim() || null,
-    terminal: input.terminal?.trim() || null,
-    flight_arrival_at: input.flightArrivalAt || null,
-    status: needsApproval ? "submitted" : "manager_approved",
-  });
+  const { data: trip, error } = await supabase
+    .from("out_of_town_trips")
+    .insert({
+      tenant_id: tenant.id,
+      travel_type: input.travelType,
+      traveler_type: input.travelerType ?? "employee",
+      destination: input.destination.trim(),
+      purpose: input.purpose?.trim() || null,
+      route: input.route?.trim() || null,
+      transport_mode: input.transportMode?.trim() || null,
+      accommodation: input.accommodation?.trim() || null,
+      contact_number: input.contactNumber?.trim() || null,
+      dest_emergency_contact: input.destEmergencyContact?.trim() || null,
+      depart_date: input.departDate,
+      return_date: input.returnDate || null,
+      estimated_cost: Math.max(0, input.estimatedCost || 0),
+      airline: input.airline?.trim() || null,
+      flight_number: input.flightNumber?.trim() || null,
+      terminal: input.terminal?.trim() || null,
+      flight_arrival_at: input.flightArrivalAt || null,
+      status: needsApproval ? "submitted" : "manager_approved",
+    })
+    .select("id, requester_id")
+    .maybeSingle();
   if (error) return { ok: false, error: error.message };
+
+  // Ping the supervisor when a business trip is waiting on them.
+  if (needsApproval && trip) {
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("manager_id, full_name")
+      .eq("id", trip.requester_id)
+      .maybeSingle();
+    if (me?.manager_id) {
+      await notifyProfiles({
+        tenantId: tenant.id,
+        profileIds: [me.manager_id],
+        audience: "manager",
+        sourceType: "approval",
+        sourceId: trip.id,
+        payload: {
+          title: "Travel approval needed",
+          body: `${me.full_name ?? "An employee"} requested ${TRAVEL_TYPE_LABEL[input.travelType]} travel to ${input.destination.trim()}.`,
+          url: "/out-of-town",
+          tag: `approval-${trip.id}`,
+          severity: "info",
+        },
+      });
+    }
+  }
   rev();
   return { ok: true };
 }
