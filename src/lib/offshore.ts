@@ -8,6 +8,7 @@ import type {
   Installation,
   Manifest,
   ManifestPax,
+  MealEntry,
   OffshoreTrip,
   Pob,
   PobBreakdown,
@@ -596,6 +597,25 @@ export async function getManifests(): Promise<Manifest[]> {
       )
       .sort((a, b) => a.person_name.localeCompare(b.person_name)),
   }));
+}
+
+// --- Catering / Daily Meal Sheet ---------------------------------------------
+
+/** Meal-sheet rows already saved for an installation + date. */
+export async function getMealSheet(
+  installationId: string,
+  date: string,
+): Promise<MealEntry[]> {
+  if (!installationId || !date) return [];
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("offshore_meal_entries")
+    .select("id, person_name, category, breakfast, snack, lunch, dinner, lodging")
+    .eq("installation_id", installationId)
+    .eq("meal_date", date)
+    .order("category")
+    .order("person_name");
+  return (data ?? []) as MealEntry[];
 }
 
 /** Expired / soon-to-expire certifications across the roster. */

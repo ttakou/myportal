@@ -12,6 +12,7 @@ import {
   Plane,
   Trash2,
   Users,
+  UtensilsCrossed,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,7 @@ import {
 } from "../actions";
 import { BulkRoomImport } from "./bulk-room-import";
 import { BulkRosterImport } from "./bulk-roster-import";
+import { CateringPanel } from "./catering-panel";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
@@ -73,7 +75,8 @@ type Tab =
   | "rooms"
   | "roster"
   | "visitors"
-  | "manifests";
+  | "manifests"
+  | "catering";
 
 export function OffshoreManagement(props: {
   crews: Crew[];
@@ -98,6 +101,7 @@ export function OffshoreManagement(props: {
     { key: "calendar", label: "Rotation calendar", icon: CalendarRange },
     { key: "manifests", label: "Manifests", icon: ClipboardList },
     { key: "rooms", label: "Accommodation", icon: BedDouble },
+    { key: "catering", label: "Catering", icon: UtensilsCrossed },
     { key: "roster", label: "Offshore staff", icon: Users },
     { key: "visitors", label: "Visitors", icon: Plane, badge: pendingVisits },
   ];
@@ -144,6 +148,7 @@ export function OffshoreManagement(props: {
       )}
       {tab === "visitors" && <VisitorsPanel visits={props.visits} />}
       {tab === "manifests" && <ManifestsPanel manifests={props.manifests} crews={props.crews} />}
+      {tab === "catering" && <CateringPanel installations={props.installations} />}
     </div>
   );
 }

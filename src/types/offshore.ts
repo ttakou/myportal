@@ -300,3 +300,33 @@ export interface Manifest {
   status: ManifestStatus;
   pax: ManifestPax[];
 }
+
+// --- Catering / Daily Meal Sheet ---------------------------------------------
+
+export type MealKind = "breakfast" | "snack" | "lunch" | "dinner" | "lodging";
+
+export const MEAL_LABEL: Record<MealKind, string> = {
+  breakfast: "Breakfast",
+  snack: "Snack",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  lodging: "Lodging",
+};
+
+export const MEAL_TIME: Partial<Record<MealKind, string>> = {
+  breakfast: "05:00",
+  snack: "09:00",
+  lunch: "11:30",
+  dinner: "17:30",
+};
+
+export interface MealEntry {
+  id: string;
+  person_name: string;
+  category: "staff" | "visitor" | "casual";
+  breakfast: boolean;
+  snack: boolean;
+  lunch: boolean;
+  dinner: boolean;
+  lodging: boolean;
+}
