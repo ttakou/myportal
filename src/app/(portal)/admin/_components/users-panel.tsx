@@ -5,9 +5,11 @@ import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
 import type { FunctionalRole } from "@/lib/auth";
 import type { EmployeeType, TenantUser } from "@/lib/admin";
+import type { AccessRole } from "@/lib/access-roles";
 import {
   addUserRole,
   removeUserRole,
+  setUserAccessRole,
   setUserActive,
   setUserDepartment,
   setUserLunchEligible,
@@ -30,9 +32,11 @@ const FUNCTIONAL: { role: FunctionalRole; label: string }[] = [
 export function UsersPanel({
   users,
   canAssignRoles,
+  accessRoles = [],
 }: {
   users: TenantUser[];
   canAssignRoles: boolean;
+  accessRoles?: AccessRole[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +73,9 @@ export function UsersPanel({
               <th className="px-4 py-3 font-medium">Manager</th>
               <th className="px-4 py-3 font-medium">Lunch</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              {canAssignRoles && accessRoles.length > 0 && (
+                <th className="px-4 py-3 font-medium">Module access</th>
+              )}
               {canAssignRoles && <th className="px-4 py-3 font-medium">Access roles</th>}
             </tr>
           </thead>
@@ -166,6 +173,40 @@ export function UsersPanel({
                     {u.is_active ? "Active" : "Inactive"}
                   </button>
                 </td>
+                {canAssignRoles && accessRoles.length > 0 && (
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {accessRoles.map((r) => {
+                        const on = u.access_role_ids.includes(r.id);
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            disabled={pending}
+                            title={
+                              r.description ||
+                              (r.module_slugs.length
+                                ? `Grants: ${r.module_slugs.join(", ")}`
+                                : "Grants no modules")
+                            }
+                            onClick={() => run(() => setUserAccessRole(u.id, r.id, !on))}
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                              on
+                                ? "bg-green-600 text-white"
+                                : "border text-muted-foreground hover:bg-accent",
+                            )}
+                          >
+                            {r.name}
+                          </button>
+                        );
+                      })}
+                      {u.access_role_ids.length === 0 && (
+                        <span className="text-[11px] text-muted-foreground">unrestricted</span>
+                      )}
+                    </div>
+                  </td>
+                )}
                 {canAssignRoles && (
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
@@ -197,7 +238,7 @@ export function UsersPanel({
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                   No users yet.
                 </td>
               </tr>

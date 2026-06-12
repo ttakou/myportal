@@ -15,6 +15,7 @@ export interface TenantUser {
   lunch_eligible: boolean;
   employee_type: EmployeeType;
   functional_roles: string[];
+  access_role_ids: string[];
 }
 
 export interface TenantModule {
@@ -32,7 +33,7 @@ export async function getTenantUsers(): Promise<TenantUser[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type, profile_roles(role)")
+    .select("id, full_name, email, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type, profile_roles(role), profile_access_roles(role_id)")
     .order("full_name");
   if (error) {
     console.error("getTenantUsers:", error.message);
@@ -41,6 +42,7 @@ export async function getTenantUsers(): Promise<TenantUser[]> {
   return (data ?? []).map((u: Record<string, any>) => ({
     ...(u as TenantUser),
     functional_roles: (u.profile_roles ?? []).map((r: { role: string }) => r.role),
+    access_role_ids: (u.profile_access_roles ?? []).map((r: { role_id: string }) => r.role_id),
   }));
 }
 

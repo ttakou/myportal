@@ -59,14 +59,30 @@ export async function middleware(request: NextRequest) {
 
   // Check the tenant's active subscriptions. RLS scopes this to the user's
   // tenant, so we only ever see our own rows.
-  const { data, error } = await supabase
-    .from("tenant_services")
-    .select("services_catalog!inner(slug)")
-    .eq("is_active", true)
-    .eq("services_catalog.slug", matched.slug)
-    .maybeSingle();
+  const [{ data, error }, { data: myRoles }] = await Promise.all([
+    supabase
+      .from("tenant_services")
+      .select("services_catalog!inner(slug)")
+      .eq("is_active", true)
+      .eq("services_catalog.slug", matched.slug)
+      .maybeSingle(),
+    // ---- 3. Role gate: users with access roles are limited to the union of
+    // their roles' modules; users with none are unrestricted.
+    supabase
+      .from("profile_access_roles")
+      .select("tenant_roles(module_slugs)")
+      .eq("profile_id", user.id),
+  ]);
 
-  if (error || !data) {
+  let roleAllowed = true;
+  if (myRoles && myRoles.length > 0) {
+    roleAllowed = myRoles.some((row) => {
+      const role = Array.isArray(row.tenant_roles) ? row.tenant_roles[0] : row.tenant_roles;
+      return ((role?.module_slugs as string[]) ?? []).includes(matched.slug);
+    });
+  }
+
+  if (error || !data || !roleAllowed) {
     const denied = request.nextUrl.clone();
     denied.pathname = "/access-denied";
     denied.searchParams.set("module", matched.slug);
