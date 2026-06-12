@@ -62,6 +62,36 @@ export interface Driver {
   on_duty: boolean;
 }
 
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  sort_order: number;
+  done: boolean;
+  done_at: string | null;
+}
+
+/** Default checklist seeded onto a new task, per task type. */
+export const CHECKLIST_TEMPLATE: Record<TransportTaskType, string[]> = {
+  airport_pickup: [
+    "Confirm flight time",
+    "Prepare name board",
+    "Arrive at airport",
+    "Meet traveller",
+    "Load luggage",
+    "Drop off at destination",
+  ],
+  airport_dropoff: [
+    "Confirm departure time",
+    "Pick up traveller",
+    "Load luggage",
+    "Drop off at terminal",
+  ],
+  passenger: ["Arrive at pickup point", "Passenger on board", "Drop off complete"],
+  delivery: ["Collect item(s)", "In transit", "Delivered & confirmed"],
+  errand: ["Errand started", "Errand completed"],
+  other: ["Task started", "Task completed"],
+};
+
 export interface TaskUpdate {
   id: string;
   author_name: string | null;
@@ -88,4 +118,5 @@ export interface TransportRequest {
   driver_phone: string | null;
   vehicle_name: string | null;
   updates: TaskUpdate[];
+  checklist: ChecklistItem[];
 }

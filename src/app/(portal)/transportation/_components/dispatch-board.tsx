@@ -23,7 +23,7 @@ import {
   setTransportStatus,
   setVehicleStatus,
 } from "../actions";
-import { FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
+import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
 import { TransportAnalytics } from "./transport-analytics";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
@@ -280,6 +280,7 @@ function TaskRow({
           )}
         </div>
       </div>
+      <Checklist task={r} canTick canAdd />
       <FollowUps task={r} canPost />
     </div>
   );

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { notifyProfiles } from "@/lib/eess-notify";
+import { seedTaskChecklist } from "@/lib/task-checklist";
 import type {
   TransportPriority,
   TransportStatus,
@@ -85,16 +86,21 @@ export async function createTransportRequest(input: {
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
 
-  const { error } = await supabase.from("transport_requests").insert({
-    tenant_id: tenant,
-    pickup: input.pickup.trim(),
-    dropoff: input.dropoff.trim(),
-    depart_at: new Date(input.departAt).toISOString(),
-    passengers: Math.max(1, Math.floor(input.passengers || 1)),
-    purpose: input.purpose?.trim() || null,
-    task_type: input.taskType ?? "passenger",
-  });
+  const { data, error } = await supabase
+    .from("transport_requests")
+    .insert({
+      tenant_id: tenant,
+      pickup: input.pickup.trim(),
+      dropoff: input.dropoff.trim(),
+      depart_at: new Date(input.departAt).toISOString(),
+      passengers: Math.max(1, Math.floor(input.passengers || 1)),
+      purpose: input.purpose?.trim() || null,
+      task_type: input.taskType ?? "passenger",
+    })
+    .select("id")
+    .maybeSingle();
   if (error) return { ok: false, error: error.message };
+  if (data) await seedTaskChecklist(supabase, tenant, data.id, input.taskType ?? "passenger");
   rev();
   return { ok: true };
 }
@@ -140,7 +146,10 @@ export async function createTransportTask(input: {
     .select("id")
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
-  if (input.driverId && data) await pushTaskToDriver(data.id);
+  if (data) {
+    await seedTaskChecklist(supabase, tenant, data.id, input.taskType);
+    if (input.driverId) await pushTaskToDriver(data.id);
+  }
   rev();
   return { ok: true };
 }
@@ -294,13 +303,20 @@ export async function setTransportStatus(
   return { ok: true };
 }
 
-/** Add a follow-up note (dispatcher, requester, or assigned driver). */
+/**
+ * Post a message on the task thread (dispatcher, requester, or assigned
+ * driver) and push-notify the other side of the conversation: a driver's
+ * message reaches the requester + travel desk, anyone else's reaches the
+ * driver.
+ */
 export async function addTaskFollowUp(id: string, note: string): Promise<ActionResult> {
   if (!note.trim()) return { ok: false, error: "Note is empty." };
   const supabase = createClient();
   const { data: req } = await supabase
     .from("transport_requests")
-    .select("tenant_id")
+    .select(
+      "tenant_id, requester_id, pickup, dropoff, driver:transport_drivers(profile_id, full_name)",
+    )
     .eq("id", id)
     .maybeSingle();
   if (!req) return { ok: false, error: "Task not found." };
@@ -309,6 +325,116 @@ export async function addTaskFollowUp(id: string, note: string): Promise<ActionR
     tenant_id: req.tenant_id,
     request_id: id,
     note: note.trim(),
+  });
+  if (error) return { ok: false, error: error.message };
+
+  await notifyTaskMessage(id, req, note.trim());
+  rev();
+  return { ok: true };
+}
+
+/** Push a task message to the counterparty (best-effort). */
+async function notifyTaskMessage(
+  requestId: string,
+  req: {
+    tenant_id: string;
+    requester_id: string | null;
+    pickup: string;
+    dropoff: string;
+    driver: unknown;
+  },
+  note: string,
+): Promise<void> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const driver = (Array.isArray(req.driver) ? req.driver[0] : req.driver) as {
+    profile_id: string | null;
+    full_name: string | null;
+  } | null;
+
+  const recipients = new Set<string>();
+  if (driver?.profile_id === user.id) {
+    // Driver wrote → requester + travel desk hear about it.
+    if (req.requester_id) recipients.add(req.requester_id);
+    const { data: admins } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("is_active", true)
+      .in("role", ["tenant_admin", "super_admin"]);
+    for (const a of admins ?? []) recipients.add(a.id as string);
+  } else if (driver?.profile_id) {
+    // Dispatcher/requester wrote → the driver hears about it.
+    recipients.add(driver.profile_id);
+  }
+  recipients.delete(user.id);
+  if (recipients.size === 0) return;
+
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  await notifyProfiles({
+    tenantId: req.tenant_id,
+    profileIds: [...recipients],
+    audience: "task_thread",
+    sourceType: "transport_task",
+    sourceId: requestId,
+    payload: {
+      title: `Message from ${me?.full_name ?? "the team"}`,
+      body: `${req.pickup} → ${req.dropoff}: ${note.slice(0, 120)}`,
+      url: "/transportation",
+      tag: `task-msg-${requestId}`,
+      severity: "info",
+    },
+  });
+}
+
+/** Tick / untick a checklist item (assigned driver or dispatcher; RLS gates). */
+export async function toggleChecklistItem(id: string, done: boolean): Promise<ActionResult> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("transport_task_checklist")
+    .update({ done, done_at: done ? new Date().toISOString() : null })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Item not found or not yours to update." };
+  rev();
+  return { ok: true };
+}
+
+/** Dispatcher adds a custom checklist item to a task. */
+export async function addChecklistItem(
+  requestId: string,
+  label: string,
+): Promise<ActionResult> {
+  if (!label.trim()) return { ok: false, error: "Label is empty." };
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { data: req } = await supabase
+    .from("transport_requests")
+    .select("tenant_id, transport_task_checklist(sort_order)")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (!req) return { ok: false, error: "Task not found." };
+  const maxOrder = Math.max(
+    -1,
+    ...((req.transport_task_checklist as { sort_order: number }[]) ?? []).map(
+      (c) => c.sort_order,
+    ),
+  );
+  const { error } = await supabase.from("transport_task_checklist").insert({
+    tenant_id: req.tenant_id,
+    request_id: requestId,
+    label: label.trim(),
+    sort_order: maxOrder + 1,
   });
   if (error) return { ok: false, error: error.message };
   rev();
