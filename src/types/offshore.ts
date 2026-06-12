@@ -150,3 +150,81 @@ export interface CertAlert {
   expiry: string;
   expired: boolean;
 }
+
+// --- Visitor requests & accommodation allocation (Phase 2) -------------------
+
+export type VisitStatus =
+  | "requested"
+  | "approved"
+  | "rejected"
+  | "onboard"
+  | "returned"
+  | "cancelled";
+
+export const VISIT_STATUS_LABEL: Record<VisitStatus, string> = {
+  requested: "Requested",
+  approved: "Approved",
+  rejected: "Rejected",
+  onboard: "On board",
+  returned: "Returned",
+  cancelled: "Cancelled",
+};
+
+export type VisitorType =
+  | "employee"
+  | "contractor"
+  | "vendor"
+  | "auditor"
+  | "regulator"
+  | "client"
+  | "management";
+
+export const VISITOR_TYPE_LABEL: Record<VisitorType, string> = {
+  employee: "Employee",
+  contractor: "Contractor",
+  vendor: "Vendor",
+  auditor: "Auditor",
+  regulator: "Regulator",
+  client: "Client",
+  management: "Management",
+};
+
+export interface BedAllocation {
+  id: string;
+  room_id: string;
+  room_label: string | null;
+  from_date: string;
+  to_date: string;
+  status: "reserved" | "checked_in" | "checked_out";
+}
+
+export interface VisitRequest {
+  id: string;
+  requester_name: string | null;
+  visitor_name: string;
+  visitor_company: string | null;
+  visitor_type: VisitorType;
+  gender: GenderRestriction;
+  host_department: string | null;
+  host_name: string | null;
+  purpose: string | null;
+  installation_id: string | null;
+  installation_name: string | null;
+  depart_date: string;
+  return_date: string | null;
+  overnight: boolean;
+  accommodation_required: boolean;
+  emergency_contact: string | null;
+  status: VisitStatus;
+  reject_reason: string | null;
+  allocation: BedAllocation | null;
+}
+
+/** A room with computed free beds for a requested date range. */
+export interface RoomAvailability {
+  room_id: string;
+  label: string;
+  room_type: string;
+  gender_restriction: GenderRestriction;
+  free_beds: number;
+}
