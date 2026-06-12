@@ -81,6 +81,16 @@ export async function getInstallations(): Promise<Installation[]> {
   return (data ?? []) as Installation[];
 }
 
+/** Every installation (incl. retired) for the configuration panel. */
+export async function getAllInstallations(): Promise<Installation[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("offshore_installations")
+    .select("id, name, pob_capacity, is_active")
+    .order("name");
+  return (data ?? []) as Installation[];
+}
+
 export async function getFlights(): Promise<Flight[]> {
   const supabase = createClient();
   const { data } = await supabase

@@ -19,6 +19,7 @@ export interface Installation {
   id: string;
   name: string;
   pob_capacity: number;
+  is_active?: boolean;
 }
 
 export interface Flight {
