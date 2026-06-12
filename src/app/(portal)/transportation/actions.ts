@@ -8,11 +8,14 @@ import type {
   TransportPriority,
   TransportStatus,
   TransportTaskType,
+  VehicleStatus,
 } from "@/types/transport";
 
 export interface ActionResult {
   ok: boolean;
   error?: string;
+  /** Non-blocking advisory shown to the dispatcher (e.g. double-booking). */
+  warning?: string;
 }
 
 function rev() {
@@ -146,6 +149,54 @@ export async function cancelTransportRequest(id: string): Promise<ActionResult> 
   return setTransportStatus(id, "cancelled");
 }
 
+/**
+ * Flag double-booking or off-duty before assigning. Returns a human advisory,
+ * or null when the driver is free and on duty. The assignment still proceeds —
+ * dispatch keeps the call, this is only a heads-up.
+ */
+async function driverAssignmentWarning(
+  supabase: ReturnType<typeof createClient>,
+  driverId: string,
+  taskId: string,
+): Promise<string | null> {
+  const { data: driver } = await supabase
+    .from("transport_drivers")
+    .select("full_name, on_duty")
+    .eq("id", driverId)
+    .maybeSingle();
+  if (!driver) return null;
+
+  const { data: task } = await supabase
+    .from("transport_requests")
+    .select("depart_at")
+    .eq("id", taskId)
+    .maybeSingle();
+
+  const notes: string[] = [];
+  if (driver.on_duty === false) notes.push(`${driver.full_name} is marked off duty`);
+
+  if (task?.depart_at) {
+    // Overlap window: another live task within 2h of this one.
+    const t = new Date(task.depart_at).getTime();
+    const from = new Date(t - 2 * 3600_000).toISOString();
+    const to = new Date(t + 2 * 3600_000).toISOString();
+    const { data: clashes } = await supabase
+      .from("transport_requests")
+      .select("id, pickup, dropoff, depart_at")
+      .eq("driver_id", driverId)
+      .neq("id", taskId)
+      .in("status", ["assigned", "in_progress"])
+      .gte("depart_at", from)
+      .lte("depart_at", to);
+    if (clashes && clashes.length > 0) {
+      notes.push(
+        `${driver.full_name} already has ${clashes.length} task(s) near this time`,
+      );
+    }
+  }
+  return notes.length ? notes.join("; ") + "." : null;
+}
+
 export async function assignTransport(
   id: string,
   driverId: string | null,
@@ -153,6 +204,9 @@ export async function assignTransport(
 ): Promise<ActionResult> {
   if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
+
+  const warning = driverId ? await driverAssignmentWarning(supabase, driverId, id) : null;
+
   const status = driverId ? "assigned" : "pending";
   const { error } = await supabase
     .from("transport_requests")
@@ -161,6 +215,51 @@ export async function assignTransport(
     .in("status", ["pending", "assigned"]);
   if (error) return { ok: false, error: error.message };
   if (driverId) await pushTaskToDriver(id);
+  rev();
+  return { ok: true, warning: warning ?? undefined };
+}
+
+/** A driver toggles their own on/off-duty status. */
+export async function setMyDuty(onDuty: boolean): Promise<ActionResult> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc("set_driver_duty", { p_on: onDuty });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function addVehicle(input: {
+  name: string;
+  plate?: string;
+  capacity?: number;
+}): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  if (!input.name.trim()) return { ok: false, error: "Vehicle name is required." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const { error } = await supabase.from("transport_vehicles").insert({
+    tenant_id: tenant,
+    name: input.name.trim(),
+    plate: input.plate?.trim() || null,
+    capacity: Math.max(1, Math.floor(input.capacity || 4)),
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function setVehicleStatus(
+  id: string,
+  status: VehicleStatus,
+): Promise<ActionResult> {
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("transport_vehicles")
+    .update({ status, is_active: status === "active" })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
 }

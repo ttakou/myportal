@@ -1,6 +1,7 @@
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import {
   getAllTransportRequests,
+  getAllVehicles,
   getDrivers,
   getMyDriver,
   getMyDriverTasks,
@@ -17,15 +18,17 @@ export default async function TransportationPage() {
   const role = await getCurrentRole();
   const isAdmin = isAdminRole(role);
 
-  const [mine, all, drivers, vehicles, myDriver, driverTasks, profiles] = await Promise.all([
-    getMyTransportRequests(),
-    isAdmin ? getAllTransportRequests() : Promise.resolve([]),
-    isAdmin ? getDrivers() : Promise.resolve([]),
-    isAdmin ? getVehicles() : Promise.resolve([]),
-    getMyDriver(),
-    getMyDriverTasks(),
-    isAdmin ? getProfilesForLinking() : Promise.resolve([]),
-  ]);
+  const [mine, all, drivers, vehicles, allVehicles, myDriver, driverTasks, profiles] =
+    await Promise.all([
+      getMyTransportRequests(),
+      isAdmin ? getAllTransportRequests() : Promise.resolve([]),
+      isAdmin ? getDrivers() : Promise.resolve([]),
+      isAdmin ? getVehicles() : Promise.resolve([]),
+      isAdmin ? getAllVehicles() : Promise.resolve([]),
+      getMyDriver(),
+      getMyDriverTasks(),
+      isAdmin ? getProfilesForLinking() : Promise.resolve([]),
+    ]);
 
   return (
     <div className="space-y-6">
@@ -42,7 +45,13 @@ export default async function TransportationPage() {
       {myDriver && <DriverTasks driver={myDriver} tasks={driverTasks} />}
 
       {isAdmin && (
-        <DispatchBoard all={all} drivers={drivers} vehicles={vehicles} profiles={profiles} />
+        <DispatchBoard
+          all={all}
+          drivers={drivers}
+          vehicles={vehicles}
+          allVehicles={allVehicles}
+          profiles={profiles}
+        />
       )}
 
       <TransportBoard mine={mine} />

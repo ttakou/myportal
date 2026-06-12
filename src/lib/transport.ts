@@ -87,7 +87,7 @@ export async function getMyDriver(): Promise<Driver | null> {
   if (!user) return null;
   const { data } = await supabase
     .from("transport_drivers")
-    .select("id, full_name, phone, profile_id")
+    .select("id, full_name, phone, profile_id, on_duty")
     .eq("profile_id", user.id)
     .maybeSingle();
   return (data as Driver | null) ?? null;
@@ -110,12 +110,24 @@ export async function getMyDriverTasks(): Promise<TransportRequest[]> {
   return (data ?? []).map((r) => mapReq(r as Record<string, any>));
 }
 
+/** Vehicles available for assignment (active only). */
 export async function getVehicles(): Promise<Vehicle[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("transport_vehicles")
-    .select("id, name, plate, capacity")
-    .eq("is_active", true)
+    .select("id, name, plate, capacity, status")
+    .eq("status", "active")
+    .order("name");
+  return (data ?? []) as Vehicle[];
+}
+
+/** Every vehicle (any status) for the fleet management panel. */
+export async function getAllVehicles(): Promise<Vehicle[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("transport_vehicles")
+    .select("id, name, plate, capacity, status")
+    .order("status")
     .order("name");
   return (data ?? []) as Vehicle[];
 }
@@ -124,7 +136,7 @@ export async function getDrivers(): Promise<Driver[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("transport_drivers")
-    .select("id, full_name, phone, profile_id")
+    .select("id, full_name, phone, profile_id, on_duty")
     .eq("is_active", true)
     .order("full_name");
   return (data ?? []) as Driver[];
