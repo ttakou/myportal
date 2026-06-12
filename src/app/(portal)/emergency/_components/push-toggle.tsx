@@ -51,12 +51,12 @@ export function PushToggle() {
           <Bell className="h-4 w-4 text-muted-foreground" />
         )}
         <div>
-          <p className="font-medium">Emergency alerts on this device</p>
+          <p className="font-medium">Push notifications on this device</p>
           <p className="text-xs text-muted-foreground">
             {denied
               ? "Notifications are blocked in your browser settings."
               : subscribed
-                ? "You'll get a push notification for SOS alerts and broadcasts."
+                ? "You'll get push notifications even when the app is closed."
                 : "Turn on push to be alerted even when the app is closed."}
           </p>
           {error && <p className="text-xs text-destructive">{error}</p>}
