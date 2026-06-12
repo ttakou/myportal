@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { notify } from "@/lib/eess-notify";
+import { getModuleSettings } from "@/lib/module-settings";
 import {
   INCIDENT_LABEL,
   type CheckinStatus,
@@ -71,7 +72,8 @@ export async function reportIncident(input: {
   if (error) return { ok: false, error: error.message };
 
   // Page the response team. Best-effort; never blocks the report from succeeding.
-  if (incident?.tenant_id) {
+  const eessCfg = await getModuleSettings("emergency");
+  if (incident?.tenant_id && eessCfg.push_incident_alerts !== false) {
     const label = INCIDENT_LABEL[input.incidentType];
     const where = input.locationText?.trim();
     await notify({
@@ -219,7 +221,8 @@ export async function sendBroadcast(input: {
   if (error) return { ok: false, error: error.message };
 
   // Fan the alert out to every employee over Web Push (other channels TBD).
-  if (channels.includes("push") && broadcast?.tenant_id) {
+  const eessCfg = await getModuleSettings("emergency");
+  if (channels.includes("push") && broadcast?.tenant_id && eessCfg.push_broadcasts !== false) {
     await notify({
       tenantId: broadcast.tenant_id,
       audience: "all",

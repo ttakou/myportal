@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess, type FunctionalRole } from "@/lib/auth";
+import { MODULE_PARAMS } from "@/lib/module-params";
 import type { UserRole } from "@/types/database";
 
 export interface ActionResult {
@@ -213,6 +214,65 @@ export async function setCanteenCutoff(hour: number | null): Promise<ActionResul
   if (error) return { ok: false, error: error.message };
   revalidatePath("/admin");
   revalidatePath("/canteen");
+  return { ok: true };
+}
+
+/**
+ * Save a module's parameters (validated against the registry) into
+ * tenant_services.settings, merging over whatever is already stored.
+ */
+export async function updateModuleSettings(
+  serviceId: string,
+  slug: string,
+  values: Record<string, boolean | number | string>,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const defs = MODULE_PARAMS[slug] ?? [];
+  const valid: Record<string, boolean | number | string> = {};
+  for (const def of defs) {
+    if (!(def.key in values)) continue;
+    const v = values[def.key];
+    if (def.type === "boolean" && typeof v !== "boolean")
+      return { ok: false, error: `${def.label} must be on or off.` };
+    if (def.type === "number") {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return { ok: false, error: `${def.label} must be a number.` };
+      if (def.min !== undefined && n < def.min)
+        return { ok: false, error: `${def.label} must be ≥ ${def.min}.` };
+      if (def.max !== undefined && n > def.max)
+        return { ok: false, error: `${def.label} must be ≤ ${def.max}.` };
+      valid[def.key] = n;
+      continue;
+    }
+    if (def.type === "select" && !def.options?.some((o) => o.value === v))
+      return { ok: false, error: `${def.label}: invalid choice.` };
+    valid[def.key] = v;
+  }
+
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const { data: existing } = await supabase
+    .from("tenant_services")
+    .select("settings, is_active")
+    .eq("service_id", serviceId)
+    .maybeSingle();
+
+  const merged = { ...((existing?.settings as object) ?? {}), ...valid };
+  const { error } = await supabase.from("tenant_services").upsert(
+    {
+      tenant_id: tenant.id,
+      service_id: serviceId,
+      is_active: existing?.is_active ?? true,
+      settings: merged,
+    },
+    { onConflict: "tenant_id,service_id" },
+  );
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
   return { ok: true };
 }
 

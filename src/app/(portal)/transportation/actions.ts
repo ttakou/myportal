@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { notifyProfiles } from "@/lib/eess-notify";
 import { seedTaskChecklist } from "@/lib/task-checklist";
+import { getModuleSettings } from "@/lib/module-settings";
 import type {
   TransportPriority,
   TransportStatus,
@@ -82,6 +83,11 @@ export async function createTransportRequest(input: {
     return { ok: false, error: "Pickup and drop-off are required." };
   if (!input.departAt) return { ok: false, error: "Departure time is required." };
 
+  const cfg = await getModuleSettings("transportation");
+  if (cfg.allow_employee_requests === false) {
+    return { ok: false, error: "Ride requests are disabled — contact the transport desk." };
+  }
+
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -100,7 +106,9 @@ export async function createTransportRequest(input: {
     .select("id")
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
-  if (data) await seedTaskChecklist(supabase, tenant, data.id, input.taskType ?? "passenger");
+  if (data && cfg.seed_checklists !== false) {
+    await seedTaskChecklist(supabase, tenant, data.id, input.taskType ?? "passenger");
+  }
   rev();
   return { ok: true };
 }
@@ -147,8 +155,11 @@ export async function createTransportTask(input: {
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (data) {
-    await seedTaskChecklist(supabase, tenant, data.id, input.taskType);
-    if (input.driverId) await pushTaskToDriver(data.id);
+    const cfg = await getModuleSettings("transportation");
+    if (cfg.seed_checklists !== false) {
+      await seedTaskChecklist(supabase, tenant, data.id, input.taskType);
+    }
+    if (input.driverId && cfg.push_on_assignment !== false) await pushTaskToDriver(data.id);
   }
   rev();
   return { ok: true };
@@ -167,6 +178,7 @@ async function driverAssignmentWarning(
   supabase: ReturnType<typeof createClient>,
   driverId: string,
   taskId: string,
+  windowHours: number,
 ): Promise<string | null> {
   const { data: driver } = await supabase
     .from("transport_drivers")
@@ -184,11 +196,11 @@ async function driverAssignmentWarning(
   const notes: string[] = [];
   if (driver.on_duty === false) notes.push(`${driver.full_name} is marked off duty`);
 
-  if (task?.depart_at) {
-    // Overlap window: another live task within 2h of this one.
+  if (task?.depart_at && windowHours > 0) {
+    // Overlap window: another live task within ±windowHours of this one.
     const t = new Date(task.depart_at).getTime();
-    const from = new Date(t - 2 * 3600_000).toISOString();
-    const to = new Date(t + 2 * 3600_000).toISOString();
+    const from = new Date(t - windowHours * 3600_000).toISOString();
+    const to = new Date(t + windowHours * 3600_000).toISOString();
     const { data: clashes } = await supabase
       .from("transport_requests")
       .select("id, pickup, dropoff, depart_at")
@@ -213,8 +225,16 @@ export async function assignTransport(
 ): Promise<ActionResult> {
   if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
+  const cfg = await getModuleSettings("transportation");
 
-  const warning = driverId ? await driverAssignmentWarning(supabase, driverId, id) : null;
+  const warning = driverId
+    ? await driverAssignmentWarning(
+        supabase,
+        driverId,
+        id,
+        Number(cfg.conflict_window_hours ?? 2),
+      )
+    : null;
 
   const status = driverId ? "assigned" : "pending";
   const { error } = await supabase
@@ -223,7 +243,7 @@ export async function assignTransport(
     .eq("id", id)
     .in("status", ["pending", "assigned"]);
   if (error) return { ok: false, error: error.message };
-  if (driverId) await pushTaskToDriver(id);
+  if (driverId && cfg.push_on_assignment !== false) await pushTaskToDriver(id);
   rev();
   return { ok: true, warning: warning ?? undefined };
 }
