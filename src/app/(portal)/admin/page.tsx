@@ -9,6 +9,7 @@ import { ModulesPanel } from "./_components/modules-panel";
 import { ModuleParamsPanel } from "./_components/module-params-panel";
 import { RolesPanel } from "./_components/roles-panel";
 import { RegisterStaffPanel } from "./_components/register-staff-panel";
+import { BulkImportPanel } from "./_components/bulk-import-panel";
 import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
 
 export default async function AdminPage() {
@@ -60,6 +61,7 @@ export default async function AdminPage() {
           accessRoles={accessRoles}
         />
       )}
+      {access.isHr && <BulkImportPanel />}
       <UsersPanel
         users={users}
         canAssignRoles={access.isHr}

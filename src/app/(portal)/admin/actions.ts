@@ -370,6 +370,147 @@ export async function registerStaff(input: {
   return { ok: true, tempPassword };
 }
 
+// --- Bulk staff import --------------------------------------------------------
+
+export interface BulkRow {
+  fullName: string;
+  email: string;
+  managerEmail?: string;
+  role?: string;
+  department?: string;
+  employeeType?: string;
+}
+
+export interface BulkRowResult {
+  email: string;
+  ok: boolean;
+  status: "created" | "skipped" | "failed";
+  error?: string;
+  tempPassword?: string;
+}
+
+export interface BulkImportResult extends ActionResult {
+  results?: BulkRowResult[];
+}
+
+/**
+ * Create many staff at once from a parsed list, then link managers by email in
+ * a second pass (so a manager listed lower in the file still resolves). Rows
+ * with an existing email are skipped, not overwritten. HR/system admin only.
+ */
+export async function bulkRegisterStaff(input: {
+  mode: "invite" | "password";
+  rows: BulkRow[];
+}): Promise<BulkImportResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  if (!input.rows?.length) return { ok: false, error: "No rows to import." };
+  if (input.rows.length > 500) return { ok: false, error: "Import is limited to 500 rows at a time." };
+
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  // Known emails in the tenant → id, seeded with existing profiles.
+  const { data: existing } = await supabase.from("profiles").select("id, email");
+  const emailToId = new Map<string, string>();
+  for (const p of existing ?? []) {
+    if (p.email) emailToId.set((p.email as string).toLowerCase(), p.id as string);
+  }
+
+  const results: BulkRowResult[] = [];
+  const managerLinks: { id: string; managerEmail: string }[] = [];
+
+  // Pass 1 — create accounts + profiles (managers linked in pass 2).
+  for (const raw of input.rows) {
+    const fullName = (raw.fullName ?? "").trim();
+    const email = (raw.email ?? "").trim().toLowerCase();
+    if (!fullName && !email) continue; // blank line
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      results.push({ email: email || "(blank)", ok: false, status: "failed", error: "Invalid email." });
+      continue;
+    }
+    if (emailToId.has(email)) {
+      results.push({ email, ok: false, status: "skipped", error: "Already exists." });
+      continue;
+    }
+
+    const role: UserRole =
+      raw.role && (ASSIGNABLE_ROLES as string[]).includes(raw.role.trim())
+        ? (raw.role.trim() as UserRole)
+        : "employee";
+    const employeeType: EmployeeType = ["employee", "contractor", "guest"].includes(
+      (raw.employeeType ?? "").trim(),
+    )
+      ? (raw.employeeType!.trim() as EmployeeType)
+      : "employee";
+
+    let userId: string;
+    let tempPassword: string | undefined;
+    if (input.mode === "invite") {
+      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+        data: { full_name: fullName },
+      });
+      if (error || !data?.user) {
+        results.push({ email, ok: false, status: "failed", error: error?.message ?? "Invite failed." });
+        continue;
+      }
+      userId = data.user.id;
+    } else {
+      tempPassword = generateTempPassword();
+      const { data, error } = await admin.auth.admin.createUser({
+        email,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: { full_name: fullName },
+      });
+      if (error || !data?.user) {
+        results.push({ email, ok: false, status: "failed", error: error?.message ?? "Create failed." });
+        continue;
+      }
+      userId = data.user.id;
+    }
+
+    const { error: profileError } = await admin.from("profiles").upsert(
+      {
+        id: userId,
+        email,
+        full_name: fullName,
+        tenant_id: tenant.id,
+        role,
+        department: raw.department?.trim() || null,
+        employee_type: employeeType,
+        is_active: true,
+      },
+      { onConflict: "id" },
+    );
+    if (profileError) {
+      results.push({ email, ok: false, status: "failed", error: profileError.message });
+      continue;
+    }
+
+    emailToId.set(email, userId);
+    if (raw.managerEmail?.trim()) {
+      managerLinks.push({ id: userId, managerEmail: raw.managerEmail.trim().toLowerCase() });
+    }
+    results.push({ email, ok: true, status: "created", tempPassword });
+  }
+
+  // Pass 2 — link managers now that every email is known.
+  for (const link of managerLinks) {
+    const managerId = emailToId.get(link.managerEmail);
+    if (managerId && managerId !== link.id) {
+      await admin.from("profiles").update({ manager_id: managerId }).eq("id", link.id);
+    }
+  }
+
+  revalidatePath("/admin");
+  const created = results.filter((r) => r.status === "created").length;
+  return { ok: created > 0, results, error: created === 0 ? "No new staff were created." : undefined };
+}
+
 // --- Access roles (role-based module access) ---------------------------------
 
 const ASSIGNABLE_MODULE_SLUGS = MODULE_ROUTES.filter((m) => !m.isCore).map((m) => m.slug);
