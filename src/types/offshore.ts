@@ -116,6 +116,7 @@ export interface Room {
   installation_id: string;
   installation_name: string | null;
   block: string | null;
+  floor: string | null;
   room_number: string;
   room_type: string;
   bed_count: number;
