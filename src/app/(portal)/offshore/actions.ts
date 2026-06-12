@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
-import { getMealSheet, searchBedAvailability } from "@/lib/offshore";
-import type { MealEntry, RoomAvailability } from "@/types/offshore";
+import { getMealSheet, getPobAsOf, getRoomHistory, searchBedAvailability } from "@/lib/offshore";
+import type { MealEntry, PobAsOf, RoomAvailability, RoomHistoryRow } from "@/types/offshore";
 
 export interface ActionResult {
   ok: boolean;
@@ -1084,4 +1084,23 @@ export async function removeMealEntry(id: string): Promise<ActionResult> {
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
+}
+
+// --- History (POB as-of + room occupancy) ------------------------------------
+
+export async function fetchPobAsOf(
+  date: string,
+): Promise<{ ok: boolean; pob?: PobAsOf; error?: string }> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (!date) return { ok: false, error: "Pick a date." };
+  return { ok: true, pob: await getPobAsOf(date) };
+}
+
+export async function fetchRoomHistory(
+  from: string,
+  to: string,
+): Promise<{ ok: boolean; rows?: RoomHistoryRow[]; error?: string }> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (!from || !to) return { ok: false, error: "Pick a date range." };
+  return { ok: true, rows: await getRoomHistory(from, to) };
 }

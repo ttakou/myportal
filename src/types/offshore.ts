@@ -330,3 +330,32 @@ export interface MealEntry {
   dinner: boolean;
   lodging: boolean;
 }
+
+// --- History (POB as-of + room occupancy) ------------------------------------
+
+export interface PobPerson {
+  name: string;
+  category: "staff" | "visitor";
+  installation: string | null;
+  crew: string | null;
+  from: string;
+  to: string | null;
+}
+
+export interface PobAsOf {
+  date: string;
+  total: number;
+  staff: number;
+  visitor: number;
+  people: PobPerson[];
+}
+
+export interface RoomHistoryRow {
+  room_label: string;
+  installation: string | null;
+  occupant: string;
+  category: "staff" | "visitor";
+  from: string;
+  to: string | null;
+  current: boolean;
+}
