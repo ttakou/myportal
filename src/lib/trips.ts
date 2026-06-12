@@ -1,13 +1,44 @@
 import { createClient } from "@/lib/supabase/server";
-import type { EmergencyContact, TravelDashboard, Trip } from "@/types/trips";
+import type {
+  AirportAssistance,
+  EmergencyContact,
+  TravelDashboard,
+  Trip,
+} from "@/types/trips";
 
 const SELECT =
   "id, destination, purpose, depart_date, return_date, estimated_cost, status, rejection_reason," +
   " travel_type, transport_mode, route, accommodation, contact_number, dest_emergency_contact," +
   " phase, departed_at, arrived_at, returned_at, last_checkin_at," +
+  " traveler_type, airline, flight_number, terminal, flight_arrival_at, flight_status, flight_checked_at," +
+  " assigned_driver_name, assigned_driver_phone, assigned_vehicle," +
   " requester:profiles!out_of_town_trips_requester_id_fkey(full_name)," +
   " trip_expenses(id, category, amount, note)," +
-  " trip_checkins(id, kind, note, created_at)";
+  " trip_checkins(id, kind, note, created_at)," +
+  " airport_assistance(id, trip_id, service_type, status, greeter_name, greeter_phone," +
+  " driver_name, driver_phone, vehicle, pickup_point, meeting_point, name_board, vip, language, notes)";
+
+function mapAssistance(rel: any): AirportAssistance | null {
+  const a = Array.isArray(rel) ? rel[0] : rel;
+  if (!a) return null;
+  return {
+    id: a.id,
+    trip_id: a.trip_id,
+    service_type: a.service_type,
+    status: a.status,
+    greeter_name: a.greeter_name,
+    greeter_phone: a.greeter_phone,
+    driver_name: a.driver_name,
+    driver_phone: a.driver_phone,
+    vehicle: a.vehicle,
+    pickup_point: a.pickup_point,
+    meeting_point: a.meeting_point,
+    name_board: a.name_board,
+    vip: a.vip,
+    language: a.language,
+    notes: a.notes,
+  };
+}
 
 function mapTrip(row: Record<string, any>): Trip {
   const requester = Array.isArray(row.requester) ? row.requester[0] : row.requester;
@@ -49,6 +80,17 @@ function mapTrip(row: Record<string, any>): Trip {
     returned_at: row.returned_at,
     last_checkin_at: row.last_checkin_at,
     checkins,
+    traveler_type: row.traveler_type,
+    airline: row.airline,
+    flight_number: row.flight_number,
+    terminal: row.terminal,
+    flight_arrival_at: row.flight_arrival_at,
+    flight_status: row.flight_status,
+    flight_checked_at: row.flight_checked_at,
+    assigned_driver_name: row.assigned_driver_name,
+    assigned_driver_phone: row.assigned_driver_phone,
+    assigned_vehicle: row.assigned_vehicle,
+    assistance: mapAssistance(row.airport_assistance),
     expenses,
     expense_total: expenses.reduce((s: number, e: { amount: number }) => s + e.amount, 0),
   };
@@ -146,6 +188,28 @@ export async function getEmergencyContacts(): Promise<EmergencyContact[]> {
     return [];
   }
   return (data ?? []) as EmergencyContact[];
+}
+
+/**
+ * Trips for the travel-services desk (admins): every trip that is not yet
+ * returned/rejected — so the desk can update accommodation, assign a driver
+ * and car, manage flights, and handle meet & greet requests. RLS limits
+ * visibility to the tenant.
+ */
+export async function getAirportDesk(): Promise<Trip[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("out_of_town_trips")
+    .select(SELECT)
+    .neq("status", "rejected")
+    .neq("phase", "returned")
+    .order("flight_arrival_at", { ascending: true, nullsFirst: false })
+    .order("depart_date", { ascending: true });
+  if (error) {
+    console.error("getAirportDesk:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => mapTrip(r as Record<string, any>));
 }
 
 /** Whether the signed-in user is the line manager of at least one employee. */

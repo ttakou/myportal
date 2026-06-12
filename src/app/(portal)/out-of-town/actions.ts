@@ -2,11 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { lookupFlight } from "@/lib/flight-api";
 import { notify } from "@/lib/eess-notify";
 import {
   APPROVAL_TRAVEL_TYPES,
   TRAVEL_TYPE_LABEL,
+  type AirportAssistStatus,
+  type AirportServiceType,
   type ContactCategory,
+  type FlightStatus,
+  type TravelerType,
   type TravelType,
   type TripCheckinKind,
 } from "@/types/trips";
@@ -24,6 +29,7 @@ const clean = (msg: string) => msg.replace(/^.*?:\s*/, "");
 
 export async function createTrip(input: {
   travelType: TravelType;
+  travelerType?: TravelerType;
   destination: string;
   purpose?: string;
   route?: string;
@@ -34,6 +40,10 @@ export async function createTrip(input: {
   departDate: string;
   returnDate?: string;
   estimatedCost?: number;
+  airline?: string;
+  flightNumber?: string;
+  terminal?: string;
+  flightArrivalAt?: string;
 }): Promise<ActionResult> {
   if (!input.destination.trim()) return { ok: false, error: "Destination is required." };
   if (!input.departDate) return { ok: false, error: "Departure date is required." };
@@ -48,6 +58,7 @@ export async function createTrip(input: {
   const { error } = await supabase.from("out_of_town_trips").insert({
     tenant_id: tenant.id,
     travel_type: input.travelType,
+    traveler_type: input.travelerType ?? "employee",
     destination: input.destination.trim(),
     purpose: input.purpose?.trim() || null,
     route: input.route?.trim() || null,
@@ -58,9 +69,152 @@ export async function createTrip(input: {
     depart_date: input.departDate,
     return_date: input.returnDate || null,
     estimated_cost: Math.max(0, input.estimatedCost || 0),
+    airline: input.airline?.trim() || null,
+    flight_number: input.flightNumber?.trim() || null,
+    terminal: input.terminal?.trim() || null,
+    flight_arrival_at: input.flightArrivalAt || null,
     status: needsApproval ? "submitted" : "manager_approved",
   });
   if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+// --- Meet & greet / airport assistance ---------------------------------------
+
+/** Traveller (or admin) requests an airport reception for a trip. */
+export async function requestAirportAssistance(input: {
+  tripId: string;
+  serviceType?: AirportServiceType;
+}): Promise<ActionResult> {
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const { error } = await supabase.from("airport_assistance").insert({
+    tenant_id: tenant.id,
+    trip_id: input.tripId,
+    service_type: input.serviceType ?? "arrival",
+  });
+  if (error) return { ok: false, error: clean(error.message) };
+  rev();
+  return { ok: true };
+}
+
+/** Travel desk assigns greeter/driver/vehicle and advances the status. */
+export async function updateAirportAssistance(input: {
+  id: string;
+  serviceType?: AirportServiceType;
+  status?: AirportAssistStatus;
+  greeterName?: string;
+  greeterPhone?: string;
+  driverName?: string;
+  driverPhone?: string;
+  vehicle?: string;
+  pickupPoint?: string;
+  meetingPoint?: string;
+  nameBoard?: boolean;
+  vip?: boolean;
+  language?: string;
+  notes?: string;
+}): Promise<ActionResult> {
+  const supabase = createClient();
+  const patch: Record<string, unknown> = {};
+  if (input.serviceType !== undefined) patch.service_type = input.serviceType;
+  if (input.status !== undefined) patch.status = input.status;
+  if (input.greeterName !== undefined) patch.greeter_name = input.greeterName.trim() || null;
+  if (input.greeterPhone !== undefined) patch.greeter_phone = input.greeterPhone.trim() || null;
+  if (input.driverName !== undefined) patch.driver_name = input.driverName.trim() || null;
+  if (input.driverPhone !== undefined) patch.driver_phone = input.driverPhone.trim() || null;
+  if (input.vehicle !== undefined) patch.vehicle = input.vehicle.trim() || null;
+  if (input.pickupPoint !== undefined) patch.pickup_point = input.pickupPoint.trim() || null;
+  if (input.meetingPoint !== undefined) patch.meeting_point = input.meetingPoint.trim() || null;
+  if (input.nameBoard !== undefined) patch.name_board = input.nameBoard;
+  if (input.vip !== undefined) patch.vip = input.vip;
+  if (input.language !== undefined) patch.language = input.language.trim() || null;
+  if (input.notes !== undefined) patch.notes = input.notes.trim() || null;
+
+  const { error } = await supabase.from("airport_assistance").update(patch).eq("id", input.id);
+  if (error) return { ok: false, error: clean(error.message) };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Pull live status for the trip's flight number from the flight-data API and
+ * write it back (status, arrival estimate, terminal, airline if missing).
+ */
+export async function refreshFlightStatus(tripId: string): Promise<ActionResult> {
+  const supabase = createClient();
+  const { data: trip, error: readError } = await supabase
+    .from("out_of_town_trips")
+    .select("id, flight_number, airline, terminal")
+    .eq("id", tripId)
+    .maybeSingle();
+  if (readError) return { ok: false, error: clean(readError.message) };
+  if (!trip) return { ok: false, error: "Trip not found." };
+  if (!trip.flight_number) {
+    return { ok: false, error: "Add a flight number first, then refresh." };
+  }
+
+  const result = await lookupFlight(trip.flight_number);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  const info = result.info;
+  const patch: Record<string, unknown> = {
+    flight_status: info.status,
+    flight_checked_at: new Date().toISOString(),
+  };
+  if (info.arrivalAt) patch.flight_arrival_at = info.arrivalAt;
+  // Fill in airline/terminal from the API only when the desk left them blank.
+  if (info.airline && !trip.airline) patch.airline = info.airline;
+  if (info.terminal && !trip.terminal) patch.terminal = info.terminal;
+
+  const { error } = await supabase.from("out_of_town_trips").update(patch).eq("id", tripId);
+  if (error) return { ok: false, error: clean(error.message) };
+  rev();
+  return { ok: true };
+}
+
+/** Travel desk updates accommodation and the assigned driver/car on a trip. */
+export async function updateTripLogistics(input: {
+  tripId: string;
+  accommodation?: string;
+  driverName?: string;
+  driverPhone?: string;
+  vehicle?: string;
+}): Promise<ActionResult> {
+  const supabase = createClient();
+  const patch: Record<string, unknown> = {};
+  if (input.accommodation !== undefined) patch.accommodation = input.accommodation.trim() || null;
+  if (input.driverName !== undefined) patch.assigned_driver_name = input.driverName.trim() || null;
+  if (input.driverPhone !== undefined) patch.assigned_driver_phone = input.driverPhone.trim() || null;
+  if (input.vehicle !== undefined) patch.assigned_vehicle = input.vehicle.trim() || null;
+
+  const { error } = await supabase.from("out_of_town_trips").update(patch).eq("id", input.tripId);
+  if (error) return { ok: false, error: clean(error.message) };
+  rev();
+  return { ok: true };
+}
+
+/** Travel desk updates flight details / status on the trip. */
+export async function updateFlight(input: {
+  tripId: string;
+  airline?: string;
+  flightNumber?: string;
+  terminal?: string;
+  flightArrivalAt?: string;
+  flightStatus?: FlightStatus;
+}): Promise<ActionResult> {
+  const supabase = createClient();
+  const patch: Record<string, unknown> = {};
+  if (input.airline !== undefined) patch.airline = input.airline.trim() || null;
+  if (input.flightNumber !== undefined) patch.flight_number = input.flightNumber.trim() || null;
+  if (input.terminal !== undefined) patch.terminal = input.terminal.trim() || null;
+  if (input.flightArrivalAt !== undefined) patch.flight_arrival_at = input.flightArrivalAt || null;
+  if (input.flightStatus !== undefined) patch.flight_status = input.flightStatus;
+
+  const { error } = await supabase.from("out_of_town_trips").update(patch).eq("id", input.tripId);
+  if (error) return { ok: false, error: clean(error.message) };
   rev();
   return { ok: true };
 }
