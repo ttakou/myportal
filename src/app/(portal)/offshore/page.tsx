@@ -2,6 +2,7 @@ import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import {
   getAccommodationSummary,
   getAddableProfiles,
+  getAllInstallations,
   getAllOffshoreTrips,
   getAllVisitRequests,
   getCertAlerts,
@@ -44,6 +45,7 @@ export default async function OffshorePage() {
     certAlerts,
     visits,
     manifests,
+    manageInstallations,
   ] = canManage
     ? await Promise.all([
         getCrews(),
@@ -55,8 +57,9 @@ export default async function OffshorePage() {
         getCertAlerts(),
         getAllVisitRequests(),
         getManifests(),
+        getAllInstallations(),
       ])
-    : [[], [], [], [], null, null, [], [], []];
+    : [[], [], [], [], null, null, [], [], [], []];
 
   return (
     <div className="space-y-8">
@@ -74,6 +77,7 @@ export default async function OffshorePage() {
           crews={crews}
           rooms={rooms}
           roster={roster}
+          manageInstallations={manageInstallations}
           installations={installations}
           addable={addable}
           pob={pobBreakdown}
