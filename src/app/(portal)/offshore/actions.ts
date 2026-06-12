@@ -127,13 +127,14 @@ export async function upsertCrew(input: {
   onshoreDays?: number;
   transportMode?: string;
   departureLocation?: string;
+  cycleStartDate?: string | null;
 }): Promise<ActionResult> {
   if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
   if (!input.name.trim()) return { ok: false, error: "Crew name is required." };
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
-  const row = {
+  const row: Record<string, unknown> = {
     tenant_id: tenant,
     name: input.name.trim(),
     installation_id: input.installationId || null,
@@ -143,6 +144,7 @@ export async function upsertCrew(input: {
     transport_mode: input.transportMode?.trim() || null,
     departure_location: input.departureLocation?.trim() || null,
   };
+  if (input.cycleStartDate !== undefined) row.cycle_start_date = input.cycleStartDate || null;
   const { error } = input.id
     ? await supabase.from("offshore_crews").update(row).eq("id", input.id)
     : await supabase.from("offshore_crews").insert(row);
@@ -249,6 +251,8 @@ export async function updateRosterMember(input: {
   id: string;
   crewId?: string | null;
   position?: string;
+  company?: string;
+  backToBackId?: string | null;
   fixedRoomId?: string | null;
   fixedBed?: string;
   medicalExpiry?: string | null;
@@ -262,6 +266,8 @@ export async function updateRosterMember(input: {
   const patch: Record<string, unknown> = {};
   if (input.crewId !== undefined) patch.crew_id = input.crewId || null;
   if (input.position !== undefined) patch.position = input.position.trim() || null;
+  if (input.company !== undefined) patch.company = input.company.trim() || null;
+  if (input.backToBackId !== undefined) patch.back_to_back_id = input.backToBackId || null;
   if (input.fixedRoomId !== undefined) patch.fixed_room_id = input.fixedRoomId || null;
   if (input.fixedBed !== undefined) patch.fixed_bed = input.fixedBed.trim() || null;
   if (input.medicalExpiry !== undefined) patch.medical_expiry = input.medicalExpiry || null;
@@ -435,6 +441,38 @@ export async function setVisitorMovement(
 }
 
 // --- Trip manifests (Phase 3) ------------------------------------------------
+
+/**
+ * Generate the crew manifest for the crew's *next* computed change date,
+ * derived from its rotation cycle. Outbound = crew going offshore.
+ */
+export async function generateNextCrewChange(
+  crewId: string,
+  direction: "out" | "in",
+): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { data: crew } = await supabase
+    .from("offshore_crews")
+    .select("offshore_days, onshore_days, cycle_start_date")
+    .eq("id", crewId)
+    .maybeSingle();
+  if (!crew) return { ok: false, error: "Crew not found." };
+  if (!crew.cycle_start_date)
+    return { ok: false, error: "Set the crew's cycle start date first." };
+
+  const period = (crew.offshore_days as number) + (crew.onshore_days as number);
+  const DAY = 86_400_000;
+  const start = new Date((crew.cycle_start_date as string) + "T00:00:00Z").getTime();
+  const now = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
+  let base = start;
+  if (now > start) base = start + Math.ceil((now - start) / (period * DAY)) * period * DAY;
+  // Inbound (crew returning) falls offshore_days after they went out.
+  const target =
+    direction === "in" ? base - (crew.onshore_days as number) * DAY : base;
+  const scheduledDate = new Date(target).toISOString().slice(0, 10);
+  return generateCrewManifest({ crewId, direction, scheduledDate });
+}
 
 export async function generateCrewManifest(input: {
   crewId: string;
