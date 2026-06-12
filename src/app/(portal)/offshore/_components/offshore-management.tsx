@@ -55,6 +55,7 @@ import {
   setRoomStatus,
   setVisitorMovement,
   togglePaxNoShow,
+  updateRoomFields,
   updateRosterMember,
   upsertCrew,
   upsertInstallation,
@@ -915,36 +916,100 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
             </tr>
           </thead>
           <tbody className="divide-y">
-            {rooms.map((r) => (
-              <tr key={r.id}>
-                <td className="px-3 py-2 font-medium">
-                  {[r.block, r.room_number].filter(Boolean).join(" ")}
-                  {r.special_flag && (
-                    <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-700">{r.special_flag}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">{r.installation_name}</td>
-                <td className="px-3 py-2 text-muted-foreground">{r.floor ?? "—"}</td>
-                <td className="px-3 py-2 capitalize text-muted-foreground">{r.room_type}</td>
-                <td className="px-3 py-2 text-muted-foreground">
-                  {r.bed_count}
-                  {r.fixed_assigned > 0 ? ` · ${r.fixed_assigned} fixed` : ""}
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">{GENDER_LABEL[r.gender_restriction]}</td>
-                <td className="px-3 py-2">
-                  <select
-                    value={r.status}
-                    disabled={pending}
-                    onChange={(e) => run(() => setRoomStatus(r.id, e.target.value))}
-                    className="rounded-md border bg-background px-1.5 py-1 text-xs"
-                  >
-                    {(Object.keys(ROOM_STATUS_LABEL) as RoomStatus[]).map((s) => (
-                      <option key={s} value={s}>{ROOM_STATUS_LABEL[s]}</option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
-            ))}
+            {rooms.map((r) => {
+              const cell = "w-full rounded-md border bg-background px-2 py-1 text-xs";
+              return (
+                <tr key={r.id}>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1">
+                      <input
+                        defaultValue={r.block ?? ""}
+                        disabled={pending}
+                        placeholder="Block"
+                        onBlur={(e) => {
+                          if (e.target.value !== (r.block ?? "")) run(() => updateRoomFields({ id: r.id, block: e.target.value }));
+                        }}
+                        className={`${cell} w-16`}
+                      />
+                      <input
+                        defaultValue={r.room_number}
+                        disabled={pending}
+                        onBlur={(e) => {
+                          if (e.target.value !== r.room_number) run(() => updateRoomFields({ id: r.id, roomNumber: e.target.value }));
+                        }}
+                        className={`${cell} w-24 font-medium`}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{r.installation_name}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      defaultValue={r.floor ?? ""}
+                      disabled={pending}
+                      placeholder="—"
+                      onBlur={(e) => {
+                        if (e.target.value !== (r.floor ?? "")) run(() => updateRoomFields({ id: r.id, floor: e.target.value }));
+                      }}
+                      className={cell}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={r.room_type}
+                      disabled={pending}
+                      onChange={(e) => run(() => updateRoomFields({ id: r.id, roomType: e.target.value }))}
+                      className={`${cell} capitalize`}
+                    >
+                      {["single", "double", "shared", "vip", "medic"].map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        defaultValue={r.bed_count}
+                        disabled={pending}
+                        onBlur={(e) => {
+                          const v = Number(e.target.value);
+                          if (v !== r.bed_count) run(() => updateRoomFields({ id: r.id, bedCount: v }));
+                        }}
+                        className={`${cell} w-16`}
+                      />
+                      {r.fixed_assigned > 0 && (
+                        <span className="text-[10px] text-muted-foreground">{r.fixed_assigned} fixed</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={r.gender_restriction}
+                      disabled={pending}
+                      onChange={(e) => run(() => updateRoomFields({ id: r.id, genderRestriction: e.target.value }))}
+                      className={cell}
+                    >
+                      {(Object.keys(GENDER_LABEL) as GenderRestriction[]).map((g) => (
+                        <option key={g} value={g}>{GENDER_LABEL[g]}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={r.status}
+                      disabled={pending}
+                      onChange={(e) => run(() => setRoomStatus(r.id, e.target.value))}
+                      className={cell}
+                    >
+                      {(Object.keys(ROOM_STATUS_LABEL) as RoomStatus[]).map((s) => (
+                        <option key={s} value={s}>{ROOM_STATUS_LABEL[s]}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              );
+            })}
             {rooms.length === 0 && (
               <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">No rooms yet.</td></tr>
             )}

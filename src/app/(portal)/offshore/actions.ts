@@ -226,6 +226,55 @@ export async function setRoomStatus(id: string, status: string): Promise<ActionR
   return { ok: true };
 }
 
+/** Inline edit of one or more room fields (only provided fields change). */
+export async function updateRoomFields(input: {
+  id: string;
+  block?: string;
+  floor?: string;
+  roomNumber?: string;
+  roomType?: string;
+  bedCount?: number;
+  maxBedCount?: number;
+  genderRestriction?: string;
+  specialFlag?: string;
+  notes?: string;
+}): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const patch: Record<string, unknown> = {};
+  if (input.block !== undefined) patch.block = input.block.trim() || null;
+  if (input.floor !== undefined) patch.floor = input.floor.trim() || null;
+  if (input.roomNumber !== undefined) {
+    if (!input.roomNumber.trim()) return { ok: false, error: "Room number can't be empty." };
+    patch.room_number = input.roomNumber.trim();
+  }
+  if (input.roomType !== undefined) patch.room_type = input.roomType.trim() || "shared";
+  if (input.bedCount !== undefined) {
+    const bed = Math.max(0, Math.floor(input.bedCount));
+    patch.bed_count = bed;
+    // Keep max capacity at least the current bed count.
+    if (input.maxBedCount === undefined) patch.max_bed_count = bed;
+  }
+  if (input.maxBedCount !== undefined) patch.max_bed_count = Math.max(0, Math.floor(input.maxBedCount));
+  if (input.genderRestriction !== undefined)
+    patch.gender_restriction = ["any", "male", "female"].includes(input.genderRestriction)
+      ? input.genderRestriction
+      : "any";
+  if (input.specialFlag !== undefined) patch.special_flag = input.specialFlag.trim() || null;
+  if (input.notes !== undefined) patch.notes = input.notes.trim() || null;
+
+  const { error } = await supabase.from("offshore_rooms").update(patch).eq("id", input.id);
+  if (error)
+    return {
+      ok: false,
+      error: error.message.includes("duplicate")
+        ? "That room number already exists on this installation."
+        : error.message,
+    };
+  rev();
+  return { ok: true };
+}
+
 export async function addRosterMember(profileId: string): Promise<ActionResult> {
   if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
   if (!profileId) return { ok: false, error: "Choose a person." };
