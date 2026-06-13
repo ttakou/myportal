@@ -9,7 +9,7 @@ import { bulkRegisterStaff, type BulkRow, type BulkRowResult } from "../actions"
 const TEMPLATE =
   "full_name,email,manager_email,role,department,employee_type\n" +
   "Jane Doe,jane@acme.com,,manager,Operations,employee\n" +
-  "John Roe,john@acme.com,jane@acme.com,employee,Operations,employee\n";
+  "John Roe,,Jane Doe,employee,Operations,employee\n";
 
 /** Split a CSV line respecting simple double-quoted fields. */
 function splitCsvLine(line: string): string[] {
@@ -55,8 +55,8 @@ function parseCsv(text: string): { rows: BulkRow[]; error?: string } {
   if (lines.length < 2) return { rows: [], error: "Need a header row and at least one data row." };
 
   const headers = splitCsvLine(lines[0]).map((h) => ALIASES[h.toLowerCase()] ?? null);
-  if (!headers.includes("fullName") || !headers.includes("email")) {
-    return { rows: [], error: "Header must include at least full_name and email." };
+  if (!headers.includes("fullName")) {
+    return { rows: [], error: "Header must include at least full_name (email is optional)." };
   }
 
   const rows: BulkRow[] = [];
@@ -137,8 +137,9 @@ export function BulkImportPanel() {
       </div>
       <p className="text-sm text-muted-foreground">
         Upload a CSV with columns <code>full_name, email, manager_email, role, department,
-        employee_type</code>. Managers are linked by their email (they can appear anywhere in the
-        file). Existing emails are skipped.
+        employee_type</code>. <strong>Email is optional</strong> — without it the account is created
+        as &ldquo;email pending&rdquo;. People already on file (matched by email, or by name when no
+        email) are skipped; managers are linked by email or name and can appear anywhere in the file.
       </p>
 
       <div className="space-y-3 rounded-lg border bg-card p-4">
