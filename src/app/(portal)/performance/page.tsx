@@ -21,7 +21,7 @@ export default async function PerformancePage() {
       <PerformanceBoard
         objectives={objectives}
         feedback={feedback}
-        users={users.map((u) => ({ id: u.id, name: u.full_name || u.email }))}
+        users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
         nineBox={nineBox}
         isAdmin={isAdmin}
       />

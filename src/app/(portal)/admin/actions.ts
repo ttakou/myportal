@@ -271,6 +271,31 @@ export async function setUserPassword(
   return { ok: true, tempPassword: password?.trim() ? undefined : pw };
 }
 
+/** Set or update a user's real email (for accounts created without one). */
+export async function updateUserEmail(userId: string, email: string): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const clean = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) return { ok: false, error: "Enter a valid email." };
+
+  const supabase = createClient();
+  const { data: target } = await supabase.from("profiles").select("id").eq("id", userId).maybeSingle();
+  if (!target) return { ok: false, error: "User not found in your organisation." };
+
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+  const { error } = await admin.auth.admin.updateUserById(userId, { email: clean, email_confirm: true });
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes("already") ? "That email is already in use." : error.message,
+    };
+  }
+  await admin.from("profiles").update({ email: clean }).eq("id", userId);
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
 /**
  * Register a new staff member end-to-end: create the auth account (invitation
  * email or temporary password), attach the profile to the caller's tenant, and
@@ -296,9 +321,16 @@ export async function registerStaff(input: {
   if (denied) return denied;
 
   const fullName = input.fullName.trim();
-  const email = input.email.trim().toLowerCase();
+  const realEmail = input.email.trim().toLowerCase();
   if (!fullName) return { ok: false, error: "Full name is required." };
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "Enter a valid email." };
+  if (realEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(realEmail))
+    return { ok: false, error: "Enter a valid email (or leave it blank to add later)." };
+  // Auth needs a unique login id even when no real email is known yet; use an
+  // internal placeholder and keep profiles.email null until one is set.
+  const hasEmail = realEmail.length > 0;
+  const email = hasEmail ? realEmail : `pending-${randomBytes(6).toString("hex")}@no-email.local`;
+  // Without a real email we can't send an invitation — fall back to a password.
+  const mode = hasEmail ? input.mode : "password";
   const role: UserRole = input.role && ASSIGNABLE_ROLES.includes(input.role) ? input.role : "employee";
 
   const supabase = createClient();
@@ -331,7 +363,7 @@ export async function registerStaff(input: {
   //    profile alongside it.
   let userId: string;
   let tempPassword: string | undefined;
-  if (input.mode === "invite") {
+  if (mode === "invite") {
     const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
       data: { full_name: fullName },
     });
@@ -371,7 +403,7 @@ export async function registerStaff(input: {
   const { error: profileError } = await admin.from("profiles").upsert(
     {
       id: userId,
-      email,
+      email: hasEmail ? email : null,
       full_name: fullName,
       tenant_id: tenant.id,
       role,
@@ -460,16 +492,22 @@ export async function bulkRegisterStaff(input: {
   // Pass 1 — create accounts + profiles (managers linked in pass 2).
   for (const raw of input.rows) {
     const fullName = (raw.fullName ?? "").trim();
-    const email = (raw.email ?? "").trim().toLowerCase();
-    if (!fullName && !email) continue; // blank line
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      results.push({ email: email || "(blank)", ok: false, status: "failed", error: "Invalid email." });
+    const realEmail = (raw.email ?? "").trim().toLowerCase();
+    if (!fullName && !realEmail) continue; // blank line
+    const hasEmail = realEmail.length > 0;
+    if (hasEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(realEmail)) {
+      results.push({ email: realEmail, ok: false, status: "failed", error: "Invalid email." });
       continue;
     }
-    if (emailToId.has(email)) {
-      results.push({ email, ok: false, status: "skipped", error: "Already exists." });
+    if (!hasEmail && !fullName) continue;
+    const label = realEmail || fullName;
+    if (hasEmail && emailToId.has(realEmail)) {
+      results.push({ email: realEmail, ok: false, status: "skipped", error: "Already exists." });
       continue;
     }
+    // Login id: real email, or an internal placeholder when none is provided.
+    const email = hasEmail ? realEmail : `pending-${randomBytes(6).toString("hex")}@no-email.local`;
+    const mode = hasEmail ? input.mode : "password";
 
     const role: UserRole =
       raw.role && (ASSIGNABLE_ROLES as string[]).includes(raw.role.trim())
@@ -483,12 +521,12 @@ export async function bulkRegisterStaff(input: {
 
     let userId: string;
     let tempPassword: string | undefined;
-    if (input.mode === "invite") {
+    if (mode === "invite") {
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
         data: { full_name: fullName },
       });
       if (error || !data?.user) {
-        results.push({ email, ok: false, status: "failed", error: error?.message ?? "Invite failed." });
+        results.push({ email: label, ok: false, status: "failed", error: error?.message ?? "Invite failed." });
         continue;
       }
       userId = data.user.id;
@@ -501,7 +539,7 @@ export async function bulkRegisterStaff(input: {
         user_metadata: { full_name: fullName },
       });
       if (error || !data?.user) {
-        results.push({ email, ok: false, status: "failed", error: error?.message ?? "Create failed." });
+        results.push({ email: label, ok: false, status: "failed", error: error?.message ?? "Create failed." });
         continue;
       }
       userId = data.user.id;
@@ -510,7 +548,7 @@ export async function bulkRegisterStaff(input: {
     const { error: profileError } = await admin.from("profiles").upsert(
       {
         id: userId,
-        email,
+        email: hasEmail ? realEmail : null,
         full_name: fullName,
         tenant_id: tenant.id,
         role,
@@ -521,15 +559,15 @@ export async function bulkRegisterStaff(input: {
       { onConflict: "id" },
     );
     if (profileError) {
-      results.push({ email, ok: false, status: "failed", error: profileError.message });
+      results.push({ email: label, ok: false, status: "failed", error: profileError.message });
       continue;
     }
 
-    emailToId.set(email, userId);
+    if (hasEmail) emailToId.set(realEmail, userId);
     if (raw.managerEmail?.trim()) {
       managerLinks.push({ id: userId, managerEmail: raw.managerEmail.trim().toLowerCase() });
     }
-    results.push({ email, ok: true, status: "created", tempPassword });
+    results.push({ email: label, ok: true, status: "created", tempPassword });
   }
 
   // Pass 2 — link managers now that every email is known.

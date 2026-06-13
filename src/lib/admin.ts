@@ -6,7 +6,7 @@ export type EmployeeType = "employee" | "contractor" | "guest";
 export interface TenantUser {
   id: string;
   full_name: string | null;
-  email: string;
+  email: string | null;
   role: UserRole;
   job_title: string | null;
   manager_id: string | null;

@@ -54,7 +54,7 @@ export default async function SavingsPage() {
       {isAdmin && (
         <SavingsAdmin
           accounts={accounts}
-          users={users.map((u) => ({ id: u.id, name: u.full_name || u.email }))}
+          users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
         />
       )}
     </div>

@@ -18,6 +18,7 @@ import {
   setUserPassword,
   setUserRole,
   setUserType,
+  updateUserEmail,
 } from "../actions";
 
 const ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
@@ -85,7 +86,13 @@ export function UsersPanel({
               <tr key={u.id} className={cn(!u.is_active && "opacity-60")}>
                 <td className="px-4 py-3">
                   <div className="font-medium">{u.full_name || "—"}</div>
-                  <div className="text-xs text-muted-foreground">{u.email}</div>
+                  {u.email ? (
+                    <div className="text-xs text-muted-foreground">{u.email}</div>
+                  ) : canAssignRoles ? (
+                    <EmailCell userId={u.id} />
+                  ) : (
+                    <div className="text-xs text-muted-foreground italic">email pending</div>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <input
@@ -253,6 +260,43 @@ export function UsersPanel({
         </table>
       </div>
     </section>
+  );
+}
+
+/** Inline "add email" for accounts created without one. */
+function EmailCell({ userId }: { userId: string }) {
+  const [value, setValue] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <form
+      className="mt-0.5 flex items-center gap-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setError(null);
+        startTransition(async () => {
+          const res = await updateUserEmail(userId, value);
+          if (!res.ok) setError(res.error ?? "Failed.");
+        });
+      }}
+    >
+      <input
+        type="email"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="add email…"
+        className="w-44 rounded-md border bg-background px-2 py-0.5 text-xs"
+      />
+      <button
+        type="submit"
+        disabled={pending || !value.trim()}
+        className="rounded-md border px-1.5 py-0.5 text-[11px] hover:bg-accent disabled:opacity-50"
+      >
+        Save
+      </button>
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
+    </form>
   );
 }
 
