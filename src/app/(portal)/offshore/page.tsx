@@ -3,6 +3,7 @@ import {
   getAccommodationSummary,
   getAddableProfiles,
   getAllInstallations,
+  getAssignableEmployees,
   getAllOffshoreTrips,
   getAllVisitRequests,
   getCertAlerts,
@@ -48,6 +49,7 @@ export default async function OffshorePage() {
     manifests,
     manageInstallations,
     calendar,
+    employees,
   ] = canManage
     ? await Promise.all([
         getCrews(),
@@ -61,8 +63,9 @@ export default async function OffshorePage() {
         getManifests(),
         getAllInstallations(),
         getRotationCalendar(8),
+        getAssignableEmployees(),
       ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, []];
 
   return (
     <div className="space-y-8">
@@ -89,6 +92,7 @@ export default async function OffshorePage() {
           visits={visits}
           manifests={manifests}
           calendar={calendar}
+          employees={employees}
         />
       )}
 

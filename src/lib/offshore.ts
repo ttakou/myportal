@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type {
   AccommodationSummary,
+  AssignableEmployee,
   BedAllocation,
   CertAlert,
   Crew,
@@ -288,6 +289,29 @@ export async function getRoster(): Promise<RosterEntry[]> {
       } as RosterEntry;
     })
     .sort((a, b) => (a.full_name ?? "").localeCompare(b.full_name ?? ""));
+}
+
+/** All active tenant employees with their current crew, for the crew builder. */
+export async function getAssignableEmployees(): Promise<AssignableEmployee[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, offshore_staff(crew_id, crew:offshore_crews(name))")
+    .eq("is_active", true)
+    .order("full_name");
+  if (error) {
+    console.error("getAssignableEmployees:", error.message);
+    return [];
+  }
+  return (data ?? []).map((p: Record<string, any>) => {
+    const s = one2<{ crew_id?: string; crew?: unknown }>(p.offshore_staff);
+    return {
+      id: p.id,
+      name: (p.full_name as string) || (p.email as string) || "Unknown",
+      crew_id: s?.crew_id ?? null,
+      crew_name: s ? one2<{ name?: string }>(s.crew as any)?.name ?? null : null,
+    };
+  });
 }
 
 /** Tenant profiles not yet on the offshore roster, for adding members. */
