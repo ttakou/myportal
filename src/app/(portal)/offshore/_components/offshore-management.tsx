@@ -1097,8 +1097,30 @@ function CrewsPanel({
       <div className="grid gap-3 lg:grid-cols-2">
         {crews.map((c) => (
           <div key={c.id} className="rounded-lg border bg-card p-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="font-medium">{c.name}</span>
+            <div className="flex items-center justify-between gap-2">
+              <input
+                defaultValue={c.name}
+                disabled={pending}
+                title="Rename crew"
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== c.name)
+                    run(() =>
+                      upsertCrew({
+                        id: c.id,
+                        name: v,
+                        installationId: c.installation_id ?? undefined,
+                        rotationPattern: c.rotation_pattern ?? undefined,
+                        offshoreDays: c.offshore_days,
+                        onshoreDays: c.onshore_days,
+                        transportMode: c.transport_mode ?? undefined,
+                        departureLocation: c.departure_location ?? undefined,
+                        cycleStartDate: c.cycle_start_date ?? null,
+                      }),
+                    );
+                }}
+                className={cn(field, "flex-1 font-medium")}
+              />
               <button
                 disabled={pending}
                 onClick={() => {
