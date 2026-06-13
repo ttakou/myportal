@@ -131,7 +131,7 @@ export function RegisterStaffPanel({
       <form onSubmit={submit} className="space-y-3 rounded-lg border bg-card p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" required className={field} />
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Work email" required className={field} />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Work email (optional)" className={field} />
           <select value={mode} onChange={(e) => setMode(e.target.value as "invite" | "password")} className={field}>
             <option value="password">Create with temporary password</option>
             <option value="invite">Send invitation email</option>

@@ -53,7 +53,7 @@ export default async function MedicalPage() {
         )}
       </div>
 
-      {isAdmin && <MedicalAdmin roster={roster} users={users.map((u) => ({ id: u.id, name: u.full_name || u.email }))} />}
+      {isAdmin && <MedicalAdmin roster={roster} users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))} />}
     </div>
   );
 }
