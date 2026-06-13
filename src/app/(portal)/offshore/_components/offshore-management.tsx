@@ -49,6 +49,7 @@ import {
   addRosterMember,
   allocateVisitorBed,
   assignToCrew,
+  autoAssignBySchedule,
   confirmManifestMovement,
   decideVisitRequest,
   deleteCrew,
@@ -532,6 +533,145 @@ function DrillCard({
   );
 }
 
+/** Parse a rotation pattern like "28/28" or "28" into offshore/onshore day counts. */
+function parsePattern(pattern: string, start: string, end: string): { off: number; on: number } | null {
+  const parts = pattern.split("/").map((n) => parseInt(n.trim(), 10));
+  if (parts[0] > 0) {
+    const off = parts[0];
+    const on = parts[1] > 0 ? parts[1] : off;
+    return { off, on };
+  }
+  // No pattern: derive offshore length from the start/end dates (onshore = same).
+  if (start && end) {
+    const days = Math.round(
+      (new Date(end + "T00:00:00Z").getTime() - new Date(start + "T00:00:00Z").getTime()) / 86400000,
+    ) + 1;
+    if (days > 0) return { off: days, on: days };
+  }
+  return null;
+}
+
+/** Shared cycle-start + pattern form that auto-groups people into a crew. */
+function RotationForm({
+  profileIds,
+  label,
+  onDone,
+}: {
+  profileIds: string[];
+  label: string;
+  onDone?: () => void;
+}) {
+  const { pending, error, run } = useRun();
+  const [start, setStart] = useState("");
+  const [pattern, setPattern] = useState("28/28");
+  const [end, setEnd] = useState("");
+
+  function apply() {
+    const parsed = parsePattern(pattern, start, end);
+    if (!start || !parsed) return;
+    run(
+      () =>
+        autoAssignBySchedule({
+          profileIds,
+          offshoreDays: parsed.off,
+          onshoreDays: parsed.on,
+          cycleStartDate: start,
+          autoName: true,
+        }),
+      onDone,
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed bg-card/50 p-2 text-xs">
+      <label className="text-muted-foreground">
+        Cycle start
+        <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={cn(field, "mt-0.5 block py-1")} />
+      </label>
+      <label className="text-muted-foreground">
+        Recurring (off/on)
+        <input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="28/28" className={cn(field, "mt-0.5 block w-24 py-1")} />
+      </label>
+      <label className="text-muted-foreground">
+        End shift (opt.)
+        <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className={cn(field, "mt-0.5 block py-1")} />
+      </label>
+      <Button size="sm" disabled={pending || !start || !profileIds.length} onClick={apply}>
+        {label}
+      </Button>
+      {error && <span className="text-destructive">{error}</span>}
+    </div>
+  );
+}
+
+/** Top-of-list bulk control: apply one rotation to every unassigned person. */
+function BulkSchedule({ profileIds }: { profileIds: string[] }) {
+  const [open, setOpen] = useState(false);
+  if (!profileIds.length) return null;
+  return (
+    <div className="mb-2 border-b pb-2">
+      {open ? (
+        <div className="space-y-1">
+          <p className="text-xs font-medium">Apply one rotation to all {profileIds.length} unassigned (same schedule → one crew):</p>
+          <RotationForm profileIds={profileIds} label={`Apply to all ${profileIds.length}`} onDone={() => setOpen(false)} />
+        </div>
+      ) : (
+        <button onClick={() => setOpen(true)} className="text-xs font-medium text-primary hover:underline">
+          + Apply a rotation to all {profileIds.length} at once
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** One unassigned person: quick crew pick + an expandable rotation scheduler. */
+function UnassignedRow({ person, crews }: { person: PobBreakdown["people"][number]; crews: Crew[] }) {
+  const { pending, run } = useRun();
+  const [sched, setSched] = useState(false);
+  const p = person;
+
+  return (
+    <div className="border-b py-1.5 last:border-0">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{p.name}</span>
+        {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
+        {p.room_label && (
+          <span className="text-xs text-muted-foreground">
+            {p.room_label}{p.bed_no ? ` · ${p.bed_no}` : ""}
+          </span>
+        )}
+        {p.lifeboat && <span className="rounded bg-sky-100 px-1.5 text-[10px] text-sky-800">{p.lifeboat}</span>}
+        {p.profile_id && (
+          <span className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => setSched((s) => !s)}
+              className={cn("rounded border px-1.5 py-1 text-xs hover:bg-accent", sched && "bg-accent")}
+            >
+              Rotation
+            </button>
+            <select
+              defaultValue={p.crew_id ?? ""}
+              disabled={pending}
+              onChange={(e) => run(() => assignToCrew([p.profile_id as string], e.target.value || null))}
+              className={cn(field, "py-1 text-xs")}
+            >
+              <option value="">No crew…</option>
+              {crews.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </span>
+        )}
+      </div>
+      {sched && p.profile_id && (
+        <div className="mt-1.5">
+          <RotationForm profileIds={[p.profile_id]} label="Schedule & assign" onDone={() => setSched(false)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 type Drill = { type: "crew" | "lb"; key: string } | { type: "rooms" } | null;
 
 function Dashboard({
@@ -633,43 +773,34 @@ function Dashboard({
           </div>
         )}
 
-        {/* Drill-down: crew member list (with assign control for the unassigned) */}
-        {drill?.type === "crew" && (
+        {/* Drill-down: crew member list (with assign + scheduling for the unassigned) */}
+        {drill?.type === "crew" && drill.key === "Unassigned" && (
           <DrillCard
-            title={
-              drill.key === "Unassigned"
-                ? `Unassigned on board — assign to a crew (${unassigned.length})`
-                : `${drill.key} on board`
-            }
+            title={`Unassigned on board — assign to a crew (${unassigned.length})`}
             onClose={() => setDrill(null)}
           >
-            {(drill.key === "Unassigned" ? unassigned : pob.people.filter((p) => p.crew_name === drill.key)).map((p) => (
-              <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 last:border-0">
-                <span className="font-medium">{p.name}</span>
-                {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
-                {p.room_label && (
-                  <span className="text-xs text-muted-foreground">
-                    {p.room_label}{p.bed_no ? ` · ${p.bed_no}` : ""}
-                  </span>
-                )}
-                {p.lifeboat && (
-                  <span className="rounded bg-sky-100 px-1.5 text-[10px] text-sky-800">{p.lifeboat}</span>
-                )}
-                {p.profile_id && (
-                  <select
-                    defaultValue={p.crew_id ?? ""}
-                    disabled={pending}
-                    onChange={(e) => run(() => assignToCrew([p.profile_id as string], e.target.value || null))}
-                    className={cn(field, "ml-auto py-1 text-xs")}
-                  >
-                    <option value="">No crew…</option>
-                    {crews.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
+            <BulkSchedule
+              profileIds={unassigned.map((p) => p.profile_id).filter((x): x is string => Boolean(x))}
+            />
+            {unassigned.map((p) => (
+              <UnassignedRow key={p.trip_id} person={p} crews={crews} />
             ))}
+          </DrillCard>
+        )}
+        {drill?.type === "crew" && drill.key !== "Unassigned" && (
+          <DrillCard title={`${drill.key} on board`} onClose={() => setDrill(null)}>
+            {pob.people
+              .filter((p) => p.crew_name === drill.key)
+              .map((p) => (
+                <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
+                  <span className="font-medium">{p.name}</span>
+                  {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {p.room_label ?? "—"}{p.bed_no ? ` · ${p.bed_no}` : ""}
+                    {p.lifeboat ? ` · ${p.lifeboat}` : ""}
+                  </span>
+                </div>
+              ))}
           </DrillCard>
         )}
 
