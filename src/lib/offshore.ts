@@ -377,12 +377,14 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
 
-  const [{ data: onboard }, { data: pob }, { data: arrivals }, { data: visitors }] =
+  const [{ data: onboard }, { data: pob }, { data: arrivals }, { data: visitors }, { data: staffRows }] =
     await Promise.all([
       supabase
         .from("offshore_trips")
         .select(
-          "category, demob_date, lifeboat, installation:offshore_installations(name), crew:offshore_crews(name)," +
+          "id, profile_id, crew_id, room_id, bed_no, category, demob_date, lifeboat," +
+            " installation:offshore_installations(name), crew:offshore_crews(name)," +
+            " room:offshore_rooms(room_number, block)," +
             " person:profiles!offshore_trips_profile_id_fkey(full_name)",
         )
         .eq("status", "onboard"),
@@ -396,7 +398,13 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
         .from("offshore_visit_requests")
         .select("visitor_name, return_date, depart_date, installation:offshore_installations(name)")
         .eq("status", "onboard"),
+      supabase.from("offshore_staff").select("profile_id, company"),
     ]);
+
+  const companyByProfile = new Map<string, string | null>();
+  for (const s of (staffRows ?? []) as Record<string, any>[]) {
+    companyByProfile.set(s.profile_id as string, (s.company as string | null) ?? null);
+  }
 
   const rows = onboard ?? [];
   const byCrewMap = new Map<string, number>();
@@ -407,14 +415,29 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
   let departuresToday = 0;
   let arrivalsToday = arrivals?.length ?? 0;
   const overstayers: PobBreakdown["overstayers"] = [];
+  const people: PobBreakdown["people"] = [];
 
   for (const r of rows as Record<string, any>[]) {
     if (r.category === "visitor") visitor++;
     else staff++;
-    const crew = one2<{ name?: string }>(r.crew)?.name ?? "Unassigned";
+    const crewName = one2<{ name?: string }>(r.crew)?.name ?? null;
+    const crew = crewName ?? "Unassigned";
     byCrewMap.set(crew, (byCrewMap.get(crew) ?? 0) + 1);
     const lb = (r.lifeboat as string | null) || "Unassigned";
     byLifeboatMap.set(lb, (byLifeboatMap.get(lb) ?? 0) + 1);
+    const room = one2<{ room_number?: string; block?: string }>(r.room);
+    people.push({
+      trip_id: r.id as string,
+      profile_id: (r.profile_id as string | null) ?? null,
+      name: one2<{ full_name?: string }>(r.person)?.full_name ?? "—",
+      crew_id: (r.crew_id as string | null) ?? null,
+      crew_name: crewName,
+      lifeboat: (r.lifeboat as string | null) ?? null,
+      room_id: (r.room_id as string | null) ?? null,
+      room_label: room ? [room.block, room.room_number].filter(Boolean).join(" ") : null,
+      bed_no: (r.bed_no as string | null) ?? null,
+      company: r.profile_id ? companyByProfile.get(r.profile_id as string) ?? null : null,
+    });
     if (r.demob_date) {
       if (r.demob_date === today) departuresToday++;
       if (r.demob_date < today) {
@@ -455,6 +478,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     arrivalsToday,
     departuresToday,
     overstayers,
+    people: people.sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
 
@@ -464,33 +488,48 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
   const [{ data: rooms }, { data: onboard }] = await Promise.all([
     supabase
       .from("offshore_rooms")
-      .select("id, bed_count, status, offshore_staff(count)")
+      .select("id, room_number, block, bed_count, status, offshore_staff(count)")
       .eq("is_active", true),
     supabase
       .from("offshore_trips")
-      .select("room_id")
+      .select("id, room_id, bed_no, person:profiles!offshore_trips_profile_id_fkey(full_name)")
       .eq("status", "onboard"),
   ]);
 
-  // On-board headcount per room (a 2-bed room may hold 4 on day/night shift).
-  const occByRoom = new Map<string, number>();
+  // On-board occupants per room (a 2-bed room may hold 4 on day/night shift).
+  const occByRoom = new Map<string, { trip_id: string; name: string; bed_no: string | null }[]>();
   let occupiedBeds = 0;
   for (const t of (onboard ?? []) as Record<string, any>[]) {
     occupiedBeds++;
     const rid = t.room_id as string | null;
-    if (rid) occByRoom.set(rid, (occByRoom.get(rid) ?? 0) + 1);
+    if (!rid) continue;
+    const list = occByRoom.get(rid) ?? [];
+    list.push({
+      trip_id: t.id as string,
+      name: one2<{ full_name?: string }>(t.person)?.full_name ?? "—",
+      bed_no: (t.bed_no as string | null) ?? null,
+    });
+    occByRoom.set(rid, list);
   }
 
   let totalBeds = 0;
   let fixedBeds = 0;
   let blockedRooms = 0;
-  let sharedRooms = 0;
+  const overbooked: AccommodationSummary["overbooked"] = [];
   for (const r of (rooms ?? []) as Record<string, any>[]) {
     const blocked = ["blocked", "maintenance"].includes(r.status);
     if (blocked) blockedRooms++;
     else totalBeds += r.bed_count ?? 0;
     fixedBeds += r.offshore_staff?.[0]?.count ?? 0;
-    if ((occByRoom.get(r.id as string) ?? 0) > (r.bed_count ?? 0)) sharedRooms++;
+    const occupants = occByRoom.get(r.id as string) ?? [];
+    if (occupants.length > (r.bed_count ?? 0)) {
+      overbooked.push({
+        room_id: r.id as string,
+        label: [r.block, r.room_number].filter(Boolean).join(" "),
+        beds: r.bed_count ?? 0,
+        occupants: occupants.sort((a, b) => (a.bed_no ?? "").localeCompare(b.bed_no ?? "")),
+      });
+    }
   }
   return {
     totalRooms: rooms?.length ?? 0,
@@ -499,7 +538,8 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
     occupiedBeds,
     blockedRooms,
     availableBeds: Math.max(0, totalBeds - occupiedBeds),
-    sharedRooms,
+    sharedRooms: overbooked.length,
+    overbooked: overbooked.sort((a, b) => a.label.localeCompare(b.label)),
   };
 }
 

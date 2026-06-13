@@ -178,6 +178,22 @@ export interface PobBreakdown {
   arrivalsToday: number;
   departuresToday: number;
   overstayers: { name: string; installation: string | null; demob_date: string | null }[];
+  /** Every person currently on board, for drill-down lists. */
+  people: PobOnboard[];
+}
+
+/** A single on-board person, used for dashboard drill-downs. */
+export interface PobOnboard {
+  trip_id: string;
+  profile_id: string | null;
+  name: string;
+  crew_id: string | null;
+  crew_name: string | null;
+  lifeboat: string | null;
+  room_id: string | null;
+  room_label: string | null;
+  bed_no: string | null;
+  company: string | null;
 }
 
 export interface AccommodationSummary {
@@ -189,6 +205,13 @@ export interface AccommodationSummary {
   availableBeds: number;
   /** Rooms whose current occupancy exceeds bed_count (day/night hot-bunking). */
   sharedRooms: number;
+  /** The hot-bunked rooms with their occupants, for drill-down + fixing. */
+  overbooked: {
+    room_id: string;
+    label: string;
+    beds: number;
+    occupants: { trip_id: string; name: string; bed_no: string | null }[];
+  }[];
 }
 
 export interface CertAlert {
