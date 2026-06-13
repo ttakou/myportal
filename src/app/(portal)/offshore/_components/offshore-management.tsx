@@ -555,6 +555,19 @@ function Dashboard({
             By crew: {pob.byCrew.map((c) => `${c.name} ${c.pob}`).join(" · ")}
           </p>
         )}
+        {pob.byLifeboat.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="font-medium text-muted-foreground">Muster / lifeboat:</span>
+            {pob.byLifeboat.map((l) => (
+              <span
+                key={l.name}
+                className="rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-800"
+              >
+                {l.name} · {l.pob}
+              </span>
+            ))}
+          </div>
+        )}
         {pob.overstayers.length > 0 && (
           <div className="mt-2 rounded-md bg-amber-50 p-3 text-sm">
             <p className="font-medium text-amber-800">Overstayers (past planned return)</p>
@@ -581,6 +594,12 @@ function Dashboard({
           <Stat label="Fixed (staff)" value={accommodation.fixedBeds} />
           <Stat label="Blocked rooms" value={accommodation.blockedRooms} />
         </div>
+        {accommodation.sharedRooms > 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {accommodation.sharedRooms} room(s) hot-bunked — occupancy exceeds installed beds
+            (day/night shift sharing).
+          </p>
+        )}
       </section>
 
       <section>
@@ -1186,6 +1205,11 @@ function RosterPanel({
                   {m.fixed_bed ? ` · ${m.fixed_bed}` : ""}
                 </span>
               )}
+              {m.lifeboat && (
+                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-medium text-sky-800">
+                  {m.lifeboat}
+                </span>
+              )}
               {m.back_to_back_name && (
                 <span className="text-xs text-muted-foreground">B2B: {m.back_to_back_name}</span>
               )}
@@ -1262,6 +1286,15 @@ function RosterPanel({
                 placeholder="Fixed bed (Bed 1)"
                 onBlur={(e) => {
                   if (e.target.value !== (m.fixed_bed ?? "")) run(() => updateRosterMember({ id: m.id, fixedBed: e.target.value }));
+                }}
+                className={field}
+              />
+              <input
+                defaultValue={m.lifeboat ?? ""}
+                disabled={pending}
+                placeholder="Muster / lifeboat (LB-1)"
+                onBlur={(e) => {
+                  if (e.target.value !== (m.lifeboat ?? "")) run(() => updateRosterMember({ id: m.id, lifeboat: e.target.value }));
                 }}
                 className={field}
               />

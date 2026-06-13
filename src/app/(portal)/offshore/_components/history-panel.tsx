@@ -71,6 +71,7 @@ export function HistoryPanel() {
                     <th className="px-3 py-2 font-medium">Category</th>
                     <th className="px-3 py-2 font-medium">Installation</th>
                     <th className="px-3 py-2 font-medium">Crew</th>
+                    <th className="px-3 py-2 font-medium">Muster</th>
                     <th className="px-3 py-2 font-medium">On board since</th>
                   </tr>
                 </thead>
@@ -81,13 +82,14 @@ export function HistoryPanel() {
                       <td className="px-3 py-1.5 capitalize text-muted-foreground">{p.category}</td>
                       <td className="px-3 py-1.5 text-muted-foreground">{p.installation ?? "—"}</td>
                       <td className="px-3 py-1.5 text-muted-foreground">{p.crew ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{p.lifeboat ?? "—"}</td>
                       <td className="px-3 py-1.5 text-muted-foreground">
                         {p.from}{p.to ? ` → ${p.to}` : ""}
                       </td>
                     </tr>
                   ))}
                   {pob.people.length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No one on board on that date.</td></tr>
+                    <tr><td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">No one on board on that date.</td></tr>
                   )}
                 </tbody>
               </table>

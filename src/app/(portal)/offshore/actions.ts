@@ -308,6 +308,7 @@ export async function updateRosterMember(input: {
   backToBackId?: string | null;
   fixedRoomId?: string | null;
   fixedBed?: string;
+  lifeboat?: string;
   medicalExpiry?: string | null;
   bosietExpiry?: string | null;
   huetExpiry?: string | null;
@@ -323,6 +324,7 @@ export async function updateRosterMember(input: {
   if (input.backToBackId !== undefined) patch.back_to_back_id = input.backToBackId || null;
   if (input.fixedRoomId !== undefined) patch.fixed_room_id = input.fixedRoomId || null;
   if (input.fixedBed !== undefined) patch.fixed_bed = input.fixedBed.trim() || null;
+  if (input.lifeboat !== undefined) patch.lifeboat = input.lifeboat.trim() || null;
   if (input.medicalExpiry !== undefined) patch.medical_expiry = input.medicalExpiry || null;
   if (input.bosietExpiry !== undefined) patch.bosiet_expiry = input.bosietExpiry || null;
   if (input.huetExpiry !== undefined) patch.huet_expiry = input.huetExpiry || null;
