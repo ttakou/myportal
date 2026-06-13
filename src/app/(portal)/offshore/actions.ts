@@ -1140,6 +1140,29 @@ export async function assignToCrew(
       .upsert(rows, { onConflict: "profile_id" });
     if (error) return { ok: false, error: error.message };
   }
+  // Keep any live on-board trips in sync so POB-by-crew reflects the change now.
+  const { error: tripErr } = await supabase
+    .from("offshore_trips")
+    .update({ crew_id: crewId })
+    .in("profile_id", profileIds)
+    .eq("status", "onboard");
+  if (tripErr) return { ok: false, error: tripErr.message };
+  rev();
+  return { ok: true };
+}
+
+/** Move an on-board person to a different room/bed (e.g. to clear an over-booked room). */
+export async function reassignTripRoom(
+  tripId: string,
+  roomId: string | null,
+  bedNo?: string | null,
+): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const patch: Record<string, unknown> = { room_id: roomId || null };
+  if (bedNo !== undefined) patch.bed_no = bedNo?.trim() || null;
+  const { error } = await supabase.from("offshore_trips").update(patch).eq("id", tripId);
+  if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
 }

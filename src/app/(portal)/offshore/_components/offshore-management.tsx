@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import {
   AlertTriangle,
   Anchor,
@@ -15,6 +15,7 @@ import {
   Users,
   UserCog,
   UtensilsCrossed,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -47,9 +48,11 @@ import {
 import {
   addRosterMember,
   allocateVisitorBed,
+  assignToCrew,
   confirmManifestMovement,
   decideVisitRequest,
   deleteCrew,
+  reassignTripRoom,
   findAvailableBeds,
   generateCrewManifest,
   generateNextCrewChange,
@@ -144,7 +147,13 @@ export function OffshoreManagement(props: {
       </div>
 
       {tab === "dashboard" && (
-        <Dashboard pob={props.pob} accommodation={props.accommodation} certAlerts={props.certAlerts} />
+        <Dashboard
+          pob={props.pob}
+          accommodation={props.accommodation}
+          certAlerts={props.certAlerts}
+          crews={props.crews}
+          rooms={props.rooms}
+        />
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
       {tab === "crews" && (
@@ -501,21 +510,59 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
   );
 }
 
+function DrillCard({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mt-2 rounded-lg border bg-card p-3">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-sm font-medium">{title}</span>
+        <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="max-h-96 overflow-y-auto">{children}</div>
+    </div>
+  );
+}
+
+type Drill = { type: "crew" | "lb"; key: string } | { type: "rooms" } | null;
+
 function Dashboard({
   pob,
   accommodation,
   certAlerts,
+  crews,
+  rooms,
 }: {
   pob: PobBreakdown;
   accommodation: AccommodationSummary;
   certAlerts: CertAlert[];
+  crews: Crew[];
+  rooms: Room[];
 }) {
+  const { pending, error, run } = useRun();
+  const [drill, setDrill] = useState<Drill>(null);
+
+  const isOpen = (d: NonNullable<Drill>) =>
+    drill?.type === d.type && ("key" in d ? "key" in drill && drill.key === d.key : true);
+  const toggle = (d: NonNullable<Drill>) => setDrill((cur) => (isOpen(d) ? null : d));
+
+  const unassigned = pob.people.filter((p) => !p.crew_id);
+
   return (
     <div className="space-y-5">
       <section>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Persons on board
         </h3>
+        {error && <p className="mb-2 rounded-md bg-destructive/10 px-3 py-1.5 text-sm text-destructive">{error}</p>}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <Stat label="Current POB" value={pob.total} />
           <Stat label="Offshore staff" value={pob.byCategory.staff} />
@@ -551,34 +598,101 @@ function Dashboard({
           </div>
         )}
         {pob.byCrew.length > 0 && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            By crew: {pob.byCrew.map((c) => `${c.name} ${c.pob}`).join(" · ")}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="font-medium text-muted-foreground">By crew:</span>
+            {pob.byCrew.map((c) => (
+              <button
+                key={c.name}
+                onClick={() => toggle({ type: "crew", key: c.name })}
+                className={cn(
+                  "rounded-full border px-2 py-0.5 font-medium hover:bg-accent",
+                  c.name === "Unassigned" && "border-amber-300 bg-amber-50 text-amber-800",
+                  isOpen({ type: "crew", key: c.name }) && "ring-1 ring-primary",
+                )}
+              >
+                {c.name} · {c.pob}
+              </button>
+            ))}
+          </div>
         )}
         {pob.byLifeboat.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
             <span className="font-medium text-muted-foreground">Muster / lifeboat:</span>
             {pob.byLifeboat.map((l) => (
-              <span
+              <button
                 key={l.name}
-                className="rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-800"
+                onClick={() => toggle({ type: "lb", key: l.name })}
+                className={cn(
+                  "rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-800 hover:bg-sky-200",
+                  isOpen({ type: "lb", key: l.name }) && "ring-1 ring-sky-500",
+                )}
               >
                 {l.name} · {l.pob}
-              </span>
+              </button>
             ))}
           </div>
         )}
-        {pob.overstayers.length > 0 && (
-          <div className="mt-2 rounded-md bg-amber-50 p-3 text-sm">
-            <p className="font-medium text-amber-800">Overstayers (past planned return)</p>
-            <ul className="mt-1 text-amber-800">
-              {pob.overstayers.map((o, i) => (
-                <li key={i}>
-                  {o.name} — {o.installation ?? "?"} · due {o.demob_date}
-                </li>
+
+        {/* Drill-down: crew member list (with assign control for the unassigned) */}
+        {drill?.type === "crew" && (
+          <DrillCard
+            title={
+              drill.key === "Unassigned"
+                ? `Unassigned on board — assign to a crew (${unassigned.length})`
+                : `${drill.key} on board`
+            }
+            onClose={() => setDrill(null)}
+          >
+            {(drill.key === "Unassigned" ? unassigned : pob.people.filter((p) => p.crew_name === drill.key)).map((p) => (
+              <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 last:border-0">
+                <span className="font-medium">{p.name}</span>
+                {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
+                {p.room_label && (
+                  <span className="text-xs text-muted-foreground">
+                    {p.room_label}{p.bed_no ? ` · ${p.bed_no}` : ""}
+                  </span>
+                )}
+                {p.lifeboat && (
+                  <span className="rounded bg-sky-100 px-1.5 text-[10px] text-sky-800">{p.lifeboat}</span>
+                )}
+                {p.profile_id && (
+                  <select
+                    defaultValue={p.crew_id ?? ""}
+                    disabled={pending}
+                    onChange={(e) => run(() => assignToCrew([p.profile_id as string], e.target.value || null))}
+                    className={cn(field, "ml-auto py-1 text-xs")}
+                  >
+                    <option value="">No crew…</option>
+                    {crews.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            ))}
+          </DrillCard>
+        )}
+
+        {/* Drill-down: muster station manifest */}
+        {drill?.type === "lb" && (
+          <DrillCard
+            title={`Muster ${drill.key} — manifest (${pob.people.filter((p) => (p.lifeboat || "Unassigned") === drill.key).length})`}
+            onClose={() => setDrill(null)}
+          >
+            {pob.people
+              .filter((p) => (p.lifeboat || "Unassigned") === drill.key)
+              .sort((a, b) => (a.room_label ?? "").localeCompare(b.room_label ?? "") || a.name.localeCompare(b.name))
+              .map((p) => (
+                <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
+                  <span className="font-medium">{p.name}</span>
+                  {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {p.room_label ?? "—"}{p.bed_no ? ` · ${p.bed_no}` : ""}
+                    {p.crew_name ? ` · ${p.crew_name}` : ""}
+                  </span>
+                </div>
               ))}
-            </ul>
-          </div>
+          </DrillCard>
         )}
       </section>
 
@@ -594,13 +708,65 @@ function Dashboard({
           <Stat label="Fixed (staff)" value={accommodation.fixedBeds} />
           <Stat label="Blocked rooms" value={accommodation.blockedRooms} />
         </div>
-        {accommodation.sharedRooms > 0 && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            {accommodation.sharedRooms} room(s) hot-bunked — occupancy exceeds installed beds
-            (day/night shift sharing).
-          </p>
+        {accommodation.overbooked.length > 0 && (
+          <button
+            onClick={() => toggle({ type: "rooms" })}
+            className={cn(
+              "mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100",
+              isOpen({ type: "rooms" }) && "ring-1 ring-amber-500",
+            )}
+          >
+            {accommodation.overbooked.length} room(s) hot-bunked — occupancy exceeds installed beds. View &amp; fix →
+          </button>
+        )}
+        {drill?.type === "rooms" && (
+          <DrillCard title="Hot-bunked rooms — reassign occupants to clear" onClose={() => setDrill(null)}>
+            {accommodation.overbooked.map((r) => (
+              <div key={r.room_id} className="border-b py-2 last:border-0">
+                <p className="text-sm font-medium">
+                  {r.label}{" "}
+                  <span className="text-xs font-normal text-destructive">
+                    {r.occupants.length} occupants / {r.beds} beds
+                  </span>
+                </p>
+                <div className="mt-1 space-y-1">
+                  {r.occupants.map((o) => (
+                    <div key={o.trip_id} className="flex flex-wrap items-center gap-2 text-sm">
+                      <span>{o.name}</span>
+                      {o.bed_no && <span className="text-xs text-muted-foreground">{o.bed_no}</span>}
+                      <select
+                        defaultValue={r.room_id}
+                        disabled={pending}
+                        onChange={(e) => run(() => reassignTripRoom(o.trip_id, e.target.value || null))}
+                        className={cn(field, "ml-auto py-1 text-xs")}
+                      >
+                        {rooms.map((rm) => (
+                          <option key={rm.id} value={rm.id}>
+                            {[rm.block, rm.room_number].filter(Boolean).join(" ")}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </DrillCard>
         )}
       </section>
+
+      {pob.overstayers.length > 0 && (
+        <div className="rounded-md bg-amber-50 p-3 text-sm">
+          <p className="font-medium text-amber-800">Overstayers (past planned return)</p>
+          <ul className="mt-1 text-amber-800">
+            {pob.overstayers.map((o, i) => (
+              <li key={i}>
+                {o.name} — {o.installation ?? "?"} · due {o.demob_date}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <section>
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
