@@ -256,35 +256,62 @@ export async function getRotationCalendar(weeks = 8): Promise<RotationCalendar> 
 
 export async function getRooms(): Promise<Room[]> {
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from("offshore_rooms")
-    .select(
-      "id, installation_id, block, floor, room_number, room_type, bed_count, max_bed_count," +
-        " gender_restriction, status, special_flag, notes," +
-        " installation:offshore_installations(name), offshore_staff(count)",
-    )
-    .eq("is_active", true)
-    .order("room_number");
+  const [{ data, error }, { data: onboard }] = await Promise.all([
+    supabase
+      .from("offshore_rooms")
+      .select(
+        "id, installation_id, block, floor, room_number, room_type, bed_count, max_bed_count," +
+          " gender_restriction, status, special_flag, notes," +
+          " installation:offshore_installations(name), offshore_staff(count)",
+      )
+      .eq("is_active", true)
+      .order("room_number"),
+    supabase
+      .from("offshore_trips")
+      .select("room_id, bed_no, person:profiles!offshore_trips_profile_id_fkey(full_name)")
+      .eq("status", "onboard"),
+  ]);
   if (error) {
     console.error("getRooms:", error.message);
     return [];
   }
-  return (data ?? []).map((r: Record<string, any>) => ({
-    id: r.id,
-    installation_id: r.installation_id,
-    installation_name: one2<{ name?: string }>(r.installation)?.name ?? null,
-    block: r.block,
-    floor: r.floor,
-    room_number: r.room_number,
-    room_type: r.room_type,
-    bed_count: r.bed_count,
-    max_bed_count: r.max_bed_count,
-    gender_restriction: r.gender_restriction,
-    status: r.status,
-    special_flag: r.special_flag,
-    notes: r.notes,
-    fixed_assigned: r.offshore_staff?.[0]?.count ?? 0,
-  }));
+
+  // Live occupants per room from on-board trips.
+  const occByRoom = new Map<string, { name: string; bed_no: string | null }[]>();
+  for (const t of (onboard ?? []) as Record<string, any>[]) {
+    const rid = t.room_id as string | null;
+    if (!rid) continue;
+    const list = occByRoom.get(rid) ?? [];
+    list.push({
+      name: one2<{ full_name?: string }>(t.person)?.full_name ?? "—",
+      bed_no: (t.bed_no as string | null) ?? null,
+    });
+    occByRoom.set(rid, list);
+  }
+
+  return (data ?? []).map((r: Record<string, any>) => {
+    const occupants = (occByRoom.get(r.id as string) ?? []).sort(
+      (a, b) => (a.bed_no ?? "").localeCompare(b.bed_no ?? "") || a.name.localeCompare(b.name),
+    );
+    return {
+      id: r.id,
+      installation_id: r.installation_id,
+      installation_name: one2<{ name?: string }>(r.installation)?.name ?? null,
+      block: r.block,
+      floor: r.floor,
+      room_number: r.room_number,
+      room_type: r.room_type,
+      bed_count: r.bed_count,
+      max_bed_count: r.max_bed_count,
+      gender_restriction: r.gender_restriction,
+      status: r.status,
+      special_flag: r.special_flag,
+      notes: r.notes,
+      fixed_assigned: r.offshore_staff?.[0]?.count ?? 0,
+      occupied: occupants.length,
+      occupants,
+    };
+  });
 }
 
 export async function getRoster(): Promise<RosterEntry[]> {
@@ -430,6 +457,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       trip_id: r.id as string,
       profile_id: (r.profile_id as string | null) ?? null,
       name: one2<{ full_name?: string }>(r.person)?.full_name ?? "—",
+      category: r.category === "visitor" ? "visitor" : "staff",
       crew_id: (r.crew_id as string | null) ?? null,
       crew_name: crewName,
       lifeboat: (r.lifeboat as string | null) ?? null,

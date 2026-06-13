@@ -1151,6 +1151,22 @@ export async function assignToCrew(
   return { ok: true };
 }
 
+/** Re-classify an on-board person as staff or visitor (POB category). */
+export async function setTripCategory(
+  tripId: string,
+  category: "staff" | "visitor",
+): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const patch: Record<string, unknown> = { category };
+  // A visitor isn't part of a crew rotation — clear any crew on the trip.
+  if (category === "visitor") patch.crew_id = null;
+  const { error } = await supabase.from("offshore_trips").update(patch).eq("id", tripId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 /** Move an on-board person to a different room/bed (e.g. to clear an over-booked room). */
 export async function reassignTripRoom(
   tripId: string,
@@ -1183,6 +1199,8 @@ export async function autoAssignBySchedule(input: {
   onshoreDays: number;
   cycleStartDate: string;
   newCrewName?: string;
+  /** When no crew matches and no name is given, create an auto-named crew. */
+  autoName?: boolean;
 }): Promise<AutoAssignResult> {
   if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
   if (!input.profileIds.length) return { ok: false, error: "Select at least one employee." };
@@ -1207,7 +1225,9 @@ export async function autoAssignBySchedule(input: {
   let crewName = match?.name as string | undefined;
 
   if (!crewId) {
-    if (!input.newCrewName?.trim()) {
+    const autoCrewName = `Crew ${off}/${on} · ${input.cycleStartDate}`;
+    const name = input.newCrewName?.trim() || (input.autoName ? autoCrewName : "");
+    if (!name) {
       // No crew has this calendar yet — let the UI propose creating one.
       return { ok: true, matched: false };
     }
@@ -1215,7 +1235,7 @@ export async function autoAssignBySchedule(input: {
       .from("offshore_crews")
       .insert({
         tenant_id: tenant,
-        name: input.newCrewName.trim(),
+        name,
         rotation_pattern: `${off}/${on}`,
         offshore_days: off,
         onshore_days: on,
