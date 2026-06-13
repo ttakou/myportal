@@ -561,6 +561,9 @@ export async function generateCrewManifest(input: {
       trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
       direction: input.direction,
       transport_mode: crew.transport_mode,
+      // Size the manifest to the whole crew (a crew change may span several
+      // transport runs); keep at least a helicopter's 12.
+      seat_capacity: Math.max(12, members.length),
       scheduled_date: input.scheduledDate,
     })
     .select("id")
