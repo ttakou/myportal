@@ -1,11 +1,16 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { ArrowLeftRight, CalendarCog, GitMerge, Users } from "lucide-react";
+import { ArrowLeftRight, CalendarCog, GitMerge, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { AssignableEmployee, Crew } from "@/types/offshore";
-import { assignToCrew, autoAssignBySchedule, mergeCrews } from "../actions";
+import {
+  assignToCrew,
+  autoAssignBySchedule,
+  mergeCrews,
+  registerOffshoreEmployee,
+} from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -84,6 +89,8 @@ function CrewBuilder({
         Drag people between the columns (or use the arrows). A room isn&apos;t required to join a crew.
       </p>
 
+      <NewEmployee crewId={crewId} crewName={crews.find((c) => c.id === crewId)?.name} />
+
       <div className="grid gap-3 sm:grid-cols-2">
         {/* Available */}
         <div
@@ -158,6 +165,71 @@ function CrewBuilder({
         </div>
       </div>
     </section>
+  );
+}
+
+// --- Register a brand-new employee, optionally straight into the crew --------
+function NewEmployee({ crewId, crewName }: { crewId: string; crewName?: string }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [toCrew, setToCrew] = useState(true);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [temp, setTemp] = useState<string | null>(null);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setTemp(null);
+    startTransition(async () => {
+      const res = await registerOffshoreEmployee({
+        fullName: name,
+        email: email || undefined,
+        company: company || undefined,
+        crewId: toCrew ? crewId : undefined,
+      });
+      if (!res.ok) {
+        setError(res.error ?? "Could not register.");
+        return;
+      }
+      setTemp(res.tempPassword ?? "set");
+      setName("");
+      setEmail("");
+      setCompany("");
+    });
+  }
+
+  if (!open) {
+    return (
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <UserPlus className="h-4 w-4" /> Register new employee
+      </Button>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed bg-card/50 p-3">
+      <UserPlus className="h-4 w-4 text-muted-foreground" />
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" required className={field} />
+      <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email (optional)" className={field} />
+      <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company (optional)" className={`${field} w-40`} />
+      <label className="inline-flex items-center gap-1 text-sm">
+        <input type="checkbox" checked={toCrew} onChange={(e) => setToCrew(e.target.checked)} />
+        add to {crewName ?? "crew"}
+      </label>
+      <Button size="sm" type="submit" disabled={pending || !name.trim()}>
+        {pending ? "Creating…" : "Register"}
+      </Button>
+      <Button size="sm" variant="ghost" type="button" onClick={() => setOpen(false)}>Close</Button>
+      {error && <span className="w-full text-xs text-destructive">{error}</span>}
+      {temp && (
+        <span className="w-full text-xs text-green-600">
+          Registered{temp !== "set" ? ` · temporary password: ${temp}` : ""}.
+        </span>
+      )}
+    </form>
   );
 }
 
