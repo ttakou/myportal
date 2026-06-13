@@ -232,6 +232,18 @@ function generateTempPassword(): string {
   return pw.slice(0, 5) + "A" + pw.slice(5, 9) + "7" + pw.slice(9, 12) + "x";
 }
 
+/** Normalise a name to an order/separator-insensitive key (e.g. "Tetu Lewis" == "Lewis.Tetu"). */
+function normName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const tokens = name
+    .toLowerCase()
+    .replace(/[._]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort();
+  return tokens.length ? tokens.join(" ") : null;
+}
+
 export interface RegisterStaffResult extends ActionResult {
   /** Returned once when mode = "password"; the admin shares it with the hire. */
   tempPassword?: string;
@@ -479,11 +491,15 @@ export async function bulkRegisterStaff(input: {
   const admin = createAdminClient();
   if (!admin) return { ok: false, error: "Server is missing the service-role key." };
 
-  // Known emails in the tenant → id, seeded with existing profiles.
-  const { data: existing } = await supabase.from("profiles").select("id, email");
+  // Known people in the tenant, keyed by email AND by normalized name, so rows
+  // are matched by name when no email is given (avoids duplicates).
+  const { data: existing } = await supabase.from("profiles").select("id, email, full_name");
   const emailToId = new Map<string, string>();
+  const nameToId = new Map<string, string>();
   for (const p of existing ?? []) {
     if (p.email) emailToId.set((p.email as string).toLowerCase(), p.id as string);
+    const nk = normName(p.full_name as string | null);
+    if (nk) nameToId.set(nk, p.id as string);
   }
 
   const results: BulkRowResult[] = [];
@@ -501,8 +517,10 @@ export async function bulkRegisterStaff(input: {
     }
     if (!hasEmail && !fullName) continue;
     const label = realEmail || fullName;
-    if (hasEmail && emailToId.has(realEmail)) {
-      results.push({ email: realEmail, ok: false, status: "skipped", error: "Already exists." });
+    // Already on the books? Match by email, else by normalized name.
+    const nkey = normName(fullName);
+    if ((hasEmail && emailToId.has(realEmail)) || (!hasEmail && nkey && nameToId.has(nkey))) {
+      results.push({ email: label, ok: false, status: "skipped", error: "Already exists." });
       continue;
     }
     // Login id: real email, or an internal placeholder when none is provided.
@@ -564,15 +582,17 @@ export async function bulkRegisterStaff(input: {
     }
 
     if (hasEmail) emailToId.set(realEmail, userId);
+    if (nkey) nameToId.set(nkey, userId);
     if (raw.managerEmail?.trim()) {
       managerLinks.push({ id: userId, managerEmail: raw.managerEmail.trim().toLowerCase() });
     }
     results.push({ email: label, ok: true, status: "created", tempPassword });
   }
 
-  // Pass 2 — link managers now that every email is known.
+  // Pass 2 — link managers now that everyone is known (by email or name).
   for (const link of managerLinks) {
-    const managerId = emailToId.get(link.managerEmail);
+    const managerId =
+      emailToId.get(link.managerEmail) ?? nameToId.get(normName(link.managerEmail) ?? "~");
     if (managerId && managerId !== link.id) {
       await admin.from("profiles").update({ manager_id: managerId }).eq("id", link.id);
     }
