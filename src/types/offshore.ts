@@ -159,6 +159,8 @@ export interface RosterEntry {
   fixed_room_id: string | null;
   fixed_room_label: string | null;
   fixed_bed: string | null;
+  /** Muster / lifeboat station (LB-1, LB-2, …). */
+  lifeboat: string | null;
   medical_expiry: string | null;
   bosiet_expiry: string | null;
   huet_expiry: string | null;
@@ -170,6 +172,8 @@ export interface PobBreakdown {
   total: number;
   byInstallation: { name: string; pob: number; capacity: number }[];
   byCrew: { name: string; pob: number }[];
+  /** On-board headcount per lifeboat / muster station (LB-1, LB-2, …). */
+  byLifeboat: { name: string; pob: number }[];
   byCategory: { staff: number; visitor: number };
   arrivalsToday: number;
   departuresToday: number;
@@ -183,6 +187,8 @@ export interface AccommodationSummary {
   occupiedBeds: number;
   blockedRooms: number;
   availableBeds: number;
+  /** Rooms whose current occupancy exceeds bed_count (day/night hot-bunking). */
+  sharedRooms: number;
 }
 
 export interface CertAlert {
@@ -355,6 +361,7 @@ export interface PobPerson {
   category: "staff" | "visitor";
   installation: string | null;
   crew: string | null;
+  lifeboat: string | null;
   from: string;
   to: string | null;
 }
