@@ -1151,6 +1151,22 @@ export async function assignToCrew(
   return { ok: true };
 }
 
+/** Re-classify an on-board person as staff or visitor (POB category). */
+export async function setTripCategory(
+  tripId: string,
+  category: "staff" | "visitor",
+): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const patch: Record<string, unknown> = { category };
+  // A visitor isn't part of a crew rotation — clear any crew on the trip.
+  if (category === "visitor") patch.crew_id = null;
+  const { error } = await supabase.from("offshore_trips").update(patch).eq("id", tripId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 /** Move an on-board person to a different room/bed (e.g. to clear an over-booked room). */
 export async function reassignTripRoom(
   tripId: string,

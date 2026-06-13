@@ -190,6 +190,7 @@ export interface PobOnboard {
   trip_id: string;
   profile_id: string | null;
   name: string;
+  category: "staff" | "visitor";
   crew_id: string | null;
   crew_name: string | null;
   lifeboat: string | null;

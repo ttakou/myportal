@@ -457,6 +457,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       trip_id: r.id as string,
       profile_id: (r.profile_id as string | null) ?? null,
       name: one2<{ full_name?: string }>(r.person)?.full_name ?? "—",
+      category: r.category === "visitor" ? "visitor" : "staff",
       crew_id: (r.crew_id as string | null) ?? null,
       crew_name: crewName,
       lifeboat: (r.lifeboat as string | null) ?? null,

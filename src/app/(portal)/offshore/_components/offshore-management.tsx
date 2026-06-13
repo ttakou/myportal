@@ -54,6 +54,7 @@ import {
   decideVisitRequest,
   deleteCrew,
   reassignTripRoom,
+  setTripCategory,
   findAvailableBeds,
   generateCrewManifest,
   generateNextCrewChange,
@@ -651,29 +652,52 @@ function UnassignedRow({ person, crews }: { person: PobBreakdown["people"][numbe
           </span>
         )}
         {p.lifeboat && <span className="rounded bg-sky-100 px-1.5 text-[10px] text-sky-800">{p.lifeboat}</span>}
+        {p.category === "visitor" && (
+          <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">Visitor</span>
+        )}
         {p.profile_id && (
           <span className="ml-auto flex items-center gap-1">
-            <button
-              onClick={() => setSched((s) => !s)}
-              className={cn("rounded border px-1.5 py-1 text-xs hover:bg-accent", sched && "bg-accent")}
-            >
-              Rotation
-            </button>
-            <select
-              defaultValue={p.crew_id ?? ""}
-              disabled={pending}
-              onChange={(e) => run(() => assignToCrew([p.profile_id as string], e.target.value || null))}
-              className={cn(field, "py-1 text-xs")}
-            >
-              <option value="">No crew…</option>
-              {crews.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            {p.category === "visitor" ? (
+              <button
+                disabled={pending}
+                onClick={() => run(() => setTripCategory(p.trip_id, "staff"))}
+                className="rounded border px-1.5 py-1 text-xs hover:bg-accent"
+              >
+                Make staff
+              </button>
+            ) : (
+              <>
+                <button
+                  disabled={pending}
+                  onClick={() => run(() => setTripCategory(p.trip_id, "visitor"))}
+                  className="rounded border px-1.5 py-1 text-xs hover:bg-accent"
+                  title="Count this person as a visitor, not crew"
+                >
+                  Visitor
+                </button>
+                <button
+                  onClick={() => setSched((s) => !s)}
+                  className={cn("rounded border px-1.5 py-1 text-xs hover:bg-accent", sched && "bg-accent")}
+                >
+                  Rotation
+                </button>
+                <select
+                  defaultValue={p.crew_id ?? ""}
+                  disabled={pending}
+                  onChange={(e) => run(() => assignToCrew([p.profile_id as string], e.target.value || null))}
+                  className={cn(field, "py-1 text-xs")}
+                >
+                  <option value="">No crew…</option>
+                  {crews.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </span>
         )}
       </div>
-      {sched && p.profile_id && (
+      {sched && p.category !== "visitor" && p.profile_id && (
         <div className="mt-1.5">
           <RotationForm profileIds={[p.profile_id]} label="Schedule & assign" onDone={() => setSched(false)} />
         </div>
