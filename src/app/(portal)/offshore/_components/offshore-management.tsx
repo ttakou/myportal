@@ -895,7 +895,7 @@ function CrewsPanel({
 
 const ROTATION_CELL: Record<RotationDay, string> = {
   offshore: "bg-primary",
-  onshore: "bg-muted",
+  onshore: "bg-blue-500",
   change_out: "bg-amber-500",
   change_in: "bg-green-500",
 };
@@ -908,7 +908,7 @@ function RotationCalendarPanel({ calendar }: { calendar: RotationCalendar }) {
     <div className="space-y-3">
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-primary" /> Offshore</span>
-        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-muted" /> Onshore</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-blue-500" /> Onshore</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-amber-500" /> Crew change (out)</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-green-500" /> Crew change (in)</span>
       </div>
