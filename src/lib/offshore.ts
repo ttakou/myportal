@@ -296,7 +296,10 @@ export async function getAssignableEmployees(): Promise<AssignableEmployee[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, offshore_staff(crew_id, crew:offshore_crews(name))")
+    .select(
+      "id, full_name, email," +
+        " offshore_staff!offshore_staff_profile_id_fkey(crew_id, crew:offshore_crews(name))",
+    )
     .eq("is_active", true)
     .order("full_name");
   if (error) {
