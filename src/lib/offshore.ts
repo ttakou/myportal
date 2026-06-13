@@ -5,6 +5,7 @@ import type {
   BedAllocation,
   CertAlert,
   Crew,
+  CrewChangeSuggestion,
   Flight,
   Installation,
   Manifest,
@@ -164,6 +165,46 @@ export async function getCrews(): Promise<Crew[]> {
     cycle_start_date: r.cycle_start_date,
     next_change_date: nextChangeDate(r.cycle_start_date, r.offshore_days, r.onshore_days),
   }));
+}
+
+/**
+ * Schedule vs reality: suggest a crew change where the rotation says a crew
+ * should be offshore but nobody's boarded (mobilise), or should be onshore but
+ * people are still on board (demobilise).
+ */
+export async function getCrewChangeSuggestions(): Promise<CrewChangeSuggestion[]> {
+  const supabase = createClient();
+  const crews = await getCrews();
+  const { data: onboard } = await supabase
+    .from("offshore_trips")
+    .select("crew_id")
+    .eq("status", "onboard");
+  const onboardByCrew = new Map<string, number>();
+  for (const t of onboard ?? []) {
+    const cid = t.crew_id as string | null;
+    if (cid) onboardByCrew.set(cid, (onboardByCrew.get(cid) ?? 0) + 1);
+  }
+
+  const today = new Date(todayIso() + "T00:00:00Z").getTime();
+  const out: CrewChangeSuggestion[] = [];
+  for (const c of crews) {
+    if (!c.is_active || !c.cycle_start_date || c.member_count === 0) continue;
+    const period = c.offshore_days + c.onshore_days;
+    if (period <= 0) continue;
+    const start = new Date(c.cycle_start_date + "T00:00:00Z").getTime();
+    const diff = Math.floor((today - start) / DAY_MS);
+    const idx = ((diff % period) + period) % period;
+    const expectedOffshore = idx < c.offshore_days;
+    const aboard = onboardByCrew.get(c.id) ?? 0;
+    if (expectedOffshore && aboard === 0) {
+      const since = new Date(today - idx * DAY_MS).toISOString().slice(0, 10);
+      out.push({ crew_id: c.id, crew_name: c.name, action: "mobilise", since, count: c.member_count });
+    } else if (!expectedOffshore && aboard > 0) {
+      const since = new Date(today - (idx - c.offshore_days) * DAY_MS).toISOString().slice(0, 10);
+      out.push({ crew_id: c.id, crew_name: c.name, action: "demobilise", since, count: aboard });
+    }
+  }
+  return out;
 }
 
 /** Gantt-style rotation calendar for the next `weeks` weeks, per crew. */

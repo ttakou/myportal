@@ -78,6 +78,15 @@ export interface AssignableEmployee {
   crew_name: string | null;
 }
 
+/** A schedule-driven prompt to board or offboard a crew. */
+export interface CrewChangeSuggestion {
+  crew_id: string;
+  crew_name: string;
+  action: "mobilise" | "demobilise";
+  since: string; // window start date the change was due
+  count: number; // people to move
+}
+
 export type RotationDay = "offshore" | "onshore" | "change_out" | "change_in";
 
 export interface RotationCalendar {

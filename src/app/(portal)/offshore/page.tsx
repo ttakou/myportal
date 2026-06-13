@@ -7,6 +7,7 @@ import {
   getAllOffshoreTrips,
   getAllVisitRequests,
   getCertAlerts,
+  getCrewChangeSuggestions,
   getCrews,
   getFlights,
   getInstallations,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/offshore";
 import { OffshoreBoard } from "./_components/offshore-board";
 import { OffshoreManagement } from "./_components/offshore-management";
+import { CrewChangeSuggestions } from "./_components/crew-change-suggestions";
 import { VisitorRequestForm } from "./_components/visitor-request-form";
 
 export default async function OffshorePage() {
@@ -50,6 +52,7 @@ export default async function OffshorePage() {
     manageInstallations,
     calendar,
     employees,
+    suggestions,
   ] = canManage
     ? await Promise.all([
         getCrews(),
@@ -64,8 +67,9 @@ export default async function OffshorePage() {
         getAllInstallations(),
         getRotationCalendar(8),
         getAssignableEmployees(),
+        getCrewChangeSuggestions(),
       ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, []];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], []];
 
   return (
     <div className="space-y-8">
@@ -77,6 +81,8 @@ export default async function OffshorePage() {
           Crew rotations, offshore-staff roster, room/bed accommodation, and live persons-on-board.
         </p>
       </div>
+
+      {canManage && suggestions.length > 0 && <CrewChangeSuggestions items={suggestions} />}
 
       {canManage && pobBreakdown && accommodation && (
         <OffshoreManagement
