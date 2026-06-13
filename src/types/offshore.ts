@@ -70,6 +70,14 @@ export interface Crew {
   next_change_date: string | null;
 }
 
+/** A tenant employee with their current crew assignment (for the crew builder). */
+export interface AssignableEmployee {
+  id: string; // profile id
+  name: string;
+  crew_id: string | null;
+  crew_name: string | null;
+}
+
 export type RotationDay = "offshore" | "onshore" | "change_out" | "change_in";
 
 export interface RotationCalendar {

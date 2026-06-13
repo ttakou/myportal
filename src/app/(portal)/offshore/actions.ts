@@ -1104,3 +1104,123 @@ export async function fetchRoomHistory(
   if (!from || !to) return { ok: false, error: "Pick a date range." };
   return { ok: true, rows: await getRoomHistory(from, to) };
 }
+
+// --- Crew assignment (drag-and-drop + calendar-driven) -----------------------
+
+/** Assign people to a crew (crewId null = remove from crew). Upserts the roster row. */
+export async function assignToCrew(
+  profileIds: string[],
+  crewId: string | null,
+): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (!profileIds.length) return { ok: false, error: "No employees selected." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  if (crewId === null) {
+    // Unassign: clear crew on existing roster rows (a room isn't required either way).
+    const { error } = await supabase
+      .from("offshore_staff")
+      .update({ crew_id: null })
+      .in("profile_id", profileIds);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    // Assign — create the roster row if missing. Room can be unknown (stays null).
+    const rows = profileIds.map((pid) => ({ tenant_id: tenant, profile_id: pid, crew_id: crewId }));
+    const { error } = await supabase
+      .from("offshore_staff")
+      .upsert(rows, { onConflict: "profile_id" });
+    if (error) return { ok: false, error: error.message };
+  }
+  rev();
+  return { ok: true };
+}
+
+export interface AutoAssignResult extends ActionResult {
+  matched?: boolean; // true if an existing crew matched the schedule
+  crewName?: string;
+}
+
+/**
+ * Auto-assign employees by their rotation schedule: find a crew with the same
+ * pattern + cycle start. If none matches and a name is given, create that crew;
+ * otherwise report back so the UI can propose creating one.
+ */
+export async function autoAssignBySchedule(input: {
+  profileIds: string[];
+  offshoreDays: number;
+  onshoreDays: number;
+  cycleStartDate: string;
+  newCrewName?: string;
+}): Promise<AutoAssignResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (!input.profileIds.length) return { ok: false, error: "Select at least one employee." };
+  if (!input.cycleStartDate) return { ok: false, error: "Cycle start date is required." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const off = Math.max(1, Math.floor(input.offshoreDays || 14));
+  const on = Math.max(1, Math.floor(input.onshoreDays || 14));
+
+  const { data: match } = await supabase
+    .from("offshore_crews")
+    .select("id, name")
+    .eq("offshore_days", off)
+    .eq("onshore_days", on)
+    .eq("cycle_start_date", input.cycleStartDate)
+    .limit(1)
+    .maybeSingle();
+
+  let crewId = match?.id as string | undefined;
+  let crewName = match?.name as string | undefined;
+
+  if (!crewId) {
+    if (!input.newCrewName?.trim()) {
+      // No crew has this calendar yet — let the UI propose creating one.
+      return { ok: true, matched: false };
+    }
+    const { data: created, error: cErr } = await supabase
+      .from("offshore_crews")
+      .insert({
+        tenant_id: tenant,
+        name: input.newCrewName.trim(),
+        rotation_pattern: `${off}/${on}`,
+        offshore_days: off,
+        onshore_days: on,
+        cycle_start_date: input.cycleStartDate,
+      })
+      .select("id, name")
+      .maybeSingle();
+    if (cErr || !created)
+      return {
+        ok: false,
+        error: cErr?.message?.includes("duplicate") ? "A crew with that name exists." : cErr?.message ?? "Could not create crew.",
+      };
+    crewId = created.id;
+    crewName = created.name;
+  }
+
+  const res = await assignToCrew(input.profileIds, crewId as string);
+  if (!res.ok) return res;
+  rev();
+  return { ok: true, matched: Boolean(match), crewName };
+}
+
+/** Merge crews that share a calendar: move members to target, delete the rest. */
+export async function mergeCrews(targetId: string, sourceIds: string[]): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const sources = sourceIds.filter((id) => id && id !== targetId);
+  if (!sources.length) return { ok: false, error: "Nothing to merge." };
+  const supabase = createClient();
+  const { error: mErr } = await supabase
+    .from("offshore_staff")
+    .update({ crew_id: targetId })
+    .in("crew_id", sources);
+  if (mErr) return { ok: false, error: mErr.message };
+  const { error: dErr } = await supabase.from("offshore_crews").delete().in("id", sources);
+  if (dErr) return { ok: false, error: dErr.message };
+  rev();
+  return { ok: true };
+}
