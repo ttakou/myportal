@@ -30,6 +30,7 @@ import {
   type AssignableEmployee,
   type CertAlert,
   type Crew,
+  type CrewChangeSuggestion,
   type GenderRestriction,
   type Manifest,
   type ManifestStatus,
@@ -99,6 +100,7 @@ export function OffshoreManagement(props: {
   manifests: Manifest[];
   calendar: RotationCalendar;
   employees: AssignableEmployee[];
+  suggestions: CrewChangeSuggestion[];
 }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const pendingVisits = props.visits.filter((v) => v.status === "requested").length;
@@ -145,7 +147,9 @@ export function OffshoreManagement(props: {
         <Dashboard pob={props.pob} accommodation={props.accommodation} certAlerts={props.certAlerts} />
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
-      {tab === "crews" && <CrewsPanel crews={props.crews} installations={props.installations} />}
+      {tab === "crews" && (
+        <CrewsPanel crews={props.crews} installations={props.installations} suggestions={props.suggestions} />
+      )}
       {tab === "calendar" && <RotationCalendarPanel calendar={props.calendar} />}
       {tab === "rooms" && <RoomsPanel rooms={props.rooms} installations={props.installations} />}
       {tab === "roster" && (
@@ -718,7 +722,17 @@ function InstallationsPanel({ installations }: { installations: Installation[] }
   );
 }
 
-function CrewsPanel({ crews, installations }: { crews: Crew[]; installations: Installation[] }) {
+function CrewsPanel({
+  crews,
+  installations,
+  suggestions,
+}: {
+  crews: Crew[];
+  installations: Installation[];
+  suggestions: CrewChangeSuggestion[];
+}) {
+  // crew → which movement is due now (mobilise = outbound, demobilise = inbound)
+  const dueByCrew = new Map(suggestions.map((s) => [s.crew_id, s.action]));
   const { pending, error, run } = useRun();
   const [name, setName] = useState("");
   const [installationId, setInstallationId] = useState("");
@@ -782,10 +796,30 @@ function CrewsPanel({ crews, installations }: { crews: Crew[]; installations: In
             </div>
             {c.cycle_start_date && (
               <div className="mt-2 flex gap-2">
-                <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => generateNextCrewChange(c.id, "out"))}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => run(() => generateNextCrewChange(c.id, "out"))}
+                  className={cn(
+                    dueByCrew.get(c.id) === "mobilise" &&
+                      "border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90",
+                  )}
+                  title={dueByCrew.get(c.id) === "mobilise" ? "Mobilisation due" : undefined}
+                >
                   Generate outbound
                 </Button>
-                <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => generateNextCrewChange(c.id, "in"))}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => run(() => generateNextCrewChange(c.id, "in"))}
+                  className={cn(
+                    dueByCrew.get(c.id) === "demobilise" &&
+                      "border-green-600 bg-green-600 text-white hover:bg-green-700",
+                  )}
+                  title={dueByCrew.get(c.id) === "demobilise" ? "Demobilisation due" : undefined}
+                >
                   Generate inbound
                 </Button>
               </div>

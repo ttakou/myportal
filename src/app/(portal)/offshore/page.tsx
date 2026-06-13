@@ -99,6 +99,7 @@ export default async function OffshorePage() {
           manifests={manifests}
           calendar={calendar}
           employees={employees}
+          suggestions={suggestions}
         />
       )}
 
