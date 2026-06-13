@@ -501,10 +501,20 @@ function VisitorCard({
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function Stat({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  tone?: "green";
+}) {
   return (
-    <div className="rounded-lg border bg-card p-3">
-      <div className="text-2xl font-semibold">{value}</div>
+    <div className={cn("rounded-lg border bg-card p-3", tone === "green" && "border-green-300 bg-green-50")}>
+      <div className={cn("text-2xl font-semibold", tone === "green" && "text-green-700")}>{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
       {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
     </div>
@@ -835,7 +845,7 @@ function Dashboard({
           <Stat label="Rooms" value={accommodation.totalRooms} />
           <Stat label="Beds (usable)" value={accommodation.totalBeds} />
           <Stat label="Occupied" value={accommodation.occupiedBeds} />
-          <Stat label="Available" value={accommodation.availableBeds} />
+          <Stat label="Available" value={accommodation.availableBeds} tone="green" />
           <Stat label="Fixed (staff)" value={accommodation.fixedBeds} />
           <Stat label="Blocked rooms" value={accommodation.blockedRooms} />
         </div>
@@ -1256,6 +1266,72 @@ function RotationCalendarPanel({ calendar }: { calendar: RotationCalendar }) {
   );
 }
 
+/** Live occupancy: every room with its checked-in occupants and a fill level. */
+function RoomOccupancyList({ rooms }: { rooms: Room[] }) {
+  const [open, setOpen] = useState(true);
+  const occupiedRooms = rooms.filter((r) => r.occupied > 0).length;
+  const totalOnboard = rooms.reduce((n, r) => n + r.occupied, 0);
+  // Show occupied rooms first, then by room label.
+  const sorted = [...rooms].sort(
+    (a, b) =>
+      b.occupied - a.occupied ||
+      [a.block, a.room_number].filter(Boolean).join(" ").localeCompare([b.block, b.room_number].filter(Boolean).join(" ")),
+  );
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-2 text-left"
+      >
+        <span className="text-sm font-semibold">
+          Room occupancy (live) — {occupiedRooms} room(s) in use · {totalOnboard} on board
+        </span>
+        <span className="text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="grid gap-2 p-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
+          {sorted.map((r) => {
+            const label = [r.block, r.room_number].filter(Boolean).join(" ");
+            const beds = r.bed_count || 0;
+            const over = r.occupied > beds;
+            const pct = beds > 0 ? Math.min(100, (r.occupied / beds) * 100) : r.occupied > 0 ? 100 : 0;
+            return (
+              <div key={r.id} className={cn("rounded-md border p-2 text-sm", r.occupied === 0 && "opacity-60")}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{label}</span>
+                  <span className={cn("text-xs font-semibold", over ? "text-destructive" : r.occupied === 0 ? "text-muted-foreground" : "text-green-700")}>
+                    {r.occupied}/{beds}
+                    {over ? " · hot-bunk" : ""}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn("h-full", over ? "bg-destructive" : "bg-green-500")}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                {r.occupants.length > 0 && (
+                  <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                    {r.occupants.map((o, i) => (
+                      <li key={i}>
+                        {o.bed_no ? <span className="font-mono">{o.bed_no}</span> : "•"} {o.name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+          {rooms.length === 0 && (
+            <p className="text-sm text-muted-foreground">No rooms yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: Installation[] }) {
   const { pending, error, run } = useRun();
   const [installationId, setInstallationId] = useState("");
@@ -1269,6 +1345,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
   return (
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+      <RoomOccupancyList rooms={rooms} />
       <BulkRoomImport />
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">

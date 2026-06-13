@@ -143,6 +143,9 @@ export interface Room {
   special_flag: string | null;
   notes: string | null;
   fixed_assigned: number;
+  /** People currently on board in this room (live). */
+  occupied: number;
+  occupants: { name: string; bed_no: string | null }[];
 }
 
 export interface RosterEntry {
