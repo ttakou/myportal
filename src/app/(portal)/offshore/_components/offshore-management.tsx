@@ -165,7 +165,7 @@ export function OffshoreManagement(props: {
       {tab === "crews" && (
         <CrewsPanel crews={props.crews} installations={props.installations} suggestions={props.suggestions} />
       )}
-      {tab === "calendar" && <RotationCalendarPanel calendar={props.calendar} />}
+      {tab === "calendar" && <RotationCalendarPanel calendar={props.calendar} crews={props.crews} />}
       {tab === "rooms" && (
         <RoomsPanel rooms={props.rooms} installations={props.installations} roster={props.roster} />
       )}
@@ -1329,7 +1329,7 @@ const ROTATION_CELL: Record<RotationDay, string> = {
   change_in: "bg-green-500",
 };
 
-function RotationCalendarPanel({ calendar }: { calendar: RotationCalendar }) {
+function RotationCalendarPanel({ calendar, crews }: { calendar: RotationCalendar; crews: Crew[] }) {
   const fmt = (d: string) =>
     new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { day: "2-digit", month: "short" });
   // Label every 7th day to keep the header readable.
@@ -1384,6 +1384,74 @@ function RotationCalendarPanel({ calendar }: { calendar: RotationCalendar }) {
         Bands are derived from each crew&apos;s rotation pattern and cycle start date. Set a cycle
         start on the Crew change tab to plot a crew.
       </p>
+
+      <CrewBackToBackList calendar={calendar} crews={crews} />
+    </div>
+  );
+}
+
+/** Crew-level back-to-back (the crew offshore while this one is ashore) + members. */
+function CrewBackToBackList({ calendar, crews }: { calendar: RotationCalendar; crews: Crew[] }) {
+  const EPOCH = new Date("2026-01-01T00:00:00Z").getTime();
+  const DAY = 86_400_000;
+  const phaseOf = (c: Crew) => {
+    if (!c.cycle_start_date) return null;
+    const cycle = c.offshore_days + c.onshore_days;
+    if (cycle <= 0) return null;
+    const d = Math.floor((new Date(c.cycle_start_date + "T00:00:00Z").getTime() - EPOCH) / DAY);
+    return (((d % cycle) + cycle) % cycle);
+  };
+  const active = crews.filter((c) => c.is_active && c.cycle_start_date);
+  // back-to-back = same pattern, phase offset by offshore_days (relieves this crew)
+  const b2bOf = (c: Crew): Crew | null => {
+    const cycle = c.offshore_days + c.onshore_days;
+    const p = phaseOf(c);
+    if (p === null) return null;
+    const want = (p + c.offshore_days) % cycle;
+    return (
+      active.find(
+        (o) =>
+          o.id !== c.id &&
+          o.offshore_days === c.offshore_days &&
+          o.onshore_days === c.onshore_days &&
+          phaseOf(o) === want,
+      ) ?? null
+    );
+  };
+  const membersByCrew = new Map(calendar.crews.map((c) => [c.id, c.members]));
+  const sorted = [...active].sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-semibold">Crews · back-to-back &amp; members</h4>
+      <div className="grid gap-2 lg:grid-cols-2">
+        {sorted.map((c) => {
+          const b2b = b2bOf(c);
+          const members = membersByCrew.get(c.id) ?? [];
+          return (
+            <div key={c.id} className="rounded-lg border bg-card p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">{c.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {c.offshore_days}/{c.onshore_days} · {members.length} member(s)
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs">
+                Back-to-back:{" "}
+                <span className={cn("font-medium", b2b ? "text-foreground" : "text-muted-foreground")}>
+                  {b2b ? b2b.name : "— none on opposite phase —"}
+                </span>
+              </p>
+              {members.length > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">{members.join(", ")}</p>
+              )}
+            </div>
+          );
+        })}
+        {sorted.length === 0 && (
+          <p className="text-sm text-muted-foreground">No crews with a cycle start to pair.</p>
+        )}
+      </div>
     </div>
   );
 }
