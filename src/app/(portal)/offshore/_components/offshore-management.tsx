@@ -157,6 +157,7 @@ export function OffshoreManagement(props: {
           certAlerts={props.certAlerts}
           crews={props.crews}
           rooms={props.rooms}
+          roster={props.roster}
         />
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
@@ -718,12 +719,14 @@ function Dashboard({
   certAlerts,
   crews,
   rooms,
+  roster,
 }: {
   pob: PobBreakdown;
   accommodation: AccommodationSummary;
   certAlerts: CertAlert[];
   crews: Crew[];
   rooms: Room[];
+  roster: RosterEntry[];
 }) {
   const { pending, error, run } = useRun();
   const [drill, setDrill] = useState<Drill>(null);
@@ -825,11 +828,19 @@ function Dashboard({
             ))}
           </DrillCard>
         )}
-        {drill?.type === "crew" && drill.key !== "Unassigned" && (
-          <DrillCard title={`${drill.key} on board`} onClose={() => setDrill(null)}>
-            {pob.people
-              .filter((p) => p.crew_name === drill.key)
-              .map((p) => (
+        {drill?.type === "crew" && drill.key !== "Unassigned" && (() => {
+          const onboard = pob.people.filter((p) => p.crew_name === drill.key);
+          const onboardIds = new Set(onboard.map((p) => p.profile_id).filter(Boolean));
+          const ashore = roster.filter((m) => m.crew_name === drill.key && !onboardIds.has(m.profile_id));
+          return (
+            <DrillCard
+              title={`${drill.key} — ${onboard.length} on board · ${ashore.length} ashore`}
+              onClose={() => setDrill(null)}
+            >
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                On board ({onboard.length})
+              </p>
+              {onboard.map((p) => (
                 <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
                   <span className="font-medium">{p.name}</span>
                   {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
@@ -839,8 +850,24 @@ function Dashboard({
                   </span>
                 </div>
               ))}
-          </DrillCard>
-        )}
+              {onboard.length === 0 && <p className="py-1 text-xs text-muted-foreground">Nobody on board.</p>}
+
+              <p className="mb-1 mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Not on board ({ashore.length})
+              </p>
+              {ashore.map((m) => (
+                <div key={m.id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0 opacity-80">
+                  <span className="font-medium">{m.full_name || m.email}</span>
+                  {m.company && <span className="text-xs text-muted-foreground">{m.company}</span>}
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    ashore{m.lifeboat ? ` · ${m.lifeboat}` : ""}
+                  </span>
+                </div>
+              ))}
+              {ashore.length === 0 && <p className="py-1 text-xs text-muted-foreground">Whole crew is on board.</p>}
+            </DrillCard>
+          );
+        })()}
 
         {/* Drill-down: muster station manifest */}
         {drill?.type === "lb" && (
