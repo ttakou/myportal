@@ -19,6 +19,7 @@ import type {
   Room,
   RoomAvailability,
   RoomHistoryRow,
+  RoomAllocationReport,
   RosterEntry,
   RotationCalendar,
   RotationDay,
@@ -990,6 +991,78 @@ export async function getRoomHistory(from: string, to: string): Promise<RoomHist
   return rows.sort(
     (a, b) => a.room_label.localeCompare(b.room_label) || a.from.localeCompare(b.from),
   );
+}
+
+/** Room allocation snapshot as of a date (staff trips + visitor bed allocations). */
+export async function getRoomAllocationAsOf(date: string): Promise<RoomAllocationReport> {
+  const supabase = createClient();
+  const [{ data: rooms }, { data: trips }, { data: allocs }] = await Promise.all([
+    supabase
+      .from("offshore_rooms")
+      .select("id, block, room_number, bed_count, installation:offshore_installations(name)")
+      .eq("is_active", true)
+      .order("room_number"),
+    supabase
+      .from("offshore_trips")
+      .select(
+        "room_id, bed_no, mobilize_date, demob_date, status," +
+          " person:profiles!offshore_trips_profile_id_fkey(full_name)",
+      )
+      .in("status", ["onboard", "demobilised"])
+      .not("room_id", "is", null)
+      .lte("mobilize_date", date),
+    supabase
+      .from("offshore_bed_allocations")
+      .select("room_id, occupant_name, from_date, to_date, status")
+      .lte("from_date", date)
+      .gte("to_date", date)
+      .neq("status", "checked_out"),
+  ]);
+
+  const occByRoom = new Map<
+    string,
+    { name: string; bed_no: string | null; category: "staff" | "visitor" }[]
+  >();
+  for (const t of (trips ?? []) as Record<string, any>[]) {
+    if (t.demob_date && (t.demob_date as string) < date) continue; // left before this date
+    const rid = t.room_id as string;
+    const list = occByRoom.get(rid) ?? [];
+    list.push({
+      name: one2<{ full_name?: string }>(t.person)?.full_name ?? "—",
+      bed_no: (t.bed_no as string | null) ?? null,
+      category: "staff",
+    });
+    occByRoom.set(rid, list);
+  }
+  for (const a of (allocs ?? []) as Record<string, any>[]) {
+    const rid = a.room_id as string | null;
+    if (!rid) continue;
+    const list = occByRoom.get(rid) ?? [];
+    list.push({ name: a.occupant_name as string, bed_no: null, category: "visitor" });
+    occByRoom.set(rid, list);
+  }
+
+  const mapped = (rooms ?? []).map((r: Record<string, any>) => {
+    const occupants = (occByRoom.get(r.id as string) ?? []).sort(
+      (a, b) => (a.bed_no ?? "").localeCompare(b.bed_no ?? "") || a.name.localeCompare(b.name),
+    );
+    return {
+      id: r.id as string,
+      label: [r.block, r.room_number].filter(Boolean).join(" "),
+      installation: one2<{ name?: string }>(r.installation)?.name ?? null,
+      beds: (r.bed_count as number) ?? 0,
+      occupants,
+    };
+  });
+  // Occupied rooms first.
+  mapped.sort((a, b) => b.occupants.length - a.occupants.length || a.label.localeCompare(b.label));
+
+  return {
+    date,
+    totalOccupants: mapped.reduce((n, r) => n + r.occupants.length, 0),
+    roomsInUse: mapped.filter((r) => r.occupants.length > 0).length,
+    rooms: mapped,
+  };
 }
 
 // --- Catering / Daily Meal Sheet ---------------------------------------------
