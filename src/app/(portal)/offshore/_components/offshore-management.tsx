@@ -186,6 +186,7 @@ export function OffshoreManagement(props: {
           crews={props.crews}
           roster={props.roster}
           onboard={props.pob.people}
+          visits={props.visits}
         />
       )}
       {tab === "assign" && <CrewAssign employees={props.employees} crews={props.crews} />}
@@ -204,16 +205,20 @@ const MANIFEST_STYLE: Record<ManifestStatus, string> = {
 };
 
 /** Build a manifest: pick mode + date, then move passengers from left to right. */
+type PickItem = { key: string; id: string; name: string; kind: "staff" | "visitor"; crew_id: string | null };
+
 function ManifestBuilder({
   crews,
   roster,
   onboard,
+  visits,
   pending,
   run,
 }: {
   crews: Crew[];
   roster: RosterEntry[];
   onboard: PobBreakdown["people"];
+  visits: VisitRequest[];
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
@@ -223,22 +228,29 @@ function ManifestBuilder({
   const [date, setDate] = useState("");
   const [seats, setSeats] = useState(12);
   const [search, setSearch] = useState("");
-  const [picked, setPicked] = useState<{ id: string; name: string }[]>([]);
+  const [picked, setPicked] = useState<PickItem[]>([]);
 
-  const pickedIds = new Set(picked.map((p) => p.id));
+  const pickedKeys = new Set(picked.map((p) => p.key));
 
-  // Candidate pool: outbound = roster ashore; inbound = people currently on board.
-  const candidates = (
+  // Staff pool: inbound (out) = roster ashore; outbound (in) = on-board staff.
+  const staff: PickItem[] =
     direction === "out"
       ? roster
           .filter((m) => !onboard.some((o) => o.profile_id === m.profile_id))
-          .map((m) => ({ id: m.profile_id, name: m.full_name || m.email, crew_id: m.crew_id }))
+          .map((m) => ({ key: "s" + m.profile_id, id: m.profile_id, name: m.full_name || m.email, kind: "staff" as const, crew_id: m.crew_id }))
       : onboard
           .filter((o) => o.profile_id)
-          .map((o) => ({ id: o.profile_id as string, name: o.name, crew_id: o.crew_id }))
-  )
+          .map((o) => ({ key: "s" + o.profile_id, id: o.profile_id as string, name: o.name, kind: "staff" as const, crew_id: o.crew_id }));
+
+  // Visitor pool: inbound = approved (due to travel out); outbound = currently on board.
+  const visitorStatus = direction === "out" ? "approved" : "onboard";
+  const visitorPool: PickItem[] = visits
+    .filter((v) => v.status === visitorStatus)
+    .map((v) => ({ key: "v" + v.id, id: v.id, name: `${v.visitor_name} (visitor)`, kind: "visitor" as const, crew_id: null }));
+
+  const candidates = [...staff, ...visitorPool]
     .filter((c) => !crewId || c.crew_id === crewId)
-    .filter((c) => !pickedIds.has(c.id))
+    .filter((c) => !pickedKeys.has(c.key))
     .filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -260,7 +272,8 @@ function ManifestBuilder({
           transportMode: mode,
           scheduledDate: date,
           seatCapacity: seats,
-          profileIds: picked.map((p) => p.id),
+          profileIds: picked.filter((p) => p.kind === "staff").map((p) => p.id),
+          visitRequestIds: picked.filter((p) => p.kind === "visitor").map((p) => p.id),
         }),
       reset,
     );
@@ -311,7 +324,7 @@ function ManifestBuilder({
             <button
               type="button"
               disabled={pending || candidates.length === 0}
-              onClick={() => setPicked((cur) => [...cur, ...candidates.map((c) => ({ id: c.id, name: c.name }))])}
+              onClick={() => setPicked((cur) => [...cur, ...candidates])}
               className="text-[11px] text-primary hover:underline disabled:opacity-50"
             >
               Add all
@@ -325,11 +338,11 @@ function ManifestBuilder({
           />
           <ul className="max-h-64 overflow-y-auto p-1">
             {candidates.map((c) => (
-              <li key={c.id}>
+              <li key={c.key}>
                 <button
                   type="button"
                   disabled={pending}
-                  onClick={() => setPicked((cur) => [...cur, { id: c.id, name: c.name }])}
+                  onClick={() => setPicked((cur) => [...cur, c])}
                   className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-accent"
                 >
                   <span>{c.name}</span>
@@ -358,11 +371,11 @@ function ManifestBuilder({
           </div>
           <ul className="max-h-64 overflow-y-auto p-1">
             {picked.map((p, i) => (
-              <li key={p.id}>
+              <li key={p.key}>
                 <button
                   type="button"
                   disabled={pending}
-                  onClick={() => setPicked((cur) => cur.filter((x) => x.id !== p.id))}
+                  onClick={() => setPicked((cur) => cur.filter((x) => x.key !== p.key))}
                   className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-destructive/10"
                 >
                   <span><span className="mr-1 tabular-nums text-muted-foreground/70">{i + 1}.</span>{p.name}</span>
@@ -389,11 +402,13 @@ function ManifestsPanel({
   crews,
   roster,
   onboard,
+  visits,
 }: {
   manifests: Manifest[];
   crews: Crew[];
   roster: RosterEntry[];
   onboard: PobBreakdown["people"];
+  visits: VisitRequest[];
 }) {
   const { pending, error, run } = useRun();
 
@@ -401,7 +416,7 @@ function ManifestsPanel({
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
-      <ManifestBuilder crews={crews} roster={roster} onboard={onboard} pending={pending} run={run} />
+      <ManifestBuilder crews={crews} roster={roster} onboard={onboard} visits={visits} pending={pending} run={run} />
 
       <div className="space-y-3">
         {manifests.map((m) => (
@@ -492,7 +507,7 @@ function ManifestCard({
                 </button>
               </span>
             )}
-            {m.status === "completed" && p.profile_id && !p.no_show && (
+            {m.status === "completed" && !p.no_show && (
               <button
                 disabled={pending}
                 title="Reverse this person if the journey didn't complete"
@@ -501,8 +516,7 @@ function ManifestCard({
                     m.direction === "out"
                       ? `${p.person_name} did not arrive at the installation? They'll be taken back off POB.`
                       : `${p.person_name} stayed aboard (didn't reach shore)? They'll be put back on POB.`;
-                  if (confirm(msg))
-                    run(() => reverseManifestPax({ manifestId: m.id, profileId: p.profile_id as string }));
+                  if (confirm(msg)) run(() => reverseManifestPax({ paxId: p.id }));
                 }}
                 className="ml-auto rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
               >

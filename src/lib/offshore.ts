@@ -729,7 +729,7 @@ export async function getManifests(): Promise<Manifest[]> {
     .select(
       "id, title, crew_id, installation_id, trip_type, direction, transport_mode, seat_capacity," +
         " scheduled_date, status, crew:offshore_crews(name), installation:offshore_installations(name)," +
-        " offshore_manifest_pax(id, profile_id, person_name, position, boarded, no_show)",
+        " offshore_manifest_pax(id, profile_id, visit_request_id, person_name, position, boarded, no_show)",
     )
     .order("scheduled_date", { ascending: false });
   if (error) {
@@ -762,6 +762,7 @@ export async function getManifests(): Promise<Manifest[]> {
         (p): ManifestPax => ({
           id: p.id,
           profile_id: p.profile_id,
+          visit_request_id: p.visit_request_id ?? null,
           person_name: p.person_name,
           position: p.position,
           boarded: p.boarded,

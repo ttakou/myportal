@@ -335,6 +335,7 @@ export const TRIP_TYPE_LABEL: Record<string, string> = {
 export interface ManifestPax {
   id: string;
   profile_id: string | null;
+  visit_request_id: string | null;
   person_name: string;
   position: string | null;
   boarded: boolean;
