@@ -845,6 +845,9 @@ function Dashboard({
                 <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
                   <span className="font-medium">{p.name}</span>
                   {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
+                  <span className="text-xs text-muted-foreground">
+                    {p.mobilize_date} → {p.demob_date ?? "—"}
+                  </span>
                   <span className="ml-auto text-xs text-muted-foreground">
                     {p.room_label ?? "—"}{p.bed_no ? ` · ${p.bed_no}` : ""}
                     {p.lifeboat ? ` · ${p.lifeboat}` : ""}

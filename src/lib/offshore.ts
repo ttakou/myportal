@@ -424,7 +424,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       supabase
         .from("offshore_trips")
         .select(
-          "id, profile_id, crew_id, room_id, bed_no, category, demob_date, lifeboat," +
+          "id, profile_id, crew_id, room_id, bed_no, category, mobilize_date, demob_date, lifeboat," +
             " installation:offshore_installations(name), crew:offshore_crews(name)," +
             " room:offshore_rooms(room_number, block)," +
             " person:profiles!offshore_trips_profile_id_fkey(full_name)",
@@ -480,6 +480,8 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       room_label: room ? [room.block, room.room_number].filter(Boolean).join(" ") : null,
       bed_no: (r.bed_no as string | null) ?? null,
       company: r.profile_id ? companyByProfile.get(r.profile_id as string) ?? null : null,
+      mobilize_date: r.mobilize_date as string,
+      demob_date: (r.demob_date as string | null) ?? null,
     });
     if (r.demob_date) {
       if (r.demob_date === today) departuresToday++;
