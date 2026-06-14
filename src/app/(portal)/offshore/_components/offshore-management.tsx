@@ -1615,9 +1615,31 @@ const ROTATION_CELL: Record<RotationDay, string> = {
 function RotationCalendarPanel({ calendar, crews }: { calendar: RotationCalendar; crews: Crew[] }) {
   const fmt = (d: string) =>
     new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+  const [repFrom, setRepFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [repWeeks, setRepWeeks] = useState(8);
   // Label every 7th day to keep the header readable.
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed bg-card/50 p-2">
+        <span className="text-sm font-medium">PDF report:</span>
+        <label className="text-xs text-muted-foreground">
+          From
+          <input type="date" value={repFrom} onChange={(e) => setRepFrom(e.target.value)} className={cn(field, "mt-0.5 block py-1")} />
+        </label>
+        <label className="text-xs text-muted-foreground">
+          Weeks
+          <input type="number" min={1} max={26} value={repWeeks} onChange={(e) => setRepWeeks(Number(e.target.value) || 8)} className={cn(field, "mt-0.5 block w-20 py-1")} />
+        </label>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!repFrom}
+          onClick={() => window.open(`/offshore-rotation?from=${repFrom}&weeks=${repWeeks}`, "_blank")}
+        >
+          <FileText className="h-4 w-4" /> Open report (A3)
+        </Button>
+      </div>
+
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-primary" /> Offshore</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-blue-500" /> Onshore</span>

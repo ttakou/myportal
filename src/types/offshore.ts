@@ -89,6 +89,23 @@ export interface CrewChangeSuggestion {
 
 export type RotationDay = "offshore" | "onshore" | "change_out" | "change_in";
 
+/** Branded rotation report: bands + members + back-to-back for every crew. */
+export interface RotationReport {
+  from: string;
+  to: string;
+  days: string[];
+  crews: {
+    id: string;
+    name: string;
+    offshore_days: number;
+    onshore_days: number;
+    member_count: number;
+    statuses: (RotationDay | null)[];
+    members: string[];
+    back_to_back: string | null;
+  }[];
+}
+
 export interface RotationCalendar {
   days: string[]; // ISO dates spanning the window
   crews: {
