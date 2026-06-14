@@ -773,6 +773,12 @@ export async function getManifests(): Promise<Manifest[]> {
   }));
 }
 
+/** One manifest with its passengers, for the printable report. */
+export async function getManifestById(id: string): Promise<Manifest | null> {
+  const all = await getManifests();
+  return all.find((m) => m.id === id) ?? null;
+}
+
 // --- History: POB as-of a date + room occupancy over a period ----------------
 
 /** Reconstruct who was on board on a past (or current) date, from trips + visits. */
