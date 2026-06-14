@@ -1072,6 +1072,52 @@ function InstallationsPanel({ installations }: { installations: Installation[] }
   );
 }
 
+/** Editable crew name with an explicit Save button (preserves rotation/cycle). */
+function CrewNameEditor({
+  c,
+  pending,
+  run,
+}: {
+  c: Crew;
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const [name, setName] = useState(c.name);
+  const changed = name.trim().length > 0 && name.trim() !== c.name;
+  const save = () => {
+    if (!changed) return;
+    run(() =>
+      upsertCrew({
+        id: c.id,
+        name: name.trim(),
+        installationId: c.installation_id ?? undefined,
+        rotationPattern: c.rotation_pattern ?? undefined,
+        offshoreDays: c.offshore_days,
+        onshoreDays: c.onshore_days,
+        transportMode: c.transport_mode ?? undefined,
+        departureLocation: c.departure_location ?? undefined,
+        cycleStartDate: c.cycle_start_date ?? null,
+      }),
+    );
+  };
+  return (
+    <div className="flex flex-1 items-center gap-1">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+        }}
+        disabled={pending}
+        className={cn(field, "flex-1 font-medium")}
+      />
+      <Button size="sm" variant="outline" disabled={pending || !changed} onClick={save}>
+        Save
+      </Button>
+    </div>
+  );
+}
+
 function CrewsPanel({
   crews,
   installations,
@@ -1098,29 +1144,7 @@ function CrewsPanel({
         {crews.map((c) => (
           <div key={c.id} className="rounded-lg border bg-card p-3 text-sm">
             <div className="flex items-center justify-between gap-2">
-              <input
-                defaultValue={c.name}
-                disabled={pending}
-                title="Rename crew"
-                onBlur={(e) => {
-                  const v = e.target.value.trim();
-                  if (v && v !== c.name)
-                    run(() =>
-                      upsertCrew({
-                        id: c.id,
-                        name: v,
-                        installationId: c.installation_id ?? undefined,
-                        rotationPattern: c.rotation_pattern ?? undefined,
-                        offshoreDays: c.offshore_days,
-                        onshoreDays: c.onshore_days,
-                        transportMode: c.transport_mode ?? undefined,
-                        departureLocation: c.departure_location ?? undefined,
-                        cycleStartDate: c.cycle_start_date ?? null,
-                      }),
-                    );
-                }}
-                className={cn(field, "flex-1 font-medium")}
-              />
+              <CrewNameEditor c={c} pending={pending} run={run} />
               <button
                 disabled={pending}
                 onClick={() => {
