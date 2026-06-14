@@ -1443,7 +1443,14 @@ function CrewBackToBackList({ calendar, crews }: { calendar: RotationCalendar; c
                 </span>
               </p>
               {members.length > 0 && (
-                <p className="mt-1 text-xs text-muted-foreground">{members.join(", ")}</p>
+                <ol className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                  {members.map((m, i) => (
+                    <li key={i}>
+                      <span className="mr-1 tabular-nums text-muted-foreground/70">{i + 1}.</span>
+                      {m}
+                    </li>
+                  ))}
+                </ol>
               )}
             </div>
           );
