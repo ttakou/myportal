@@ -540,10 +540,13 @@ export async function createManifest(input: {
   scheduledDate: string;
   seatCapacity: number;
   profileIds: string[];
+  visitRequestIds?: string[];
 }): Promise<ActionResult> {
   if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
   if (!input.scheduledDate) return { ok: false, error: "Scheduled date is required." };
-  if (!input.profileIds.length) return { ok: false, error: "Select at least one passenger." };
+  const visitorIds = input.visitRequestIds ?? [];
+  if (!input.profileIds.length && !visitorIds.length)
+    return { ok: false, error: "Select at least one passenger." };
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -573,7 +576,7 @@ export async function createManifest(input: {
       trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
       direction: input.direction,
       transport_mode: modeLabel,
-      seat_capacity: Math.max(1, Math.floor(input.seatCapacity || input.profileIds.length)),
+      seat_capacity: Math.max(1, Math.floor(input.seatCapacity || input.profileIds.length + visitorIds.length)),
       scheduled_date: input.scheduledDate,
     })
     .select("id")
@@ -597,7 +600,7 @@ export async function createManifest(input: {
       byId.set(p.id as string, { profile_id: p.id, profile: { full_name: p.full_name, email: p.email } });
   }
 
-  const pax = input.profileIds.map((id) => {
+  const pax: Record<string, unknown>[] = input.profileIds.map((id) => {
     const s = byId.get(id);
     const p = s ? (Array.isArray(s.profile) ? s.profile[0] : s.profile) : null;
     return {
@@ -608,6 +611,25 @@ export async function createManifest(input: {
       position: s?.position ?? null,
     };
   });
+
+  if (visitorIds.length) {
+    const { data: visits } = await supabase
+      .from("offshore_visit_requests")
+      .select("id, visitor_name, visitor_company")
+      .in("id", visitorIds);
+    const vById = new Map<string, Record<string, any>>();
+    for (const v of visits ?? []) vById.set(v.id as string, v);
+    for (const id of visitorIds) {
+      const v = vById.get(id);
+      pax.push({
+        tenant_id: tenant,
+        manifest_id: manifest.id,
+        visit_request_id: id,
+        person_name: (v?.visitor_name as string) || "Visitor",
+        position: (v?.visitor_company as string) ?? "Visitor",
+      });
+    }
+  }
   await supabase.from("offshore_manifest_pax").insert(pax);
   rev();
   return { ok: true };
@@ -726,11 +748,24 @@ export async function confirmManifestMovement(id: string): Promise<ActionResult>
 
   const { data: pax } = await supabase
     .from("offshore_manifest_pax")
-    .select("id, profile_id, no_show")
+    .select("id, profile_id, visit_request_id, no_show")
     .eq("manifest_id", id);
   const travelling = (pax ?? []).filter((p) => !p.no_show && p.profile_id);
-  if (travelling.length > (m.seat_capacity as number)) {
-    return { ok: false, error: `Over seat capacity (${travelling.length}/${m.seat_capacity}).` };
+  const visitors = (pax ?? []).filter((p) => !p.no_show && p.visit_request_id);
+  if (travelling.length + visitors.length > (m.seat_capacity as number)) {
+    return {
+      ok: false,
+      error: `Over seat capacity (${travelling.length + visitors.length}/${m.seat_capacity}).`,
+    };
+  }
+
+  // Visitors: inbound (joining) -> on board; outbound (leaving) -> returned.
+  if (visitors.length) {
+    const vStatus = m.direction === "out" ? "onboard" : "returned";
+    await supabase
+      .from("offshore_visit_requests")
+      .update({ status: vStatus })
+      .in("id", visitors.map((p) => p.visit_request_id as string));
   }
 
   if (m.direction === "out") {
@@ -1471,38 +1506,46 @@ export async function registerOffshoreEmployee(input: {
  * inbound (joining) → they didn't arrive, take them off POB; outbound
  * (leaving) → they stayed aboard, put them back on POB.
  */
-export async function reverseManifestPax(input: {
-  manifestId: string;
-  profileId: string;
-}): Promise<ActionResult> {
+export async function reverseManifestPax(input: { paxId: string }): Promise<ActionResult> {
   if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
-  const { data: m } = await supabase
-    .from("offshore_manifests")
-    .select("direction")
-    .eq("id", input.manifestId)
+  const { data: p } = await supabase
+    .from("offshore_manifest_pax")
+    .select("id, profile_id, visit_request_id, manifest:offshore_manifests(direction)")
+    .eq("id", input.paxId)
     .maybeSingle();
-  if (!m) return { ok: false, error: "Manifest not found." };
+  if (!p) return { ok: false, error: "Passenger not found." };
+  const direction =
+    (Array.isArray(p.manifest) ? p.manifest[0] : p.manifest)?.direction ?? "out";
 
-  if (m.direction === "out") {
-    // Inbound joining — never arrived: cancel their on-board trip.
+  if (p.visit_request_id) {
+    // Visitor: inbound didn't arrive -> back to approved; outbound stayed -> onboard.
+    const vStatus = direction === "out" ? "approved" : "onboard";
     const { error } = await supabase
-      .from("offshore_trips")
-      .update({ status: "cancelled" })
-      .eq("profile_id", input.profileId)
-      .eq("status", "onboard");
+      .from("offshore_visit_requests")
+      .update({ status: vStatus })
+      .eq("id", p.visit_request_id);
     if (error) return { ok: false, error: error.message };
-  } else {
-    // Outbound leaving — stayed aboard: re-board them.
-    const res = await boardMember(input.profileId);
-    if (!res.ok) return res;
+  } else if (p.profile_id) {
+    if (direction === "out") {
+      // Inbound joining — never arrived: cancel their on-board trip.
+      const { error } = await supabase
+        .from("offshore_trips")
+        .update({ status: "cancelled" })
+        .eq("profile_id", p.profile_id)
+        .eq("status", "onboard");
+      if (error) return { ok: false, error: error.message };
+    } else {
+      // Outbound leaving — stayed aboard: re-board them.
+      const res = await boardMember(p.profile_id as string);
+      if (!res.ok) return res;
+    }
   }
 
   await supabase
     .from("offshore_manifest_pax")
     .update({ no_show: true, boarded: false })
-    .eq("manifest_id", input.manifestId)
-    .eq("profile_id", input.profileId);
+    .eq("id", input.paxId);
   rev();
   return { ok: true };
 }
