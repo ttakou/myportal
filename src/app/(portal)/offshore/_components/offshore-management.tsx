@@ -59,6 +59,8 @@ import {
   offboardTrip,
   reassignTripRoom,
   setBackToBack,
+  setRoomDefaultOwners,
+  setAllRoomDefaults,
   setTripCategory,
   findAvailableBeds,
   createManifest,
@@ -1798,6 +1800,19 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
       {open && (
         <div className="px-3 pb-3">
           {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
+          <div className="mb-2 flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                if (confirm("Set default owners for every room from the current allocation? Each on-board rotator's fixed room/bed is set, and their back-to-back shares it."))
+                  run(() => setAllRoomDefaults());
+              }}
+            >
+              Set all default owners from current
+            </Button>
+          </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {sorted.map((r) => {
               const label = [r.block, r.room_number].filter(Boolean).join(" ");
@@ -1860,6 +1875,33 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
                       ))}
                     </ul>
                   )}
+                  <div className="mt-1.5 border-t pt-1 text-[11px] text-muted-foreground">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-medium">Default owner(s)</span>
+                      {r.occupied > 0 && (
+                        <button
+                          disabled={pending}
+                          title="Set the current occupants (and their back-to-backs) as this room's fixed owners"
+                          onClick={() => run(() => setRoomDefaultOwners(r.id))}
+                          className="rounded border px-1.5 py-0.5 hover:bg-accent"
+                        >
+                          Set from current
+                        </button>
+                      )}
+                    </div>
+                    {r.owners.length > 0 ? (
+                      <ul className="mt-0.5 space-y-0.5">
+                        {r.owners.map((o, i) => (
+                          <li key={i}>
+                            <span className="font-mono">{o.bed || "•"}</span> {o.name}
+                            {o.back_to_back ? <span className="text-muted-foreground/70"> ⇄ {o.back_to_back}</span> : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-0.5 italic">none set</p>
+                    )}
+                  </div>
                 </div>
               );
             })}
