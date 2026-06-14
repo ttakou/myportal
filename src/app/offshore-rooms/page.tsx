@@ -74,9 +74,18 @@ export default async function RoomAllocationReportPage({
                   <p className="mt-1 text-gray-400">Empty</p>
                 )}
                 {r.owners.length > 0 && (
-                  <p className="mt-1 border-t border-gray-100 pt-1 text-[10px] text-gray-500">
-                    Owner: {r.owners.map((o) => o.name + (o.back_to_back ? ` ⇄ ${o.back_to_back}` : "")).join("; ")}
-                  </p>
+                  <div className="mt-1 border-t border-gray-100 pt-1">
+                    <p className="text-[10px] font-semibold text-gray-500">Default owner(s)</p>
+                    <ul className="mt-0.5 space-y-0.5 text-[10px]">
+                      {r.owners.map((o, i) => (
+                        <li key={i}>
+                          <span style={{ color: "#dc2626", fontWeight: 600 }}>{o.name}</span>
+                          {o.bed ? <span className="text-gray-400"> · {o.bed}</span> : ""}
+                          {o.back_to_back ? <span className="text-gray-400"> ⇄ {o.back_to_back}</span> : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             );
