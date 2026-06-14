@@ -145,7 +145,13 @@ export interface Room {
   fixed_assigned: number;
   /** People currently on board in this room (live). */
   occupied: number;
-  occupants: { name: string; bed_no: string | null }[];
+  occupants: {
+    trip_id: string;
+    profile_id: string | null;
+    name: string;
+    bed_no: string | null;
+    b2b_name: string | null;
+  }[];
 }
 
 export interface RosterEntry {

@@ -1167,6 +1167,37 @@ export async function setTripCategory(
   return { ok: true };
 }
 
+/** Offboard one person (demobilise their live trip) — removes them from POB. */
+export async function offboardTrip(tripId: string): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const { error } = await supabase
+    .from("offshore_trips")
+    .update({ status: "demobilised", demob_date: today })
+    .eq("id", tripId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Set or clear a roster member's back-to-back partner (by profile ids). */
+export async function setBackToBack(
+  profileId: string,
+  b2bProfileId: string | null,
+): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (profileId === b2bProfileId) return { ok: false, error: "A person can't be their own back-to-back." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("offshore_staff")
+    .update({ back_to_back_id: b2bProfileId })
+    .eq("profile_id", profileId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 /** Move an on-board person to a different room/bed (e.g. to clear an over-booked room). */
 export async function reassignTripRoom(
   tripId: string,
