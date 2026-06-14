@@ -160,6 +160,8 @@ export interface Room {
   special_flag: string | null;
   notes: string | null;
   fixed_assigned: number;
+  /** Default owners — rotators whose fixed room is this room (+ their back-to-back). */
+  owners: { name: string; bed: string | null; back_to_back: string | null }[];
   /** People currently on board in this room (live). */
   occupied: number;
   occupants: {
@@ -449,5 +451,6 @@ export interface RoomAllocationReport {
     installation: string | null;
     beds: number;
     occupants: { name: string; bed_no: string | null; category: "staff" | "visitor" }[];
+    owners: { name: string; bed: string | null; back_to_back: string | null }[];
   }[];
 }

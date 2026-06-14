@@ -329,7 +329,7 @@ export async function getRotationCalendar(weeks = 8): Promise<RotationCalendar> 
 
 export async function getRooms(): Promise<Room[]> {
   const supabase = createClient();
-  const [{ data, error }, { data: onboard }, { data: staff }] = await Promise.all([
+  const [{ data, error }, { data: onboard }, { data: staff }, { data: fixedOwners }] = await Promise.all([
     supabase
       .from("offshore_rooms")
       .select(
@@ -346,6 +346,14 @@ export async function getRooms(): Promise<Room[]> {
     supabase
       .from("offshore_staff")
       .select("profile_id, b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)"),
+    supabase
+      .from("offshore_staff")
+      .select(
+        "fixed_room_id, fixed_bed," +
+          " profile:profiles!offshore_staff_profile_id_fkey(full_name)," +
+          " b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)",
+      )
+      .not("fixed_room_id", "is", null),
   ]);
   if (error) {
     console.error("getRooms:", error.message);
@@ -356,6 +364,20 @@ export async function getRooms(): Promise<Room[]> {
   const b2bByProfile = new Map<string, string | null>();
   for (const s of (staff ?? []) as Record<string, any>[]) {
     b2bByProfile.set(s.profile_id as string, one2<{ full_name?: string }>(s.b2b)?.full_name ?? null);
+  }
+
+  // Default owners (fixed room) per room.
+  const ownersByRoom = new Map<string, { name: string; bed: string | null; back_to_back: string | null }[]>();
+  for (const s of (fixedOwners ?? []) as Record<string, any>[]) {
+    const rid = s.fixed_room_id as string | null;
+    if (!rid) continue;
+    const list = ownersByRoom.get(rid) ?? [];
+    list.push({
+      name: one2<{ full_name?: string }>(s.profile)?.full_name ?? "—",
+      bed: (s.fixed_bed as string | null) ?? null,
+      back_to_back: one2<{ full_name?: string }>(s.b2b)?.full_name ?? null,
+    });
+    ownersByRoom.set(rid, list);
   }
 
   // Live occupants per room from on-board trips.
@@ -396,6 +418,9 @@ export async function getRooms(): Promise<Room[]> {
       special_flag: r.special_flag,
       notes: r.notes,
       fixed_assigned: r.offshore_staff?.[0]?.count ?? 0,
+      owners: (ownersByRoom.get(r.id as string) ?? []).sort((a, b) =>
+        (a.bed ?? "").localeCompare(b.bed ?? "") || a.name.localeCompare(b.name),
+      ),
       occupied: occupants.length,
       occupants,
     };
@@ -996,7 +1021,7 @@ export async function getRoomHistory(from: string, to: string): Promise<RoomHist
 /** Room allocation snapshot as of a date (staff trips + visitor bed allocations). */
 export async function getRoomAllocationAsOf(date: string): Promise<RoomAllocationReport> {
   const supabase = createClient();
-  const [{ data: rooms }, { data: trips }, { data: allocs }] = await Promise.all([
+  const [{ data: rooms }, { data: trips }, { data: allocs }, { data: fixedOwners }] = await Promise.all([
     supabase
       .from("offshore_rooms")
       .select("id, block, room_number, bed_count, installation:offshore_installations(name)")
@@ -1017,7 +1042,27 @@ export async function getRoomAllocationAsOf(date: string): Promise<RoomAllocatio
       .lte("from_date", date)
       .gte("to_date", date)
       .neq("status", "checked_out"),
+    supabase
+      .from("offshore_staff")
+      .select(
+        "fixed_room_id, fixed_bed," +
+          " profile:profiles!offshore_staff_profile_id_fkey(full_name)," +
+          " b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)",
+      )
+      .not("fixed_room_id", "is", null),
   ]);
+
+  const ownersByRoom = new Map<string, { name: string; bed: string | null; back_to_back: string | null }[]>();
+  for (const s of (fixedOwners ?? []) as Record<string, any>[]) {
+    const rid = s.fixed_room_id as string;
+    const list = ownersByRoom.get(rid) ?? [];
+    list.push({
+      name: one2<{ full_name?: string }>(s.profile)?.full_name ?? "—",
+      bed: (s.fixed_bed as string | null) ?? null,
+      back_to_back: one2<{ full_name?: string }>(s.b2b)?.full_name ?? null,
+    });
+    ownersByRoom.set(rid, list);
+  }
 
   const occByRoom = new Map<
     string,
@@ -1052,6 +1097,7 @@ export async function getRoomAllocationAsOf(date: string): Promise<RoomAllocatio
       installation: one2<{ name?: string }>(r.installation)?.name ?? null,
       beds: (r.bed_count as number) ?? 0,
       occupants,
+      owners: ownersByRoom.get(r.id as string) ?? [],
     };
   });
   // Occupied rooms first.

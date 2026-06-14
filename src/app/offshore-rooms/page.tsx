@@ -73,6 +73,11 @@ export default async function RoomAllocationReportPage({
                 ) : (
                   <p className="mt-1 text-gray-400">Empty</p>
                 )}
+                {r.owners.length > 0 && (
+                  <p className="mt-1 border-t border-gray-100 pt-1 text-[10px] text-gray-500">
+                    Owner: {r.owners.map((o) => o.name + (o.back_to_back ? ` ⇄ ${o.back_to_back}` : "")).join("; ")}
+                  </p>
+                )}
               </div>
             );
           })}

@@ -1400,6 +1400,76 @@ export async function setBackToBack(
   return { ok: true };
 }
 
+/**
+ * Set a room's default owners from who is currently allocated there: each
+ * on-board rotator's fixed room/bed is set to this room, and their back-to-back
+ * (who shares the cabin on the opposite rotation) gets the same fixed room.
+ */
+export async function setRoomDefaultOwners(roomId: string): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { data: trips } = await supabase
+    .from("offshore_trips")
+    .select("profile_id, bed_no")
+    .eq("status", "onboard")
+    .eq("room_id", roomId)
+    .not("profile_id", "is", null);
+  if (!trips?.length) return { ok: false, error: "No one is currently allocated to this room." };
+
+  for (const t of trips) {
+    await supabase
+      .from("offshore_staff")
+      .update({ fixed_room_id: roomId, fixed_bed: (t.bed_no as string | null) ?? null })
+      .eq("profile_id", t.profile_id as string);
+    const { data: s } = await supabase
+      .from("offshore_staff")
+      .select("back_to_back_id")
+      .eq("profile_id", t.profile_id as string)
+      .maybeSingle();
+    if (s?.back_to_back_id) {
+      await supabase
+        .from("offshore_staff")
+        .update({ fixed_room_id: roomId })
+        .eq("profile_id", s.back_to_back_id as string);
+    }
+  }
+  rev();
+  return { ok: true };
+}
+
+/** Set every room's default owners from the current allocation in one pass. */
+export async function setAllRoomDefaults(): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { data: trips } = await supabase
+    .from("offshore_trips")
+    .select("profile_id, bed_no, room_id")
+    .eq("status", "onboard")
+    .not("room_id", "is", null)
+    .not("profile_id", "is", null);
+  if (!trips?.length) return { ok: false, error: "Nobody is currently on board." };
+
+  const { data: staff } = await supabase.from("offshore_staff").select("profile_id, back_to_back_id");
+  const b2bByProfile = new Map<string, string | null>();
+  for (const s of staff ?? []) b2bByProfile.set(s.profile_id as string, (s.back_to_back_id as string | null) ?? null);
+
+  for (const t of trips) {
+    await supabase
+      .from("offshore_staff")
+      .update({ fixed_room_id: t.room_id as string, fixed_bed: (t.bed_no as string | null) ?? null })
+      .eq("profile_id", t.profile_id as string);
+    const b2b = b2bByProfile.get(t.profile_id as string);
+    if (b2b) {
+      await supabase
+        .from("offshore_staff")
+        .update({ fixed_room_id: t.room_id as string })
+        .eq("profile_id", b2b);
+    }
+  }
+  rev();
+  return { ok: true };
+}
+
 /** Move an on-board person to a different room/bed (e.g. to clear an over-booked room). */
 export async function reassignTripRoom(
   tripId: string,
