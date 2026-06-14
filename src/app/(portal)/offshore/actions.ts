@@ -567,7 +567,7 @@ export async function createManifest(input: {
     .from("offshore_manifests")
     .insert({
       tenant_id: tenant,
-      title: `${crewName} · ${input.direction === "out" ? "outbound" : "inbound"} · ${modeLabel} · ${input.scheduledDate}`,
+      title: `${crewName} · ${input.direction === "out" ? "inbound" : "outbound"} · ${modeLabel} · ${input.scheduledDate}`,
       crew_id: input.crewId || null,
       installation_id: installationId,
       trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
@@ -641,7 +641,7 @@ export async function generateCrewManifest(input: {
     .from("offshore_manifests")
     .insert({
       tenant_id: tenant,
-      title: `${crew.name} · ${input.direction === "out" ? "outbound" : "inbound"} · ${input.scheduledDate}`,
+      title: `${crew.name} · ${input.direction === "out" ? "inbound" : "outbound"} · ${input.scheduledDate}`,
       crew_id: input.crewId,
       installation_id: crew.installation_id,
       trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
@@ -721,8 +721,8 @@ export async function confirmManifestMovement(id: string): Promise<ActionResult>
     .eq("id", id)
     .maybeSingle();
   if (!m) return { ok: false, error: "Manifest not found." };
-  if (m.status !== "locked")
-    return { ok: false, error: "Lock the manifest before confirming the movement." };
+  if (m.status === "completed") return { ok: false, error: "Manifest already approved." };
+  if (m.status === "cancelled") return { ok: false, error: "Manifest is cancelled." };
 
   const { data: pax } = await supabase
     .from("offshore_manifest_pax")

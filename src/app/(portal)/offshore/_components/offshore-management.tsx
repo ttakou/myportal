@@ -272,8 +272,8 @@ function ManifestBuilder({
         <label className="text-xs text-muted-foreground">
           Direction
           <select value={direction} onChange={(e) => { setDirection(e.target.value as "out" | "in"); setPicked([]); }} className={cn(field, "mt-0.5 block py-1")}>
-            <option value="out">Outbound (to platform)</option>
-            <option value="in">Inbound (to shore)</option>
+            <option value="out">Inbound — joining (mobilise)</option>
+            <option value="in">Outbound — leaving (demobilise)</option>
           </select>
         </label>
         <label className="text-xs text-muted-foreground">
@@ -497,19 +497,17 @@ function ManifestCard({
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2">
-        {m.status === "draft" && (
-          <Button size="sm" disabled={pending} onClick={() => run(() => setManifestStatus(m.id, "approved"))}>
-            Approve
-          </Button>
-        )}
-        {m.status === "approved" && (
-          <Button size="sm" disabled={pending} onClick={() => run(() => setManifestStatus(m.id, "locked"))}>
-            Lock
-          </Button>
-        )}
-        {m.status === "locked" && (
-          <Button size="sm" disabled={pending} onClick={() => run(() => confirmManifestMovement(m.id))}>
-            Confirm {m.direction === "out" ? "departure (board)" : "arrival onshore"}
+        {m.status !== "completed" && m.status !== "cancelled" && (
+          <Button
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              const verb = m.direction === "out" ? "board (mobilise)" : "demob (offboard)";
+              if (confirm(`Approve this manifest? ${travelling.length} passenger(s) will be ${verb}.`))
+                run(() => confirmManifestMovement(m.id));
+            }}
+          >
+            Approve &amp; {m.direction === "out" ? "board" : "demob"}
           </Button>
         )}
         {editable && (
@@ -1436,7 +1434,7 @@ function CrewsPanel({
                   )}
                   title={dueByCrew.get(c.id) === "mobilise" ? "Mobilisation due" : undefined}
                 >
-                  Generate outbound
+                  Inbound manifest (board)
                 </Button>
                 <Button
                   size="sm"
@@ -1449,7 +1447,7 @@ function CrewsPanel({
                   )}
                   title={dueByCrew.get(c.id) === "demobilise" ? "Demobilisation due" : undefined}
                 >
-                  Generate inbound
+                  Outbound manifest (demob)
                 </Button>
               </div>
             )}

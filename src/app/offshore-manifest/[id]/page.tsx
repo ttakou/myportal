@@ -23,7 +23,7 @@ export default async function ManifestReportPage({
 
   const travelling = m.pax.filter((p) => !p.no_show);
   const noShow = m.pax.filter((p) => p.no_show);
-  const directionLabel = m.direction === "out" ? "Outbound — to installation" : "Inbound — to shore";
+  const directionLabel = m.direction === "out" ? "Inbound — joining installation" : "Outbound — leaving installation";
   const mode = (m.transport_mode ?? "—").replace(/^\w/, (c) => c.toUpperCase());
   const generated = new Date().toLocaleString("en-GB", { timeZone: "UTC" }) + " UTC";
 
