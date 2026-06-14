@@ -22,6 +22,7 @@ const ASSIGNABLE_FUNCTIONAL: FunctionalRole[] = [
   "hr_admin",
   "finance",
   "safety_admin",
+  "oim",
   "system_admin",
 ];
 

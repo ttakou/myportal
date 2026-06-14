@@ -282,6 +282,7 @@ export interface BedAllocation {
 
 export interface VisitRequest {
   id: string;
+  group_id: string | null;
   requester_name: string | null;
   visitor_name: string;
   visitor_company: string | null;

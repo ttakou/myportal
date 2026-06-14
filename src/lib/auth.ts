@@ -7,6 +7,7 @@ export type FunctionalRole =
   | "hr_admin"
   | "finance"
   | "safety_admin"
+  | "oim"
   | "system_admin";
 
 /**
@@ -44,6 +45,8 @@ export interface Access {
   isHr: boolean;
   isFinance: boolean;
   isSafetyAdmin: boolean;
+  /** Offshore Installation Manager — approves offshore visit requests. */
+  isOim: boolean;
 }
 
 /** Resolve the current user's base role + functional roles into capability flags. */
@@ -75,5 +78,6 @@ export async function getAccess(): Promise<Access> {
     isHr: isSystemAdmin || has("hr_admin"),
     isFinance: isSystemAdmin || has("finance"),
     isSafetyAdmin: isSystemAdmin || has("safety_admin"),
+    isOim: isSystemAdmin || has("oim"),
   };
 }
