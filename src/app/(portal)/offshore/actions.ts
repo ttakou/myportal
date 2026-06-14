@@ -407,6 +407,89 @@ export async function decideVisitRequest(
   return { ok: true };
 }
 
+/** OIM (or admin) approves offshore visit requests. */
+async function canApproveVisits(): Promise<boolean> {
+  const a = await getAccess();
+  return a.isAdmin || a.isOim;
+}
+
+/**
+ * Host raises ONE request covering several named visitors (shared trip details).
+ * Each visitor is stored as its own row sharing a group_id, so they can be
+ * bed-allocated, manifested and amended individually after OIM approval.
+ */
+export async function createVisitGroup(input: {
+  purpose?: string;
+  installationId?: string;
+  hostName?: string;
+  hostDepartment?: string;
+  departDate: string;
+  returnDate?: string;
+  overnight?: boolean;
+  visitors: { name: string; company?: string; gender?: string; emergencyContact?: string }[];
+}): Promise<ActionResult> {
+  if (!input.departDate) return { ok: false, error: "Departure date is required." };
+  const visitors = (input.visitors ?? []).filter((v) => v.name?.trim());
+  if (!visitors.length) return { ok: false, error: "Add at least one visitor name." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const overnight = input.overnight ?? true;
+  const groupId = crypto.randomUUID();
+
+  const rows = visitors.map((v) => ({
+    tenant_id: tenant,
+    group_id: groupId,
+    requester_id: user?.id ?? null,
+    visitor_name: v.name.trim(),
+    visitor_company: v.company?.trim() || null,
+    visitor_type: "contractor",
+    gender: ["any", "male", "female"].includes(v.gender ?? "") ? v.gender : "any",
+    host_name: input.hostName?.trim() || null,
+    host_department: input.hostDepartment?.trim() || null,
+    purpose: input.purpose?.trim() || null,
+    installation_id: input.installationId || null,
+    depart_date: input.departDate,
+    return_date: input.returnDate || null,
+    overnight,
+    accommodation_required: overnight,
+    emergency_contact: v.emergencyContact?.trim() || null,
+  }));
+  const { error } = await supabase.from("offshore_visit_requests").insert(rows);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** OIM decision on a whole visit group (all still-pending visitors at once). */
+export async function decideVisitGroup(
+  groupId: string,
+  decision: "approved" | "rejected",
+  reason?: string,
+): Promise<ActionResult> {
+  if (!(await canApproveVisits())) return { ok: false, error: "Only the OIM can approve visit requests." };
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from("offshore_visit_requests")
+    .update({
+      status: decision,
+      approved_by: user?.id ?? null,
+      approved_at: new Date().toISOString(),
+      reject_reason: decision === "rejected" ? reason?.trim() || "Not approved" : null,
+    })
+    .eq("group_id", groupId)
+    .eq("status", "requested");
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 /** Server-action wrapper so the client can query live bed availability. */
 export async function findAvailableBeds(input: {
   installationId: string;

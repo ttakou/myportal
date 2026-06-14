@@ -53,6 +53,7 @@ import {
   autoAssignBySchedule,
   confirmManifestMovement,
   decideVisitRequest,
+  decideVisitGroup,
   boardMember,
   deleteCrew,
   offboardTrip,
@@ -561,6 +562,21 @@ const VISIT_STYLE: Record<VisitStatus, string> = {
   cancelled: "bg-destructive/10 text-destructive line-through",
 };
 
+/** Group visit requests by their shared group_id (legacy single requests stand alone). */
+function groupVisits(list: VisitRequest[]): VisitRequest[][] {
+  const map = new Map<string, VisitRequest[]>();
+  const order: string[] = [];
+  for (const v of list) {
+    const k = v.group_id ?? v.id;
+    if (!map.has(k)) {
+      map.set(k, []);
+      order.push(k);
+    }
+    map.get(k)!.push(v);
+  }
+  return order.map((k) => map.get(k)!);
+}
+
 function VisitorsPanel({ visits }: { visits: VisitRequest[] }) {
   const { pending, error, run } = useRun();
   const open = visits.filter((v) => !["returned", "rejected", "cancelled"].includes(v.status));
@@ -573,9 +589,63 @@ function VisitorsPanel({ visits }: { visits: VisitRequest[] }) {
         <p className="text-sm text-muted-foreground">No active visitor requests.</p>
       )}
       <div className="space-y-3">
-        {open.map((v) => (
-          <VisitorCard key={v.id} v={v} pending={pending} run={run} />
-        ))}
+        {groupVisits(open).map((g) => {
+          const head = g[0];
+          const grouped = g.length > 1 || head.group_id != null;
+          const pendingDecision = head.status === "requested";
+          return (
+            <div key={head.group_id ?? head.id} className={cn(grouped && "rounded-lg border bg-card/50 p-2")}>
+              {grouped && (
+                <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
+                  <span className="text-sm font-medium">
+                    {g.length} visitor(s) · {head.purpose ?? "—"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {head.installation_name ?? "—"} · {head.depart_date}
+                    {head.host_name ? ` · host ${head.host_name}` : ""}
+                  </span>
+                  {pendingDecision && (
+                    <span className="ml-auto flex gap-2">
+                      <Button
+                        size="sm"
+                        disabled={pending}
+                        onClick={() =>
+                          run(() =>
+                            head.group_id
+                              ? decideVisitGroup(head.group_id, "approved")
+                              : decideVisitRequest(head.id, "approved"),
+                          )
+                        }
+                      >
+                        Approve request
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => {
+                          const reason = prompt("Reason for rejection?") ?? undefined;
+                          run(() =>
+                            head.group_id
+                              ? decideVisitGroup(head.group_id, "rejected", reason)
+                              : decideVisitRequest(head.id, "rejected", reason),
+                          );
+                        }}
+                      >
+                        Reject
+                      </Button>
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="space-y-3">
+                {g.map((v) => (
+                  <VisitorCard key={v.id} v={v} pending={pending} run={run} hideDecision={grouped} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
       {closed.length > 0 && (
         <details className="rounded-lg border bg-card p-3">
@@ -598,10 +668,12 @@ function VisitorCard({
   v,
   pending,
   run,
+  hideDecision,
 }: {
   v: VisitRequest;
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+  hideDecision?: boolean;
 }) {
   const [rooms, setRooms] = useState<RoomAvailability[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -655,7 +727,7 @@ function VisitorCard({
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        {v.status === "requested" && (
+        {v.status === "requested" && !hideDecision && (
           <>
             <Button size="sm" disabled={pending} onClick={() => run(() => decideVisitRequest(v.id, "approved"))}>
               Approve

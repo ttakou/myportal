@@ -19,6 +19,7 @@ import {
   getRooms,
   getRoster,
   getRotationCalendar,
+  getVisitorSuggestions,
 } from "@/lib/offshore";
 import { OffshoreBoard } from "./_components/offshore-board";
 import { OffshoreManagement } from "./_components/offshore-management";
@@ -28,15 +29,16 @@ import { VisitorRequestForm } from "./_components/visitor-request-form";
 export default async function OffshorePage() {
   const access = await getAccess();
   const isAdmin = isAdminRole(await getCurrentRole());
-  const canManage = access.isAdmin || access.isSafetyAdmin;
+  const canManage = access.isAdmin || access.isSafetyAdmin || access.isOim;
 
-  const [mine, all, installations, flights, pob, myVisits] = await Promise.all([
+  const [mine, all, installations, flights, pob, myVisits, suggestionLists] = await Promise.all([
     getMyOffshoreTrips(),
     isAdmin ? getAllOffshoreTrips() : Promise.resolve([]),
     getInstallations(),
     isAdmin ? getFlights() : Promise.resolve([]),
     isAdmin ? getPob() : Promise.resolve([]),
     getMyVisitRequests(),
+    getVisitorSuggestions(),
   ]);
 
   const [
@@ -103,7 +105,12 @@ export default async function OffshorePage() {
         />
       )}
 
-      <VisitorRequestForm installations={installations} mine={myVisits} />
+      <VisitorRequestForm
+        installations={installations}
+        mine={myVisits}
+        nameSuggestions={suggestionLists.names}
+        companySuggestions={suggestionLists.companies}
+      />
 
       <OffshoreBoard
         mine={mine}
