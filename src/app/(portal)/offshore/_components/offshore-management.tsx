@@ -52,6 +52,7 @@ import {
   autoAssignBySchedule,
   confirmManifestMovement,
   decideVisitRequest,
+  boardMember,
   deleteCrew,
   offboardTrip,
   reassignTripRoom,
@@ -848,6 +849,16 @@ function Dashboard({
                     {p.room_label ?? "—"}{p.bed_no ? ` · ${p.bed_no}` : ""}
                     {p.lifeboat ? ` · ${p.lifeboat}` : ""}
                   </span>
+                  <button
+                    disabled={pending}
+                    onClick={() => {
+                      if (confirm(`Demob ${p.name} now (before the crew change)?`))
+                        run(() => offboardTrip(p.trip_id));
+                    }}
+                    className="rounded border px-1.5 py-0.5 text-[11px] hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    Demob
+                  </button>
                 </div>
               ))}
               {onboard.length === 0 && <p className="py-1 text-xs text-muted-foreground">Nobody on board.</p>}
@@ -856,12 +867,19 @@ function Dashboard({
                 Not on board ({ashore.length})
               </p>
               {ashore.map((m) => (
-                <div key={m.id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0 opacity-80">
+                <div key={m.id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
                   <span className="font-medium">{m.full_name || m.email}</span>
                   {m.company && <span className="text-xs text-muted-foreground">{m.company}</span>}
                   <span className="ml-auto text-xs text-muted-foreground">
                     ashore{m.lifeboat ? ` · ${m.lifeboat}` : ""}
                   </span>
+                  <button
+                    disabled={pending}
+                    onClick={() => run(() => boardMember(m.profile_id))}
+                    className="rounded border px-1.5 py-0.5 text-[11px] hover:bg-green-50 hover:text-green-700"
+                  >
+                    Board now
+                  </button>
                 </div>
               ))}
               {ashore.length === 0 && <p className="py-1 text-xs text-muted-foreground">Whole crew is on board.</p>}
