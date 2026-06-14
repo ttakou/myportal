@@ -32,14 +32,20 @@ export default async function RotationReportPage({
 
   return (
     <div className="bg-gray-100 p-6 print:bg-white print:p-0">
-      {/* A3 landscape for printing */}
-      <style>{`@media print { @page { size: A3 landscape; margin: 10mm; } }`}</style>
+      {/* A3 landscape + keep background colours when printing */}
+      <style>{`
+        @media print { @page { size: A3 landscape; margin: 10mm; } }
+        .rotation-report, .rotation-report * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+      `}</style>
 
       <div className="mx-auto mb-3 max-w-[1500px] print:hidden">
         <PrintButton />
       </div>
 
-      <div className="mx-auto max-w-[1500px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">
+      <div className="rotation-report mx-auto max-w-[1500px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">
         {/* Header */}
         <div className="flex items-start justify-between border-b-2 border-gray-900 pb-3">
           <div className="flex items-center gap-3">
