@@ -1384,6 +1384,76 @@ export async function registerOffshoreEmployee(input: {
 
 // --- One-click crew mobilise / demobilise (from schedule suggestions) --------
 
+/** Board a single member now (late arrival joining colleagues already offshore). */
+export async function boardMember(profileId: string): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const { data: already } = await supabase
+    .from("offshore_trips")
+    .select("id")
+    .eq("profile_id", profileId)
+    .eq("status", "onboard")
+    .maybeSingle();
+  if (already) return { ok: true }; // already aboard
+
+  const { data: staff } = await supabase
+    .from("offshore_staff")
+    .select("crew_id, fixed_room_id, fixed_bed, lifeboat")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+
+  let installationId: string | null = null;
+  let fromIso = new Date().toISOString().slice(0, 10);
+  let toIso: string | null = null;
+  if (staff?.crew_id) {
+    const { data: crew } = await supabase
+      .from("offshore_crews")
+      .select("offshore_days, onshore_days, cycle_start_date, installation_id")
+      .eq("id", staff.crew_id)
+      .maybeSingle();
+    if (crew) {
+      installationId = (crew.installation_id as string | null) ?? null;
+      const DAY = 86_400_000;
+      const today = new Date(fromIso + "T00:00:00Z").getTime();
+      let from = today;
+      let to = today + (crew.offshore_days as number) * DAY;
+      if (crew.cycle_start_date) {
+        const period = (crew.offshore_days as number) + (crew.onshore_days as number);
+        const start = new Date((crew.cycle_start_date as string) + "T00:00:00Z").getTime();
+        const idx = ((Math.floor((today - start) / DAY) % period) + period) % period;
+        if (idx < (crew.offshore_days as number)) {
+          from = today - idx * DAY;
+          to = from + (crew.offshore_days as number) * DAY;
+        }
+      }
+      fromIso = new Date(from).toISOString().slice(0, 10);
+      toIso = new Date(to).toISOString().slice(0, 10);
+    }
+  }
+
+  const { error } = await supabase.from("offshore_trips").insert({
+    tenant_id: tenant,
+    profile_id: profileId,
+    installation_id: installationId,
+    crew_id: staff?.crew_id ?? null,
+    category: "staff",
+    trip_type: "crew_change_out",
+    mobilize_date: fromIso,
+    demob_date: toIso,
+    status: "onboard",
+    hse_cleared_at: new Date().toISOString(),
+    room_id: staff?.fixed_room_id ?? null,
+    bed_no: staff?.fixed_bed ?? null,
+    lifeboat: staff?.lifeboat ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 /** Board a crew for its current offshore window (idempotent). */
 export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
   if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
