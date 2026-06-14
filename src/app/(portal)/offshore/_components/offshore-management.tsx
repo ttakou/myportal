@@ -2125,6 +2125,7 @@ function RosterPanel({
 }) {
   const { pending, error, run } = useRun();
   const [newId, setNewId] = useState("");
+  const [repDate, setRepDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   function expired(date: string | null) {
     return date ? new Date(date) < new Date() : false;
@@ -2133,6 +2134,17 @@ function RosterPanel({
   return (
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed bg-card/50 p-2">
+        <span className="text-sm font-medium">PDF report:</span>
+        <label className="text-xs text-muted-foreground">
+          As of
+          <input type="date" value={repDate} onChange={(e) => setRepDate(e.target.value)} className={cn(field, "mt-0.5 block py-1")} />
+        </label>
+        <Button size="sm" variant="outline" disabled={!repDate} onClick={() => window.open(`/offshore-roster?date=${repDate}`, "_blank")}>
+          <FileText className="h-4 w-4" /> Roster &amp; room allocation report
+        </Button>
+      </div>
 
       <form
         className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed bg-card/50 p-3"
