@@ -437,3 +437,17 @@ export interface RoomHistoryRow {
   to: string | null;
   current: boolean;
 }
+
+/** Room allocation snapshot as of a date, for the printable report. */
+export interface RoomAllocationReport {
+  date: string;
+  totalOccupants: number;
+  roomsInUse: number;
+  rooms: {
+    id: string;
+    label: string;
+    installation: string | null;
+    beds: number;
+    occupants: { name: string; bed_no: string | null; category: "staff" | "visitor" }[];
+  }[];
+}
