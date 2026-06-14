@@ -204,6 +204,8 @@ export interface PobOnboard {
   room_label: string | null;
   bed_no: string | null;
   company: string | null;
+  mobilize_date: string;
+  demob_date: string | null;
 }
 
 export interface AccommodationSummary {
