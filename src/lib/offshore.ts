@@ -22,6 +22,7 @@ import type {
   RosterEntry,
   RotationCalendar,
   RotationDay,
+  RotationReport,
   VisitRequest,
 } from "@/types/offshore";
 
@@ -205,6 +206,77 @@ export async function getCrewChangeSuggestions(): Promise<CrewChangeSuggestion[]
     }
   }
   return out;
+}
+
+/** Branded rotation report from a chosen date, all crews + members + back-to-back. */
+export async function getRotationReport(fromIso: string, weeks = 8): Promise<RotationReport> {
+  const crews = (await getCrews()).filter((c) => c.is_active && c.cycle_start_date);
+  const roster = await getRoster();
+  const membersByCrew = new Map<string, string[]>();
+  for (const r of roster) {
+    if (!r.crew_id) continue;
+    const list = membersByCrew.get(r.crew_id) ?? [];
+    list.push(r.full_name || r.email);
+    membersByCrew.set(r.crew_id, list);
+  }
+
+  const start = new Date(fromIso + "T00:00:00Z").getTime();
+  const n = Math.max(1, weeks) * 7;
+  const days: string[] = [];
+  for (let i = 0; i < n; i++) days.push(new Date(start + i * DAY_MS).toISOString().slice(0, 10));
+
+  const EPOCH = new Date("2026-01-01T00:00:00Z").getTime();
+  const phaseOf = (c: (typeof crews)[number]) => {
+    const cycle = c.offshore_days + c.onshore_days;
+    if (cycle <= 0 || !c.cycle_start_date) return null;
+    const d = Math.floor((new Date(c.cycle_start_date + "T00:00:00Z").getTime() - EPOCH) / DAY_MS);
+    return ((d % cycle) + cycle) % cycle;
+  };
+  const b2bOf = (c: (typeof crews)[number]): string | null => {
+    const cycle = c.offshore_days + c.onshore_days;
+    const p = phaseOf(c);
+    if (p === null) return null;
+    const want = (p + c.offshore_days) % cycle;
+    return (
+      crews.find(
+        (o) =>
+          o.id !== c.id &&
+          o.offshore_days === c.offshore_days &&
+          o.onshore_days === c.onshore_days &&
+          phaseOf(o) === want,
+      )?.name ?? null
+    );
+  };
+
+  return {
+    from: fromIso,
+    to: days[days.length - 1] ?? fromIso,
+    days,
+    crews: crews.map((c) => {
+      const period = c.offshore_days + c.onshore_days;
+      const anchor = c.cycle_start_date
+        ? new Date(c.cycle_start_date + "T00:00:00Z").getTime()
+        : null;
+      const statuses = days.map((d): RotationDay | null => {
+        if (!anchor || period <= 0) return null;
+        const diff = Math.floor((new Date(d + "T00:00:00Z").getTime() - anchor) / DAY_MS);
+        const idx = ((diff % period) + period) % period;
+        if (idx === 0) return "change_out";
+        if (idx === c.offshore_days) return "change_in";
+        return idx < c.offshore_days ? "offshore" : "onshore";
+      });
+      return {
+        id: c.id,
+        name: c.name,
+        offshore_days: c.offshore_days,
+        onshore_days: c.onshore_days,
+        member_count: c.member_count,
+        statuses,
+        members: (membersByCrew.get(c.id) ?? []).sort((a, b) => a.localeCompare(b)),
+        back_to_back: b2bOf(c),
+      };
+    }),
+  };
 }
 
 /** Gantt-style rotation calendar for the next `weeks` weeks, per crew. */
