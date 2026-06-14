@@ -256,7 +256,7 @@ export async function getRotationCalendar(weeks = 8): Promise<RotationCalendar> 
 
 export async function getRooms(): Promise<Room[]> {
   const supabase = createClient();
-  const [{ data, error }, { data: onboard }] = await Promise.all([
+  const [{ data, error }, { data: onboard }, { data: staff }] = await Promise.all([
     supabase
       .from("offshore_rooms")
       .select(
@@ -268,23 +268,38 @@ export async function getRooms(): Promise<Room[]> {
       .order("room_number"),
     supabase
       .from("offshore_trips")
-      .select("room_id, bed_no, person:profiles!offshore_trips_profile_id_fkey(full_name)")
+      .select("id, room_id, bed_no, profile_id, person:profiles!offshore_trips_profile_id_fkey(full_name)")
       .eq("status", "onboard"),
+    supabase
+      .from("offshore_staff")
+      .select("profile_id, b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)"),
   ]);
   if (error) {
     console.error("getRooms:", error.message);
     return [];
   }
 
+  // profile -> back-to-back name
+  const b2bByProfile = new Map<string, string | null>();
+  for (const s of (staff ?? []) as Record<string, any>[]) {
+    b2bByProfile.set(s.profile_id as string, one2<{ full_name?: string }>(s.b2b)?.full_name ?? null);
+  }
+
   // Live occupants per room from on-board trips.
-  const occByRoom = new Map<string, { name: string; bed_no: string | null }[]>();
+  const occByRoom = new Map<
+    string,
+    { trip_id: string; profile_id: string | null; name: string; bed_no: string | null; b2b_name: string | null }[]
+  >();
   for (const t of (onboard ?? []) as Record<string, any>[]) {
     const rid = t.room_id as string | null;
     if (!rid) continue;
     const list = occByRoom.get(rid) ?? [];
     list.push({
+      trip_id: t.id as string,
+      profile_id: (t.profile_id as string | null) ?? null,
       name: one2<{ full_name?: string }>(t.person)?.full_name ?? "—",
       bed_no: (t.bed_no as string | null) ?? null,
+      b2b_name: t.profile_id ? b2bByProfile.get(t.profile_id as string) ?? null : null,
     });
     occByRoom.set(rid, list);
   }

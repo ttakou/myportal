@@ -53,7 +53,9 @@ import {
   confirmManifestMovement,
   decideVisitRequest,
   deleteCrew,
+  offboardTrip,
   reassignTripRoom,
+  setBackToBack,
   setTripCategory,
   findAvailableBeds,
   generateCrewManifest,
@@ -162,7 +164,9 @@ export function OffshoreManagement(props: {
         <CrewsPanel crews={props.crews} installations={props.installations} suggestions={props.suggestions} />
       )}
       {tab === "calendar" && <RotationCalendarPanel calendar={props.calendar} />}
-      {tab === "rooms" && <RoomsPanel rooms={props.rooms} installations={props.installations} />}
+      {tab === "rooms" && (
+        <RoomsPanel rooms={props.rooms} installations={props.installations} roster={props.roster} />
+      )}
       {tab === "roster" && (
         <RosterPanel
           roster={props.roster}
@@ -1337,10 +1341,14 @@ function RotationCalendarPanel({ calendar }: { calendar: RotationCalendar }) {
 }
 
 /** Live occupancy: every room with its checked-in occupants and a fill level. */
-function RoomOccupancyList({ rooms }: { rooms: Room[] }) {
+function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEntry[] }) {
   const [open, setOpen] = useState(true);
+  const { pending, error, run } = useRun();
   const occupiedRooms = rooms.filter((r) => r.occupied > 0).length;
   const totalOnboard = rooms.reduce((n, r) => n + r.occupied, 0);
+  const mates = roster
+    .map((m) => ({ id: m.profile_id, name: m.full_name || m.email }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   // Show occupied rooms first, then by room label.
   const sorted = [...rooms].sort(
     (a, b) =>
@@ -1360,49 +1368,90 @@ function RoomOccupancyList({ rooms }: { rooms: Room[] }) {
         <span className="text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
       </button>
       {open && (
-        <div className="grid gap-2 p-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
-          {sorted.map((r) => {
-            const label = [r.block, r.room_number].filter(Boolean).join(" ");
-            const beds = r.bed_count || 0;
-            const over = r.occupied > beds;
-            const pct = beds > 0 ? Math.min(100, (r.occupied / beds) * 100) : r.occupied > 0 ? 100 : 0;
-            return (
-              <div key={r.id} className={cn("rounded-md border p-2 text-sm", r.occupied === 0 && "opacity-60")}>
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{label}</span>
-                  <span className={cn("text-xs font-semibold", over ? "text-destructive" : r.occupied === 0 ? "text-muted-foreground" : "text-green-700")}>
-                    {r.occupied}/{beds}
-                    {over ? " · hot-bunk" : ""}
-                  </span>
+        <div className="px-3 pb-3">
+          {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {sorted.map((r) => {
+              const label = [r.block, r.room_number].filter(Boolean).join(" ");
+              const beds = r.bed_count || 0;
+              const over = r.occupied > beds;
+              const pct = beds > 0 ? Math.min(100, (r.occupied / beds) * 100) : r.occupied > 0 ? 100 : 0;
+              return (
+                <div key={r.id} className={cn("rounded-md border p-2 text-sm", r.occupied === 0 && "opacity-60")}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{label}</span>
+                    <span className={cn("text-xs font-semibold", over ? "text-destructive" : r.occupied === 0 ? "text-muted-foreground" : "text-green-700")}>
+                      {r.occupied}/{beds}
+                      {over ? " · hot-bunk" : ""}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn("h-full", over ? "bg-destructive" : "bg-green-500")}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  {r.occupants.length > 0 && (
+                    <ul className="mt-1.5 space-y-1.5">
+                      {r.occupants.map((o) => (
+                        <li key={o.trip_id} className="border-b pb-1.5 last:border-0 last:pb-0">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
+                            <span className="font-medium">{o.name}</span>
+                            <button
+                              disabled={pending}
+                              title="Remove from board"
+                              onClick={() => {
+                                if (confirm(`Remove ${o.name} from board? They'll be taken off POB.`))
+                                  run(() => offboardTrip(o.trip_id));
+                              }}
+                              className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          {o.profile_id && (
+                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                              <span>B2B:</span>
+                              <select
+                                value={mates.find((m) => m.name === o.b2b_name)?.id ?? ""}
+                                disabled={pending}
+                                onChange={(e) => run(() => setBackToBack(o.profile_id as string, e.target.value || null))}
+                                className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
+                              >
+                                <option value="">— none —</option>
+                                {mates
+                                  .filter((m) => m.id !== o.profile_id)
+                                  .map((m) => (
+                                    <option key={m.id} value={m.id}>{m.name}</option>
+                                  ))}
+                              </select>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn("h-full", over ? "bg-destructive" : "bg-green-500")}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                {r.occupants.length > 0 && (
-                  <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                    {r.occupants.map((o, i) => (
-                      <li key={i}>
-                        {o.bed_no ? <span className="font-mono">{o.bed_no}</span> : "•"} {o.name}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-          {rooms.length === 0 && (
-            <p className="text-sm text-muted-foreground">No rooms yet.</p>
-          )}
+              );
+            })}
+            {rooms.length === 0 && <p className="text-sm text-muted-foreground">No rooms yet.</p>}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: Installation[] }) {
+function RoomsPanel({
+  rooms,
+  installations,
+  roster,
+}: {
+  rooms: Room[];
+  installations: Installation[];
+  roster: RosterEntry[];
+}) {
   const { pending, error, run } = useRun();
   const [installationId, setInstallationId] = useState("");
   const [block, setBlock] = useState("");
@@ -1415,7 +1464,7 @@ function RoomsPanel({ rooms, installations }: { rooms: Room[]; installations: In
   return (
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
-      <RoomOccupancyList rooms={rooms} />
+      <RoomOccupancyList rooms={rooms} roster={roster} />
       <BulkRoomImport />
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
