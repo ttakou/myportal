@@ -1466,6 +1466,47 @@ export async function registerOffshoreEmployee(input: {
   return { ok: true, tempPassword: hasEmail ? undefined : tempPassword };
 }
 
+/**
+ * Amend one passenger after approval when the journey didn't complete:
+ * inbound (joining) → they didn't arrive, take them off POB; outbound
+ * (leaving) → they stayed aboard, put them back on POB.
+ */
+export async function reverseManifestPax(input: {
+  manifestId: string;
+  profileId: string;
+}): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const { data: m } = await supabase
+    .from("offshore_manifests")
+    .select("direction")
+    .eq("id", input.manifestId)
+    .maybeSingle();
+  if (!m) return { ok: false, error: "Manifest not found." };
+
+  if (m.direction === "out") {
+    // Inbound joining — never arrived: cancel their on-board trip.
+    const { error } = await supabase
+      .from("offshore_trips")
+      .update({ status: "cancelled" })
+      .eq("profile_id", input.profileId)
+      .eq("status", "onboard");
+    if (error) return { ok: false, error: error.message };
+  } else {
+    // Outbound leaving — stayed aboard: re-board them.
+    const res = await boardMember(input.profileId);
+    if (!res.ok) return res;
+  }
+
+  await supabase
+    .from("offshore_manifest_pax")
+    .update({ no_show: true, boarded: false })
+    .eq("manifest_id", input.manifestId)
+    .eq("profile_id", input.profileId);
+  rev();
+  return { ok: true };
+}
+
 // --- One-click crew mobilise / demobilise (from schedule suggestions) --------
 
 /** Board a single member now (late arrival joining colleagues already offshore). */

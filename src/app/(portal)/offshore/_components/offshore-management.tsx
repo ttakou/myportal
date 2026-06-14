@@ -63,6 +63,7 @@ import {
   createManifest,
   generateNextCrewChange,
   removeManifestPax,
+  reverseManifestPax,
   removeRosterMember,
   setInstallationActive,
   setManifestStatus,
@@ -490,6 +491,23 @@ function ManifestCard({
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </span>
+            )}
+            {m.status === "completed" && p.profile_id && !p.no_show && (
+              <button
+                disabled={pending}
+                title="Reverse this person if the journey didn't complete"
+                onClick={() => {
+                  const msg =
+                    m.direction === "out"
+                      ? `${p.person_name} did not arrive at the installation? They'll be taken back off POB.`
+                      : `${p.person_name} stayed aboard (didn't reach shore)? They'll be put back on POB.`;
+                  if (confirm(msg))
+                    run(() => reverseManifestPax({ manifestId: m.id, profileId: p.profile_id as string }));
+                }}
+                className="ml-auto rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+              >
+                {m.direction === "out" ? "Did not arrive" : "Returned aboard"}
+              </button>
             )}
           </div>
         ))}
