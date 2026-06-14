@@ -8,6 +8,7 @@ import {
   CalendarClock,
   CalendarRange,
   ClipboardList,
+  FileText,
   History,
   LayoutGrid,
   Plane,
@@ -59,7 +60,7 @@ import {
   setBackToBack,
   setTripCategory,
   findAvailableBeds,
-  generateCrewManifest,
+  createManifest,
   generateNextCrewChange,
   removeManifestPax,
   removeRosterMember,
@@ -178,7 +179,14 @@ export function OffshoreManagement(props: {
         />
       )}
       {tab === "visitors" && <VisitorsPanel visits={props.visits} />}
-      {tab === "manifests" && <ManifestsPanel manifests={props.manifests} crews={props.crews} />}
+      {tab === "manifests" && (
+        <ManifestsPanel
+          manifests={props.manifests}
+          crews={props.crews}
+          roster={props.roster}
+          onboard={props.pob.people}
+        />
+      )}
       {tab === "assign" && <CrewAssign employees={props.employees} crews={props.crews} />}
       {tab === "catering" && <CateringPanel installations={props.installations} />}
       {tab === "history" && <HistoryPanel />}
@@ -194,40 +202,205 @@ const MANIFEST_STYLE: Record<ManifestStatus, string> = {
   cancelled: "bg-destructive/10 text-destructive line-through",
 };
 
-function ManifestsPanel({ manifests, crews }: { manifests: Manifest[]; crews: Crew[] }) {
-  const { pending, error, run } = useRun();
-  const [crewId, setCrewId] = useState("");
+/** Build a manifest: pick mode + date, then move passengers from left to right. */
+function ManifestBuilder({
+  crews,
+  roster,
+  onboard,
+  pending,
+  run,
+}: {
+  crews: Crew[];
+  roster: RosterEntry[];
+  onboard: PobBreakdown["people"];
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
   const [direction, setDirection] = useState<"out" | "in">("out");
+  const [mode, setMode] = useState<"helicopter" | "boat">("helicopter");
+  const [crewId, setCrewId] = useState("");
   const [date, setDate] = useState("");
+  const [seats, setSeats] = useState(12);
+  const [search, setSearch] = useState("");
+  const [picked, setPicked] = useState<{ id: string; name: string }[]>([]);
+
+  const pickedIds = new Set(picked.map((p) => p.id));
+
+  // Candidate pool: outbound = roster ashore; inbound = people currently on board.
+  const candidates = (
+    direction === "out"
+      ? roster
+          .filter((m) => !onboard.some((o) => o.profile_id === m.profile_id))
+          .map((m) => ({ id: m.profile_id, name: m.full_name || m.email, crew_id: m.crew_id }))
+      : onboard
+          .filter((o) => o.profile_id)
+          .map((o) => ({ id: o.profile_id as string, name: o.name, crew_id: o.crew_id }))
+  )
+    .filter((c) => !crewId || c.crew_id === crewId)
+    .filter((c) => !pickedIds.has(c.id))
+    .filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const setModeAndSeats = (m: "helicopter" | "boat") => {
+    setMode(m);
+    setSeats(m === "boat" ? 24 : 12);
+  };
+  const reset = () => {
+    setPicked([]);
+    setDate("");
+    setSearch("");
+  };
+  const submit = () =>
+    run(
+      () =>
+        createManifest({
+          crewId: crewId || null,
+          direction,
+          transportMode: mode,
+          scheduledDate: date,
+          seatCapacity: seats,
+          profileIds: picked.map((p) => p.id),
+        }),
+      reset,
+    );
+
+  const over = picked.length > seats;
+
+  return (
+    <div className="space-y-2 rounded-lg border border-dashed bg-card/50 p-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-muted-foreground">
+          Direction
+          <select value={direction} onChange={(e) => { setDirection(e.target.value as "out" | "in"); setPicked([]); }} className={cn(field, "mt-0.5 block py-1")}>
+            <option value="out">Outbound (to platform)</option>
+            <option value="in">Inbound (to shore)</option>
+          </select>
+        </label>
+        <label className="text-xs text-muted-foreground">
+          Mode
+          <select value={mode} onChange={(e) => setModeAndSeats(e.target.value as "helicopter" | "boat")} className={cn(field, "mt-0.5 block py-1")}>
+            <option value="helicopter">Helicopter</option>
+            <option value="boat">Boat</option>
+          </select>
+        </label>
+        <label className="text-xs text-muted-foreground">
+          Crew (filter)
+          <select value={crewId} onChange={(e) => { setCrewId(e.target.value); setPicked([]); }} className={cn(field, "mt-0.5 block py-1")}>
+            <option value="">All crews</option>
+            {crews.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-muted-foreground">
+          Date
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={cn(field, "mt-0.5 block py-1")} />
+        </label>
+        <label className="text-xs text-muted-foreground">
+          Seats
+          <input type="number" min={1} value={seats} onChange={(e) => setSeats(Number(e.target.value) || 1)} className={cn(field, "mt-0.5 block w-20 py-1")} />
+        </label>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        {/* Available */}
+        <div className="rounded-md border">
+          <div className="flex items-center justify-between border-b px-2 py-1">
+            <span className="text-xs font-semibold">Available ({candidates.length})</span>
+            <button
+              type="button"
+              disabled={pending || candidates.length === 0}
+              onClick={() => setPicked((cur) => [...cur, ...candidates.map((c) => ({ id: c.id, name: c.name }))])}
+              className="text-[11px] text-primary hover:underline disabled:opacity-50"
+            >
+              Add all
+            </button>
+          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="w-full border-b px-2 py-1 text-xs outline-none"
+          />
+          <ul className="max-h-64 overflow-y-auto p-1">
+            {candidates.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setPicked((cur) => [...cur, { id: c.id, name: c.name }])}
+                  className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                >
+                  <span>{c.name}</span>
+                  <span className="text-muted-foreground">+</span>
+                </button>
+              </li>
+            ))}
+            {candidates.length === 0 && <li className="px-2 py-2 text-xs text-muted-foreground">No one to add.</li>}
+          </ul>
+        </div>
+
+        {/* Selected */}
+        <div className="rounded-md border">
+          <div className="flex items-center justify-between border-b px-2 py-1">
+            <span className={cn("text-xs font-semibold", over && "text-destructive")}>
+              Manifest ({picked.length}/{seats}){over ? " · over capacity" : ""}
+            </span>
+            <button
+              type="button"
+              disabled={pending || picked.length === 0}
+              onClick={() => setPicked([])}
+              className="text-[11px] text-muted-foreground hover:underline disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+          <ul className="max-h-64 overflow-y-auto p-1">
+            {picked.map((p, i) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setPicked((cur) => cur.filter((x) => x.id !== p.id))}
+                  className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-destructive/10"
+                >
+                  <span><span className="mr-1 tabular-nums text-muted-foreground/70">{i + 1}.</span>{p.name}</span>
+                  <span className="text-muted-foreground">×</span>
+                </button>
+              </li>
+            ))}
+            {picked.length === 0 && <li className="px-2 py-2 text-xs text-muted-foreground">Click people on the left to add.</li>}
+          </ul>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Button size="sm" disabled={pending || !date || picked.length === 0} onClick={submit}>
+          Create manifest ({picked.length})
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ManifestsPanel({
+  manifests,
+  crews,
+  roster,
+  onboard,
+}: {
+  manifests: Manifest[];
+  crews: Crew[];
+  roster: RosterEntry[];
+  onboard: PobBreakdown["people"];
+}) {
+  const { pending, error, run } = useRun();
 
   return (
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
-      <form
-        className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed bg-card/50 p-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(
-            () => generateCrewManifest({ crewId, direction, scheduledDate: date }),
-            () => setDate(""),
-          );
-        }}
-      >
-        <span className="text-sm font-medium">Generate crew manifest:</span>
-        <select value={crewId} onChange={(e) => setCrewId(e.target.value)} required className={field}>
-          <option value="">Crew…</option>
-          {crews.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-        <select value={direction} onChange={(e) => setDirection(e.target.value as "out" | "in")} className={field}>
-          <option value="out">Outbound</option>
-          <option value="in">Inbound</option>
-        </select>
-        <input value={date} onChange={(e) => setDate(e.target.value)} type="date" required className={field} />
-        <Button type="submit" size="sm" disabled={pending || !crewId}>Generate</Button>
-      </form>
+      <ManifestBuilder crews={crews} roster={roster} onboard={onboard} pending={pending} run={run} />
 
       <div className="space-y-3">
         {manifests.map((m) => (
@@ -268,6 +441,14 @@ function ManifestCard({
         <span className={cn("ml-auto text-xs", overCapacity ? "font-medium text-destructive" : "text-muted-foreground")}>
           {travelling.length}/{m.seat_capacity} seats
         </span>
+        <a
+          href={`/offshore-manifest/${m.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium hover:bg-accent"
+        >
+          <FileText className="h-3.5 w-3.5" /> Report
+        </a>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         {m.installation_name ?? "—"} · {m.scheduled_date}

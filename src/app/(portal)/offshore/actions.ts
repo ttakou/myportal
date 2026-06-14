@@ -529,6 +529,90 @@ export async function generateNextCrewChange(
   return generateCrewManifest({ crewId, direction, scheduledDate });
 }
 
+/**
+ * Build a manifest from a hand-picked passenger list and a transport mode
+ * (helicopter or boat). Crew is optional — a movement can mix people.
+ */
+export async function createManifest(input: {
+  crewId?: string | null;
+  direction: "out" | "in";
+  transportMode: string; // "helicopter" | "boat"
+  scheduledDate: string;
+  seatCapacity: number;
+  profileIds: string[];
+}): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (!input.scheduledDate) return { ok: false, error: "Scheduled date is required." };
+  if (!input.profileIds.length) return { ok: false, error: "Select at least one passenger." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  let crewName = "Movement";
+  let installationId: string | null = null;
+  if (input.crewId) {
+    const { data: crew } = await supabase
+      .from("offshore_crews")
+      .select("name, installation_id")
+      .eq("id", input.crewId)
+      .maybeSingle();
+    if (crew) {
+      crewName = crew.name as string;
+      installationId = (crew.installation_id as string | null) ?? null;
+    }
+  }
+  const modeLabel = input.transportMode === "boat" ? "boat" : "helicopter";
+
+  const { data: manifest, error } = await supabase
+    .from("offshore_manifests")
+    .insert({
+      tenant_id: tenant,
+      title: `${crewName} · ${input.direction === "out" ? "outbound" : "inbound"} · ${modeLabel} · ${input.scheduledDate}`,
+      crew_id: input.crewId || null,
+      installation_id: installationId,
+      trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
+      direction: input.direction,
+      transport_mode: modeLabel,
+      seat_capacity: Math.max(1, Math.floor(input.seatCapacity || input.profileIds.length)),
+      scheduled_date: input.scheduledDate,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !manifest) return { ok: false, error: error?.message ?? "Could not create manifest." };
+
+  const { data: people } = await supabase
+    .from("offshore_staff")
+    .select("profile_id, position, company, profile:profiles!offshore_staff_profile_id_fkey(full_name, email)")
+    .in("profile_id", input.profileIds);
+  const byId = new Map<string, Record<string, any>>();
+  for (const s of people ?? []) byId.set(s.profile_id as string, s);
+  // Fall back to profiles for anyone not on the roster.
+  const missing = input.profileIds.filter((id) => !byId.has(id));
+  if (missing.length) {
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", missing);
+    for (const p of profs ?? [])
+      byId.set(p.id as string, { profile_id: p.id, profile: { full_name: p.full_name, email: p.email } });
+  }
+
+  const pax = input.profileIds.map((id) => {
+    const s = byId.get(id);
+    const p = s ? (Array.isArray(s.profile) ? s.profile[0] : s.profile) : null;
+    return {
+      tenant_id: tenant,
+      manifest_id: manifest.id,
+      profile_id: id,
+      person_name: p?.full_name || p?.email || "Passenger",
+      position: s?.position ?? null,
+    };
+  });
+  await supabase.from("offshore_manifest_pax").insert(pax);
+  rev();
+  return { ok: true };
+}
+
 export async function generateCrewManifest(input: {
   crewId: string;
   direction: "out" | "in";
