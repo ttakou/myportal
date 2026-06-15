@@ -7,6 +7,7 @@ import { getAccessRoles } from "@/lib/access-roles";
 import { getTenantBranding } from "@/lib/branding";
 import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
 import { UsersPanel } from "./_components/users-panel";
+import { AuditLogPanel } from "./_components/audit-log-panel";
 import { ModulesPanel } from "./_components/modules-panel";
 import { ModuleParamsPanel } from "./_components/module-params-panel";
 import { RolesPanel } from "./_components/roles-panel";
@@ -122,6 +123,7 @@ export default async function AdminPage() {
           </div>
         </section>
       )}
+      {access.isSystemAdmin && <AuditLogPanel />}
     </div>
   );
 }
