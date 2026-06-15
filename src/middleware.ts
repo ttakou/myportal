@@ -22,6 +22,30 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // ---- Impersonation auto-expiry ---------------------------------------------
+  // If an impersonation window has elapsed, restore the admin's own session and
+  // clear the impersonation cookies before doing anything else.
+  const impExp = request.cookies.get("imp_exp")?.value;
+  if (user && impExp && Number(impExp) < Date.now()) {
+    const rt = request.cookies.get("imp_admin_rt")?.value;
+    if (rt) {
+      try {
+        await supabase.auth.refreshSession({ refresh_token: rt });
+      } catch {
+        /* fall through and clear cookies regardless */
+      }
+    }
+    const back = request.nextUrl.clone();
+    back.pathname = "/admin";
+    back.search = "";
+    const redirect = NextResponse.redirect(back);
+    supabaseResponse.cookies.getAll().forEach((c) => redirect.cookies.set(c.name, c.value));
+    for (const name of ["imp_admin_rt", "imp_active", "imp_actor", "imp_exp"]) {
+      redirect.cookies.set(name, "", { maxAge: 0, path: "/" });
+    }
+    return redirect;
+  }
+
   // ---- 1. Authentication gate -------------------------------------------------
   if (!user) {
     if (isPublic(pathname) || pathname === "/") {

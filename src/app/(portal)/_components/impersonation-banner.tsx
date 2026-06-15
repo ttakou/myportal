@@ -11,6 +11,7 @@ export function ImpersonationBanner({ name }: { name: string }) {
     <div className="flex flex-wrap items-center justify-center gap-3 bg-amber-500 px-4 py-1.5 text-sm font-medium text-amber-950">
       <span className="inline-flex items-center gap-1.5">
         <UserCog className="h-4 w-4" /> You are acting as <strong>{name}</strong>
+        <span className="hidden font-normal opacity-80 sm:inline">· auto-ends after 30 min</span>
       </span>
       <button
         disabled={pending}
