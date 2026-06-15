@@ -887,6 +887,7 @@ export async function setModuleActive(
 const IMP_RT = "imp_admin_rt"; // saved admin refresh token (httpOnly)
 const IMP_ACTIVE = "imp_active"; // impersonated user id (readable flag)
 const IMP_ACTOR = "imp_actor"; // admin id, for the stop-event audit (httpOnly)
+const IMP_EXP = "imp_exp"; // impersonation auto-expiry (epoch ms)
 
 /**
  * Super-admin acts as another user: swap the auth session to the target (via a
@@ -903,6 +904,16 @@ export async function startImpersonation(userId: string): Promise<ActionResult> 
   if (gErr || !tgt?.user) return { ok: false, error: gErr?.message ?? "User not found." };
   const email = tgt.user.email;
   if (!email) return { ok: false, error: "This user has no email address to impersonate." };
+
+  // Never impersonate another admin (privilege-escalation guard).
+  const { data: tgtProfile } = await admin
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+  if (tgtProfile?.role === "super_admin" || tgtProfile?.role === "tenant_admin") {
+    return { ok: false, error: "You can't impersonate another administrator." };
+  }
 
   const supabase = createClient();
   const {
@@ -933,6 +944,13 @@ export async function startImpersonation(userId: string): Promise<ActionResult> 
     return { ok: false, error: vErr.message };
   }
   store.set(IMP_ACTIVE, userId, { secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
+  // Auto-expiry: impersonation ends 30 minutes after it starts.
+  store.set(IMP_EXP, String(Date.now() + 30 * 60 * 1000), {
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 8,
+  });
 
   // Audit (service role bypasses RLS; record the acting super-admin).
   const actorId = session.user.id;
@@ -965,6 +983,7 @@ export async function stopImpersonation(): Promise<ActionResult> {
   store.delete(IMP_RT);
   store.delete(IMP_ACTIVE);
   store.delete(IMP_ACTOR);
+  store.delete(IMP_EXP);
   if (error) return { ok: false, error: `Could not restore your session: ${error.message}` };
 
   const admin = createAdminClient();
