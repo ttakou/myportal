@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import {
   AlertTriangle,
   Anchor,
@@ -16,6 +16,7 @@ import {
   Users,
   UserCog,
   UtensilsCrossed,
+  LifeBuoy,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,9 @@ import {
   TRIP_TYPE_LABEL,
   VISIT_STATUS_LABEL,
   VISITOR_TYPE_LABEL,
+  EMERGENCY_ROLE_LABEL,
+  type EmergencyRole,
+  type EmergencyRoleKind,
   type AccommodationSummary,
   type AssignableEmployee,
   type CertAlert,
@@ -56,6 +60,8 @@ import {
   decideVisitGroup,
   boardMember,
   deleteCrew,
+  deleteEmergencyWindow,
+  setEmergencyRole,
   offboardTrip,
   reassignTripRoom,
   setBackToBack,
@@ -97,6 +103,7 @@ type Tab =
   | "visitors"
   | "manifests"
   | "catering"
+  | "emergency"
   | "history";
 
 export function OffshoreManagement(props: {
@@ -114,6 +121,8 @@ export function OffshoreManagement(props: {
   calendar: RotationCalendar;
   employees: AssignableEmployee[];
   suggestions: CrewChangeSuggestion[];
+  emergencyRoles: EmergencyRole[];
+  musterGroups: string[];
 }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const pendingVisits = props.visits.filter((v) => v.status === "requested").length;
@@ -128,6 +137,7 @@ export function OffshoreManagement(props: {
     { key: "roster", label: "Offshore staff", icon: Users },
     { key: "assign", label: "Assign crews", icon: UserCog },
     { key: "visitors", label: "Visitors", icon: Plane, badge: pendingVisits },
+    { key: "emergency", label: "Muster roles", icon: LifeBuoy },
     { key: "history", label: "History", icon: History },
   ];
 
@@ -194,7 +204,148 @@ export function OffshoreManagement(props: {
       )}
       {tab === "assign" && <CrewAssign employees={props.employees} crews={props.crews} />}
       {tab === "catering" && <CateringPanel installations={props.installations} />}
+      {tab === "emergency" && (
+        <EmergencyRolesPanel
+          roles={props.emergencyRoles}
+          musterGroups={props.musterGroups}
+          roster={props.roster}
+        />
+      )}
       {tab === "history" && <HistoryPanel />}
+    </div>
+  );
+}
+
+const EMERGENCY_ORDER: EmergencyRoleKind[] = [
+  "evac_leader",
+  "evac_assistant",
+  "headcount_principal",
+  "headcount_assistant",
+];
+
+/** Per rotation window + muster group: evacuation & head-count role holders. */
+function EmergencyRolesPanel({
+  roles,
+  musterGroups,
+  roster,
+}: {
+  roles: EmergencyRole[];
+  musterGroups: string[];
+  roster: RosterEntry[];
+}) {
+  const { pending, error, run } = useRun();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const windows = useMemo(() => {
+    const seen = new Map<string, { from: string; to: string }>();
+    for (const r of roles) {
+      const k = r.from_date + "|" + r.to_date;
+      if (!seen.has(k)) seen.set(k, { from: r.from_date, to: r.to_date });
+    }
+    return [...seen.values()].sort((a, b) => b.from.localeCompare(a.from));
+  }, [roles]);
+
+  const [from, setFrom] = useState(windows[0]?.from ?? today);
+  const [to, setTo] = useState(windows[0]?.to ?? today);
+
+  const groups = musterGroups.length
+    ? musterGroups
+    : [...new Set(roles.map((r) => r.lifeboat))].sort() ;
+  const people = [...roster]
+    .map((m) => ({ id: m.profile_id, name: m.full_name || m.email }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const holder = (group: string, role: EmergencyRoleKind) =>
+    roles.find(
+      (r) => r.from_date === from && r.to_date === to && r.lifeboat === group && r.role === role,
+    )?.profile_id ?? "";
+
+  return (
+    <div className="space-y-3">
+      {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+      <p className="text-sm text-muted-foreground">
+        Evacuation &amp; head-count leaders per muster group, fixed for a rotation window (they stay
+        the same across the crews aboard).
+      </p>
+
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed bg-card/50 p-3">
+        <label className="text-xs text-muted-foreground">
+          Rotation from
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={cn(field, "mt-0.5 block py-1")} />
+        </label>
+        <label className="text-xs text-muted-foreground">
+          to
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={cn(field, "mt-0.5 block py-1")} />
+        </label>
+        {windows.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-xs text-muted-foreground">Existing:</span>
+            {windows.map((w) => (
+              <button
+                key={w.from + w.to}
+                onClick={() => { setFrom(w.from); setTo(w.to); }}
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[11px] hover:bg-accent",
+                  from === w.from && to === w.to && "ring-1 ring-primary",
+                )}
+              >
+                {w.from} → {w.to}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No muster groups configured. Set a room&apos;s muster (Accommodation tab) first.
+        </p>
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {groups.map((g) => (
+            <div key={g} className="rounded-lg border bg-card p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">{g}</span>
+                <span className="text-xs text-muted-foreground">muster group</span>
+              </div>
+              <div className="grid gap-2">
+                {EMERGENCY_ORDER.map((role) => (
+                  <label key={role} className="flex items-center gap-2 text-sm">
+                    <span className="w-40 shrink-0 text-xs text-muted-foreground">{EMERGENCY_ROLE_LABEL[role]}</span>
+                    <select
+                      value={holder(g, role)}
+                      disabled={pending || !from || !to}
+                      onChange={(e) =>
+                        run(() => setEmergencyRole({ fromDate: from, toDate: to, lifeboat: g, role, profileId: e.target.value || null }))
+                      }
+                      className={cn(field, "flex-1 py-1")}
+                    >
+                      <option value="">— none —</option>
+                      {people.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {windows.some((w) => w.from === from && w.to === to) && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending}
+          onClick={() => {
+            if (confirm(`Clear all muster roles for ${from} → ${to}?`))
+              run(() => deleteEmergencyWindow(from, to));
+          }}
+        >
+          Clear this window
+        </Button>
+      )}
     </div>
   );
 }

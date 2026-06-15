@@ -6,6 +6,7 @@ import type {
   CertAlert,
   Crew,
   CrewChangeSuggestion,
+  EmergencyRole,
   Flight,
   Installation,
   Manifest,
@@ -735,6 +736,43 @@ const VISIT_SELECT =
   " requester:profiles!offshore_visit_requests_requester_id_fkey(full_name)," +
   " installation:offshore_installations(name)," +
   " offshore_bed_allocations(id, room_id, from_date, to_date, status, room:offshore_rooms(room_number, block))";
+
+/** Distinct muster / lifeboat groups configured on rooms (e.g. LB-1, LB-2). */
+export async function getMusterGroups(): Promise<string[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("offshore_rooms")
+    .select("lifeboat")
+    .not("lifeboat", "is", null);
+  const set = new Set<string>();
+  for (const r of data ?? []) if (r.lifeboat) set.add(r.lifeboat as string);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+/** Evacuation / head-count role holders per rotation window + muster group. */
+export async function getEmergencyRoles(): Promise<EmergencyRole[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("offshore_emergency_roles")
+    .select(
+      "id, from_date, to_date, lifeboat, role, profile_id," +
+        " person:profiles!offshore_emergency_roles_profile_id_fkey(full_name)",
+    )
+    .order("from_date", { ascending: false });
+  if (error) {
+    console.error("getEmergencyRoles:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r: Record<string, any>) => ({
+    id: r.id,
+    from_date: r.from_date,
+    to_date: r.to_date,
+    lifeboat: r.lifeboat,
+    role: r.role,
+    profile_id: r.profile_id ?? null,
+    person_name: one2<{ full_name?: string }>(r.person)?.full_name ?? null,
+  }));
+}
 
 /** Existing names + companies, to suggest/de-duplicate while raising visit requests. */
 export async function getVisitorSuggestions(): Promise<{ names: string[]; companies: string[] }> {

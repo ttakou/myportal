@@ -1705,6 +1705,68 @@ export async function reverseManifestPax(input: { paxId: string }): Promise<Acti
   return { ok: true };
 }
 
+// --- Emergency (muster) roles per rotation window ----------------------------
+
+/** Set/clear one evacuation or head-count role for a muster group in a window. */
+export async function setEmergencyRole(input: {
+  fromDate: string;
+  toDate: string;
+  lifeboat: string;
+  role: "evac_leader" | "evac_assistant" | "headcount_principal" | "headcount_assistant";
+  profileId: string | null;
+}): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  if (!input.fromDate || !input.toDate) return { ok: false, error: "Rotation window dates are required." };
+  if (!input.lifeboat) return { ok: false, error: "Muster group is required." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  if (!input.profileId) {
+    const { error } = await supabase
+      .from("offshore_emergency_roles")
+      .delete()
+      .eq("tenant_id", tenant)
+      .eq("from_date", input.fromDate)
+      .eq("to_date", input.toDate)
+      .eq("lifeboat", input.lifeboat)
+      .eq("role", input.role);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await supabase.from("offshore_emergency_roles").upsert(
+      {
+        tenant_id: tenant,
+        from_date: input.fromDate,
+        to_date: input.toDate,
+        lifeboat: input.lifeboat,
+        role: input.role,
+        profile_id: input.profileId,
+      },
+      { onConflict: "tenant_id,from_date,to_date,lifeboat,role" },
+    );
+    if (error) return { ok: false, error: error.message };
+  }
+  rev();
+  return { ok: true };
+}
+
+/** Remove every role row for a rotation window. */
+export async function deleteEmergencyWindow(fromDate: string, toDate: string): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const { error } = await supabase
+    .from("offshore_emergency_roles")
+    .delete()
+    .eq("tenant_id", tenant)
+    .eq("from_date", fromDate)
+    .eq("to_date", toDate);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 // --- One-click crew mobilise / demobilise (from schedule suggestions) --------
 
 /** Board a single member now (late arrival joining colleagues already offshore). */
