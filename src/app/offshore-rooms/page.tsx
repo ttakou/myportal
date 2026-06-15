@@ -55,7 +55,10 @@ export default async function RoomAllocationReportPage({
             return (
               <div key={r.id} className="rounded border border-gray-200 p-2 text-[11px]" style={{ breakInside: "avoid" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 pb-1">
-                  <span className="font-semibold text-gray-900">{r.label}</span>
+                  <span className="font-semibold text-gray-900">
+                    {r.label}
+                    {r.lifeboat ? <span className="ml-1 rounded bg-sky-100 px-1 text-[9px] text-sky-800">{r.lifeboat}</span> : null}
+                  </span>
                   <span className={over ? "font-semibold text-red-600" : r.occupants.length ? "font-semibold text-green-700" : "text-gray-400"}>
                     {r.occupants.length}/{r.beds}{over ? " · hot-bunk" : ""}
                   </span>

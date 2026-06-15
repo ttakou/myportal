@@ -159,6 +159,8 @@ export interface Room {
   status: RoomStatus;
   special_flag: string | null;
   notes: string | null;
+  /** Muster / lifeboat group for everyone in this room. */
+  lifeboat: string | null;
   fixed_assigned: number;
   /** Default owners — rotators whose fixed room is this room (+ their back-to-back). */
   owners: { name: string; bed: string | null; back_to_back: string | null }[];
@@ -450,6 +452,7 @@ export interface RoomAllocationReport {
     label: string;
     installation: string | null;
     beds: number;
+    lifeboat: string | null;
     occupants: { name: string; bed_no: string | null; category: "staff" | "visitor" }[];
     owners: { name: string; bed: string | null; back_to_back: string | null }[];
   }[];
