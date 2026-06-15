@@ -405,6 +405,23 @@ export async function decideVisitRequest(
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  const { data: vr } = await supabase
+    .from("offshore_visit_requests")
+    .select("requester_id, visitor_name, tenant_id")
+    .eq("id", id)
+    .maybeSingle();
+  const admin = createAdminClient();
+  if (admin && vr?.requester_id) {
+    await admin.from("notifications").insert({
+      tenant_id: vr.tenant_id,
+      profile_id: vr.requester_id,
+      category: "approval",
+      title: `Visit ${decision === "approved" ? "approved" : "rejected"}: ${vr.visitor_name}`,
+      body: decision === "rejected" ? reason?.trim() || "Not approved" : "Approved for travel.",
+      url: "/offshore",
+    });
+  }
   rev();
   return { ok: true };
 }
@@ -488,6 +505,31 @@ export async function decideVisitGroup(
     .eq("group_id", groupId)
     .eq("status", "requested");
   if (error) return { ok: false, error: error.message };
+
+  // Notify the host who raised the group request.
+  const { data: rows } = await supabase
+    .from("offshore_visit_requests")
+    .select("requester_id, tenant_id")
+    .eq("group_id", groupId)
+    .limit(1);
+  const head = rows?.[0];
+  const admin = createAdminClient();
+  if (admin && head?.requester_id) {
+    const { count } = await supabase
+      .from("offshore_visit_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("group_id", groupId);
+    await admin.from("notifications").insert({
+      tenant_id: head.tenant_id,
+      profile_id: head.requester_id,
+      category: "approval",
+      title: `Visit request ${decision === "approved" ? "approved" : "rejected"}`,
+      body:
+        (decision === "rejected" ? reason?.trim() || "Not approved" : "Approved for travel") +
+        ` · ${count ?? 0} visitor(s)`,
+      url: "/offshore",
+    });
+  }
   rev();
   return { ok: true };
 }
