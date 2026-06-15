@@ -247,6 +247,30 @@ export interface AccommodationSummary {
   }[];
 }
 
+export type EmergencyRoleKind =
+  | "evac_leader"
+  | "evac_assistant"
+  | "headcount_principal"
+  | "headcount_assistant";
+
+export const EMERGENCY_ROLE_LABEL: Record<EmergencyRoleKind, string> = {
+  evac_leader: "Evacuation leader",
+  evac_assistant: "Evacuation assistant",
+  headcount_principal: "Head-count (principal)",
+  headcount_assistant: "Head-count (assistant)",
+};
+
+/** Evacuation / head-count role holder for a muster group over a rotation window. */
+export interface EmergencyRole {
+  id: string;
+  from_date: string;
+  to_date: string;
+  lifeboat: string;
+  role: EmergencyRoleKind;
+  profile_id: string | null;
+  person_name: string | null;
+}
+
 export interface CertAlert {
   full_name: string | null;
   kind: "medical" | "bosiet" | "huet";

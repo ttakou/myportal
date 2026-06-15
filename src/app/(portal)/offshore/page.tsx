@@ -9,6 +9,8 @@ import {
   getCertAlerts,
   getCrewChangeSuggestions,
   getCrews,
+  getEmergencyRoles,
+  getMusterGroups,
   getFlights,
   getInstallations,
   getManifests,
@@ -55,6 +57,8 @@ export default async function OffshorePage() {
     calendar,
     employees,
     suggestions,
+    emergencyRoles,
+    musterGroups,
   ] = canManage
     ? await Promise.all([
         getCrews(),
@@ -70,8 +74,10 @@ export default async function OffshorePage() {
         getRotationCalendar(8),
         getAssignableEmployees(),
         getCrewChangeSuggestions(),
+        getEmergencyRoles(),
+        getMusterGroups(),
       ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], []];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], []];
 
   return (
     <div className="space-y-8">
@@ -102,6 +108,8 @@ export default async function OffshorePage() {
           calendar={calendar}
           employees={employees}
           suggestions={suggestions}
+          emergencyRoles={emergencyRoles}
+          musterGroups={musterGroups}
         />
       )}
 
