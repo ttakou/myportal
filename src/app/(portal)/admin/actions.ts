@@ -984,3 +984,46 @@ export async function stopImpersonation(): Promise<ActionResult> {
   revalidatePath("/", "layout");
   return { ok: true };
 }
+
+// --- Audit log (read) --------------------------------------------------------
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actor_name: string | null;
+  table_name: string;
+  op: string;
+  row_id: string | null;
+  changes: Record<string, unknown> | null;
+}
+
+/** Recent audit-log entries (RLS limits to tenant/super admins). */
+export async function fetchAuditLog(input: {
+  tableName?: string;
+  limit?: number;
+}): Promise<{ ok: boolean; error?: string; entries?: AuditEntry[] }> {
+  if (!(await getAccess()).isSystemAdmin) return { ok: false, error: "Not authorized." };
+  const supabase = createClient();
+  let q = supabase
+    .from("audit_log")
+    .select("id, at, op, table_name, row_id, changes, actor:profiles!audit_log_actor_id_fkey(full_name, email)")
+    .order("at", { ascending: false })
+    .limit(Math.min(input.limit ?? 100, 500));
+  if (input.tableName) q = q.eq("table_name", input.tableName);
+  const { data, error } = await q;
+  if (error) return { ok: false, error: error.message };
+  const one = (v: unknown) => (Array.isArray(v) ? v[0] : v) as { full_name?: string; email?: string } | null;
+  const entries = ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
+    const a = one(r.actor);
+    return {
+      id: String(r.id),
+      at: r.at as string,
+      actor_name: a?.full_name || a?.email || null,
+      table_name: r.table_name as string,
+      op: r.op as string,
+      row_id: (r.row_id as string | null) ?? null,
+      changes: (r.changes as Record<string, unknown> | null) ?? null,
+    };
+  });
+  return { ok: true, entries };
+}
