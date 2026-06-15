@@ -26,8 +26,14 @@ export default async function RoomAllocationReportPage({
         .room-report, .room-report * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       `}</style>
 
-      <div className="mx-auto mb-3 max-w-[1100px] print:hidden">
+      <div className="mx-auto mb-3 flex max-w-[1100px] items-center gap-2 print:hidden">
         <PrintButton />
+        <a
+          href={`/offshore-export?type=rooms&date=${date}`}
+          className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50"
+        >
+          Download CSV
+        </a>
       </div>
 
       <div className="room-report mx-auto max-w-[1100px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">

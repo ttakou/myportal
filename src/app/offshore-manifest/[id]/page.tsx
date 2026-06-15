@@ -36,7 +36,13 @@ export default async function ManifestReportPage({
 
   return (
     <div className="min-h-screen bg-gray-100 p-6 print:bg-white print:p-0">
-      <div className="mx-auto mb-3 flex max-w-[800px] justify-end print:hidden">
+      <div className="mx-auto mb-3 flex max-w-[800px] justify-end gap-2 print:hidden">
+        <a
+          href={`/offshore-export?type=manifest&id=${m.id}`}
+          className="inline-flex items-center gap-2 rounded-md border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
+        >
+          Download CSV
+        </a>
         <PrintButton />
       </div>
 

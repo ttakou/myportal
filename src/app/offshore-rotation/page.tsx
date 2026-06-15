@@ -58,8 +58,14 @@ export default async function RotationReportPage({
         }
       `}</style>
 
-      <div className="mx-auto mb-3 max-w-[1500px] print:hidden">
+      <div className="mx-auto mb-3 flex max-w-[1500px] items-center gap-2 print:hidden">
         <PrintButton />
+        <a
+          href={`/offshore-export?type=rotation&from=${from}&weeks=${weeks}`}
+          className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50"
+        >
+          Download CSV
+        </a>
       </div>
 
       <div className="rotation-report mx-auto max-w-[1500px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">
