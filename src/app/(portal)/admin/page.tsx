@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { getTenantUsers, getTenantModules } from "@/lib/admin";
 import { getAccessRoles } from "@/lib/access-roles";
 import { getTenantBranding } from "@/lib/branding";
@@ -32,12 +33,14 @@ export default async function AdminPage() {
     );
   }
 
-  const [users, modules, accessRoles, branding] = await Promise.all([
+  const [users, modules, accessRoles, branding, me] = await Promise.all([
     getTenantUsers(),
     getTenantModules(),
     getAccessRoles(),
     getTenantBranding(),
+    createClient().auth.getUser().then((r) => r.data.user),
   ]);
+  const selfId = me?.id ?? "";
   const canteenActive = modules.some((m) => m.slug === "canteen" && m.is_active);
   const showCanteen = canteenActive && access.isCanteenManager;
   const servedMeals = showCanteen ? await getServedMealPeriods() : [];
@@ -68,6 +71,8 @@ export default async function AdminPage() {
         users={users}
         canAssignRoles={access.isHr}
         accessRoles={access.isSystemAdmin ? accessRoles : []}
+        canImpersonate={access.role === "super_admin"}
+        selfId={selfId}
       />
     </div>
   );

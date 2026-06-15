@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { createClient } from "@/lib/supabase/server";
@@ -6,6 +7,7 @@ import { getMyNotifications } from "@/lib/notifications";
 import { UserMenu } from "./_components/user-menu";
 import { NotificationBell } from "./_components/notification-bell";
 import { PortalShell } from "./_components/portal-shell";
+import { ImpersonationBanner } from "./_components/impersonation-banner";
 
 /**
  * Shared layout for all authenticated portal pages (dashboard + every module).
@@ -43,9 +45,11 @@ export default async function PortalLayout({
 
   const displayName = profile?.full_name || profile?.email || "User";
   const role = profile?.role ?? "employee";
+  const impersonating = cookies().get("imp_active")?.value;
 
   return (
     <div style={brandingToCssVars(branding)}>
+      {impersonating && <ImpersonationBanner name={displayName} />}
       <PortalShell
         sidebar={<Sidebar brandName={branding.name} logoUrl={branding.logoUrl} />}
         header={

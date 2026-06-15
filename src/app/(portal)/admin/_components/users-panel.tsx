@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Copy, KeyRound } from "lucide-react";
+import { Check, Copy, KeyRound, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
 import type { FunctionalRole } from "@/lib/auth";
@@ -19,6 +19,7 @@ import {
   setUserRole,
   setUserType,
   updateUserEmail,
+  startImpersonation,
 } from "../actions";
 
 const ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
@@ -37,10 +38,14 @@ export function UsersPanel({
   users,
   canAssignRoles,
   accessRoles = [],
+  canImpersonate = false,
+  selfId = "",
 }: {
   users: TenantUser[];
   canAssignRoles: boolean;
   accessRoles?: AccessRole[];
+  canImpersonate?: boolean;
+  selfId?: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -181,6 +186,23 @@ export function UsersPanel({
                   >
                     {u.is_active ? "Active" : "Inactive"}
                   </button>
+                  {canImpersonate && u.id !== selfId && (
+                    <button
+                      type="button"
+                      disabled={pending}
+                      title="Act as this user"
+                      onClick={() =>
+                        startTransition(async () => {
+                          const res = await startImpersonation(u.id);
+                          if (!res.ok) setError(res.error ?? "Could not impersonate.");
+                          else window.location.href = "/dashboard";
+                        })
+                      }
+                      className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                    >
+                      <UserCog className="h-3.5 w-3.5" /> Impersonate
+                    </button>
+                  )}
                 </td>
                 {canAssignRoles && accessRoles.length > 0 && (
                   <td className="px-4 py-3">

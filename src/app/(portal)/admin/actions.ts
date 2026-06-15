@@ -1,10 +1,11 @@
 "use server";
 
 import { randomBytes } from "crypto";
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getAccess, type FunctionalRole } from "@/lib/auth";
+import { getAccess, getCurrentRole, type FunctionalRole } from "@/lib/auth";
 import { MODULE_PARAMS } from "@/lib/module-params";
 import { MODULE_ROUTES } from "@/lib/navigation";
 import type { EmployeeType } from "@/lib/admin";
@@ -878,5 +879,73 @@ export async function setModuleActive(
   if (error) return { ok: false, error: error.message };
   revalidatePath("/admin");
   revalidatePath("/", "layout"); // sidebar reflects the change
+  return { ok: true };
+}
+
+// --- Impersonation (super admin "act as" another user) -----------------------
+
+const IMP_RT = "imp_admin_rt"; // saved admin refresh token (httpOnly)
+const IMP_ACTIVE = "imp_active"; // impersonated user id (readable flag)
+
+/**
+ * Super-admin acts as another user: swap the auth session to the target (via a
+ * service-role magic-link OTP) after stashing the admin's refresh token so it
+ * can be restored with stopImpersonation().
+ */
+export async function startImpersonation(userId: string): Promise<ActionResult> {
+  if ((await getCurrentRole()) !== "super_admin")
+    return { ok: false, error: "Only super admins can impersonate." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Service role not configured." };
+
+  const { data: tgt, error: gErr } = await admin.auth.admin.getUserById(userId);
+  if (gErr || !tgt?.user) return { ok: false, error: gErr?.message ?? "User not found." };
+  const email = tgt.user.email;
+  if (!email) return { ok: false, error: "This user has no email address to impersonate." };
+
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return { ok: false, error: "No active session." };
+
+  const { data: link, error: lErr } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+  });
+  const otp = link?.properties?.email_otp;
+  if (lErr || !otp) return { ok: false, error: lErr?.message ?? "Could not generate a session." };
+
+  const store = cookies();
+  // Save the admin's refresh token *before* the auth cookie is overwritten.
+  store.set(IMP_RT, session.refresh_token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 8,
+  });
+
+  const { error: vErr } = await supabase.auth.verifyOtp({ email, token: otp, type: "magiclink" });
+  if (vErr) {
+    store.delete(IMP_RT);
+    return { ok: false, error: vErr.message };
+  }
+  store.set(IMP_ACTIVE, userId, { secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/** Restore the super-admin's own session and end impersonation. */
+export async function stopImpersonation(): Promise<ActionResult> {
+  const store = cookies();
+  const rt = store.get(IMP_RT)?.value;
+  if (!rt) return { ok: false, error: "Not impersonating." };
+  const supabase = createClient();
+  const { error } = await supabase.auth.refreshSession({ refresh_token: rt });
+  store.delete(IMP_RT);
+  store.delete(IMP_ACTIVE);
+  if (error) return { ok: false, error: `Could not restore your session: ${error.message}` };
+  revalidatePath("/", "layout");
   return { ok: true };
 }
