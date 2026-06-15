@@ -1,7 +1,7 @@
 import { getAccess } from "@/lib/auth";
 import { getTenantBranding } from "@/lib/branding";
-import { getRotationReport } from "@/lib/offshore";
-import type { RotationDay } from "@/types/offshore";
+import { getEmergencyRoles, getRotationReport } from "@/lib/offshore";
+import { EMERGENCY_ROLE_LABEL, type EmergencyRoleKind, type RotationDay } from "@/types/offshore";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
 const CELL: Record<RotationDay, string> = {
@@ -10,6 +10,8 @@ const CELL: Record<RotationDay, string> = {
   change_out: "#f59e0b",
   change_in: "#22c55e",
 };
+
+const ROLE_ORDER: EmergencyRoleKind[] = ["evac_leader", "evac_assistant", "headcount_principal", "headcount_assistant"];
 
 /** Standalone, A3-landscape rotation calendar report with tenant branding. */
 export default async function RotationReportPage({
@@ -25,7 +27,22 @@ export default async function RotationReportPage({
 
   const from = sp.from || new Date().toISOString().slice(0, 10);
   const weeks = Math.max(1, Math.min(26, Number(sp.weeks) || 8));
-  const [report, branding] = await Promise.all([getRotationReport(from, weeks), getTenantBranding()]);
+  const [report, branding, emergencyRoles] = await Promise.all([
+    getRotationReport(from, weeks),
+    getTenantBranding(),
+    getEmergencyRoles(),
+  ]);
+
+  // Muster-role windows overlapping the report range, grouped by window then group.
+  const windowMap = new Map<string, { from: string; to: string; groups: Map<string, typeof emergencyRoles> }>();
+  for (const r of emergencyRoles) {
+    if (r.from_date > report.to || r.to_date < report.from) continue; // outside range
+    const wk = r.from_date + "|" + r.to_date;
+    if (!windowMap.has(wk)) windowMap.set(wk, { from: r.from_date, to: r.to_date, groups: new Map() });
+    const w = windowMap.get(wk)!;
+    w.groups.set(r.lifeboat, [...(w.groups.get(r.lifeboat) ?? []), r]);
+  }
+  const musterWindows = [...windowMap.values()].sort((a, b) => a.from.localeCompare(b.from));
 
   const fmt = (d: string) =>
     new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
@@ -122,6 +139,42 @@ export default async function RotationReportPage({
             </div>
           ))}
         </div>
+
+        {/* Muster roles per rotation window */}
+        {musterWindows.length > 0 && (
+          <>
+            <h2 className="mt-6 mb-2 text-sm font-bold text-gray-900">Muster roles by rotation window</h2>
+            <div className="space-y-3">
+              {musterWindows.map((w) => (
+                <div key={w.from + w.to} style={{ breakInside: "avoid" }}>
+                  <div className="mb-1 text-[11px] font-semibold text-gray-700">
+                    {fmt(w.from)} → {fmt(w.to)}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    {[...w.groups.entries()]
+                      .sort((a, b) => a[0].localeCompare(b[0]))
+                      .map(([group, rows]) => (
+                        <div key={group} className="rounded border border-gray-200 p-2 text-[11px]">
+                          <div className="mb-1 font-semibold text-gray-900">Muster {group}</div>
+                          <ul className="space-y-0.5">
+                            {ROLE_ORDER.map((role) => {
+                              const holder = rows.find((r) => r.role === role);
+                              return (
+                                <li key={role} className="flex justify-between gap-2">
+                                  <span className="text-gray-500">{EMERGENCY_ROLE_LABEL[role]}</span>
+                                  <span className="font-medium text-gray-900">{holder?.person_name ?? "—"}</span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="mt-6 border-t border-gray-200 pt-2 text-[9px] text-gray-400">
           {branding.name} · Crew rotation calendar · Generated {new Date().toLocaleString("en-GB", { timeZone: "UTC" })} UTC
