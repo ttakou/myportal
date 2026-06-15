@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { getTenantUsers, getTenantModules } from "@/lib/admin";
+import { getTenantUsers, getTenantModules, getImpersonationLog } from "@/lib/admin";
 import { getAccessRoles } from "@/lib/access-roles";
 import { getTenantBranding } from "@/lib/branding";
 import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
@@ -41,6 +41,8 @@ export default async function AdminPage() {
     createClient().auth.getUser().then((r) => r.data.user),
   ]);
   const selfId = me?.id ?? "";
+  const isSuper = access.role === "super_admin";
+  const impersonationLog = isSuper ? await getImpersonationLog() : [];
   const canteenActive = modules.some((m) => m.slug === "canteen" && m.is_active);
   const showCanteen = canteenActive && access.isCanteenManager;
   const servedMeals = showCanteen ? await getServedMealPeriods() : [];
@@ -71,9 +73,55 @@ export default async function AdminPage() {
         users={users}
         canAssignRoles={access.isHr}
         accessRoles={access.isSystemAdmin ? accessRoles : []}
-        canImpersonate={access.role === "super_admin"}
+        canImpersonate={isSuper}
         selfId={selfId}
       />
+      {isSuper && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">Impersonation log</h2>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">When (UTC)</th>
+                  <th className="px-4 py-2 font-medium">Action</th>
+                  <th className="px-4 py-2 font-medium">Admin</th>
+                  <th className="px-4 py-2 font-medium">Acted as</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {impersonationLog.map((e) => (
+                  <tr key={e.id}>
+                    <td className="px-4 py-2 text-muted-foreground">
+                      {new Date(e.created_at).toLocaleString("en-GB", { timeZone: "UTC" })}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={
+                          e.action === "start"
+                            ? "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                            : "rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                        }
+                      >
+                        {e.action === "start" ? "Started" : "Stopped"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2">{e.actor_name ?? "—"}</td>
+                    <td className="px-4 py-2">{e.target_name ?? "—"}</td>
+                  </tr>
+                ))}
+                {impersonationLog.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
+                      No impersonation events yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

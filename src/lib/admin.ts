@@ -74,3 +74,41 @@ export async function getTenantModules(): Promise<TenantModule[]> {
     };
   });
 }
+
+export interface ImpersonationEvent {
+  id: string;
+  actor_name: string | null;
+  target_name: string | null;
+  action: "start" | "stop";
+  created_at: string;
+}
+
+/** Recent impersonation events for the tenant (RLS limits to admins). */
+export async function getImpersonationLog(limit = 50): Promise<ImpersonationEvent[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("impersonation_audit")
+    .select(
+      "id, action, created_at," +
+        " actor:profiles!impersonation_audit_actor_id_fkey(full_name, email)," +
+        " target:profiles!impersonation_audit_target_id_fkey(full_name, email)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("getImpersonationLog:", error.message);
+    return [];
+  }
+  const one = (v: unknown) => (Array.isArray(v) ? v[0] : v) as { full_name?: string; email?: string } | null;
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
+    const a = one(r.actor);
+    const t = one(r.target);
+    return {
+      id: r.id as string,
+      actor_name: a?.full_name || a?.email || null,
+      target_name: t?.full_name || t?.email || null,
+      action: r.action as "start" | "stop",
+      created_at: r.created_at as string,
+    };
+  });
+}

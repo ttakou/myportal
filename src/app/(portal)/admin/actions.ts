@@ -886,6 +886,7 @@ export async function setModuleActive(
 
 const IMP_RT = "imp_admin_rt"; // saved admin refresh token (httpOnly)
 const IMP_ACTIVE = "imp_active"; // impersonated user id (readable flag)
+const IMP_ACTOR = "imp_actor"; // admin id, for the stop-event audit (httpOnly)
 
 /**
  * Super-admin acts as another user: swap the auth session to the target (via a
@@ -932,6 +933,22 @@ export async function startImpersonation(userId: string): Promise<ActionResult> 
     return { ok: false, error: vErr.message };
   }
   store.set(IMP_ACTIVE, userId, { secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
+
+  // Audit (service role bypasses RLS; record the acting super-admin).
+  const actorId = session.user.id;
+  store.set(IMP_ACTOR, actorId, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
+  const { data: actorProfile } = await admin
+    .from("profiles")
+    .select("tenant_id")
+    .eq("id", actorId)
+    .maybeSingle();
+  await admin.from("impersonation_audit").insert({
+    tenant_id: actorProfile?.tenant_id ?? null,
+    actor_id: actorId,
+    target_id: userId,
+    action: "start",
+  });
+
   revalidatePath("/", "layout");
   return { ok: true };
 }
@@ -941,11 +958,29 @@ export async function stopImpersonation(): Promise<ActionResult> {
   const store = cookies();
   const rt = store.get(IMP_RT)?.value;
   if (!rt) return { ok: false, error: "Not impersonating." };
+  const actorId = store.get(IMP_ACTOR)?.value ?? null;
+  const targetId = store.get(IMP_ACTIVE)?.value ?? null;
   const supabase = createClient();
   const { error } = await supabase.auth.refreshSession({ refresh_token: rt });
   store.delete(IMP_RT);
   store.delete(IMP_ACTIVE);
+  store.delete(IMP_ACTOR);
   if (error) return { ok: false, error: `Could not restore your session: ${error.message}` };
+
+  const admin = createAdminClient();
+  if (admin && actorId) {
+    const { data: actorProfile } = await admin
+      .from("profiles")
+      .select("tenant_id")
+      .eq("id", actorId)
+      .maybeSingle();
+    await admin.from("impersonation_audit").insert({
+      tenant_id: actorProfile?.tenant_id ?? null,
+      actor_id: actorId,
+      target_id: targetId,
+      action: "stop",
+    });
+  }
   revalidatePath("/", "layout");
   return { ok: true };
 }
