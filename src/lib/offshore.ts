@@ -7,6 +7,7 @@ import type {
   Crew,
   CrewChangeSuggestion,
   EmergencyRole,
+  MusterDrill,
   Flight,
   Installation,
   Manifest,
@@ -747,6 +748,38 @@ export async function getMusterGroups(): Promise<string[]> {
   const set = new Set<string>();
   for (const r of data ?? []) if (r.lifeboat) set.add(r.lifeboat as string);
   return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+/** The currently-open muster roll-call (if any) with its check-ins. */
+export async function getActiveMusterDrill(): Promise<MusterDrill | null> {
+  const supabase = createClient();
+  const { data: drill } = await supabase
+    .from("offshore_muster_drills")
+    .select("id, started_at, ended_at, kind")
+    .is("ended_at", null)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!drill) return null;
+  const { data: checkins } = await supabase
+    .from("offshore_muster_checkins")
+    .select("id, profile_id, name, lifeboat, accounted")
+    .eq("drill_id", drill.id);
+  return {
+    id: drill.id as string,
+    started_at: drill.started_at as string,
+    ended_at: (drill.ended_at as string | null) ?? null,
+    kind: drill.kind as string,
+    checkins: ((checkins ?? []) as Record<string, any>[])
+      .map((c) => ({
+        id: c.id as string,
+        profile_id: (c.profile_id as string | null) ?? null,
+        name: c.name as string,
+        lifeboat: (c.lifeboat as string | null) ?? null,
+        accounted: Boolean(c.accounted),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
 }
 
 /** Evacuation / head-count role holders per rotation window + muster group. */
