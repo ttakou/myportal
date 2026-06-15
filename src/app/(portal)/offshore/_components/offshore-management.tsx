@@ -1956,6 +1956,7 @@ function RoomsPanel({
               <th className="px-3 py-2 font-medium">Floor</th>
               <th className="px-3 py-2 font-medium">Type</th>
               <th className="px-3 py-2 font-medium">Beds</th>
+              <th className="px-3 py-2 font-medium">Muster</th>
               <th className="px-3 py-2 font-medium">Gender</th>
               <th className="px-3 py-2 font-medium">Status</th>
             </tr>
@@ -2029,6 +2030,17 @@ function RoomsPanel({
                     </div>
                   </td>
                   <td className="px-3 py-2">
+                    <input
+                      defaultValue={r.lifeboat ?? ""}
+                      disabled={pending}
+                      placeholder="LB-1"
+                      onBlur={(e) => {
+                        if (e.target.value !== (r.lifeboat ?? "")) run(() => updateRoomFields({ id: r.id, lifeboat: e.target.value }));
+                      }}
+                      className={`${cell} w-20`}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
                     <select
                       value={r.gender_restriction}
                       disabled={pending}
@@ -2056,7 +2068,7 @@ function RoomsPanel({
               );
             })}
             {rooms.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">No rooms yet.</td></tr>
+              <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">No rooms yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -2275,15 +2287,10 @@ function RosterPanel({
                 }}
                 className={field}
               />
-              <input
-                defaultValue={m.lifeboat ?? ""}
-                disabled={pending}
-                placeholder="Muster / lifeboat (LB-1)"
-                onBlur={(e) => {
-                  if (e.target.value !== (m.lifeboat ?? "")) run(() => updateRosterMember({ id: m.id, lifeboat: e.target.value }));
-                }}
-                className={field}
-              />
+              <div className={cn(field, "flex items-center gap-1 bg-muted/40")} title="Muster follows the fixed room">
+                <span className="text-xs text-muted-foreground">Muster:</span>
+                <span className="font-medium">{m.lifeboat ?? "— set on room —"}</span>
+              </div>
             </div>
 
             <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

@@ -334,7 +334,7 @@ export async function getRooms(): Promise<Room[]> {
       .from("offshore_rooms")
       .select(
         "id, installation_id, block, floor, room_number, room_type, bed_count, max_bed_count," +
-          " gender_restriction, status, special_flag, notes," +
+          " gender_restriction, status, special_flag, notes, lifeboat," +
           " installation:offshore_installations(name), offshore_staff(count)",
       )
       .eq("is_active", true)
@@ -417,6 +417,7 @@ export async function getRooms(): Promise<Room[]> {
       status: r.status,
       special_flag: r.special_flag,
       notes: r.notes,
+      lifeboat: (r.lifeboat as string | null) ?? null,
       fixed_assigned: r.offshore_staff?.[0]?.count ?? 0,
       owners: (ownersByRoom.get(r.id as string) ?? []).sort((a, b) =>
         (a.bed ?? "").localeCompare(b.bed ?? "") || a.name.localeCompare(b.name),
@@ -436,7 +437,7 @@ export async function getRoster(): Promise<RosterEntry[]> {
         " lifeboat, medical_expiry, bosiet_expiry, huet_expiry, emergency_contact, travel_eligible," +
         " profile:profiles!offshore_staff_profile_id_fkey(full_name, email)," +
         " b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)," +
-        " crew:offshore_crews(name), room:offshore_rooms(room_number, block)",
+        " crew:offshore_crews(name), room:offshore_rooms(room_number, block, lifeboat)",
     );
   if (error) {
     console.error("getRoster:", error.message);
@@ -445,7 +446,7 @@ export async function getRoster(): Promise<RosterEntry[]> {
   return (data ?? [])
     .map((r: Record<string, any>) => {
       const p = one2<{ full_name?: string; email?: string }>(r.profile);
-      const room = one2<{ room_number?: string; block?: string }>(r.room);
+      const room = one2<{ room_number?: string; block?: string; lifeboat?: string }>(r.room);
       return {
         id: r.id,
         profile_id: r.profile_id,
@@ -462,7 +463,8 @@ export async function getRoster(): Promise<RosterEntry[]> {
           ? [room.block, room.room_number].filter(Boolean).join(" ")
           : null,
         fixed_bed: r.fixed_bed,
-        lifeboat: r.lifeboat ?? null,
+        // Muster follows the fixed room; fall back to any stored value.
+        lifeboat: (room?.lifeboat as string | null) ?? r.lifeboat ?? null,
         medical_expiry: r.medical_expiry,
         bosiet_expiry: r.bosiet_expiry,
         huet_expiry: r.huet_expiry,
@@ -524,7 +526,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
         .select(
           "id, profile_id, crew_id, room_id, bed_no, category, mobilize_date, demob_date, lifeboat," +
             " installation:offshore_installations(name), crew:offshore_crews(name)," +
-            " room:offshore_rooms(room_number, block)," +
+            " room:offshore_rooms(room_number, block, lifeboat)," +
             " person:profiles!offshore_trips_profile_id_fkey(full_name)",
         )
         .eq("status", "onboard"),
@@ -563,9 +565,11 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     const crewName = one2<{ name?: string }>(r.crew)?.name ?? null;
     const crew = crewName ?? "Unassigned";
     byCrewMap.set(crew, (byCrewMap.get(crew) ?? 0) + 1);
-    const lb = (r.lifeboat as string | null) || "Unassigned";
+    const room = one2<{ room_number?: string; block?: string; lifeboat?: string }>(r.room);
+    // Muster follows the room; fall back to the trip's stored value.
+    const muster = (room?.lifeboat as string | null) ?? (r.lifeboat as string | null) ?? null;
+    const lb = muster || "Unassigned";
     byLifeboatMap.set(lb, (byLifeboatMap.get(lb) ?? 0) + 1);
-    const room = one2<{ room_number?: string; block?: string }>(r.room);
     people.push({
       trip_id: r.id as string,
       profile_id: (r.profile_id as string | null) ?? null,
@@ -573,7 +577,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       category: r.category === "visitor" ? "visitor" : "staff",
       crew_id: (r.crew_id as string | null) ?? null,
       crew_name: crewName,
-      lifeboat: (r.lifeboat as string | null) ?? null,
+      lifeboat: muster,
       room_id: (r.room_id as string | null) ?? null,
       room_label: room ? [room.block, room.room_number].filter(Boolean).join(" ") : null,
       bed_no: (r.bed_no as string | null) ?? null,
@@ -1024,7 +1028,7 @@ export async function getRoomAllocationAsOf(date: string): Promise<RoomAllocatio
   const [{ data: rooms }, { data: trips }, { data: allocs }, { data: fixedOwners }] = await Promise.all([
     supabase
       .from("offshore_rooms")
-      .select("id, block, room_number, bed_count, installation:offshore_installations(name)")
+      .select("id, block, room_number, bed_count, lifeboat, installation:offshore_installations(name)")
       .eq("is_active", true)
       .order("room_number"),
     supabase
@@ -1096,6 +1100,7 @@ export async function getRoomAllocationAsOf(date: string): Promise<RoomAllocatio
       label: [r.block, r.room_number].filter(Boolean).join(" "),
       installation: one2<{ name?: string }>(r.installation)?.name ?? null,
       beds: (r.bed_count as number) ?? 0,
+      lifeboat: (r.lifeboat as string | null) ?? null,
       occupants,
       owners: ownersByRoom.get(r.id as string) ?? [],
     };

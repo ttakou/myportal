@@ -240,6 +240,7 @@ export async function updateRoomFields(input: {
   genderRestriction?: string;
   specialFlag?: string;
   notes?: string;
+  lifeboat?: string;
 }): Promise<ActionResult> {
   if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
@@ -264,6 +265,7 @@ export async function updateRoomFields(input: {
       : "any";
   if (input.specialFlag !== undefined) patch.special_flag = input.specialFlag.trim() || null;
   if (input.notes !== undefined) patch.notes = input.notes.trim() || null;
+  if (input.lifeboat !== undefined) patch.lifeboat = input.lifeboat.trim() || null;
 
   const { error } = await supabase.from("offshore_rooms").update(patch).eq("id", input.id);
   if (error)
