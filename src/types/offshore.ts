@@ -271,6 +271,22 @@ export interface EmergencyRole {
   person_name: string | null;
 }
 
+/** A live emergency muster roll-call. */
+export interface MusterDrill {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  kind: string;
+  checkins: MusterCheckin[];
+}
+export interface MusterCheckin {
+  id: string;
+  profile_id: string | null;
+  name: string;
+  lifeboat: string | null;
+  accounted: boolean;
+}
+
 export interface CertAlert {
   full_name: string | null;
   kind: "medical" | "bosiet" | "huet";

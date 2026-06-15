@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import {
   AlertTriangle,
   Anchor,
@@ -17,6 +17,7 @@ import {
   UserCog,
   UtensilsCrossed,
   LifeBuoy,
+  Siren,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ import {
   EMERGENCY_ROLE_LABEL,
   type EmergencyRole,
   type EmergencyRoleKind,
+  type MusterDrill,
   type AccommodationSummary,
   type AssignableEmployee,
   type CertAlert,
@@ -62,6 +64,9 @@ import {
   deleteCrew,
   deleteEmergencyWindow,
   setEmergencyRole,
+  startMusterDrill,
+  setMusterCheckin,
+  endMusterDrill,
   offboardTrip,
   reassignTripRoom,
   setBackToBack,
@@ -104,6 +109,7 @@ type Tab =
   | "manifests"
   | "catering"
   | "emergency"
+  | "drill"
   | "history";
 
 export function OffshoreManagement(props: {
@@ -123,6 +129,7 @@ export function OffshoreManagement(props: {
   suggestions: CrewChangeSuggestion[];
   emergencyRoles: EmergencyRole[];
   musterGroups: string[];
+  musterDrill: MusterDrill | null;
 }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const pendingVisits = props.visits.filter((v) => v.status === "requested").length;
@@ -138,6 +145,7 @@ export function OffshoreManagement(props: {
     { key: "assign", label: "Assign crews", icon: UserCog },
     { key: "visitors", label: "Visitors", icon: Plane, badge: pendingVisits },
     { key: "emergency", label: "Muster roles", icon: LifeBuoy },
+    { key: "drill", label: "Muster drill", icon: Siren, badge: props.musterDrill ? 1 : undefined },
     { key: "history", label: "History", icon: History },
   ];
 
@@ -211,6 +219,7 @@ export function OffshoreManagement(props: {
           roster={props.roster}
         />
       )}
+      {tab === "drill" && <MusterDrillPanel drill={props.musterDrill} />}
       {tab === "history" && <HistoryPanel />}
     </div>
   );
@@ -346,6 +355,132 @@ function EmergencyRolesPanel({
           Clear this window
         </Button>
       )}
+    </div>
+  );
+}
+
+/** Live emergency muster roll-call: tick off who's accounted per muster group. */
+function MusterDrillPanel({ drill }: { drill: MusterDrill | null }) {
+  const { pending, error, run } = useRun();
+  const [elapsed, setElapsed] = useState("00:00");
+
+  useEffect(() => {
+    if (!drill) return;
+    const start = new Date(drill.started_at).getTime();
+    const tick = () => {
+      const s = Math.max(0, Math.floor((Date.now() - start) / 1000));
+      setElapsed(`${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`);
+    };
+    tick();
+    const h = setInterval(tick, 1000);
+    return () => clearInterval(h);
+  }, [drill]);
+
+  if (!drill) {
+    return (
+      <div className="space-y-3">
+        {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+        <p className="text-sm text-muted-foreground">
+          Start a roll-call to snapshot everyone on board and check them off at their muster station.
+        </p>
+        <div className="flex gap-2">
+          <Button disabled={pending} onClick={() => run(() => startMusterDrill("drill"))}>
+            <Siren className="h-4 w-4" /> Start drill roll-call
+          </Button>
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              if (confirm("Start a REAL emergency roll-call?")) run(() => startMusterDrill("real"));
+            }}
+          >
+            Real emergency
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const groups = new Map<string, typeof drill.checkins>();
+  for (const c of drill.checkins) {
+    const g = c.lifeboat || "Unassigned";
+    groups.set(g, [...(groups.get(g) ?? []), c]);
+  }
+  const total = drill.checkins.length;
+  const accounted = drill.checkins.filter((c) => c.accounted).length;
+  const unaccounted = total - accounted;
+
+  return (
+    <div className="space-y-3">
+      {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-3 rounded-lg border p-3",
+          drill.kind === "real" ? "border-destructive bg-destructive/5" : "bg-card",
+        )}
+      >
+        <span className="inline-flex items-center gap-1.5 font-semibold">
+          <Siren className={cn("h-4 w-4", drill.kind === "real" && "text-destructive")} />
+          {drill.kind === "real" ? "EMERGENCY roll-call" : "Drill roll-call"}
+        </span>
+        <span className="font-mono text-lg tabular-nums">{elapsed}</span>
+        <span className="text-sm">
+          <span className="font-semibold text-green-700">{accounted}</span> accounted ·{" "}
+          <span className={cn("font-semibold", unaccounted > 0 ? "text-destructive" : "text-muted-foreground")}>
+            {unaccounted}
+          </span>{" "}
+          unaccounted · {total} POB
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          disabled={pending}
+          onClick={() => {
+            if (confirm("End this roll-call?")) run(() => endMusterDrill(drill.id));
+          }}
+        >
+          End roll-call
+        </Button>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {[...groups.entries()]
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([g, people]) => {
+            const acc = people.filter((p) => p.accounted).length;
+            return (
+              <div key={g} className="rounded-lg border bg-card p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">{g}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {acc}/{people.length} accounted
+                  </span>
+                </div>
+                <ul className="space-y-0.5">
+                  {people.map((p) => (
+                    <li key={p.id}>
+                      <label
+                        className={cn(
+                          "flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm",
+                          p.accounted ? "bg-green-50 text-green-900" : "hover:bg-accent",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={p.accounted}
+                          disabled={pending}
+                          onChange={(e) => run(() => setMusterCheckin(p.id, e.target.checked))}
+                        />
+                        <span className={cn(p.accounted && "line-through opacity-70")}>{p.name}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+      </div>
     </div>
   );
 }

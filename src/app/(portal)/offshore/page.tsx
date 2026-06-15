@@ -7,6 +7,7 @@ import {
   getAllOffshoreTrips,
   getAllVisitRequests,
   getCertAlerts,
+  getActiveMusterDrill,
   getCrewChangeSuggestions,
   getCrews,
   getEmergencyRoles,
@@ -59,6 +60,7 @@ export default async function OffshorePage() {
     suggestions,
     emergencyRoles,
     musterGroups,
+    musterDrill,
   ] = canManage
     ? await Promise.all([
         getCrews(),
@@ -76,8 +78,9 @@ export default async function OffshorePage() {
         getCrewChangeSuggestions(),
         getEmergencyRoles(),
         getMusterGroups(),
+        getActiveMusterDrill(),
       ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], []];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], null];
 
   return (
     <div className="space-y-8">
@@ -110,6 +113,7 @@ export default async function OffshorePage() {
           suggestions={suggestions}
           emergencyRoles={emergencyRoles}
           musterGroups={musterGroups}
+          musterDrill={musterDrill}
         />
       )}
 
