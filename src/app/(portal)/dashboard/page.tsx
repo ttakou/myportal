@@ -151,32 +151,7 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      {/* Onshore quick access — lead with the key everyday services */}
-      {focusServices.length > 0 && (
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-lg font-semibold">Quick access</h2>
-            <p className="text-sm text-muted-foreground">Your most-used services.</p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {focusServices.map((s) => (
-              <a
-                key={s.id}
-                href={s.route_path}
-                className="flex flex-col gap-2 rounded-lg border bg-card p-5 transition-colors hover:bg-accent"
-              >
-                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  {focusIcon(s.slug)}
-                </span>
-                <h3 className="font-medium">{s.name}</h3>
-                <p className="text-sm text-muted-foreground">{s.description}</p>
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Today's canteen menu — onshore staff lead with this */}
+      {/* Onshore: lead with today's canteen menu, then quick access */}
       {!isOffshore && canteenActive && (
         <section>
           <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -267,6 +242,31 @@ export default async function DashboardPage() {
                 </div>
               )}
             </div>
+          </div>
+        </section>
+      )}
+
+      {/* Quick access — just below the menu */}
+      {focusServices.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">Quick access</h2>
+            <p className="text-sm text-muted-foreground">Your most-used services.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {focusServices.map((s) => (
+              <a
+                key={s.id}
+                href={s.route_path}
+                className="flex flex-col gap-2 rounded-lg border bg-card p-5 transition-colors hover:bg-accent"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  {focusIcon(s.slug)}
+                </span>
+                <h3 className="font-medium">{s.name}</h3>
+                <p className="text-sm text-muted-foreground">{s.description}</p>
+              </a>
+            ))}
           </div>
         </section>
       )}
