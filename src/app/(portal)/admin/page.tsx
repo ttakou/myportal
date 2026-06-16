@@ -42,8 +42,9 @@ export default async function AdminPage() {
     createClient().auth.getUser().then((r) => r.data.user),
   ]);
   const selfId = me?.id ?? "";
-  const isSuper = access.role === "super_admin";
-  const impersonationLog = isSuper ? await getImpersonationLog() : [];
+  // Tenant + super admins can impersonate non-admin users within their tenant.
+  const canImpersonate = access.isAdmin;
+  const impersonationLog = canImpersonate ? await getImpersonationLog() : [];
   const canteenActive = modules.some((m) => m.slug === "canteen" && m.is_active);
   const showCanteen = canteenActive && access.isCanteenManager;
   const servedMeals = showCanteen ? await getServedMealPeriods() : [];
@@ -77,10 +78,10 @@ export default async function AdminPage() {
         users={users}
         canAssignRoles={access.isHr}
         accessRoles={access.isSystemAdmin ? accessRoles : []}
-        canImpersonate={isSuper}
+        canImpersonate={canImpersonate}
         selfId={selfId}
       />
-      {isSuper && (
+      {canImpersonate && (
         <section className="space-y-2">
           <h2 className="text-lg font-semibold">Impersonation log</h2>
           <div className="overflow-x-auto rounded-lg border">

@@ -895,8 +895,9 @@ const IMP_EXP = "imp_exp"; // impersonation auto-expiry (epoch ms)
  * can be restored with stopImpersonation().
  */
 export async function startImpersonation(userId: string): Promise<ActionResult> {
-  if ((await getCurrentRole()) !== "super_admin")
-    return { ok: false, error: "Only super admins can impersonate." };
+  const role = await getCurrentRole();
+  if (role !== "super_admin" && role !== "tenant_admin")
+    return { ok: false, error: "Only administrators can impersonate." };
   const admin = createAdminClient();
   if (!admin) return { ok: false, error: "Service role not configured." };
 
@@ -905,21 +906,37 @@ export async function startImpersonation(userId: string): Promise<ActionResult> 
   const email = tgt.user.email;
   if (!email) return { ok: false, error: "This user has no email address to impersonate." };
 
-  // Never impersonate another admin (privilege-escalation guard).
-  const { data: tgtProfile } = await admin
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle();
-  if (tgtProfile?.role === "super_admin" || tgtProfile?.role === "tenant_admin") {
-    return { ok: false, error: "You can't impersonate another administrator." };
-  }
-
   const supabase = createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) return { ok: false, error: "No active session." };
+
+  // Resolve both parties' roles + tenants on the service-role client.
+  const { data: tgtProfile } = await admin
+    .from("profiles")
+    .select("role, tenant_id")
+    .eq("id", userId)
+    .maybeSingle();
+  const { data: actorProfileRow } = await admin
+    .from("profiles")
+    .select("tenant_id")
+    .eq("id", session.user.id)
+    .maybeSingle();
+
+  // Never impersonate another admin (privilege-escalation guard).
+  if (tgtProfile?.role === "super_admin" || tgtProfile?.role === "tenant_admin") {
+    return { ok: false, error: "You can't impersonate another administrator." };
+  }
+  // Tenant admins may only act as users inside their own tenant. (Super admins,
+  // a cross-tenant role, are not restricted.)
+  if (
+    role === "tenant_admin" &&
+    tgtProfile?.tenant_id &&
+    tgtProfile.tenant_id !== actorProfileRow?.tenant_id
+  ) {
+    return { ok: false, error: "You can only impersonate users in your organisation." };
+  }
 
   const { data: link, error: lErr } = await admin.auth.admin.generateLink({
     type: "magiclink",
@@ -952,16 +969,11 @@ export async function startImpersonation(userId: string): Promise<ActionResult> 
     maxAge: 60 * 60 * 8,
   });
 
-  // Audit (service role bypasses RLS; record the acting super-admin).
+  // Audit (service role bypasses RLS; record the acting admin).
   const actorId = session.user.id;
   store.set(IMP_ACTOR, actorId, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
-  const { data: actorProfile } = await admin
-    .from("profiles")
-    .select("tenant_id")
-    .eq("id", actorId)
-    .maybeSingle();
   await admin.from("impersonation_audit").insert({
-    tenant_id: actorProfile?.tenant_id ?? null,
+    tenant_id: actorProfileRow?.tenant_id ?? null,
     actor_id: actorId,
     target_id: userId,
     action: "start",
