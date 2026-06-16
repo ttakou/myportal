@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAccess } from "@/lib/auth";
 import {
   getManifestById,
+  getManifests,
   getMusterDrill,
   getRoomAllocationAsOf,
   getRoster,
@@ -103,6 +104,36 @@ export async function GET(req: NextRequest) {
       rows.push([i + 1, p.person_name, p.position, p.no_show ? "No-show" : p.boarded ? "Boarded" : "Booked", p.issues.join("; ")]),
     );
     return csvResponse(`manifest-${m.scheduled_date}.csv`, rows);
+  }
+
+  if (type === "manifest-history") {
+    const statusFilter = sp.get("status"); // completed | cancelled | null(all)
+    const crewFilter = sp.get("crew");
+    const dirLabel = (d: string) => (d === "out" ? "Inbound (mobilise)" : "Outbound (demobilise)");
+    const manifests = (await getManifests())
+      .filter((m) => m.status === "completed" || m.status === "cancelled")
+      .filter((m) => !statusFilter || m.status === statusFilter)
+      .filter((m) => !crewFilter || m.crew_id === crewFilter);
+    const rows: (string | number | null)[][] = [
+      [
+        "Scheduled date", "Manifest", "Status", "Direction", "Installation", "Crew",
+        "Transport", "Seats", "#", "Passenger", "Position", "Pax status", "Remarks",
+      ],
+    ];
+    for (const m of manifests) {
+      if (m.pax.length === 0) {
+        rows.push([m.scheduled_date, m.title, m.status, dirLabel(m.direction), m.installation_name, m.crew_name, m.transport_mode, m.seat_capacity, "", "", "", "", ""]);
+      } else {
+        m.pax.forEach((p, i) =>
+          rows.push([
+            m.scheduled_date, m.title, m.status, dirLabel(m.direction), m.installation_name, m.crew_name,
+            m.transport_mode, m.seat_capacity, i + 1, p.person_name, p.position,
+            p.no_show ? "No-show" : p.boarded ? "Boarded" : "Booked", p.issues.join("; "),
+          ]),
+        );
+      }
+    }
+    return csvResponse(`manifest-history-${today()}.csv`, rows);
   }
 
   if (type === "muster") {

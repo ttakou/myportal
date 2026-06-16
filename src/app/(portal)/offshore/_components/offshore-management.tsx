@@ -10,6 +10,7 @@ import {
   ClipboardList,
   FileText,
   History,
+  ChevronDown,
   LayoutGrid,
   Plane,
   Trash2,
@@ -793,6 +794,9 @@ function ManifestsPanel({
 }) {
   const { pending, error, run } = useRun();
 
+  const active = manifests.filter((m) => m.status !== "completed" && m.status !== "cancelled");
+  const history = manifests.filter((m) => m.status === "completed" || m.status === "cancelled");
+
   return (
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
@@ -800,15 +804,124 @@ function ManifestsPanel({
       <ManifestBuilder crews={crews} roster={roster} onboard={onboard} visits={visits} pending={pending} run={run} />
 
       <div className="space-y-3">
-        {manifests.map((m) => (
+        {active.map((m) => (
           <ManifestCard key={m.id} m={m} pending={pending} run={run} />
         ))}
-        {manifests.length === 0 && (
+        {active.length === 0 && (
           <p className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
-            No manifests yet.
+            No active or upcoming manifests.
           </p>
         )}
       </div>
+
+      <ManifestHistory history={history} crews={crews} pending={pending} run={run} />
+    </div>
+  );
+}
+
+/** Collapsible archive of completed & cancelled manifests, with filters. */
+function ManifestHistory({
+  history,
+  crews,
+  pending,
+  run,
+}: {
+  history: Manifest[];
+  crews: Crew[];
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<"all" | "completed" | "cancelled">("all");
+  const [crewId, setCrewId] = useState("");
+
+  const filtered = history
+    .filter((m) => status === "all" || m.status === status)
+    .filter((m) => !crewId || m.crew_id === crewId)
+    .filter((m) => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (
+        m.title.toLowerCase().includes(q) ||
+        (m.installation_name ?? "").toLowerCase().includes(q) ||
+        (m.crew_name ?? "").toLowerCase().includes(q) ||
+        m.scheduled_date.includes(q)
+      );
+    });
+
+  const csvHref =
+    "/offshore-export?type=manifest-history" +
+    (status !== "all" ? `&status=${status}` : "") +
+    (crewId ? `&crew=${crewId}` : "");
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold"
+      >
+        <History className="h-4 w-4 text-muted-foreground" />
+        History
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+          {history.length}
+        </span>
+        <ChevronDown className={cn("ml-auto h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="space-y-3 border-t p-3">
+          {history.length === 0 ? (
+            <p className="px-1 py-4 text-center text-sm text-muted-foreground">
+              No completed or cancelled manifests yet.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-2">
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search title, crew, installation, date…"
+                  className={cn(field, "min-w-[14rem] flex-1 py-1")}
+                />
+                <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} className={cn(field, "py-1")}>
+                  <option value="all">All statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <select value={crewId} onChange={(e) => setCrewId(e.target.value)} className={cn(field, "py-1")}>
+                  <option value="">All crews</option>
+                  {crews.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <a
+                  href={csvHref}
+                  className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                >
+                  <FileText className="h-3.5 w-3.5" /> Export CSV
+                </a>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground">
+                Showing {filtered.length} of {history.length}
+              </p>
+
+              <div className="space-y-3">
+                {filtered.map((m) => (
+                  <ManifestCard key={m.id} m={m} pending={pending} run={run} />
+                ))}
+                {filtered.length === 0 && (
+                  <p className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
+                    No manifests match your filters.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
