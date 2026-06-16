@@ -66,9 +66,12 @@ export default async function DashboardPage() {
   const myRequests = me?.myRequests ?? [];
   const quickLinks = me?.quickLinks ?? [];
 
-  // Onshore users (no offshore profile/trip) lead with the four key services;
-  // the remaining modules drop below under "More modules".
-  const isOffshore = Boolean(offshore);
+  // The full offshore-centric dashboard is reserved for users on the offshore
+  // staff roster (isStaff). Anyone else — including a non-offshore user who
+  // simply has a trip — keeps the standard onshore dashboard, with their trip
+  // shown as an add-on section below.
+  const isStaff = Boolean(offshore?.isStaff);
+  const isOffshore = isStaff;
   const focusServices = isOffshore
     ? []
     : FOCUS_SLUGS.map((slug) => services.find((s) => s.slug === slug)).filter(
@@ -100,7 +103,7 @@ export default async function DashboardPage() {
       {offshore && (
         <section className="space-y-3">
           <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <Anchor className="h-5 w-5 text-brand" /> My offshore
+            <Anchor className="h-5 w-5 text-brand" /> {isStaff ? "My offshore" : "My offshore trip"}
           </h2>
           <div className="rounded-lg border bg-card p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -119,21 +122,27 @@ export default async function DashboardPage() {
                       : undefined
                   }
                 />
-                <Stat
-                  icon={<LifeBuoy className="h-4 w-4" />}
-                  label="Muster station"
-                  value={offshore.station ?? "Not assigned"}
-                />
-                <Stat
-                  icon={<BedDouble className="h-4 w-4" />}
-                  label="Cabin / bed"
-                  value={[offshore.room, offshore.bed && `Bed ${offshore.bed}`].filter(Boolean).join(" · ") || "Not assigned"}
-                />
-                <Stat
-                  icon={<Users className="h-4 w-4" />}
-                  label="Crew"
-                  value={offshore.crew ?? "—"}
-                />
+                {/* Muster station, cabin and crew are roster concepts — only
+                    meaningful for offshore staff, so hide them for trip-only users. */}
+                {isStaff && (
+                  <>
+                    <Stat
+                      icon={<LifeBuoy className="h-4 w-4" />}
+                      label="Muster station"
+                      value={offshore.station ?? "Not assigned"}
+                    />
+                    <Stat
+                      icon={<BedDouble className="h-4 w-4" />}
+                      label="Cabin / bed"
+                      value={[offshore.room, offshore.bed && `Bed ${offshore.bed}`].filter(Boolean).join(" · ") || "Not assigned"}
+                    />
+                    <Stat
+                      icon={<Users className="h-4 w-4" />}
+                      label="Crew"
+                      value={offshore.crew ?? "—"}
+                    />
+                  </>
+                )}
               </div>
               <Link
                 href="/emergency"
