@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getMyAllowedSlugs } from "@/lib/access-roles";
+import { getAccess } from "@/lib/auth";
 import type { ActiveService } from "@/types/database";
 
 /**
@@ -13,7 +14,7 @@ import type { ActiveService } from "@/types/database";
 export async function getActiveServices(): Promise<ActiveService[]> {
   const supabase = createClient();
 
-  const [{ data, error }, allowed] = await Promise.all([
+  const [{ data, error }, allowed, access] = await Promise.all([
     supabase
       .from("tenant_services")
       .select(
@@ -27,12 +28,17 @@ export async function getActiveServices(): Promise<ActiveService[]> {
       )
       .eq("is_active", true),
     getMyAllowedSlugs(),
+    getAccess(),
   ]);
 
   if (error) {
     console.error("Failed to load active services:", error.message);
     return [];
   }
+
+  // The core "Core System & RBAC" module is the admin console (/admin); only
+  // HR/system admins can use it, so hide it from everyone else.
+  const canAdmin = access.isHr || access.isSystemAdmin;
 
   return (data ?? [])
     .filter((row) => row.services_catalog)
@@ -46,6 +52,7 @@ export async function getActiveServices(): Promise<ActiveService[]> {
         tenant_service_settings: (row.settings ?? {}) as Record<string, unknown>,
       } as ActiveService;
     })
+    .filter((svc) => (svc.slug === "core" ? canAdmin : true))
     .filter((svc) => allowed === null || svc.is_core || allowed.includes(svc.slug))
     .sort((a, b) => a.sort_order - b.sort_order);
 }
