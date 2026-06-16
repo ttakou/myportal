@@ -97,6 +97,28 @@ export function UsersPanel({
                   ) : (
                     <div className="text-xs text-muted-foreground italic">email pending</div>
                   )}
+                  {(u.functional_roles.length > 0 || u.access_role_ids.length > 0) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      {u.functional_roles.map((r) => (
+                        <span
+                          key={r}
+                          className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                        >
+                          {FUNCTIONAL.find((f) => f.role === r)?.label ?? r}
+                        </span>
+                      ))}
+                      {accessRoles
+                        .filter((r) => u.access_role_ids.includes(r.id))
+                        .map((r) => (
+                          <span
+                            key={r.id}
+                            className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700"
+                          >
+                            {r.name}
+                          </span>
+                        ))}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <input
