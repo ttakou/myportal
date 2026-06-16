@@ -15,6 +15,29 @@ import { getActiveServices } from "@/lib/services";
 import { getMyDashboard } from "@/lib/dashboard";
 import { getMenu, today } from "@/lib/canteen";
 import { MEAL_PERIODS, MEAL_PERIOD_LABEL } from "@/types/canteen";
+import { cn } from "@/lib/utils";
+
+/** Kitchen-coded accents so the two kitchens read at a glance. */
+function kitchenChip(kind?: string) {
+  switch (kind) {
+    case "local":
+      return "bg-emerald-100 text-emerald-700";
+    case "chinese":
+      return "bg-rose-100 text-rose-700";
+    default:
+      return "bg-primary/10 text-primary";
+  }
+}
+function kitchenDot(kind?: string) {
+  switch (kind) {
+    case "local":
+      return "bg-emerald-500";
+    case "chinese":
+      return "bg-rose-500";
+    default:
+      return "bg-primary";
+  }
+}
 
 /** Services an onshore user's dashboard leads with, in priority order. */
 const FOCUS_SLUGS = ["emergency", "canteen", "transportation", "visitors"];
@@ -153,6 +176,101 @@ export default async function DashboardPage() {
         </section>
       )}
 
+      {/* Today's canteen menu — onshore staff lead with this */}
+      {!isOffshore && canteenActive && (
+        <section>
+          <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+            {/* Header band */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-brand to-brand-dark px-6 py-4 text-white">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                  <UtensilsCrossed className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold leading-tight">Today&apos;s canteen menu</h2>
+                  <p className="text-sm text-white/85">{menuDateLabel}</p>
+                </div>
+              </div>
+              <Link
+                href="/canteen"
+                className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-brand shadow-sm transition hover:bg-white/90"
+              >
+                Book your meal <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            {/* Body */}
+            <div className="bg-gradient-to-b from-brand/5 to-transparent p-6">
+              {menuPeriods.length === 0 ? (
+                <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  Today&apos;s menu hasn&apos;t been published yet — check back soon.
+                </p>
+              ) : (
+                <div className="grid gap-x-8 gap-y-6 md:grid-cols-2 lg:grid-cols-3">
+                  {menuPeriods.map((period) => (
+                    <div key={period}>
+                      <h3 className="mb-3 flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                        {MEAL_PERIOD_LABEL[period]}
+                        <span className="h-px flex-1 bg-border" />
+                      </h3>
+                      <ul className="space-y-3.5">
+                        {menu
+                          .filter((d) => d.meal_period === period)
+                          .map((d) => (
+                            <li key={d.id} className="flex gap-3">
+                              <span
+                                className={cn(
+                                  "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                                  kitchenDot(d.kitchen_kind),
+                                )}
+                              />
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span
+                                    className={cn(
+                                      "font-medium leading-snug",
+                                      !d.available && "text-muted-foreground line-through",
+                                    )}
+                                  >
+                                    {d.name}
+                                  </span>
+                                  {d.kitchen_name && (
+                                    <span
+                                      className={cn(
+                                        "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                        kitchenChip(d.kitchen_kind),
+                                      )}
+                                    >
+                                      {d.kitchen_name}
+                                    </span>
+                                  )}
+                                  {!d.available && (
+                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                      Sold out
+                                    </span>
+                                  )}
+                                </div>
+                                {d.description && (
+                                  <p className="mt-0.5 text-xs text-muted-foreground">{d.description}</p>
+                                )}
+                                {d.allergens.length > 0 && (
+                                  <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-700">
+                                    Allergens: {d.allergens.join(", ")}
+                                  </p>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Action strips */}
       {(approvals.length > 0 || myRequests.length > 0) && (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -176,63 +294,6 @@ export default async function DashboardPage() {
             </Link>
           ))}
         </div>
-      )}
-
-      {/* Today's canteen menu — onshore staff */}
-      {!isOffshore && canteenActive && (
-        <section className="space-y-3">
-          <div>
-            <h2 className="flex items-center gap-2 text-lg font-semibold">
-              <UtensilsCrossed className="h-5 w-5 text-brand" /> Today&apos;s canteen menu
-            </h2>
-            <p className="text-sm text-muted-foreground">{menuDateLabel}</p>
-          </div>
-          {menuPeriods.length === 0 ? (
-            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Today&apos;s menu hasn&apos;t been published yet.
-            </p>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {menuPeriods.map((period) => (
-                <div key={period} className="rounded-lg border bg-card p-4">
-                  <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                    {MEAL_PERIOD_LABEL[period]}
-                  </h3>
-                  <ul className="space-y-2">
-                    {menu
-                      .filter((d) => d.meal_period === period)
-                      .map((d) => (
-                        <li key={d.id}>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{d.name}</span>
-                            {d.kitchen_name && (
-                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                                {d.kitchen_name}
-                              </span>
-                            )}
-                            {!d.available && (
-                              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                Sold out
-                              </span>
-                            )}
-                          </div>
-                          {d.description && (
-                            <p className="text-xs text-muted-foreground">{d.description}</p>
-                          )}
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          )}
-          <Link
-            href="/canteen"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-          >
-            Book your meal <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </section>
       )}
 
       {/* Modules — offshore keeps the full grid; onshore is intentionally focused */}
