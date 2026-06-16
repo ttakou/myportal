@@ -750,6 +750,39 @@ export async function getMusterGroups(): Promise<string[]> {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
+/** Recent muster roll-calls (active + ended) with accounted/total, for the archive. */
+export async function getMusterDrills(limit = 20): Promise<
+  { id: string; started_at: string; ended_at: string | null; kind: string; total: number; accounted: number }[]
+> {
+  const supabase = createClient();
+  const { data: drills } = await supabase
+    .from("offshore_muster_drills")
+    .select("id, started_at, ended_at, kind")
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (!drills?.length) return [];
+  const ids = drills.map((d) => d.id as string);
+  const { data: checks } = await supabase
+    .from("offshore_muster_checkins")
+    .select("drill_id, accounted")
+    .in("drill_id", ids);
+  const totals = new Map<string, { total: number; accounted: number }>();
+  for (const c of checks ?? []) {
+    const t = totals.get(c.drill_id as string) ?? { total: 0, accounted: 0 };
+    t.total++;
+    if (c.accounted) t.accounted++;
+    totals.set(c.drill_id as string, t);
+  }
+  return drills.map((d) => ({
+    id: d.id as string,
+    started_at: d.started_at as string,
+    ended_at: (d.ended_at as string | null) ?? null,
+    kind: d.kind as string,
+    total: totals.get(d.id as string)?.total ?? 0,
+    accounted: totals.get(d.id as string)?.accounted ?? 0,
+  }));
+}
+
 /** A specific muster roll-call with its check-ins (for the report/export). */
 export async function getMusterDrill(id: string): Promise<MusterDrill | null> {
   const supabase = createClient();
