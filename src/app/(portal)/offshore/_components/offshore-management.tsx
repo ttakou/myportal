@@ -431,10 +431,17 @@ function MusterDrillPanel({ drill }: { drill: MusterDrill | null }) {
           </span>{" "}
           unaccounted · {total} POB
         </span>
+        <a
+          href={`/offshore-muster/${drill.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto inline-flex items-center gap-1 rounded border px-2 py-1 text-xs font-medium hover:bg-accent"
+        >
+          <FileText className="h-3.5 w-3.5" /> Report
+        </a>
         <Button
           size="sm"
           variant="outline"
-          className="ml-auto"
           disabled={pending}
           onClick={() => {
             if (confirm("End this roll-call?")) run(() => endMusterDrill(drill.id));
@@ -1312,9 +1319,22 @@ function Dashboard({
   return (
     <div className="space-y-5">
       <section>
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Persons on board
-        </h3>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Persons on board
+          </h3>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              if (confirm("Start a muster roll-call for everyone on board?"))
+                run(() => startMusterDrill("drill"));
+            }}
+          >
+            <Siren className="h-4 w-4" /> Start muster roll-call
+          </Button>
+        </div>
         {error && <p className="mb-2 rounded-md bg-destructive/10 px-3 py-1.5 text-sm text-destructive">{error}</p>}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <Stat label="Current POB" value={pob.total} />

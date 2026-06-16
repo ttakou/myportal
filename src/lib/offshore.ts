@@ -750,6 +750,36 @@ export async function getMusterGroups(): Promise<string[]> {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
+/** A specific muster roll-call with its check-ins (for the report/export). */
+export async function getMusterDrill(id: string): Promise<MusterDrill | null> {
+  const supabase = createClient();
+  const { data: drill } = await supabase
+    .from("offshore_muster_drills")
+    .select("id, started_at, ended_at, kind")
+    .eq("id", id)
+    .maybeSingle();
+  if (!drill) return null;
+  const { data: checkins } = await supabase
+    .from("offshore_muster_checkins")
+    .select("id, profile_id, name, lifeboat, accounted")
+    .eq("drill_id", id);
+  return {
+    id: drill.id as string,
+    started_at: drill.started_at as string,
+    ended_at: (drill.ended_at as string | null) ?? null,
+    kind: drill.kind as string,
+    checkins: ((checkins ?? []) as Record<string, any>[])
+      .map((c) => ({
+        id: c.id as string,
+        profile_id: (c.profile_id as string | null) ?? null,
+        name: c.name as string,
+        lifeboat: (c.lifeboat as string | null) ?? null,
+        accounted: Boolean(c.accounted),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
 /** The currently-open muster roll-call (if any) with its check-ins. */
 export async function getActiveMusterDrill(): Promise<MusterDrill | null> {
   const supabase = createClient();
