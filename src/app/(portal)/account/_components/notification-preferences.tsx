@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Bell, Smartphone } from "lucide-react";
+import { Bell, Smartphone, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   MUTABLE_CATEGORIES,
@@ -19,7 +19,7 @@ export function NotificationPreferences({ initial }: { initial: PrefMap }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function toggle(category: MutableCategory, channel: "in_app" | "push") {
+  function toggle(category: MutableCategory, channel: "in_app" | "push" | "email") {
     const next = !prefs[category][channel];
     setPrefs((p) => ({ ...p, [category]: { ...p[category], [channel]: next } }));
     setError(null);
@@ -58,6 +58,11 @@ export function NotificationPreferences({ initial }: { initial: PrefMap }) {
                   <Smartphone className="h-3.5 w-3.5" /> Push
                 </span>
               </th>
+              <th className="px-4 py-3 font-medium">
+                <span className="inline-flex items-center gap-1">
+                  <Mail className="h-3.5 w-3.5" /> Email
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -79,6 +84,13 @@ export function NotificationPreferences({ initial }: { initial: PrefMap }) {
                     on={prefs[c.key].push}
                     disabled={pending}
                     onClick={() => toggle(c.key, "push")}
+                  />
+                </td>
+                <td className="px-4 py-3">
+                  <Switch
+                    on={prefs[c.key].email}
+                    disabled={pending}
+                    onClick={() => toggle(c.key, "email")}
                   />
                 </td>
               </tr>

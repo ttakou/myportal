@@ -2,6 +2,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { filterByPreference } from "@/lib/notification-prefs";
 import { isWebPushConfigured, sendWebPush, type PushSubscriptionRecord } from "@/lib/webpush";
+import { isEmailConfigured, sendEmail } from "@/lib/email";
 
 /**
  * Deliver a notification to specific people: writes the in-app bell record and,
@@ -22,7 +23,7 @@ export async function notifyUsers(input: {
     const admin = createAdminClient();
     if (!admin) return;
 
-    const { inApp, push } = await filterByPreference(admin, ids, input.category);
+    const { inApp, push, email } = await filterByPreference(admin, ids, input.category);
 
     if (inApp.length) {
       await admin.from("notifications").insert(
@@ -63,6 +64,26 @@ export async function notifyUsers(input: {
             /* best-effort */
           }
         }),
+      );
+    }
+
+    if (isEmailConfigured() && email.length) {
+      const { data: people } = await admin
+        .from("profiles")
+        .select("id, email")
+        .in("id", email)
+        .not("email", "is", null);
+      const url = input.url ? new URL(input.url, process.env.NEXT_PUBLIC_SITE_URL ?? "https://mportals.com").toString() : null;
+      const html =
+        `<p>${input.title}</p>` +
+        (input.body ? `<p>${input.body}</p>` : "") +
+        (url ? `<p><a href="${url}">Open in MyPortal</a></p>` : "");
+      await Promise.all(
+        ((people ?? []) as Record<string, any>[]).map((p) =>
+          p.email
+            ? sendEmail({ to: p.email as string, subject: input.title, html, text: input.body })
+            : Promise.resolve(false),
+        ),
       );
     }
   } catch (e) {

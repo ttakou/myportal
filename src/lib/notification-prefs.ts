@@ -16,11 +16,11 @@ export async function getMyNotificationPrefs(): Promise<PrefMap> {
   const supabase = createClient();
   const { data } = await supabase
     .from("notification_preferences")
-    .select("category, in_app, push");
+    .select("category, in_app, push, email");
   const out = defaultPrefs();
   for (const row of data ?? []) {
     if (row.category in out) {
-      out[row.category as MutableCategory] = { in_app: row.in_app, push: row.push };
+      out[row.category as MutableCategory] = { in_app: row.in_app, push: row.push, email: row.email };
     }
   }
   return out;
@@ -35,25 +35,28 @@ export async function filterByPreference(
   admin: SupabaseClient,
   profileIds: string[],
   category: string,
-): Promise<{ inApp: string[]; push: string[] }> {
+): Promise<{ inApp: string[]; push: string[]; email: string[] }> {
   const mutable = ["transport", "flight", "approval", "general"].includes(category);
   if (!mutable || profileIds.length === 0) {
-    return { inApp: profileIds, push: profileIds };
+    return { inApp: profileIds, push: profileIds, email: profileIds };
   }
   const { data } = await admin
     .from("notification_preferences")
-    .select("profile_id, in_app, push")
+    .select("profile_id, in_app, push, email")
     .eq("category", category)
     .in("profile_id", profileIds);
 
   const muteInApp = new Set<string>();
   const mutePush = new Set<string>();
+  const muteEmail = new Set<string>();
   for (const row of data ?? []) {
     if (row.in_app === false) muteInApp.add(row.profile_id as string);
     if (row.push === false) mutePush.add(row.profile_id as string);
+    if (row.email === false) muteEmail.add(row.profile_id as string);
   }
   return {
     inApp: profileIds.filter((id) => !muteInApp.has(id)),
     push: profileIds.filter((id) => !mutePush.has(id)),
+    email: profileIds.filter((id) => !muteEmail.has(id)),
   };
 }
