@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Check, Copy, KeyRound, UserCog } from "lucide-react";
+import { Fragment, useState, useTransition } from "react";
+import { Check, Copy, KeyRound, SlidersHorizontal, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
 import type { FunctionalRole } from "@/lib/auth";
@@ -49,6 +49,7 @@ export function UsersPanel({
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -80,16 +81,13 @@ export function UsersPanel({
               <th className="px-4 py-3 font-medium">Manager</th>
               <th className="px-4 py-3 font-medium">Lunch</th>
               <th className="px-4 py-3 font-medium">Status</th>
-              {canAssignRoles && accessRoles.length > 0 && (
-                <th className="px-4 py-3 font-medium">Module access</th>
-              )}
-              {canAssignRoles && <th className="px-4 py-3 font-medium">Access roles</th>}
-              {canAssignRoles && <th className="px-4 py-3 font-medium">Password</th>}
+              {canAssignRoles && <th className="px-4 py-3 font-medium">Roles &amp; access</th>}
             </tr>
           </thead>
           <tbody className="divide-y">
             {users.map((u) => (
-              <tr key={u.id} className={cn(!u.is_active && "opacity-60")}>
+              <Fragment key={u.id}>
+              <tr className={cn(!u.is_active && "opacity-60")}>
                 <td className="px-4 py-3">
                   <div className="font-medium">{u.full_name || "—"}</div>
                   {u.email ? (
@@ -204,77 +202,105 @@ export function UsersPanel({
                     </button>
                   )}
                 </td>
-                {canAssignRoles && accessRoles.length > 0 && (
+                {canAssignRoles && (
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {accessRoles.map((r) => {
-                        const on = u.access_role_ids.includes(r.id);
-                        return (
-                          <button
-                            key={r.id}
-                            type="button"
-                            disabled={pending}
-                            title={
-                              r.description ||
-                              (r.module_slugs.length
-                                ? `Grants: ${r.module_slugs.join(", ")}`
-                                : "Grants no modules")
-                            }
-                            onClick={() => run(() => setUserAccessRole(u.id, r.id, !on))}
-                            className={cn(
-                              "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                              on
-                                ? "bg-green-600 text-white"
-                                : "border text-muted-foreground hover:bg-accent",
-                            )}
-                          >
-                            {r.name}
-                          </button>
-                        );
-                      })}
-                      {u.access_role_ids.length === 0 && (
-                        <span className="text-[11px] text-muted-foreground">unrestricted</span>
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(expanded === u.id ? null : u.id)}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-accent",
+                        expanded === u.id && "bg-accent",
                       )}
-                    </div>
-                  </td>
-                )}
-                {canAssignRoles && (
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {FUNCTIONAL.map((fr) => {
-                        const on = u.functional_roles.includes(fr.role);
-                        return (
-                          <button
-                            key={fr.role}
-                            type="button"
-                            disabled={pending}
-                            onClick={() =>
-                              run(() =>
-                                on ? removeUserRole(u.id, fr.role) : addUserRole(u.id, fr.role),
-                              )
-                            }
-                            className={cn(
-                              "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                              on ? "bg-primary text-primary-foreground" : "border text-muted-foreground hover:bg-accent",
-                            )}
-                          >
-                            {fr.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </td>
-                )}
-                {canAssignRoles && (
-                  <td className="px-4 py-3">
-                    <SetPasswordControl userId={u.id} />
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" /> Roles &amp; access
+                    </button>
                   </td>
                 )}
               </tr>
+              {canAssignRoles && expanded === u.id && (
+                <tr className="bg-muted/30">
+                  <td colSpan={8} className="px-4 py-4">
+                    <div className="grid gap-5 md:grid-cols-3">
+                      <div>
+                        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Functional roles (capabilities)
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {FUNCTIONAL.map((fr) => {
+                            const on = u.functional_roles.includes(fr.role);
+                            return (
+                              <button
+                                key={fr.role}
+                                type="button"
+                                disabled={pending}
+                                onClick={() =>
+                                  run(() =>
+                                    on ? removeUserRole(u.id, fr.role) : addUserRole(u.id, fr.role),
+                                  )
+                                }
+                                className={cn(
+                                  "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                  on ? "bg-primary text-primary-foreground" : "border text-muted-foreground hover:bg-accent",
+                                )}
+                              >
+                                {fr.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {accessRoles.length > 0 && (
+                        <div>
+                          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Module access
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {accessRoles.map((r) => {
+                              const on = u.access_role_ids.includes(r.id);
+                              return (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  disabled={pending}
+                                  title={
+                                    r.description ||
+                                    (r.module_slugs.length
+                                      ? `Grants: ${r.module_slugs.join(", ")}`
+                                      : "Grants no modules")
+                                  }
+                                  onClick={() => run(() => setUserAccessRole(u.id, r.id, !on))}
+                                  className={cn(
+                                    "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                    on
+                                      ? "bg-green-600 text-white"
+                                      : "border text-muted-foreground hover:bg-accent",
+                                  )}
+                                >
+                                  {r.name}
+                                </button>
+                              );
+                            })}
+                            {u.access_role_ids.length === 0 && (
+                              <span className="text-[11px] text-muted-foreground">unrestricted</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Password
+                        </p>
+                        <SetPasswordControl userId={u.id} />
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
                   No users yet.
                 </td>
               </tr>
