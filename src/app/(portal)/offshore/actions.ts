@@ -38,6 +38,62 @@ export async function requestOffshoreTrip(input: {
   return { ok: true };
 }
 
+/**
+ * Raise ONE offshore trip request covering several people at once. Any signed-in
+ * user may book colleagues (e.g. a focal point mobilising their whole team); the
+ * self-only insert policy is bypassed with the service-role client AFTER every
+ * selected person is verified to belong to the caller's own tenant.
+ */
+export async function requestOffshoreTripGroup(input: {
+  installationId: string;
+  mobilizeDate: string;
+  demobDate?: string;
+  profileIds: string[];
+}): Promise<ActionResult> {
+  if (!input.mobilizeDate) return { ok: false, error: "Mobilise date is required." };
+  const ids = [...new Set(input.profileIds.filter(Boolean))];
+  if (ids.length === 0) return { ok: false, error: "Add at least one person." };
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("tenant_id")
+    .eq("id", user.id)
+    .maybeSingle();
+  const tenantId = me?.tenant_id as string | undefined;
+  if (!tenantId) return { ok: false, error: "No tenant in scope." };
+
+  const adminCli = createAdminClient();
+  if (!adminCli) return { ok: false, error: "Server is missing the service-role key." };
+
+  // Only keep people who are really in the caller's tenant.
+  const { data: people } = await adminCli
+    .from("profiles")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .in("id", ids);
+  const valid = (people ?? []).map((p) => p.id as string);
+  if (valid.length === 0) return { ok: false, error: "No valid people in your organisation." };
+
+  const { error } = await adminCli.from("offshore_trips").insert(
+    valid.map((pid) => ({
+      tenant_id: tenantId,
+      profile_id: pid,
+      installation_id: input.installationId || null,
+      mobilize_date: input.mobilizeDate,
+      demob_date: input.demobDate || null,
+    })),
+  );
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 export async function clearHse(id: string): Promise<ActionResult> {
   if (!(await admin())) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
