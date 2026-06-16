@@ -293,7 +293,11 @@ export async function updateUserEmail(userId: string, email: string): Promise<Ac
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) return { ok: false, error: "Enter a valid email." };
 
   const supabase = createClient();
-  const { data: target } = await supabase.from("profiles").select("id").eq("id", userId).maybeSingle();
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("id, tenant_id")
+    .eq("id", userId)
+    .maybeSingle();
   if (!target) return { ok: false, error: "User not found in your organisation." };
 
   const admin = createAdminClient();
@@ -305,7 +309,8 @@ export async function updateUserEmail(userId: string, email: string): Promise<Ac
       error: error.message.includes("already") ? "That email is already in use." : error.message,
     };
   }
-  await admin.from("profiles").update({ email: clean }).eq("id", userId);
+  // Re-scope the privileged write to the validated tenant (defence in depth).
+  await admin.from("profiles").update({ email: clean }).eq("id", userId).eq("tenant_id", target.tenant_id);
   revalidatePath("/admin");
   return { ok: true };
 }
@@ -885,7 +890,7 @@ export async function setModuleActive(
 // --- Impersonation (super admin "act as" another user) -----------------------
 
 const IMP_RT = "imp_admin_rt"; // saved admin refresh token (httpOnly)
-const IMP_ACTIVE = "imp_active"; // impersonated user id (readable flag)
+const IMP_ACTIVE = "imp_active"; // impersonated user id (server-read only)
 const IMP_ACTOR = "imp_actor"; // admin id, for the stop-event audit (httpOnly)
 const IMP_EXP = "imp_exp"; // impersonation auto-expiry (epoch ms)
 
@@ -960,9 +965,12 @@ export async function startImpersonation(userId: string): Promise<ActionResult> 
     store.delete(IMP_RT);
     return { ok: false, error: vErr.message };
   }
-  store.set(IMP_ACTIVE, userId, { secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
+  // httpOnly: these are only ever read server-side (middleware + layout), so
+  // keep them out of reach of any client-side script (XSS hardening).
+  store.set(IMP_ACTIVE, userId, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
   // Auto-expiry: impersonation ends 30 minutes after it starts.
   store.set(IMP_EXP, String(Date.now() + 30 * 60 * 1000), {
+    httpOnly: true,
     secure: true,
     sameSite: "lax",
     path: "/",

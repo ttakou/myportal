@@ -46,7 +46,7 @@ export async function getEntitlements(): Promise<MealEntitlement[]> {
     .order("starts_on", { ascending: false });
 
   return (data ?? []).map((r) => {
-    const p = one<ProfileLite>(r.profiles as never);
+    const p = one<ProfileLite>(r.profiles as ProfileLite | ProfileLite[] | null);
     const starts_on = r.starts_on as string;
     const ends_on = r.ends_on as string;
     return {
@@ -118,7 +118,7 @@ export async function getRedemptionBoard(
     if (existing) {
       existing.effective += meals;
     } else {
-      const p = one<ProfileLite>(g.profiles as never);
+      const p = one<ProfileLite>(g.profiles as ProfileLite | ProfileLite[] | null);
       byProfile.set(id, {
         profile_id: id,
         full_name: p?.full_name ?? null,
