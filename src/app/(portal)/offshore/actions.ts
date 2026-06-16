@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getMealSheet, getPobAsOf, getRoomHistory, searchBedAvailability } from "@/lib/offshore";
+import { notifyUsers } from "@/lib/notify";
 import type { MealEntry, PobAsOf, RoomAvailability, RoomHistoryRow } from "@/types/offshore";
 
 export interface ActionResult {
@@ -411,11 +412,10 @@ export async function decideVisitRequest(
     .select("requester_id, visitor_name, tenant_id")
     .eq("id", id)
     .maybeSingle();
-  const admin = createAdminClient();
-  if (admin && vr?.requester_id) {
-    await admin.from("notifications").insert({
-      tenant_id: vr.tenant_id,
-      profile_id: vr.requester_id,
+  if (vr?.requester_id && vr.tenant_id) {
+    await notifyUsers({
+      tenantId: vr.tenant_id as string,
+      profileIds: [vr.requester_id as string],
       category: "approval",
       title: `Visit ${decision === "approved" ? "approved" : "rejected"}: ${vr.visitor_name}`,
       body: decision === "rejected" ? reason?.trim() || "Not approved" : "Approved for travel.",
@@ -513,15 +513,14 @@ export async function decideVisitGroup(
     .eq("group_id", groupId)
     .limit(1);
   const head = rows?.[0];
-  const admin = createAdminClient();
-  if (admin && head?.requester_id) {
+  if (head?.requester_id && head.tenant_id) {
     const { count } = await supabase
       .from("offshore_visit_requests")
       .select("id", { count: "exact", head: true })
       .eq("group_id", groupId);
-    await admin.from("notifications").insert({
-      tenant_id: head.tenant_id,
-      profile_id: head.requester_id,
+    await notifyUsers({
+      tenantId: head.tenant_id as string,
+      profileIds: [head.requester_id as string],
       category: "approval",
       title: `Visit request ${decision === "approved" ? "approved" : "rejected"}`,
       body:
