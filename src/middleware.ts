@@ -4,6 +4,7 @@ import {
   ALWAYS_ALLOWED_PREFIXES,
   matchModuleRoute,
 } from "@/lib/navigation";
+import { isBaselineOnshoreSlug, isOffshoreUser } from "@/lib/onshore";
 
 const PUBLIC_PATHS = ["/login", "/auth", "/_next", "/favicon.ico"];
 
@@ -104,6 +105,15 @@ export async function middleware(request: NextRequest) {
       const role = Array.isArray(row.tenant_roles) ? row.tenant_roles[0] : row.tenant_roles;
       return ((role?.module_slugs as string[]) ?? []).includes(matched.slug);
     });
+  }
+
+  // Onshore staff always keep access to the baseline onshore modules, even when
+  // their access roles wouldn't otherwise grant them. The tenant subscription
+  // check above still applies.
+  if (!roleAllowed && isBaselineOnshoreSlug(matched.slug)) {
+    if (!(await isOffshoreUser(supabase, user.id))) {
+      roleAllowed = true;
+    }
   }
 
   if (error || !data || !roleAllowed) {
