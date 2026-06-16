@@ -129,7 +129,9 @@ export interface LunchHistoryRow {
 
 // --- Meal entitlements ------------------------------------------------------
 
-/** A row of the HR roster: who is entitled to a meal per working day. */
+export type EntitlementStatus = "active" | "upcoming" | "expired";
+
+/** A defined-period meal entitlement: employee + meals/day + start–end dates. */
 export interface MealEntitlement {
   id: string;
   profile_id: string;
@@ -137,21 +139,10 @@ export interface MealEntitlement {
   email: string;
   job_title: string | null;
   daily_meals: number;
-  is_active: boolean;
-  notes: string | null;
-  last_renewed_on: string | null;
-}
-
-/** A date-ranged top-up granted to a host employee for a visitor period. */
-export interface MealEntitlementExtra {
-  id: string;
-  profile_id: string;
-  full_name: string | null;
-  email: string;
-  extra_meals: number;
-  reason: string | null;
   starts_on: string;
   ends_on: string;
+  reason: string | null;
+  status: EntitlementStatus;
 }
 
 /** One entitled person's standing on a given day, for the serving point. */
@@ -160,15 +151,15 @@ export interface MealRedemptionRow {
   full_name: string | null;
   email: string;
   job_title: string | null;
-  /** Base daily meals + any visitor extras active today. */
+  /** Sum of all grants covering the day. */
   effective: number;
-  /** Meals already taken today. */
+  /** Meals already taken that day. */
   used: number;
   /** effective − used, floored at 0. */
   remaining: number;
 }
 
-/** An employee available to be added to the entitlement roster. */
+/** An employee available to be granted an entitlement. */
 export interface EntitlementCandidate {
   id: string;
   full_name: string | null;
