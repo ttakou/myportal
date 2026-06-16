@@ -7,9 +7,30 @@ import {
   Anchor,
   Siren,
   ArrowRight,
+  UtensilsCrossed,
+  Car,
+  UserPlus,
 } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
 import { getMyDashboard } from "@/lib/dashboard";
+
+/** Services an onshore user's dashboard leads with, in priority order. */
+const FOCUS_SLUGS = ["emergency", "canteen", "transportation", "visitors"];
+
+function focusIcon(slug: string) {
+  switch (slug) {
+    case "emergency":
+      return <Siren className="h-5 w-5" />;
+    case "canteen":
+      return <UtensilsCrossed className="h-5 w-5" />;
+    case "transportation":
+      return <Car className="h-5 w-5" />;
+    case "visitors":
+      return <UserPlus className="h-5 w-5" />;
+    default:
+      return <ArrowRight className="h-5 w-5" />;
+  }
+}
 
 export default async function DashboardPage() {
   const [services, me] = await Promise.all([getActiveServices(), getMyDashboard()]);
@@ -19,6 +40,17 @@ export default async function DashboardPage() {
   const approvals = me?.approvals ?? [];
   const myRequests = me?.myRequests ?? [];
   const quickLinks = me?.quickLinks ?? [];
+
+  // Onshore users (no offshore profile/trip) lead with the four key services;
+  // the remaining modules drop below under "More modules".
+  const isOffshore = Boolean(offshore);
+  const focusServices = isOffshore
+    ? []
+    : FOCUS_SLUGS.map((slug) => services.find((s) => s.slug === slug)).filter(
+        (s): s is NonNullable<typeof s> => Boolean(s),
+      );
+  const focusIds = new Set(focusServices.map((s) => s.id));
+  const otherServices = services.filter((s) => !focusIds.has(s.id));
 
   return (
     <div className="space-y-8">
@@ -84,6 +116,31 @@ export default async function DashboardPage() {
         </section>
       )}
 
+      {/* Onshore quick access — lead with the key everyday services */}
+      {focusServices.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">Quick access</h2>
+            <p className="text-sm text-muted-foreground">Your most-used services.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {focusServices.map((s) => (
+              <a
+                key={s.id}
+                href={s.route_path}
+                className="flex flex-col gap-2 rounded-lg border bg-card p-5 transition-colors hover:bg-accent"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  {focusIcon(s.slug)}
+                </span>
+                <h3 className="font-medium">{s.name}</h3>
+                <p className="text-sm text-muted-foreground">{s.description}</p>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Action strips */}
       {(approvals.length > 0 || myRequests.length > 0) && (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -110,30 +167,42 @@ export default async function DashboardPage() {
       )}
 
       {/* Modules */}
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold">Modules</h2>
-          <p className="text-sm text-muted-foreground">Everything your organization has access to.</p>
-        </div>
-        {services.length === 0 ? (
+      {services.length === 0 ? (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">Modules</h2>
+            <p className="text-sm text-muted-foreground">Everything your organization has access to.</p>
+          </div>
           <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
             No modules are currently enabled for your organization. Contact your administrator.
           </p>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {services.map((s) => (
-              <a
-                key={s.id}
-                href={s.route_path}
-                className="rounded-lg border bg-card p-5 transition-colors hover:bg-accent"
-              >
-                <h3 className="font-medium">{s.name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{s.description}</p>
-              </a>
-            ))}
-          </div>
-        )}
-      </section>
+        </section>
+      ) : (
+        otherServices.length > 0 && (
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold">
+                {focusServices.length > 0 ? "More modules" : "Modules"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Everything your organization has access to.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {otherServices.map((s) => (
+                <a
+                  key={s.id}
+                  href={s.route_path}
+                  className="rounded-lg border bg-card p-5 transition-colors hover:bg-accent"
+                >
+                  <h3 className="font-medium">{s.name}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{s.description}</p>
+                </a>
+              ))}
+            </div>
+          </section>
+        )
+      )}
     </div>
   );
 }
