@@ -975,27 +975,41 @@ export async function confirmManifestMovement(id: string): Promise<ActionResult>
   }
 
   if (m.direction === "out") {
-    // Fixed-room lookup for each member.
+    // Fixed-room + crew lookup for each member.
     const ids = travelling.map((p) => p.profile_id as string);
+    const idList = ids.length ? ids : ["00000000-0000-0000-0000-000000000000"];
     const { data: staff } = await supabase
       .from("offshore_staff")
-      .select("profile_id, fixed_room_id, fixed_bed")
-      .in("profile_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
-    const roomByProfile = new Map<string, { room: string | null; bed: string | null }>();
+      .select("profile_id, fixed_room_id, fixed_bed, crew_id")
+      .in("profile_id", idList);
+    const roomByProfile = new Map<string, { room: string | null; bed: string | null; crew: string | null }>();
     for (const s of staff ?? [])
       roomByProfile.set(s.profile_id as string, {
         room: (s.fixed_room_id as string) ?? null,
         bed: (s.fixed_bed as string) ?? null,
+        crew: (s.crew_id as string) ?? null,
       });
+
+    // Idempotency: never board someone who already has an active onboard trip.
+    const { data: existing } = await supabase
+      .from("offshore_trips")
+      .select("profile_id")
+      .eq("status", "onboard")
+      .in("profile_id", idList);
+    const alreadyOnboard = new Set((existing ?? []).map((e) => e.profile_id as string));
 
     const nowIso = new Date().toISOString();
     for (const p of travelling) {
-      const fixed = roomByProfile.get(p.profile_id as string);
+      const pid = p.profile_id as string;
+      if (alreadyOnboard.has(pid)) continue; // skip duplicates
+      const fixed = roomByProfile.get(pid);
       await supabase.from("offshore_trips").insert({
         tenant_id: tenant,
-        profile_id: p.profile_id,
+        profile_id: pid,
         installation_id: m.installation_id,
-        crew_id: m.crew_id,
+        // Prefer the manifest's crew; fall back to the person's roster crew so
+        // POB "by crew" and crew-change suggestions stay accurate.
+        crew_id: (m.crew_id as string | null) ?? fixed?.crew ?? null,
         category: "staff",
         trip_type: "crew_change_out",
         mobilize_date: m.scheduled_date,
