@@ -1789,6 +1789,25 @@ export async function startMusterDrill(kind: "drill" | "real" = "drill"): Promis
       lifeboat: r?.lifeboat ?? null,
     };
   });
+
+  // On-board visitors (tracked via visit requests + bed allocations) muster too.
+  const { data: visits } = await supabase
+    .from("offshore_visit_requests")
+    .select("id, visitor_name, offshore_bed_allocations(status, room:offshore_rooms(lifeboat))")
+    .eq("status", "onboard")
+    .eq("tenant_id", tenant);
+  for (const v of (visits ?? []) as Record<string, any>[]) {
+    const alloc = (v.offshore_bed_allocations as any[])?.find((a) => a.status !== "checked_out");
+    const room = alloc && (Array.isArray(alloc.room) ? alloc.room[0] : alloc.room);
+    rows.push({
+      tenant_id: tenant,
+      drill_id: drill.id,
+      profile_id: null,
+      name: `${v.visitor_name} (visitor)`,
+      lifeboat: (room?.lifeboat as string | null) ?? null,
+    });
+  }
+
   if (rows.length) await supabase.from("offshore_muster_checkins").insert(rows);
   rev();
   return { ok: true };

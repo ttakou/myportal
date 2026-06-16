@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAccess } from "@/lib/auth";
 import {
   getManifestById,
+  getMusterDrill,
   getRoomAllocationAsOf,
   getRoster,
   getRotationReport,
@@ -102,6 +103,23 @@ export async function GET(req: NextRequest) {
       rows.push([i + 1, p.person_name, p.position, p.no_show ? "No-show" : p.boarded ? "Boarded" : "Booked", p.issues.join("; ")]),
     );
     return csvResponse(`manifest-${m.scheduled_date}.csv`, rows);
+  }
+
+  if (type === "muster") {
+    const id = sp.get("id");
+    if (!id) return new NextResponse("Missing drill id", { status: 400 });
+    const d = await getMusterDrill(id);
+    if (!d) return new NextResponse("Drill not found", { status: 404 });
+    const rows: (string | number | null)[][] = [
+      ["Muster roll-call", d.kind],
+      ["Started", d.started_at],
+      ["Ended", d.ended_at],
+      [],
+      ["Muster", "Name", "Status"],
+    ];
+    for (const c of [...d.checkins].sort((a, b) => (a.lifeboat ?? "").localeCompare(b.lifeboat ?? "") || a.name.localeCompare(b.name)))
+      rows.push([c.lifeboat ?? "Unassigned", c.name, c.accounted ? "Accounted" : "UNACCOUNTED"]);
+    return csvResponse(`muster-${d.started_at.slice(0, 10)}.csv`, rows);
   }
 
   return new NextResponse("Unknown export type", { status: 400 });
