@@ -602,6 +602,28 @@ function ManifestBuilder({
     .filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Pre-fill the manifest from the chosen crew + direction: inbound pulls the
+  // crew's staff ashore (due to mobilise); outbound pulls the crew's staff on
+  // board (due to demobilise). Cleared when no crew is selected. The planner can
+  // still add/remove anyone before creating.
+  useEffect(() => {
+    if (!crewId) {
+      setPicked([]);
+      return;
+    }
+    const pool: PickItem[] =
+      direction === "out"
+        ? roster
+            .filter((m) => m.crew_id === crewId && !onboard.some((o) => o.profile_id === m.profile_id))
+            .map((m) => ({ key: "s" + m.profile_id, id: m.profile_id, name: m.full_name || m.email, kind: "staff" as const, crew_id: m.crew_id }))
+        : onboard
+            .filter((o) => o.profile_id && o.crew_id === crewId)
+            .map((o) => ({ key: "s" + o.profile_id, id: o.profile_id as string, name: o.name, kind: "staff" as const, crew_id: o.crew_id }));
+    setPicked(pool);
+    // roster/onboard are stable props; re-fill only when crew or direction changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crewId, direction]);
+
   const setModeAndSeats = (m: "helicopter" | "boat") => {
     setMode(m);
     setSeats(m === "boat" ? 24 : 12);
@@ -633,7 +655,7 @@ function ManifestBuilder({
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-xs text-muted-foreground">
           Direction
-          <select value={direction} onChange={(e) => { setDirection(e.target.value as "out" | "in"); setPicked([]); }} className={cn(field, "mt-0.5 block py-1")}>
+          <select value={direction} onChange={(e) => setDirection(e.target.value as "out" | "in")} className={cn(field, "mt-0.5 block py-1")}>
             <option value="out">Inbound — joining (mobilise)</option>
             <option value="in">Outbound — leaving (demobilise)</option>
           </select>
@@ -647,7 +669,7 @@ function ManifestBuilder({
         </label>
         <label className="text-xs text-muted-foreground">
           Crew (filter)
-          <select value={crewId} onChange={(e) => { setCrewId(e.target.value); setPicked([]); }} className={cn(field, "mt-0.5 block py-1")}>
+          <select value={crewId} onChange={(e) => setCrewId(e.target.value)} className={cn(field, "mt-0.5 block py-1")}>
             <option value="">All crews</option>
             {crews.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -663,6 +685,17 @@ function ManifestBuilder({
           <input type="number" min={1} value={seats} onChange={(e) => setSeats(Number(e.target.value) || 1)} className={cn(field, "mt-0.5 block w-20 py-1")} />
         </label>
       </div>
+
+      {crewId ? (
+        <p className="text-[11px] text-muted-foreground">
+          Pre-filled with <span className="font-medium">{crews.find((c) => c.id === crewId)?.name}</span>{" "}
+          {direction === "out" ? "joining (mobilise)" : "leaving (demobilise)"} — add or remove anyone before creating.
+        </p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">
+          Pick a crew to auto-fill the manifest from the crew change, or add people manually.
+        </p>
+      )}
 
       <div className="grid gap-2 sm:grid-cols-2">
         {/* Available */}
