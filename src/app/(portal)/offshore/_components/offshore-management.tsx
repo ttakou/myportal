@@ -85,6 +85,7 @@ import {
   setRoomStatus,
   setVisitorMovement,
   togglePaxNoShow,
+  updateManifestTransport,
   updateRoomFields,
   updateRosterMember,
   upsertCrew,
@@ -939,6 +940,13 @@ function ManifestCard({
   const overCapacity = travelling.length > m.seat_capacity;
   const issues = travelling.filter((p) => p.issues.length > 0).length;
   const editable = m.status === "draft" || m.status === "approved";
+  const canEditTransport = m.status !== "completed" && m.status !== "cancelled";
+
+  const [editingTransport, setEditingTransport] = useState(false);
+  const [editMode, setEditMode] = useState<"helicopter" | "boat">(
+    m.transport_mode === "helicopter" ? "helicopter" : "boat",
+  );
+  const [editSeats, setEditSeats] = useState(m.seat_capacity);
 
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -951,6 +959,15 @@ function ManifestCard({
         <span className={cn("ml-auto text-xs", overCapacity ? "font-medium text-destructive" : "text-muted-foreground")}>
           {travelling.length}/{m.seat_capacity} seats
         </span>
+        {canEditTransport && !editingTransport && (
+          <button
+            type="button"
+            onClick={() => setEditingTransport(true)}
+            className="rounded border px-2 py-0.5 text-[11px] font-medium hover:bg-accent"
+          >
+            Seats / transport
+          </button>
+        )}
         <a
           href={`/offshore-manifest/${m.id}`}
           target="_blank"
@@ -960,6 +977,55 @@ function ManifestCard({
           <FileText className="h-3.5 w-3.5" /> Report
         </a>
       </div>
+
+      {editingTransport && (
+        <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-dashed bg-card/50 p-2">
+          <label className="text-[11px] text-muted-foreground">
+            Transport
+            <select
+              value={editMode}
+              onChange={(e) => {
+                const mode = e.target.value as "helicopter" | "boat";
+                setEditMode(mode);
+                setEditSeats(mode === "boat" ? 24 : 12);
+              }}
+              className={cn(field, "mt-0.5 block py-1")}
+            >
+              <option value="boat">Boat</option>
+              <option value="helicopter">Helicopter</option>
+            </select>
+          </label>
+          <label className="text-[11px] text-muted-foreground">
+            Seats
+            <input
+              type="number"
+              min={1}
+              value={editSeats}
+              onChange={(e) => setEditSeats(Number(e.target.value) || 1)}
+              className={cn(field, "mt-0.5 block w-20 py-1")}
+            />
+          </label>
+          {editSeats < travelling.length && (
+            <span className="text-[11px] text-destructive">Below the {travelling.length} travelling.</span>
+          )}
+          <Button
+            size="sm"
+            disabled={pending}
+            onClick={() =>
+              run(
+                () => updateManifestTransport({ id: m.id, transportMode: editMode, seatCapacity: editSeats }),
+                () => setEditingTransport(false),
+              )
+            }
+          >
+            Save
+          </Button>
+          <Button size="sm" variant="outline" disabled={pending} onClick={() => setEditingTransport(false)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+
       <p className="mt-1 text-xs text-muted-foreground">
         {m.installation_name ?? "—"} · {m.scheduled_date}
         {m.transport_mode ? ` · ${m.transport_mode}` : ""}

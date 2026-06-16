@@ -887,6 +887,30 @@ export async function setManifestStatus(
   return { ok: true };
 }
 
+/** Adjust an existing manifest's transport mode and/or seat capacity. */
+export async function updateManifestTransport(input: {
+  id: string;
+  transportMode?: "helicopter" | "boat";
+  seatCapacity?: number;
+}): Promise<ActionResult> {
+  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const patch: Record<string, unknown> = {};
+  if (input.transportMode === "helicopter" || input.transportMode === "boat") {
+    patch.transport_mode = input.transportMode;
+  }
+  if (input.seatCapacity !== undefined) {
+    const seats = Math.floor(input.seatCapacity);
+    if (!Number.isFinite(seats) || seats < 1) return { ok: false, error: "Seats must be at least 1." };
+    patch.seat_capacity = seats;
+  }
+  if (Object.keys(patch).length === 0) return { ok: false, error: "Nothing to update." };
+  const supabase = createClient();
+  const { error } = await supabase.from("offshore_manifests").update(patch).eq("id", input.id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 export async function togglePaxNoShow(id: string, noShow: boolean): Promise<ActionResult> {
   if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
