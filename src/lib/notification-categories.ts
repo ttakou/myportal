@@ -16,15 +16,16 @@ export const MUTABLE_CATEGORIES: { key: MutableCategory; label: string; help: st
 export interface CategoryPref {
   in_app: boolean;
   push: boolean;
+  email: boolean;
 }
 
 export type PrefMap = Record<MutableCategory, CategoryPref>;
 
 export function defaultPrefs(): PrefMap {
   return {
-    transport: { in_app: true, push: true },
-    flight: { in_app: true, push: true },
-    approval: { in_app: true, push: true },
-    general: { in_app: true, push: true },
+    transport: { in_app: true, push: true, email: true },
+    flight: { in_app: true, push: true, email: true },
+    approval: { in_app: true, push: true, email: true },
+    general: { in_app: true, push: true, email: true },
   };
 }

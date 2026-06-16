@@ -11,10 +11,10 @@ export interface ActionResult {
 
 const CATEGORIES = ["transport", "flight", "approval", "general"];
 
-/** Set the signed-in user's in-app / push preference for a category. */
+/** Set the signed-in user's in-app / push / email preference for a category. */
 export async function setNotificationPref(
   category: MutableCategory,
-  channel: "in_app" | "push",
+  channel: "in_app" | "push" | "email",
   enabled: boolean,
 ): Promise<ActionResult> {
   if (!CATEGORIES.includes(category)) return { ok: false, error: "Unknown category." };
