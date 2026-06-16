@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ShieldX } from "lucide-react";
+import { ShieldX, BarChart3 } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getTenantUsers, getTenantModules, getImpersonationLog } from "@/lib/admin";
@@ -56,6 +56,9 @@ export default async function AdminPage() {
         <p className="text-muted-foreground">
           Manage your organization&apos;s modules and people.
         </p>
+        <Link href="/analytics" className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent">
+          <BarChart3 className="h-4 w-4" /> Executive dashboard
+        </Link>
       </div>
 
       {access.isSystemAdmin && <BrandingPanel branding={branding} />}
