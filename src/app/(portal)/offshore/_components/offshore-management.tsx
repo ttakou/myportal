@@ -572,10 +572,10 @@ function ManifestBuilder({
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
   const [direction, setDirection] = useState<"out" | "in">("out");
-  const [mode, setMode] = useState<"helicopter" | "boat">("helicopter");
+  const [mode, setMode] = useState<"helicopter" | "boat">("boat");
   const [crewId, setCrewId] = useState("");
   const [date, setDate] = useState("");
-  const [seats, setSeats] = useState(12);
+  const [seats, setSeats] = useState(24);
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<PickItem[]>([]);
 
