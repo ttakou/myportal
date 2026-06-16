@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Ship, ShieldCheck } from "lucide-react";
+import { Ship, ShieldCheck, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,7 @@ import {
   addFlight,
   assignManifest,
   clearHse,
-  requestOffshoreTrip,
+  requestOffshoreTripGroup,
   setOffshoreStatus,
 } from "../actions";
 
@@ -39,6 +39,8 @@ export function OffshoreBoard({
   flights,
   pob,
   isAdmin,
+  people,
+  meId,
 }: {
   mine: OffshoreTrip[];
   all: OffshoreTrip[];
@@ -46,6 +48,8 @@ export function OffshoreBoard({
   flights: Flight[];
   pob: Pob[];
   isAdmin: boolean;
+  people: { id: string; name: string }[];
+  meId: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +57,14 @@ export function OffshoreBoard({
   const [installationId, setInstallationId] = useState(installations[0]?.id ?? "");
   const [mobilize, setMobilize] = useState("");
   const [demob, setDemob] = useState("");
+  // People on this request — defaults to the requester (self-service stays easy).
+  const [rows, setRows] = useState<string[]>([meId]);
+
+  const setRow = (i: number, id: string) =>
+    setRows((cur) => cur.map((v, idx) => (idx === i ? id : v)));
+  const addRow = () => setRows((cur) => [...cur, ""]);
+  const removeRow = (i: number) => setRows((cur) => cur.filter((_, idx) => idx !== i));
+  const selectedCount = new Set(rows.filter(Boolean)).size;
 
   const [fDate, setFDate] = useState("");
   const [fRoute, setFRoute] = useState("");
@@ -92,20 +104,81 @@ export function OffshoreBoard({
         </section>
       )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(() => requestOffshoreTrip({ installationId, mobilizeDate: mobilize, demobDate: demob }), () => { setMobilize(""); setDemob(""); });
-        }}
-        className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
-      >
-        <select value={installationId} onChange={(e) => setInstallationId(e.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm">
-          {installations.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-        </select>
-        <label className="text-xs text-muted-foreground">Mobilise<input value={mobilize} onChange={(e) => setMobilize(e.target.value)} type="date" required className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" /></label>
-        <label className="text-xs text-muted-foreground">Demob<input value={demob} onChange={(e) => setDemob(e.target.value)} type="date" className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" /></label>
-        <Button type="submit" disabled={pending} className="self-end"><Ship className="h-4 w-4" /> Request trip</Button>
-      </form>
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Request an offshore trip</h2>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            run(
+              () =>
+                requestOffshoreTripGroup({
+                  installationId,
+                  mobilizeDate: mobilize,
+                  demobDate: demob,
+                  profileIds: rows.filter(Boolean),
+                }),
+              () => {
+                setMobilize("");
+                setDemob("");
+                setRows([meId]);
+              },
+            );
+          }}
+          className="space-y-3 rounded-lg border bg-card p-4"
+        >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="text-xs text-muted-foreground">
+              Installation
+              <select value={installationId} onChange={(e) => setInstallationId(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm">
+                {installations.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-muted-foreground">
+              Mobilise
+              <input value={mobilize} onChange={(e) => setMobilize(e.target.value)} type="date" required className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-xs text-muted-foreground">
+              Demob
+              <input value={demob} onChange={(e) => setDemob(e.target.value)} type="date" className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            </label>
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-sm font-medium">People on this trip</span>
+            {rows.map((id, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <select
+                  value={id}
+                  onChange={(e) => setRow(i, e.target.value)}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">{i === 0 ? "Select a person…" : "Add another person…"}</option>
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}{p.id === meId ? " (me)" : ""}</option>
+                  ))}
+                </select>
+                {rows.length > 1 && (
+                  <button type="button" onClick={() => removeRow(i)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Button type="button" size="sm" variant="outline" onClick={addRow}>
+              <Plus className="h-4 w-4" /> Add person
+            </Button>
+            <Button type="submit" disabled={pending}>
+              <Ship className="h-4 w-4" /> Request trip ({selectedCount})
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            One request can cover several people — each gets their own trip to clear HSE and be manifested.
+          </p>
+        </form>
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">My offshore trips</h2>

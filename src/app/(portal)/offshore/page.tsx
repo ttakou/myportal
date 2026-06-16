@@ -1,4 +1,5 @@
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import {
   getAccommodationSummary,
   getAddableProfiles,
@@ -35,15 +36,20 @@ export default async function OffshorePage() {
   const isAdmin = isAdminRole(await getCurrentRole());
   const canManage = access.isAdmin || access.isSafetyAdmin || access.isOim;
 
-  const [mine, all, installations, flights, pob, myVisits, suggestionLists] = await Promise.all([
-    getMyOffshoreTrips(),
-    isAdmin ? getAllOffshoreTrips() : Promise.resolve([]),
-    getInstallations(),
-    isAdmin ? getFlights() : Promise.resolve([]),
-    isAdmin ? getPob() : Promise.resolve([]),
-    getMyVisitRequests(),
-    getVisitorSuggestions(),
-  ]);
+  const [mine, all, installations, flights, pob, myVisits, suggestionLists, boardPeople, me] =
+    await Promise.all([
+      getMyOffshoreTrips(),
+      isAdmin ? getAllOffshoreTrips() : Promise.resolve([]),
+      getInstallations(),
+      isAdmin ? getFlights() : Promise.resolve([]),
+      isAdmin ? getPob() : Promise.resolve([]),
+      getMyVisitRequests(),
+      getVisitorSuggestions(),
+      getAssignableEmployees(),
+      createClient().auth.getUser().then((r) => r.data.user),
+    ]);
+  const meId = me?.id ?? "";
+  const people = boardPeople.map((p) => ({ id: p.id, name: p.name }));
 
   const [
     crews,
@@ -135,6 +141,8 @@ export default async function OffshorePage() {
         flights={flights}
         pob={pob}
         isAdmin={isAdmin}
+        people={people}
+        meId={meId}
       />
     </div>
   );
