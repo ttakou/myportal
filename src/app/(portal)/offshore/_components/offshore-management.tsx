@@ -130,6 +130,7 @@ export function OffshoreManagement(props: {
   emergencyRoles: EmergencyRole[];
   musterGroups: string[];
   musterDrill: MusterDrill | null;
+  musterDrillHistory: MusterDrillSummary[];
 }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const pendingVisits = props.visits.filter((v) => v.status === "requested").length;
@@ -219,7 +220,7 @@ export function OffshoreManagement(props: {
           roster={props.roster}
         />
       )}
-      {tab === "drill" && <MusterDrillPanel drill={props.musterDrill} />}
+      {tab === "drill" && <MusterDrillPanel drill={props.musterDrill} history={props.musterDrillHistory} />}
       {tab === "history" && <HistoryPanel />}
     </div>
   );
@@ -359,8 +360,56 @@ function EmergencyRolesPanel({
   );
 }
 
+type MusterDrillSummary = {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  kind: string;
+  total: number;
+  accounted: number;
+};
+
+/** Past roll-calls (archive) with links to each report. */
+function MusterArchive({ history }: { history: MusterDrillSummary[] }) {
+  const past = history.filter((d) => d.ended_at);
+  if (past.length === 0) return null;
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="border-b px-3 py-2 text-sm font-semibold">Past roll-calls</div>
+      <ul className="divide-y text-sm">
+        {past.map((d) => (
+          <li key={d.id} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+            <span className="font-medium">
+              {new Date(d.started_at).toLocaleString("en-GB", { timeZone: "UTC" })} UTC
+            </span>
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                d.kind === "real" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground",
+              )}
+            >
+              {d.kind === "real" ? "Emergency" : "Drill"}
+            </span>
+            <span className={cn("text-xs", d.accounted < d.total ? "text-destructive" : "text-green-700")}>
+              {d.accounted}/{d.total} accounted
+            </span>
+            <a
+              href={`/offshore-muster/${d.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium hover:bg-accent"
+            >
+              <FileText className="h-3.5 w-3.5" /> Report
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** Live emergency muster roll-call: tick off who's accounted per muster group. */
-function MusterDrillPanel({ drill }: { drill: MusterDrill | null }) {
+function MusterDrillPanel({ drill, history }: { drill: MusterDrill | null; history: MusterDrillSummary[] }) {
   const { pending, error, run } = useRun();
   const [elapsed, setElapsed] = useState("00:00");
 
@@ -397,6 +446,7 @@ function MusterDrillPanel({ drill }: { drill: MusterDrill | null }) {
             Real emergency
           </Button>
         </div>
+        <MusterArchive history={history} />
       </div>
     );
   }
@@ -488,6 +538,8 @@ function MusterDrillPanel({ drill }: { drill: MusterDrill | null }) {
             );
           })}
       </div>
+
+      <MusterArchive history={history} />
     </div>
   );
 }
