@@ -2,10 +2,30 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  CalendarCheck,
+  HeartPulse,
+  PiggyBank,
+  Plane,
+  ShieldCheck,
+  UtensilsCrossed,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 type OAuthProvider = "google" | "azure";
+
+const HERO_IMAGE =
+  "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1400&q=80";
+
+const FEATURES = [
+  { icon: UtensilsCrossed, label: "Canteen & meals" },
+  { icon: Plane, label: "Travel & trips" },
+  { icon: HeartPulse, label: "Medical records" },
+  { icon: PiggyBank, label: "Savings & payroll" },
+  { icon: CalendarCheck, label: "Performance" },
+  { icon: ShieldCheck, label: "HSE & offshore" },
+];
 
 export function LoginForm({ tenantSlug }: { tenantSlug?: string | null }) {
   const router = useRouter();
@@ -65,94 +85,143 @@ export function LoginForm({ tenantSlug }: { tenantSlug?: string | null }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6 rounded-lg border bg-card p-8">
-        <div className="space-y-1 text-center">
-          <h1 className="text-xl font-semibold tracking-tight">
-            MyEnterprisePortal
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Sign in to your account
-          </p>
-          {tenantSlug && (
-            <p className="text-xs text-muted-foreground">
-              Workspace:{" "}
-              <span className="font-medium text-foreground">{tenantSlug}</span>
-            </p>
-          )}
-        </div>
+    <div className="min-h-screen lg:grid lg:grid-cols-2">
+      <HeroPanel />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
+      <div className="flex min-h-screen items-center justify-center px-4 py-10">
+        <div className="w-full max-w-sm space-y-6 rounded-lg border bg-card p-8 shadow-sm">
+          <div className="space-y-1 text-center">
+            <h1 className="text-xl font-semibold tracking-tight">
+              MyEnterprisePortal
+            </h1>
+            <p className="text-sm text-muted-foreground">Sign in to your account</p>
+            {tenantSlug && (
+              <p className="text-xs text-muted-foreground">
+                Workspace:{" "}
+                <span className="font-medium text-foreground">{tenantSlug}</span>
+              </p>
+            )}
           </div>
 
-          <div className="space-y-1">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1">
+              <label htmlFor="email" className="text-sm font-medium">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label htmlFor="password" className="text-sm font-medium">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">
+                or continue with
+              </span>
+            </div>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Signing in…" : "Sign in"}
-          </Button>
-        </form>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t" />
+          <div className="space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={ssoLoading !== null}
+              onClick={() => handleOAuth("azure")}
+            >
+              <MicrosoftIcon />
+              {ssoLoading === "azure" ? "Redirecting…" : "Sign in with Microsoft"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={ssoLoading !== null}
+              onClick={() => handleOAuth("google")}
+            >
+              <GoogleIcon />
+              {ssoLoading === "google" ? "Redirecting…" : "Sign in with Google"}
+            </Button>
           </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
-              or continue with
-            </span>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            disabled={ssoLoading !== null}
-            onClick={() => handleOAuth("azure")}
-          >
-            <MicrosoftIcon />
-            {ssoLoading === "azure" ? "Redirecting…" : "Sign in with Microsoft"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            disabled={ssoLoading !== null}
-            onClick={() => handleOAuth("google")}
-          >
-            <GoogleIcon />
-            {ssoLoading === "google" ? "Redirecting…" : "Sign in with Google"}
-          </Button>
         </div>
       </div>
     </div>
+  );
+}
+
+/** Branded marketing panel shown beside the sign-in card on large screens. */
+function HeroPanel() {
+  return (
+    <aside className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-rose-900 p-12 text-white lg:flex">
+      {/* Photo + legibility overlays. Falls back to the gradient if it fails. */}
+      <div
+        className="absolute inset-0 bg-cover bg-center opacity-25"
+        style={{ backgroundImage: `url('${HERO_IMAGE}')` }}
+        aria-hidden
+      />
+      <div
+        className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-900/40 to-transparent"
+        aria-hidden
+      />
+
+      <p className="relative text-sm font-semibold uppercase tracking-[0.2em] text-white/70">
+        MyEnterprisePortal
+      </p>
+
+      <div className="relative space-y-6">
+        <h2 className="max-w-md text-3xl font-semibold leading-tight">
+          Everything your team needs, in one self-service portal.
+        </h2>
+        <p className="max-w-md text-white/80">
+          Book meals, request trips, manage medicals, track savings and clear
+          HSE — all from a single sign-in.
+        </p>
+        <ul className="grid max-w-md grid-cols-2 gap-3">
+          {FEATURES.map(({ icon: Icon, label }) => (
+            <li
+              key={label}
+              className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-medium backdrop-blur-sm"
+            >
+              <Icon className="h-4 w-4 shrink-0 text-white/80" />
+              {label}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <p className="relative text-xs text-white/50">
+        Secure single sign-on with Microsoft &amp; Google.
+      </p>
+    </aside>
   );
 }
 

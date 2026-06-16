@@ -48,11 +48,26 @@ export async function requestOffshoreTripGroup(input: {
   installationId: string;
   mobilizeDate: string;
   demobDate?: string;
-  profileIds: string[];
+  /**
+   * People on the trip. Each entry is either an existing employee (profileId)
+   * or an ad-hoc free-text name (name) for someone not in the directory.
+   */
+  people: { profileId?: string | null; name?: string | null }[];
 }): Promise<ActionResult> {
   if (!input.mobilizeDate) return { ok: false, error: "Mobilise date is required." };
-  const ids = [...new Set(input.profileIds.filter(Boolean))];
-  if (ids.length === 0) return { ok: false, error: "Add at least one person." };
+
+  // Split the entries into employee ids and free-text names.
+  const ids = [...new Set((input.people ?? []).map((p) => p.profileId).filter(Boolean) as string[])];
+  const names = [
+    ...new Map(
+      (input.people ?? [])
+        .filter((p) => !p.profileId && p.name?.trim())
+        .map((p) => [p.name!.trim().toLowerCase(), p.name!.trim()] as const),
+    ).values(),
+  ];
+  if (ids.length === 0 && names.length === 0) {
+    return { ok: false, error: "Add at least one person." };
+  }
 
   const supabase = createClient();
   const {
@@ -71,24 +86,33 @@ export async function requestOffshoreTripGroup(input: {
   const adminCli = createAdminClient();
   if (!adminCli) return { ok: false, error: "Server is missing the service-role key." };
 
-  // Only keep people who are really in the caller's tenant.
-  const { data: people } = await adminCli
-    .from("profiles")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .in("id", ids);
-  const valid = (people ?? []).map((p) => p.id as string);
-  if (valid.length === 0) return { ok: false, error: "No valid people in your organisation." };
+  // Only keep employee ids that really belong to the caller's tenant.
+  let validIds: string[] = [];
+  if (ids.length > 0) {
+    const { data: people } = await adminCli
+      .from("profiles")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .in("id", ids);
+    validIds = (people ?? []).map((p) => p.id as string);
+  }
+  if (validIds.length === 0 && names.length === 0) {
+    return { ok: false, error: "No valid people in your organisation." };
+  }
 
-  const { error } = await adminCli.from("offshore_trips").insert(
-    valid.map((pid) => ({
-      tenant_id: tenantId,
-      profile_id: pid,
-      installation_id: input.installationId || null,
-      mobilize_date: input.mobilizeDate,
-      demob_date: input.demobDate || null,
-    })),
-  );
+  const base = {
+    tenant_id: tenantId,
+    requester_id: user.id,
+    installation_id: input.installationId || null,
+    mobilize_date: input.mobilizeDate,
+    demob_date: input.demobDate || null,
+  };
+  const rows = [
+    ...validIds.map((pid) => ({ ...base, profile_id: pid })),
+    ...names.map((person_name) => ({ ...base, profile_id: null, person_name })),
+  ];
+
+  const { error } = await adminCli.from("offshore_trips").insert(rows);
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };

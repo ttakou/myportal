@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Ship, ShieldCheck, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -57,14 +57,25 @@ export function OffshoreBoard({
   const [installationId, setInstallationId] = useState(installations[0]?.id ?? "");
   const [mobilize, setMobilize] = useState("");
   const [demob, setDemob] = useState("");
-  // People on this request — defaults to the requester (self-service stays easy).
-  const [rows, setRows] = useState<string[]>([meId]);
 
-  const setRow = (i: number, id: string) =>
-    setRows((cur) => cur.map((v, idx) => (idx === i ? id : v)));
+  // Map a typed name back to an employee (case-insensitive); anything not found
+  // is treated as a brand-new named person (visitor/contractor not in the system).
+  const idByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of people) m.set(p.name.toLowerCase(), p.id);
+    return m;
+  }, [people]);
+  const myName = people.find((p) => p.id === meId)?.name ?? "";
+
+  // People on this request — defaults to the requester (self-service stays easy).
+  // Each row holds a free-typed name that may match an employee or be new.
+  const [rows, setRows] = useState<string[]>([myName]);
+
+  const setRow = (i: number, name: string) =>
+    setRows((cur) => cur.map((v, idx) => (idx === i ? name : v)));
   const addRow = () => setRows((cur) => [...cur, ""]);
   const removeRow = (i: number) => setRows((cur) => cur.filter((_, idx) => idx !== i));
-  const selectedCount = new Set(rows.filter(Boolean)).size;
+  const selectedCount = rows.filter((r) => r.trim()).length;
 
   const [fDate, setFDate] = useState("");
   const [fRoute, setFRoute] = useState("");
@@ -109,18 +120,25 @@ export function OffshoreBoard({
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            const entries = rows
+              .map((r) => r.trim())
+              .filter(Boolean)
+              .map((name) => {
+                const id = idByName.get(name.toLowerCase());
+                return id ? { profileId: id } : { name };
+              });
             run(
               () =>
                 requestOffshoreTripGroup({
                   installationId,
                   mobilizeDate: mobilize,
                   demobDate: demob,
-                  profileIds: rows.filter(Boolean),
+                  people: entries,
                 }),
               () => {
                 setMobilize("");
                 setDemob("");
-                setRows([meId]);
+                setRows([myName]);
               },
             );
           }}
@@ -145,18 +163,19 @@ export function OffshoreBoard({
 
           <div className="space-y-2">
             <span className="text-sm font-medium">People on this trip</span>
-            {rows.map((id, i) => (
+            {rows.map((name, i) => (
               <div key={i} className="flex items-center gap-2">
-                <select
-                  value={id}
+                <input
+                  list="offshore-people"
+                  value={name}
                   onChange={(e) => setRow(i, e.target.value)}
+                  placeholder={
+                    i === 0
+                      ? "Type or pick a person…"
+                      : "Type a new name, or pick an employee…"
+                  }
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <option value="">{i === 0 ? "Select a person…" : "Add another person…"}</option>
-                  {people.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}{p.id === meId ? " (me)" : ""}</option>
-                  ))}
-                </select>
+                />
                 {rows.length > 1 && (
                   <button type="button" onClick={() => removeRow(i)} className="rounded p-1 text-muted-foreground hover:text-destructive">
                     <Trash2 className="h-4 w-4" />
@@ -164,6 +183,15 @@ export function OffshoreBoard({
                 )}
               </div>
             ))}
+            {/* Shared lookup list — matched names book the employee; anything
+                else is recorded as a new named person (visitor/contractor). */}
+            <datalist id="offshore-people">
+              {people.map((p) => (
+                <option key={p.id} value={p.name}>
+                  {p.id === meId ? `${p.name} (me)` : p.name}
+                </option>
+              ))}
+            </datalist>
           </div>
 
           <div className="flex items-center justify-between">
@@ -175,7 +203,9 @@ export function OffshoreBoard({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            One request can cover several people — each gets their own trip to clear HSE and be manifested.
+            Pick an employee from the list, or type a new name for a visitor or
+            contractor not yet in the system. One request can cover several
+            people — each gets their own trip to clear HSE and be manifested.
           </p>
         </form>
       </section>

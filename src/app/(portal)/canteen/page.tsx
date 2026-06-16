@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, History, LayoutDashboard, MessageSquare, ScanLine, Settings } from "lucide-react";
+import { BarChart3, History, LayoutDashboard, MessageSquare, ScanLine, Settings, UtensilsCrossed, Users } from "lucide-react";
 import { getCanteenCutoff, getMenu, getMyBookings, getServedMealPeriods, resolveServiceDate, today } from "@/lib/canteen";
 import { getAccess } from "@/lib/auth";
 import { MenuBoard } from "./_components/menu-board";
@@ -21,6 +21,7 @@ export default async function CanteenPage({
     cutoff != null && serviceDate === today() && new Date().getHours() >= cutoff;
   const canManage = access.isCanteenManager;
   const canServe = access.isCanteenStaff;
+  const canEntitle = access.isHr;
   const canReport = access.isFinance || access.isCanteenManager;
 
   const prettyDate = new Date(serviceDate + "T00:00:00").toLocaleDateString(
@@ -57,6 +58,24 @@ export default async function CanteenPage({
             >
               <ScanLine className="h-4 w-4" />
               Serving point
+            </Link>
+          )}
+          {canServe && (
+            <Link
+              href="/canteen/redeem"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <UtensilsCrossed className="h-4 w-4" />
+              Meal serving
+            </Link>
+          )}
+          {canEntitle && (
+            <Link
+              href="/canteen/entitlements"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <Users className="h-4 w-4" />
+              Entitlements
             </Link>
           )}
           {canManage && (
