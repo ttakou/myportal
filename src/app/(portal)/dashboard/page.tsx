@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
 import { getMyDashboard } from "@/lib/dashboard";
+import { getMenu, today } from "@/lib/canteen";
+import { MEAL_PERIODS, MEAL_PERIOD_LABEL } from "@/types/canteen";
 
 /** Services an onshore user's dashboard leads with, in priority order. */
 const FOCUS_SLUGS = ["emergency", "canteen", "transportation", "visitors"];
@@ -51,6 +53,16 @@ export default async function DashboardPage() {
       );
   const focusIds = new Set(focusServices.map((s) => s.id));
   const otherServices = services.filter((s) => !focusIds.has(s.id));
+
+  // Onshore staff lead with today's canteen menu (when the module is on for them).
+  const canteenActive = services.some((s) => s.slug === "canteen");
+  const menu = !isOffshore && canteenActive ? await getMenu(today()) : [];
+  const menuPeriods = MEAL_PERIODS.filter((p) => menu.some((d) => d.meal_period === p));
+  const menuDateLabel = new Date().toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
   return (
     <div className="space-y-8">
@@ -166,24 +178,81 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Modules */}
-      {services.length === 0 ? (
+      {/* Today's canteen menu — onshore staff */}
+      {!isOffshore && canteenActive && (
         <section className="space-y-3">
           <div>
-            <h2 className="text-lg font-semibold">Modules</h2>
-            <p className="text-sm text-muted-foreground">Everything your organization has access to.</p>
+            <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <UtensilsCrossed className="h-5 w-5 text-brand" /> Today&apos;s canteen menu
+            </h2>
+            <p className="text-sm text-muted-foreground">{menuDateLabel}</p>
           </div>
-          <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-            No modules are currently enabled for your organization. Contact your administrator.
-          </p>
+          {menuPeriods.length === 0 ? (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Today&apos;s menu hasn&apos;t been published yet.
+            </p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {menuPeriods.map((period) => (
+                <div key={period} className="rounded-lg border bg-card p-4">
+                  <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    {MEAL_PERIOD_LABEL[period]}
+                  </h3>
+                  <ul className="space-y-2">
+                    {menu
+                      .filter((d) => d.meal_period === period)
+                      .map((d) => (
+                        <li key={d.id}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{d.name}</span>
+                            {d.kitchen_name && (
+                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                                {d.kitchen_name}
+                              </span>
+                            )}
+                            {!d.available && (
+                              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                Sold out
+                              </span>
+                            )}
+                          </div>
+                          {d.description && (
+                            <p className="text-xs text-muted-foreground">{d.description}</p>
+                          )}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+          <Link
+            href="/canteen"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          >
+            Book your meal <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </section>
-      ) : (
-        otherServices.length > 0 && (
+      )}
+
+      {/* Modules — offshore keeps the full grid; onshore is intentionally focused */}
+      {isOffshore &&
+        (services.length === 0 ? (
           <section className="space-y-3">
             <div>
-              <h2 className="text-lg font-semibold">
-                {focusServices.length > 0 ? "More modules" : "Modules"}
-              </h2>
+              <h2 className="text-lg font-semibold">Modules</h2>
+              <p className="text-sm text-muted-foreground">
+                Everything your organization has access to.
+              </p>
+            </div>
+            <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+              No modules are currently enabled for your organization. Contact your administrator.
+            </p>
+          </section>
+        ) : (
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold">Modules</h2>
               <p className="text-sm text-muted-foreground">
                 Everything your organization has access to.
               </p>
@@ -201,8 +270,7 @@ export default async function DashboardPage() {
               ))}
             </div>
           </section>
-        )
-      )}
+        ))}
     </div>
   );
 }
