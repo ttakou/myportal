@@ -122,6 +122,15 @@ export interface Colleague {
   department: string | null;
 }
 
+/** An HR-maintained department (or company-wide) objective employees align to. */
+export interface DepartmentObjective {
+  id: string;
+  department: string | null;
+  title: string;
+  description: string | null;
+  is_active: boolean;
+}
+
 /** A review request shown to the stakeholder being asked to rate. */
 export interface RaterAssignment {
   id: string;

@@ -9,6 +9,7 @@ import {
   type Appraisal,
   type AppraisalGoal,
   type Colleague,
+  type DepartmentObjective,
 } from "@/types/appraisal";
 import {
   acknowledge,
@@ -40,9 +41,11 @@ const EDITABLE = new Set(["not_started", "draft", "returned_for_correction"]);
 export function MyAppraisalPanel({
   appraisal,
   colleagues = [],
+  deptObjectives = [],
 }: {
   appraisal: Appraisal;
   colleagues?: Colleague[];
+  deptObjectives?: DepartmentObjective[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +80,7 @@ export function MyAppraisalPanel({
           pending={pending}
           run={run}
           colleagues={colleagues}
+          deptObjectives={deptObjectives}
         />
       )}
       {appraisal.stage === "goal_review" && (
@@ -115,14 +119,17 @@ function GoalSetting({
   pending,
   run,
   colleagues,
+  deptObjectives,
 }: {
   appraisal: Appraisal;
   editable: boolean;
   pending: boolean;
   run: RunFn;
   colleagues: Colleague[];
+  deptObjectives: DepartmentObjective[];
 }) {
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [weight, setWeight] = useState("");
   const [deadline, setDeadline] = useState("");
   const [indicator, setIndicator] = useState("");
@@ -187,7 +194,7 @@ function GoalSetting({
       )}
       {editable && (
         <form
-          className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4"
+          className="mt-3 space-y-2 border-t pt-3"
           onSubmit={(e) => {
             e.preventDefault();
             run(
@@ -195,6 +202,7 @@ function GoalSetting({
                 addGoal({
                   appraisalId: appraisal.id,
                   title,
+                  description: description || undefined,
                   weight: Number(weight) || 0,
                   deadline: deadline || undefined,
                   successIndicator: indicator || undefined,
@@ -203,6 +211,7 @@ function GoalSetting({
                 }),
               () => {
                 setTitle("");
+                setDescription("");
                 setWeight("");
                 setDeadline("");
                 setIndicator("");
@@ -212,16 +221,83 @@ function GoalSetting({
             );
           }}
         >
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Objective" required className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
-          <input value={weight} onChange={(e) => setWeight(e.target.value)} type="number" min={0} max={100} placeholder="Weight %" className="rounded-md border bg-background px-3 py-2 text-sm" />
-          <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
-          <select value={kind} onChange={(e) => setKind(e.target.value as "objective" | "development")} className="rounded-md border bg-background px-3 py-2 text-sm">
-            <option value="objective">Objective</option>
-            <option value="development">Development</option>
-          </select>
-          <input value={alignment} onChange={(e) => setAlignment(e.target.value)} placeholder="Business alignment (optional)" className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
-          <input value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Success indicator (optional)" className="rounded-md border bg-background px-3 py-2 text-sm" />
-          <Button type="submit" disabled={pending}><Plus className="h-4 w-4" /> Add</Button>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Title</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Objective title"
+              required
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What the objective involves, scope, context…"
+              rows={3}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="text-xs font-medium text-muted-foreground">
+              Weight %
+              <input value={weight} onChange={(e) => setWeight(e.target.value)} type="number" min={0} max={100} placeholder="0" className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-xs font-medium text-muted-foreground">
+              Deadline
+              <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-xs font-medium text-muted-foreground">
+              Type
+              <select value={kind} onChange={(e) => setKind(e.target.value as "objective" | "development")} className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm">
+                <option value="objective">Objective</option>
+                <option value="development">Development</option>
+              </select>
+            </label>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              Business alignment {deptObjectives.length > 0 ? "(department objective)" : "(optional)"}
+            </label>
+            {deptObjectives.length > 0 ? (
+              <select
+                value={alignment}
+                onChange={(e) => setAlignment(e.target.value)}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">— Align to a department objective —</option>
+                {deptObjectives.map((o) => (
+                  <option key={o.id} value={o.title}>
+                    {o.department ? `[${o.department}] ` : "[All] "}
+                    {o.title}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={alignment}
+                onChange={(e) => setAlignment(e.target.value)}
+                placeholder="How this supports the business (optional)"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              />
+            )}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Success indicator</label>
+            <textarea
+              value={indicator}
+              onChange={(e) => setIndicator(e.target.value)}
+              placeholder="How success is measured — target, metric, evidence…"
+              rows={3}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button type="submit" disabled={pending}><Plus className="h-4 w-4" /> Add objective</Button>
+          </div>
         </form>
       )}
       {editable && appraisal.goals.length > 0 && (
@@ -735,7 +811,7 @@ function GoalReviewers({
   return (
     <div className="mt-2 space-y-1 pl-3">
       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Stakeholder reviewers
+        Witness
       </div>
       {goal.raters.length > 0 ? (
         <ul className="space-y-0.5">
@@ -756,7 +832,7 @@ function GoalReviewers({
               {editable && (
                 <button
                   type="button"
-                  aria-label="Remove reviewer"
+                  aria-label="Remove witness"
                   disabled={pending}
                   onClick={() => run(() => removeGoalRater({ appraisalId, raterRowId: r.id }))}
                   className="text-muted-foreground hover:text-destructive"
@@ -768,9 +844,9 @@ function GoalReviewers({
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-muted-foreground">No reviewers yet.</p>
+        <p className="text-xs text-muted-foreground">No witness yet.</p>
       )}
-      {editable && (
+      {editable && goal.raters.length === 0 && (
         <form
           className="flex flex-wrap gap-1"
           onSubmit={(e) => {
@@ -796,7 +872,7 @@ function GoalReviewers({
             onChange={(e) => setRaterId(e.target.value)}
             className="flex-1 rounded-md border bg-background px-2 py-1 text-xs"
           >
-            <option value="">{q ? `Select (${options.length})…` : "Add a reviewer…"}</option>
+            <option value="">{q ? `Select (${options.length})…` : "Choose a witness…"}</option>
             {options.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.full_name ?? "—"}
@@ -809,13 +885,13 @@ function GoalReviewers({
             disabled={pending || !raterId}
             className="rounded-md border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
           >
-            Invite
+            Assign
           </button>
         </form>
       )}
-      {editable && (
+      {editable && goal.raters.length === 0 && (
         <p className="text-[11px] text-muted-foreground">
-          Adding a reviewer gives them a Witness role to rate this goal. Their rating and
+          One witness per objective. They get a Witness role to rate this goal; their rating and
           comments are shared only with your line manager.
         </p>
       )}
