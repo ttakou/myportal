@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { notifyUsers } from "@/lib/notify";
+import { runAppraisalReminders } from "@/lib/appraisal-reminders";
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
 
@@ -821,6 +822,19 @@ export async function rateCompetencyManager(input: {
     .from("appraisal_competency_ratings")
     .upsert(row, { onConflict: "appraisal_id,competency_id" });
   if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** HR: send reminders now (flag overdue goal-setting + nudge current owners). */
+export async function sendAppraisalReminders(): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const res = await runAppraisalReminders(tenant.id as string);
+  if (!res.ok) return { ok: false, error: res.error ?? "Could not send reminders." };
   rev();
   return { ok: true };
 }

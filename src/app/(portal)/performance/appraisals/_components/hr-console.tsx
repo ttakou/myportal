@@ -19,6 +19,7 @@ import {
   hrValidate,
   launchCycle,
   resolveAppeal,
+  sendAppraisalReminders,
   setCompetencyActive,
 } from "../actions";
 
@@ -139,7 +140,12 @@ export function HrConsole({
 
       {activeCycleId && appraisals.length > 0 && (
         <div className="rounded-lg border bg-card p-4">
-          <h3 className="mb-2 text-sm font-semibold">Completion — active cycle ({appraisals.length} employees)</h3>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Completion — active cycle ({appraisals.length} employees)</h3>
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => sendAppraisalReminders())}>
+              Send reminders
+            </Button>
+          </div>
           <div className="flex flex-wrap gap-2">
             {counts.map(([status, n]) => (
               <span key={status} className="rounded-full bg-muted px-2.5 py-1 text-xs">
