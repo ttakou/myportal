@@ -6,6 +6,7 @@ import type {
   TransportRequest,
   Vehicle,
 } from "@/types/transport";
+import { one } from "@/lib/supabase/row-helpers";
 
 const REQ_SELECT =
   "id, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
@@ -14,10 +15,6 @@ const REQ_SELECT =
   " driver:transport_drivers(full_name, phone), vehicle:transport_vehicles(name)," +
   " transport_task_updates(id, note, new_status, created_at, author:profiles(full_name))," +
   " transport_task_checklist(id, label, sort_order, done, done_at)";
-
-function one<T>(v: T | T[] | null): T | null {
-  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
-}
 
 function mapUpdate(row: Record<string, any>): TaskUpdate {
   return {

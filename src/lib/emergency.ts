@@ -8,14 +8,11 @@ import type {
   DeliveryLog,
   Incident,
 } from "@/types/emergency";
+import { one } from "@/lib/supabase/row-helpers";
 
 // ---------------------------------------------------------------------------
 // Row mappers (Supabase types embedded relations as arrays; they're 1:1 here)
 // ---------------------------------------------------------------------------
-function one<T>(rel: T | T[] | null | undefined): T | null {
-  if (Array.isArray(rel)) return rel[0] ?? null;
-  return rel ?? null;
-}
 
 const INCIDENT_SELECT =
   "id, incident_type, severity, status, is_sos, note, location_text, lat, lng, photo_url, created_at," +

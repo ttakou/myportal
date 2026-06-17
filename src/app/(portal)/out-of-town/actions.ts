@@ -18,10 +18,8 @@ import {
   type TripCheckinKind,
 } from "@/types/trips";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 
 function rev() {
   revalidatePath("/out-of-town");

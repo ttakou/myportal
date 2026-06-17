@@ -4,10 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 
 /** Campboss marks a reservation as packed (or un-packs it). */
 export async function setReservationPrepared(

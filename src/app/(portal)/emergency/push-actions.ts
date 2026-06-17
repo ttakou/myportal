@@ -2,10 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 
 /** Register (or refresh) a browser push subscription for the signed-in user. */
 export async function savePushSubscription(input: {

@@ -13,12 +13,8 @@ import type {
   VehicleStatus,
 } from "@/types/transport";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-  /** Non-blocking advisory shown to the dispatcher (e.g. double-booking). */
-  warning?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 
 function rev() {
   revalidatePath("/transportation");
