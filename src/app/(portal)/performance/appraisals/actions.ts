@@ -254,6 +254,47 @@ export async function applyCalibration(input: {
   return { ok: true };
 }
 
+// --- HR: department objectives ----------------------------------------------
+
+export async function addDepartmentObjective(input: {
+  title: string;
+  department?: string;
+  description?: string;
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  if (!input.title.trim()) return { ok: false, error: "Objective title is required." };
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const { error } = await supabase.from("appraisal_department_objectives").insert({
+    tenant_id: tenant.id,
+    department: input.department?.trim() || null,
+    title: input.title.trim(),
+    description: input.description?.trim() || null,
+    created_by: await uid(),
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function setDepartmentObjectiveActive(
+  id: string,
+  active: boolean,
+): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_department_objectives")
+    .update({ is_active: active })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 // --- Employee: goal setting -------------------------------------------------
 
 const EDITABLE = new Set(["not_started", "draft", "returned_for_correction"]);
@@ -1243,10 +1284,17 @@ export async function addGoalRater(input: {
   const guard = await requireParticipantOpen(input.appraisalId);
   if ("ok" in guard) return guard;
   const a = guard.a;
-  if (!input.raterId) return { ok: false, error: "Pick a reviewer." };
+  if (!input.raterId) return { ok: false, error: "Pick a witness." };
   if (input.raterId === a.employee_id)
-    return { ok: false, error: "You can't add yourself as a reviewer." };
+    return { ok: false, error: "You can't add yourself as a witness." };
   const supabase = createClient();
+  // One witness per objective.
+  const { count } = await supabase
+    .from("appraisal_goal_raters")
+    .select("id", { count: "exact", head: true })
+    .eq("goal_id", input.goalId);
+  if ((count ?? 0) >= 1)
+    return { ok: false, error: "This objective already has a witness. Remove them first." };
   const { error } = await supabase.from("appraisal_goal_raters").insert({
     tenant_id: a.tenant_id,
     appraisal_id: a.id,
@@ -1256,7 +1304,7 @@ export async function addGoalRater(input: {
   });
   if (error) {
     if (error.code === "23505")
-      return { ok: false, error: "That person is already reviewing this goal." };
+      return { ok: false, error: "This objective already has a witness." };
     return { ok: false, error: error.message };
   }
   // Grant the assessor the view-only "Witness" role so they can reach the

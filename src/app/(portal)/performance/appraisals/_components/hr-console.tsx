@@ -10,10 +10,12 @@ import {
   type AppraisalCompetency,
   type AppraisalCycle,
   type AppraisalStatus,
+  type DepartmentObjective,
   type RatingBand,
 } from "@/types/appraisal";
 import {
   addCompetency,
+  addDepartmentObjective,
   closeAppraisal,
   closeCycle,
   createCycle,
@@ -23,6 +25,7 @@ import {
   resolveAppeal,
   sendAppraisalReminders,
   setCompetencyActive,
+  setDepartmentObjectiveActive,
   updateCycleBands,
 } from "../actions";
 
@@ -31,11 +34,13 @@ export function HrConsole({
   appraisals,
   activeCycleId,
   competencies,
+  departmentObjectives,
 }: {
   cycles: AppraisalCycle[];
   appraisals: Appraisal[];
   activeCycleId: string | null;
   competencies: AppraisalCompetency[];
+  departmentObjectives: DepartmentObjective[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -195,8 +200,83 @@ export function HrConsole({
 
       <HrQueue appraisals={appraisals} />
       {cycles.length > 0 && <RatingBandsManager cycles={cycles} />}
+      <DepartmentObjectivesEditor objectives={departmentObjectives} />
       <CompetencyEditor competencies={competencies} />
     </section>
+  );
+}
+
+/** HR maintains the library of department / company objectives employees align to. */
+function DepartmentObjectivesEditor({ objectives }: { objectives: DepartmentObjective[] }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [department, setDepartment] = useState("");
+  const [description, setDescription] = useState("");
+
+  function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Action failed.");
+      else onOk?.();
+    });
+  }
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <h3 className="mb-2 text-sm font-semibold">Department objectives</h3>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Employees align their goals to these. Leave department blank for company-wide.
+      </p>
+      {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
+      {objectives.length > 0 && (
+        <ul className="mb-3 divide-y">
+          {objectives.map((o) => (
+            <li key={o.id} className="flex items-start justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <div className={`font-medium ${o.is_active ? "" : "text-muted-foreground line-through"}`}>
+                  <span className="mr-2 rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                    {o.department || "All"}
+                  </span>
+                  {o.title}
+                </div>
+                {o.description && <div className="text-xs text-muted-foreground">{o.description}</div>}
+              </div>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => run(() => setDepartmentObjectiveActive(o.id, !o.is_active))}
+                className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {o.is_active ? "Retire" : "Restore"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(
+            () => addDepartmentObjective({ title, department: department || undefined, description: description || undefined }),
+            () => {
+              setTitle("");
+              setDepartment("");
+              setDescription("");
+            },
+          );
+        }}
+      >
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Objective title" required className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
+        <input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Department (blank = all)" className="rounded-md border bg-background px-3 py-2 text-sm" />
+        <Button type="submit" size="sm" disabled={pending || !title.trim()}>
+          <Plus className="h-4 w-4" /> Add
+        </Button>
+        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-4" />
+      </form>
+    </div>
   );
 }
 

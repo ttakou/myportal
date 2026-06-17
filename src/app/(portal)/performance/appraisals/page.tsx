@@ -9,6 +9,8 @@ import {
   getCompetencies,
   getCycleAppraisals,
   getCycles,
+  getDepartmentObjectives,
+  getDepartmentObjectivesForMe,
   getMyAppraisal,
   getMyRaterAssignments,
   getSecondLevelQueue,
@@ -38,6 +40,7 @@ export default async function AppraisalsPage() {
     raterAssignments,
     calibrationRoster,
     calibrationAdjustments,
+    departmentObjectives,
   ] = await Promise.all([
     isHr ? getCycles() : Promise.resolve([]),
     cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
@@ -49,8 +52,12 @@ export default async function AppraisalsPage() {
     getMyRaterAssignments(),
     isHr && cycle ? getCalibrationRoster(cycle.id) : Promise.resolve([]),
     isHr && cycle ? getCalibrationAdjustments(cycle.id) : Promise.resolve([]),
+    isHr ? getDepartmentObjectives() : Promise.resolve([]),
   ]);
-  const colleagues = myAppraisal ? await getTenantColleagues() : [];
+  const [colleagues, deptObjectives] = await Promise.all([
+    myAppraisal ? getTenantColleagues() : Promise.resolve([]),
+    myAppraisal ? getDepartmentObjectivesForMe() : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -69,7 +76,13 @@ export default async function AppraisalsPage() {
         </p>
       </div>
 
-      {myAppraisal && <MyAppraisalPanel appraisal={myAppraisal} colleagues={colleagues} />}
+      {myAppraisal && (
+        <MyAppraisalPanel
+          appraisal={myAppraisal}
+          colleagues={colleagues}
+          deptObjectives={deptObjectives}
+        />
+      )}
       {raterAssignments.length > 0 && <RaterInbox assignments={raterAssignments} />}
       {team.length > 0 && <TeamReviewPanel appraisals={team} />}
       {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
@@ -79,6 +92,7 @@ export default async function AppraisalsPage() {
           appraisals={cycleAppraisals}
           activeCycleId={cycle?.id ?? null}
           competencies={competencies}
+          departmentObjectives={departmentObjectives}
         />
       )}
       {isHr && calibration && (

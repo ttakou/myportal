@@ -11,6 +11,7 @@ import type {
   CalibrationAdjustment,
   CalibrationRosterRow,
   Colleague,
+  DepartmentObjective,
   GoalRater,
   RaterAssignment,
 } from "@/types/appraisal";
@@ -151,6 +152,41 @@ export async function getTenantColleagues(): Promise<Colleague[]> {
     .order("full_name")
     .limit(500);
   return (data ?? []) as Colleague[];
+}
+
+/** Department objectives the signed-in employee can align goals to
+ *  (their department + company-wide), active only. */
+export async function getDepartmentObjectivesForMe(): Promise<DepartmentObjective[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("department")
+    .eq("id", user.id)
+    .maybeSingle();
+  const dept = (me?.department as string | null) ?? null;
+  let q = supabase
+    .from("appraisal_department_objectives")
+    .select("id, department, title, description, is_active")
+    .eq("is_active", true)
+    .order("title");
+  q = dept ? q.or(`department.is.null,department.eq.${dept}`) : q.is("department", null);
+  const { data } = await q;
+  return (data ?? []) as DepartmentObjective[];
+}
+
+/** All department objectives for the HR management UI. */
+export async function getDepartmentObjectives(): Promise<DepartmentObjective[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("appraisal_department_objectives")
+    .select("id, department, title, description, is_active")
+    .order("department", { nullsFirst: true })
+    .order("title");
+  return (data ?? []) as DepartmentObjective[];
 }
 
 /** Appraisals the signed-in manager owns (their direct reports). */
