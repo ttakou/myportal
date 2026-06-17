@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAccess, getCurrentRole, type FunctionalRole } from "@/lib/auth";
 import { MODULE_PARAMS } from "@/lib/module-params";
-import { MODULE_ROUTES } from "@/lib/navigation";
+import { cleanPermissions, viewableSlugs } from "@/lib/permissions";
 import type { EmployeeType } from "@/lib/admin";
 import type { UserRole } from "@/types/database";
 
@@ -725,21 +725,13 @@ export async function uploadTenantLogo(input: {
   return { ok: true, url: pub.publicUrl };
 }
 
-// --- Access roles (role-based module access) ---------------------------------
+// --- Access roles (role-based, per-module action permissions) ----------------
 
-const ASSIGNABLE_MODULE_SLUGS = MODULE_ROUTES.filter((m) => !m.isCore).map((m) => m.slug);
-
-function cleanModuleSlugs(slugs: string[]): string[] {
-  return [...new Set(slugs)].filter((s) =>
-    (ASSIGNABLE_MODULE_SLUGS as string[]).includes(s),
-  );
-}
-
-/** Create a named access role granting a set of modules. */
+/** Create a named access role with per-module action permissions. */
 export async function createAccessRole(input: {
   name: string;
   description?: string;
-  moduleSlugs: string[];
+  permissions: Record<string, string[]>;
 }): Promise<ActionResult> {
   const denied = await requireAdmin();
   if (denied) return denied;
@@ -749,11 +741,13 @@ export async function createAccessRole(input: {
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
 
+  const perms = cleanPermissions(input.permissions);
   const { error } = await supabase.from("tenant_roles").insert({
     tenant_id: tenant.id,
     name: input.name.trim(),
     description: input.description?.trim() || null,
-    module_slugs: cleanModuleSlugs(input.moduleSlugs),
+    permissions: perms,
+    module_slugs: viewableSlugs(perms),
   });
   if (error)
     return {
@@ -770,7 +764,7 @@ export async function updateAccessRole(input: {
   id: string;
   name?: string;
   description?: string;
-  moduleSlugs?: string[];
+  permissions?: Record<string, string[]>;
 }): Promise<ActionResult> {
   const denied = await requireAdmin();
   if (denied) return denied;
@@ -780,7 +774,11 @@ export async function updateAccessRole(input: {
     patch.name = input.name.trim();
   }
   if (input.description !== undefined) patch.description = input.description.trim() || null;
-  if (input.moduleSlugs !== undefined) patch.module_slugs = cleanModuleSlugs(input.moduleSlugs);
+  if (input.permissions !== undefined) {
+    const perms = cleanPermissions(input.permissions);
+    patch.permissions = perms;
+    patch.module_slugs = viewableSlugs(perms);
+  }
 
   const supabase = createClient();
   const { error } = await supabase.from("tenant_roles").update(patch).eq("id", input.id);

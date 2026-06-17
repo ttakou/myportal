@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import type { PermissionMap } from "@/lib/permissions";
 
 /**
  * Role-based module access.
@@ -14,6 +15,8 @@ export interface AccessRole {
   name: string;
   description: string | null;
   module_slugs: string[];
+  /** Per-module action grants, e.g. { offshore: ["view","approve"] }. */
+  permissions: PermissionMap;
   member_count: number;
 }
 
@@ -22,7 +25,7 @@ export async function getAccessRoles(): Promise<AccessRole[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("tenant_roles")
-    .select("id, name, description, module_slugs, profile_access_roles(count)")
+    .select("id, name, description, module_slugs, permissions, profile_access_roles(count)")
     .order("name");
   if (error) {
     console.error("getAccessRoles:", error.message);
@@ -33,6 +36,7 @@ export async function getAccessRoles(): Promise<AccessRole[]> {
     name: r.name,
     description: r.description,
     module_slugs: r.module_slugs ?? [],
+    permissions: (r.permissions ?? {}) as PermissionMap,
     member_count: r.profile_access_roles?.[0]?.count ?? 0,
   }));
 }
