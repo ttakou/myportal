@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 import { notify } from "@/lib/eess-notify";
 import { getModuleSettings } from "@/lib/module-settings";
 import {
@@ -195,7 +195,8 @@ export async function sendBroadcast(input: {
   radiusM?: number | null;
   requiresCheckin: boolean;
 }): Promise<ActionResult> {
-  if (!(await getAccess()).isSafetyAdmin) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("emergency", "manage", (a) => a.isSafetyAdmin);
+  if (gate) return gate;
   if (!input.title.trim() || !input.message.trim()) {
     return { ok: false, error: "Title and message are required." };
   }
@@ -247,7 +248,8 @@ export async function setBroadcastActive(
   id: string,
   isActive: boolean,
 ): Promise<ActionResult> {
-  if (!(await getAccess()).isSafetyAdmin) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("emergency", "manage", (a) => a.isSafetyAdmin);
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("eess_broadcasts")
@@ -266,7 +268,8 @@ export async function setIncidentStatus(
   id: string,
   status: IncidentStatus,
 ): Promise<ActionResult> {
-  if (!(await getAccess()).isSafetyAdmin) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("emergency", "approve", (a) => a.isSafetyAdmin);
+  if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
