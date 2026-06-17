@@ -796,7 +796,8 @@ function GoalReviewers({
       )}
       {editable && (
         <p className="text-[11px] text-muted-foreground">
-          Their rating and comments are shared only with your line manager.
+          Adding a reviewer gives them a Witness role to rate this goal. Their rating and
+          comments are shared only with your line manager.
         </p>
       )}
     </div>
