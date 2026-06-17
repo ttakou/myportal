@@ -9,7 +9,14 @@ import {
   type AppraisalCycle,
   type AppraisalStatus,
 } from "@/types/appraisal";
-import { closeCycle, createCycle, launchCycle } from "../actions";
+import {
+  closeAppraisal,
+  closeCycle,
+  createCycle,
+  hrReturnToManager,
+  hrValidate,
+  launchCycle,
+} from "../actions";
 
 export function HrConsole({
   cycles,
@@ -136,6 +143,102 @@ export function HrConsole({
           </div>
         </div>
       )}
+
+      <HrQueue appraisals={appraisals} />
     </section>
+  );
+}
+
+function HrQueue({ appraisals }: { appraisals: Appraisal[] }) {
+  const toValidate = appraisals.filter(
+    (a) => a.stage === "hr_review" && a.status === "pending_hr_review",
+  );
+  const toClose = appraisals.filter(
+    (a) => a.stage !== "closed" && ["completed", "under_appeal"].includes(a.status),
+  );
+  if (toValidate.length === 0 && toClose.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <h3 className="mb-2 text-sm font-semibold">HR actions</h3>
+      <ul className="divide-y">
+        {toValidate.map((a) => (
+          <HrRow key={a.id} a={a} kind="validate" />
+        ))}
+        {toClose.map((a) => (
+          <HrRow key={a.id} a={a} kind="close" />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function HrRow({ a, kind }: { a: Appraisal; kind: "validate" | "close" }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [returning, setReturning] = useState(false);
+  const [comment, setComment] = useState("");
+
+  function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Action failed.");
+    });
+  }
+
+  return (
+    <li className="py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm">
+          <span className="font-medium">{a.employee_name || "—"}</span>
+          {a.overall_rating != null ? (
+            <span className="ml-2 text-xs text-muted-foreground">overall {a.overall_rating}</span>
+          ) : null}
+          {a.status === "under_appeal" ? (
+            <span className="ml-2 text-xs text-amber-700">disputed</span>
+          ) : null}
+        </span>
+        <div className="flex gap-2">
+          {kind === "validate" && !returning && (
+            <>
+              <Button variant="outline" size="sm" disabled={pending} onClick={() => setReturning(true)}>
+                Return
+              </Button>
+              <Button size="sm" disabled={pending} onClick={() => run(() => hrValidate(a.id))}>
+                Validate
+              </Button>
+            </>
+          )}
+          {kind === "close" && (
+            <Button size="sm" disabled={pending} onClick={() => run(() => closeAppraisal(a.id))}>
+              Close
+            </Button>
+          )}
+        </div>
+      </div>
+      {returning && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="What needs correcting?"
+            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending || !comment.trim()}
+            onClick={() => run(() => hrReturnToManager({ appraisalId: a.id, comment }))}
+          >
+            Send to manager
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setReturning(false)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+    </li>
   );
 }

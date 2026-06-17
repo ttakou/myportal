@@ -101,6 +101,11 @@ export interface Appraisal {
   overall_rating: number | null;
   employee_summary: string | null;
   manager_summary: string | null;
+  discussion_date: string | null;
+  discussion_notes: string | null;
+  acknowledged_at: string | null;
+  employee_agreed: boolean | null;
+  employee_ack_comment: string | null;
   goals: AppraisalGoal[];
   events: AppraisalEvent[];
 }

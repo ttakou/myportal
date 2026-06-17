@@ -10,7 +10,8 @@ import type {
 
 const APPRAISAL_SELECT =
   "id, cycle_id, employee_id, manager_id, stage, status, overall_rating," +
-  " employee_summary, manager_summary," +
+  " employee_summary, manager_summary, discussion_date, discussion_notes," +
+  " acknowledged_at, employee_agreed, employee_ack_comment," +
   " cycle:appraisal_cycles(name)," +
   " employee:profiles!employee_id(full_name)," +
   " manager:profiles!manager_id(full_name)";
@@ -29,6 +30,11 @@ function mapAppraisal(r: Record<string, any>): Appraisal {
     overall_rating: r.overall_rating ?? null,
     employee_summary: r.employee_summary ?? null,
     manager_summary: r.manager_summary ?? null,
+    discussion_date: r.discussion_date ?? null,
+    discussion_notes: r.discussion_notes ?? null,
+    acknowledged_at: r.acknowledged_at ?? null,
+    employee_agreed: r.employee_agreed ?? null,
+    employee_ack_comment: r.employee_ack_comment ?? null,
     goals: [],
     events: [],
   };
