@@ -112,7 +112,7 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
           <div className="max-h-96 overflow-y-auto">
             {feed.items.length === 0 && (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-                You're all caught up.
+                You&apos;re all caught up.
               </p>
             )}
             {feed.items.map((n) => {
