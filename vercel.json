@@ -4,10 +4,6 @@
     {
       "path": "/api/cron/flights",
       "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/cron/meal-entitlements",
-      "schedule": "0 0 1 * *"
     }
   ]
 }

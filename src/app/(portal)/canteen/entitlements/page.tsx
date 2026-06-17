@@ -1,11 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
-import {
-  getActiveExtras,
-  getEntitlementCandidates,
-  getEntitlementRoster,
-} from "@/lib/canteen-entitlements";
+import { getActiveEmployees, getEntitlements } from "@/lib/canteen-entitlements";
 import { EntitlementsManager } from "./_components/entitlements-manager";
 
 export default async function EntitlementsPage() {
@@ -24,10 +20,9 @@ export default async function EntitlementsPage() {
     );
   }
 
-  const [roster, extras, candidates] = await Promise.all([
-    getEntitlementRoster(),
-    getActiveExtras(),
-    getEntitlementCandidates(),
+  const [entitlements, employees] = await Promise.all([
+    getEntitlements(),
+    getActiveEmployees(),
   ]);
 
   return (
@@ -41,13 +36,14 @@ export default async function EntitlementsPage() {
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Meal entitlements</h1>
         <p className="text-muted-foreground">
-          Define who is entitled to a meal each working day (Mon–Fri), and add
-          temporary top-ups for employees hosting visitors. Entitlements renew
-          automatically at the start of every month.
+          Grant canteen meals for a defined period — e.g. a year for onshore
+          staff, a month for an offshore crew on a project, or a few days for an
+          offshore worker visiting the onshore office. Expired grants are kept
+          for history.
         </p>
       </div>
 
-      <EntitlementsManager roster={roster} extras={extras} candidates={candidates} />
+      <EntitlementsManager entitlements={entitlements} employees={employees} />
     </div>
   );
 }
