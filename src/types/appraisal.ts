@@ -63,6 +63,7 @@ export interface AppraisalCycle {
   weight_okr: number;
   weight_competency: number;
   weight_development: number;
+  require_second_level: boolean;
   created_at: string;
 }
 
@@ -149,6 +150,8 @@ export interface Appraisal {
   employee_name: string | null;
   manager_id: string | null;
   manager_name: string | null;
+  second_level_id: string | null;
+  second_level_name: string | null;
   stage: AppraisalStage;
   status: AppraisalStatus;
   overall_rating: number | null;

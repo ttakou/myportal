@@ -11,13 +11,14 @@ import type {
 } from "@/types/appraisal";
 
 const APPRAISAL_SELECT =
-  "id, cycle_id, employee_id, manager_id, stage, status, overall_rating," +
+  "id, cycle_id, employee_id, manager_id, second_level_id, stage, status, overall_rating," +
   " final_score, rating_label," +
   " employee_summary, manager_summary, discussion_date, discussion_notes," +
   " acknowledged_at, employee_agreed, employee_ack_comment," +
   " cycle:appraisal_cycles(name)," +
   " employee:profiles!employee_id(full_name)," +
-  " manager:profiles!manager_id(full_name)";
+  " manager:profiles!manager_id(full_name)," +
+  " second_level:profiles!second_level_id(full_name)";
 
 function mapAppraisal(r: Record<string, any>): Appraisal {
   return {
@@ -28,6 +29,8 @@ function mapAppraisal(r: Record<string, any>): Appraisal {
     employee_name: one<{ full_name?: string }>(r.employee)?.full_name ?? null,
     manager_id: r.manager_id ?? null,
     manager_name: one<{ full_name?: string }>(r.manager)?.full_name ?? null,
+    second_level_id: r.second_level_id ?? null,
+    second_level_name: one<{ full_name?: string }>(r.second_level)?.full_name ?? null,
     stage: r.stage,
     status: r.status,
     overall_rating: r.overall_rating ?? null,
@@ -64,7 +67,7 @@ export async function getActiveCycle(): Promise<AppraisalCycle | null> {
     .from("appraisal_cycles")
     .select(
       "id, name, year, period_start, period_end, goal_setting_deadline, status," +
-        " weight_okr, weight_competency, weight_development, created_at",
+        " weight_okr, weight_competency, weight_development, require_second_level, created_at",
     )
     .order("status", { ascending: true }) // 'active' sorts before 'draft'/'closed'? no — filter instead
     .order("year", { ascending: false })
@@ -80,7 +83,7 @@ export async function getCycles(): Promise<AppraisalCycle[]> {
     .from("appraisal_cycles")
     .select(
       "id, name, year, period_start, period_end, goal_setting_deadline, status," +
-        " weight_okr, weight_competency, weight_development, created_at",
+        " weight_okr, weight_competency, weight_development, require_second_level, created_at",
     )
     .order("year", { ascending: false })
     .order("created_at", { ascending: false });
@@ -119,6 +122,24 @@ export async function getTeamAppraisals(cycleId: string): Promise<Appraisal[]> {
     .eq("cycle_id", cycleId)
     .eq("manager_id", user.id)
     .order("status");
+  const list = (data ?? []).map((r) => mapAppraisal(r as Record<string, any>));
+  await Promise.all(list.map((ap) => hydrate(ap)));
+  return list;
+}
+
+/** Appraisals awaiting the signed-in second-level approver. */
+export async function getSecondLevelQueue(cycleId: string): Promise<Appraisal[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("appraisals")
+    .select(APPRAISAL_SELECT)
+    .eq("cycle_id", cycleId)
+    .eq("second_level_id", user.id)
+    .eq("status", "pending_second_level");
   const list = (data ?? []).map((r) => mapAppraisal(r as Record<string, any>));
   await Promise.all(list.map((ap) => hydrate(ap)));
   return list;
