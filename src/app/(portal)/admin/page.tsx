@@ -19,13 +19,13 @@ import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
 export default async function AdminPage() {
   const access = await getAccess();
 
-  if (!access.isHr && !access.isSystemAdmin) {
+  if (!access.isSystemAdmin) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
         <h1 className="text-xl font-semibold">Administrators only</h1>
         <p className="text-muted-foreground">
-          The admin console is available to HR and system administrators.
+          The admin console is available to system administrators.
         </p>
         <Link href="/dashboard" className="text-sm font-medium text-primary hover:underline">
           ← Back to dashboard
