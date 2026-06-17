@@ -6,17 +6,26 @@ import { Button } from "@/components/ui/button";
 import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type AppraisalGoal } from "@/types/appraisal";
 import {
   acknowledge,
+  addDevelopmentItem,
   addGoal,
   addKeyResult,
+  deleteDevelopmentItem,
   deleteGoal,
   deleteKeyResult,
   rateCompetencySelf,
+  setDevelopmentStatus,
   submitGoals,
   submitMidYear,
   submitSelfAssessment,
   updateGoalProgress,
   updateKeyResultProgress,
 } from "../actions";
+
+const DEV_STATUS_LABEL: Record<"planned" | "in_progress" | "done", string> = {
+  planned: "Planned",
+  in_progress: "In progress",
+  done: "Done",
+};
 
 const EDITABLE = new Set(["not_started", "draft", "returned_for_correction"]);
 
@@ -64,6 +73,8 @@ export function MyAppraisalPanel({ appraisal }: { appraisal: Appraisal }) {
         appraisal.status === "pending_employee_acknowledgement" && (
           <Acknowledge appraisal={appraisal} pending={pending} run={run} />
         )}
+
+      <DevelopmentPlan appraisal={appraisal} pending={pending} run={run} />
 
       <History appraisal={appraisal} />
     </section>
@@ -441,6 +452,114 @@ function Acknowledge({
           Accept appraisal
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** Individual development plan — visible always; editable until the appraisal closes. */
+function DevelopmentPlan({
+  appraisal,
+  pending,
+  run,
+}: {
+  appraisal: Appraisal;
+  pending: boolean;
+  run: RunFn;
+}) {
+  const [area, setArea] = useState("");
+  const [action, setAction] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const editable = appraisal.status !== "closed";
+  const items = appraisal.development_plan;
+
+  if (!editable && items.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <h3 className="mb-3 text-sm font-semibold">Development plan</h3>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No development actions yet.</p>
+      ) : (
+        <ul className="divide-y">
+          {items.map((it) => (
+            <li key={it.id} className="flex items-start justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <div className="font-medium">{it.area}</div>
+                {it.action && <div className="text-sm text-muted-foreground">{it.action}</div>}
+                <div className="text-xs text-muted-foreground">
+                  {it.target_date ? `Target ${it.target_date}` : "No target date"}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {editable ? (
+                  <select
+                    value={it.status}
+                    disabled={pending}
+                    onChange={(e) =>
+                      run(() =>
+                        setDevelopmentStatus({
+                          appraisalId: appraisal.id,
+                          itemId: it.id,
+                          status: e.target.value as "planned" | "in_progress" | "done",
+                        }),
+                      )
+                    }
+                    className="rounded-md border bg-background px-2 py-1 text-xs"
+                  >
+                    {(["planned", "in_progress", "done"] as const).map((s) => (
+                      <option key={s} value={s}>{DEV_STATUS_LABEL[s]}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                    {DEV_STATUS_LABEL[it.status]}
+                  </span>
+                )}
+                {editable && (
+                  <button
+                    type="button"
+                    aria-label="Remove"
+                    disabled={pending}
+                    onClick={() => run(() => deleteDevelopmentItem({ appraisalId: appraisal.id, itemId: it.id }))}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {editable && (
+        <form
+          className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            run(
+              () =>
+                addDevelopmentItem({
+                  appraisalId: appraisal.id,
+                  area,
+                  action: action || undefined,
+                  targetDate: targetDate || undefined,
+                }),
+              () => {
+                setArea("");
+                setAction("");
+                setTargetDate("");
+              },
+            );
+          }}
+        >
+          <input value={area} onChange={(e) => setArea(e.target.value)} placeholder="Development area" required className="rounded-md border bg-background px-3 py-2 text-sm" />
+          <input value={action} onChange={(e) => setAction(e.target.value)} placeholder="Action / how (optional)" className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
+          <input value={targetDate} onChange={(e) => setTargetDate(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
+          <Button type="submit" disabled={pending || !area.trim()} className="sm:col-span-2 lg:col-span-4 lg:justify-self-end">
+            <Plus className="h-4 w-4" /> Add development action
+          </Button>
+        </form>
+      )}
     </div>
   );
 }

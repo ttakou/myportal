@@ -133,6 +133,14 @@ export interface CompetencyRating {
   manager_comment: string | null;
 }
 
+export interface AppraisalDevelopmentItem {
+  id: string;
+  area: string;
+  action: string | null;
+  target_date: string | null;
+  status: "planned" | "in_progress" | "done";
+}
+
 export interface AppraisalAppeal {
   id: string;
   reason: string | null;
@@ -166,6 +174,7 @@ export interface Appraisal {
   employee_ack_comment: string | null;
   appeal: AppraisalAppeal | null;
   competencies: CompetencyRating[];
+  development_plan: AppraisalDevelopmentItem[];
   goals: AppraisalGoal[];
   events: AppraisalEvent[];
 }
