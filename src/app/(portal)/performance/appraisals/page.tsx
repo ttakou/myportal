@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import {
   getActiveCycle,
+  getCompetencies,
   getCycleAppraisals,
   getCycles,
   getMyAppraisal,
@@ -17,11 +18,12 @@ export default async function AppraisalsPage() {
   const isHr = access.isHr || access.isAdmin || access.isSystemAdmin;
   const cycle = await getActiveCycle();
 
-  const [cycles, myAppraisal, team, cycleAppraisals] = await Promise.all([
+  const [cycles, myAppraisal, team, cycleAppraisals, competencies] = await Promise.all([
     isHr ? getCycles() : Promise.resolve([]),
     cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
     cycle ? getTeamAppraisals(cycle.id) : Promise.resolve([]),
     isHr && cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
+    isHr ? getCompetencies() : Promise.resolve([]),
   ]);
 
   return (
@@ -44,7 +46,12 @@ export default async function AppraisalsPage() {
       {myAppraisal && <MyAppraisalPanel appraisal={myAppraisal} />}
       {team.length > 0 && <TeamReviewPanel appraisals={team} />}
       {isHr && (
-        <HrConsole cycles={cycles} appraisals={cycleAppraisals} activeCycleId={cycle?.id ?? null} />
+        <HrConsole
+          cycles={cycles}
+          appraisals={cycleAppraisals}
+          activeCycleId={cycle?.id ?? null}
+          competencies={competencies}
+        />
       )}
 
       {!cycle && !isHr && (

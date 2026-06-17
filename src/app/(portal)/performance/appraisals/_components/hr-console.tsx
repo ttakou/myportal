@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import {
   STATUS_LABEL,
   type Appraisal,
+  type AppraisalCompetency,
   type AppraisalCycle,
   type AppraisalStatus,
 } from "@/types/appraisal";
 import {
+  addCompetency,
   closeAppraisal,
   closeCycle,
   createCycle,
@@ -17,16 +19,19 @@ import {
   hrValidate,
   launchCycle,
   resolveAppeal,
+  setCompetencyActive,
 } from "../actions";
 
 export function HrConsole({
   cycles,
   appraisals,
   activeCycleId,
+  competencies,
 }: {
   cycles: AppraisalCycle[];
   appraisals: Appraisal[];
   activeCycleId: string | null;
+  competencies: AppraisalCompetency[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +151,66 @@ export function HrConsole({
       )}
 
       <HrQueue appraisals={appraisals} />
+      <CompetencyEditor competencies={competencies} />
     </section>
+  );
+}
+
+function CompetencyEditor({ competencies }: { competencies: AppraisalCompetency[] }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+
+  function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Action failed.");
+      else onOk?.();
+    });
+  }
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <h3 className="mb-2 text-sm font-semibold">Competency framework</h3>
+      {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
+      <div className="mb-2 flex flex-wrap gap-2">
+        {competencies.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            disabled={pending}
+            onClick={() => run(() => setCompetencyActive(c.id, !c.is_active))}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+              c.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground line-through"
+            }`}
+            title={c.is_active ? "Active — click to retire" : "Retired — click to reactivate"}
+          >
+            {c.name}
+          </button>
+        ))}
+        {competencies.length === 0 && (
+          <span className="text-xs text-muted-foreground">No competencies defined yet.</span>
+        )}
+      </div>
+      <form
+        className="flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() => addCompetency({ name }), () => setName(""));
+        }}
+      >
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="New competency (e.g. Teamwork)"
+          className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+        />
+        <Button type="submit" size="sm" disabled={pending || !name.trim()}>
+          <Plus className="h-4 w-4" /> Add
+        </Button>
+      </form>
+    </div>
   );
 }
 

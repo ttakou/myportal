@@ -7,6 +7,7 @@ import { STAGE_LABEL, STATUS_LABEL, type Appraisal } from "@/types/appraisal";
 import {
   approveGoals,
   completeMidYear,
+  rateCompetencyManager,
   recordDiscussion,
   returnGoals,
   setManagerRating,
@@ -139,6 +140,45 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
           <Button size="sm" disabled={pending} onClick={() => run(() => completeMidYear({ appraisalId: a.id, comment }))}>
             <Check className="h-4 w-4" /> Complete mid-year review
           </Button>
+        </div>
+      )}
+
+      {evaluating && a.competencies.length > 0 && (
+        <div className="mt-3 space-y-2 border-t pt-3">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Competencies
+          </h4>
+          {a.competencies.map((c) => (
+            <div key={c.competency_id} className="flex flex-wrap items-center gap-2">
+              <span className="min-w-[140px] text-sm">
+                {c.name}
+                {c.employee_rating != null ? (
+                  <span className="ml-1 text-xs text-muted-foreground">(self {c.employee_rating})</span>
+                ) : null}
+              </span>
+              <select
+                defaultValue={c.manager_rating ?? ""}
+                disabled={pending}
+                onChange={(e) =>
+                  run(() => rateCompetencyManager({ appraisalId: a.id, competencyId: c.competency_id, rating: Number(e.target.value) }))
+                }
+                className="rounded-md border bg-background px-2 py-1 text-xs"
+              >
+                <option value="">Rate 1–5</option>
+                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <input
+                defaultValue={c.manager_comment ?? ""}
+                disabled={pending}
+                placeholder="Comment"
+                onBlur={(e) => {
+                  if (e.target.value !== (c.manager_comment ?? ""))
+                    run(() => rateCompetencyManager({ appraisalId: a.id, competencyId: c.competency_id, comment: e.target.value }));
+                }}
+                className="flex-1 rounded-md border bg-background px-2 py-1 text-xs"
+              />
+            </div>
+          ))}
         </div>
       )}
 
