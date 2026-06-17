@@ -71,6 +71,11 @@ export interface AppraisalGoal {
   deadline: string | null;
   success_indicator: string | null;
   employee_progress: string | null;
+  employee_self_rating: number | null;
+  employee_comment: string | null;
+  manager_rating: number | null;
+  manager_comment: string | null;
+  at_risk: boolean;
   status: "draft" | "approved";
 }
 
@@ -94,6 +99,8 @@ export interface Appraisal {
   stage: AppraisalStage;
   status: AppraisalStatus;
   overall_rating: number | null;
+  employee_summary: string | null;
+  manager_summary: string | null;
   goals: AppraisalGoal[];
   events: AppraisalEvent[];
 }
