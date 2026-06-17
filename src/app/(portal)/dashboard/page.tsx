@@ -255,7 +255,17 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      {/* Quick access — just below the menu */}
+      {/* Open items first — approvals and my open requests above the shortcuts */}
+      {(approvals.length > 0 || myRequests.length > 0) && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {approvals.length > 0 && (
+            <CountList title="Awaiting your approval" items={approvals} accent />
+          )}
+          {myRequests.length > 0 && <CountList title="My open requests" items={myRequests} />}
+        </div>
+      )}
+
+      {/* Quick access — just below open items */}
       {focusServices.length > 0 && (
         <section className="space-y-3">
           <div>
@@ -278,16 +288,6 @@ export default async function DashboardPage() {
             ))}
           </div>
         </section>
-      )}
-
-      {/* Action strips */}
-      {(approvals.length > 0 || myRequests.length > 0) && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {approvals.length > 0 && (
-            <CountList title="Awaiting your approval" items={approvals} accent />
-          )}
-          {myRequests.length > 0 && <CountList title="My open requests" items={myRequests} />}
-        </div>
       )}
 
       {/* Quick actions */}
