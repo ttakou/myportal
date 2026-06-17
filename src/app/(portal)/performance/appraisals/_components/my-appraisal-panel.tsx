@@ -717,8 +717,18 @@ function GoalReviewers({
   colleagues: Colleague[];
 }) {
   const [raterId, setRaterId] = useState("");
+  const [query, setQuery] = useState("");
   const attached = new Set(goal.raters.map((r) => r.rater_id));
-  const options = colleagues.filter((c) => !attached.has(c.id));
+  const q = query.trim().toLowerCase();
+  const options = colleagues
+    .filter((c) => !attached.has(c.id))
+    .filter(
+      (c) =>
+        !q ||
+        (c.full_name ?? "").toLowerCase().includes(q) ||
+        (c.department ?? "").toLowerCase().includes(q),
+    )
+    .slice(0, 50);
 
   if (!editable && goal.raters.length === 0) return null;
 
@@ -768,16 +778,25 @@ function GoalReviewers({
             if (!raterId) return;
             run(
               () => addGoalRater({ appraisalId, goalId: goal.id, raterId }),
-              () => setRaterId(""),
+              () => {
+                setRaterId("");
+                setQuery("");
+              },
             );
           }}
         >
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search people by name or department…"
+            className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+          />
           <select
             value={raterId}
             onChange={(e) => setRaterId(e.target.value)}
             className="flex-1 rounded-md border bg-background px-2 py-1 text-xs"
           >
-            <option value="">Add a reviewer…</option>
+            <option value="">{q ? `Select (${options.length})…` : "Add a reviewer…"}</option>
             {options.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.full_name ?? "—"}

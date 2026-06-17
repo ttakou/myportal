@@ -198,8 +198,13 @@ export async function getCycleAppraisals(cycleId: string): Promise<Appraisal[]> 
     .eq("cycle_id", cycleId)
     .order("status");
   const list = (data ?? []).map((r) => mapAppraisal(r as Record<string, any>));
-  // Hydrate the disputed ones so HR sees the appeal reason in the queue.
-  await Promise.all(list.filter((a) => a.status === "under_appeal").map((a) => hydrate(a)));
+  // Hydrate the rows HR acts on so the queue shows the appeal reason and the
+  // (confidential) stakeholder feedback during validation.
+  await Promise.all(
+    list
+      .filter((a) => a.status === "under_appeal" || a.status === "pending_hr_review")
+      .map((a) => hydrate(a)),
+  );
   return list;
 }
 
