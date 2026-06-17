@@ -8,30 +8,43 @@ import {
   getCycleAppraisals,
   getCycles,
   getMyAppraisal,
+  getMyRaterAssignments,
   getSecondLevelQueue,
   getTeamAppraisals,
+  getTenantColleagues,
 } from "@/lib/appraisals";
 import { MyAppraisalPanel } from "./_components/my-appraisal-panel";
 import { TeamReviewPanel } from "./_components/team-review-panel";
 import { HrConsole } from "./_components/hr-console";
 import { CalibrationPanel } from "./_components/calibration-panel";
 import { SecondLevelPanel } from "./_components/second-level-panel";
+import { RaterInbox } from "./_components/rater-inbox";
 
 export default async function AppraisalsPage() {
   const access = await getAccess();
   const isHr = access.isHr || access.isAdmin || access.isSystemAdmin;
   const cycle = await getActiveCycle();
 
-  const [cycles, myAppraisal, team, cycleAppraisals, competencies, calibration, secondLevel] =
-    await Promise.all([
-      isHr ? getCycles() : Promise.resolve([]),
-      cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
-      cycle ? getTeamAppraisals(cycle.id) : Promise.resolve([]),
-      isHr && cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
-      isHr ? getCompetencies() : Promise.resolve([]),
-      isHr && cycle ? getCalibration(cycle.id) : Promise.resolve(null),
-      cycle ? getSecondLevelQueue(cycle.id) : Promise.resolve([]),
-    ]);
+  const [
+    cycles,
+    myAppraisal,
+    team,
+    cycleAppraisals,
+    competencies,
+    calibration,
+    secondLevel,
+    raterAssignments,
+  ] = await Promise.all([
+    isHr ? getCycles() : Promise.resolve([]),
+    cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
+    cycle ? getTeamAppraisals(cycle.id) : Promise.resolve([]),
+    isHr && cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
+    isHr ? getCompetencies() : Promise.resolve([]),
+    isHr && cycle ? getCalibration(cycle.id) : Promise.resolve(null),
+    cycle ? getSecondLevelQueue(cycle.id) : Promise.resolve([]),
+    getMyRaterAssignments(),
+  ]);
+  const colleagues = myAppraisal ? await getTenantColleagues() : [];
 
   return (
     <div className="space-y-8">
@@ -50,7 +63,8 @@ export default async function AppraisalsPage() {
         </p>
       </div>
 
-      {myAppraisal && <MyAppraisalPanel appraisal={myAppraisal} />}
+      {myAppraisal && <MyAppraisalPanel appraisal={myAppraisal} colleagues={colleagues} />}
+      {raterAssignments.length > 0 && <RaterInbox assignments={raterAssignments} />}
       {team.length > 0 && <TeamReviewPanel appraisals={team} />}
       {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
       {isHr && (

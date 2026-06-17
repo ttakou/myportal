@@ -1133,3 +1133,89 @@ export async function deleteDevelopmentItem(input: {
   rev();
   return { ok: true };
 }
+
+// --- Stakeholder goal reviewers --------------------------------------------
+
+/** Employee (or manager/HR) attaches a business colleague to review a goal. */
+export async function addGoalRater(input: {
+  appraisalId: string;
+  goalId: string;
+  raterId: string;
+}): Promise<ActionResult> {
+  const guard = await requireParticipantOpen(input.appraisalId);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  if (!input.raterId) return { ok: false, error: "Pick a reviewer." };
+  if (input.raterId === a.employee_id)
+    return { ok: false, error: "You can't add yourself as a reviewer." };
+  const supabase = createClient();
+  const { error } = await supabase.from("appraisal_goal_raters").insert({
+    tenant_id: a.tenant_id,
+    appraisal_id: a.id,
+    goal_id: input.goalId,
+    rater_id: input.raterId,
+    created_by: await uid(),
+  });
+  if (error) {
+    if (error.code === "23505")
+      return { ok: false, error: "That person is already reviewing this goal." };
+    return { ok: false, error: error.message };
+  }
+  await notifyUsers({
+    tenantId: a.tenant_id,
+    profileIds: [input.raterId],
+    category: "general",
+    title: "Performance feedback requested",
+    body: "You've been asked to rate a colleague's performance on an objective.",
+    url: "/performance/appraisals",
+  });
+  rev();
+  return { ok: true };
+}
+
+/** Employee (or manager/HR) removes a reviewer from a goal. */
+export async function removeGoalRater(input: {
+  appraisalId: string;
+  raterRowId: string;
+}): Promise<ActionResult> {
+  const guard = await requireParticipantOpen(input.appraisalId);
+  if ("ok" in guard) return guard;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_goal_raters")
+    .delete()
+    .eq("id", input.raterRowId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** The stakeholder submits (or revises) their rating + comment for a goal.
+ *  Authorisation is enforced by RLS — only the assigned rater can update. */
+export async function submitGoalRating(input: {
+  assignmentId: string;
+  rating: number;
+  comment?: string;
+}): Promise<ActionResult> {
+  const me = await uid();
+  if (!me) return { ok: false, error: "Not signed in." };
+  if (!input.rating || input.rating < 1 || input.rating > 5)
+    return { ok: false, error: "Rating must be between 1 and 5." };
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("appraisal_goal_raters")
+    .update({
+      rating: input.rating,
+      comment: input.comment?.trim() || null,
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    })
+    .eq("id", input.assignmentId)
+    .eq("rater_id", me)
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!data || data.length === 0)
+    return { ok: false, error: "This review request isn't assigned to you." };
+  rev();
+  return { ok: true };
+}

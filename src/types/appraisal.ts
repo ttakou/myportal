@@ -89,6 +89,38 @@ export interface AppraisalKeyResult {
   progress: number;
 }
 
+/** A business stakeholder attached to an objective to rate performance on it.
+ *  rating/comment are confidential to the manager — they are never populated
+ *  for the employee's own view of the appraisal. */
+export interface GoalRater {
+  id: string;
+  rater_id: string;
+  rater_name: string | null;
+  rating: number | null;
+  comment: string | null;
+  status: "invited" | "submitted";
+}
+
+/** A person in the tenant, for the stakeholder-reviewer picker. */
+export interface Colleague {
+  id: string;
+  full_name: string | null;
+  department: string | null;
+}
+
+/** A review request shown to the stakeholder being asked to rate. */
+export interface RaterAssignment {
+  id: string;
+  appraisal_id: string;
+  goal_id: string;
+  goal_title: string;
+  employee_name: string | null;
+  cycle_name: string | null;
+  rating: number | null;
+  comment: string | null;
+  status: "invited" | "submitted";
+}
+
 export interface AppraisalGoal {
   id: string;
   title: string;
@@ -107,6 +139,7 @@ export interface AppraisalGoal {
   at_risk: boolean;
   status: "draft" | "approved";
   key_results: AppraisalKeyResult[];
+  raters: GoalRater[];
 }
 
 export interface AppraisalEvent {
