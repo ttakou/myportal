@@ -1,17 +1,31 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { CheckCircle2, ScanLine, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CheckCircle2, ScanLine, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import type { Reservation } from "@/types/canteen";
+import type { CanteenDish, Reservation } from "@/types/canteen";
 import { setReservationCollected } from "../campboss/actions";
+import { lookupWalkin, serveWalkin } from "./actions";
 
-export function ServingScreen({ reservations }: { reservations: Reservation[] }) {
+type WalkinPerson = { id: string; name: string; email: string };
+
+export function ServingScreen({
+  reservations,
+  dishes,
+}: {
+  reservations: Reservation[];
+  dishes: CanteenDish[];
+}) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
   const [code, setCode] = useState("");
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
+  // When a scan finds no booking but an entitled employee, we prompt the staff
+  // to pick a dish and serve them as a walk-in.
+  const [walkin, setWalkin] = useState<WalkinPerson | null>(null);
 
   const served = reservations.filter((r) => r.collected_at).length;
 
@@ -35,11 +49,12 @@ export function ServingScreen({ reservations }: { reservations: Reservation[] })
     setFlash(null);
     startTransition(async () => {
       const res = await setReservationCollected(r.booking_id, true);
-      setFlash(
-        res.ok
-          ? { ok: true, msg: `Collected: ${r.person_name ?? r.person_email}` }
-          : { ok: false, msg: res.error ?? "Failed." },
-      );
+      if (res.ok) {
+        setFlash({ ok: true, msg: `Collected: ${r.person_name ?? r.person_email}` });
+        router.refresh();
+      } else {
+        setFlash({ ok: false, msg: res.error ?? "Failed." });
+      }
     });
   }
 
@@ -54,16 +69,46 @@ export function ServingScreen({ reservations }: { reservations: Reservation[] })
         r.person_email.toLowerCase() === c ||
         (r.person_name ?? "").toLowerCase() === c,
     );
-    setCode("");
-    if (!match) {
-      setFlash({ ok: false, msg: `No reservation found for "${code}"` });
+    if (match) {
+      setCode("");
+      if (match.collected_at) {
+        setFlash({ ok: false, msg: `${match.person_name ?? match.person_email} already collected` });
+        return;
+      }
+      collect(match);
       return;
     }
-    if (match.collected_at) {
-      setFlash({ ok: false, msg: `${match.person_name ?? match.person_email} already collected` });
-      return;
-    }
-    collect(match);
+    // No booking — see if this is an entitled employee we can serve as a walk-in.
+    setFlash(null);
+    setWalkin(null);
+    startTransition(async () => {
+      const res = await lookupWalkin(code.trim());
+      setCode("");
+      if (res.ok && res.person) {
+        setWalkin(res.person);
+      } else {
+        setFlash({ ok: false, msg: res.error ?? `No reservation found for "${code}"` });
+      }
+    });
+  }
+
+  function serve(dish: CanteenDish) {
+    if (!walkin) return;
+    const person = walkin;
+    setFlash(null);
+    startTransition(async () => {
+      const res = await serveWalkin(person.id, dish.id);
+      if (res.ok) {
+        setWalkin(null);
+        setFlash({
+          ok: true,
+          msg: `Served (walk-in): ${res.served?.name ?? person.name} — ${res.served?.dish ?? dish.name}`,
+        });
+        router.refresh();
+      } else {
+        setFlash({ ok: false, msg: res.error ?? "Failed." });
+      }
+    });
   }
 
   return (
@@ -99,6 +144,45 @@ export function ServingScreen({ reservations }: { reservations: Reservation[] })
         >
           {flash.msg}
         </p>
+      )}
+
+      {/* Walk-in: entitled employee with no booking — pick a dish to serve. */}
+      {walkin && (
+        <div className="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-medium">
+              <UserPlus className="mr-1.5 inline h-4 w-4 align-text-bottom" />
+              No booking for{" "}
+              <span className="font-semibold">{walkin.name}</span> — serve a walk-in:
+            </p>
+            <button
+              type="button"
+              onClick={() => setWalkin(null)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Cancel walk-in"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {dishes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No meals on today&apos;s menu to serve.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {dishes.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  disabled={pending}
+                  onClick={() => serve(d)}
+                  className="rounded-md border bg-background px-3 py-2 text-left text-sm hover:border-primary hover:bg-accent disabled:opacity-50"
+                >
+                  <span className="block text-xs text-muted-foreground">{d.kitchen_name}</span>
+                  <span className="font-medium">{d.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Search + list */}
