@@ -297,7 +297,12 @@ export async function setDepartmentObjectiveActive(
 
 // --- Employee: goal setting -------------------------------------------------
 
-const EDITABLE = new Set(["not_started", "draft", "returned_for_correction"]);
+const EDITABLE = new Set([
+  "not_started",
+  "draft",
+  "returned_for_correction",
+  "pending_manager_review",
+]);
 
 async function requireEmployeeEditable(id: string): Promise<{ a: AppraisalRow } | ActionResult> {
   const a = await loadAppraisal(id);

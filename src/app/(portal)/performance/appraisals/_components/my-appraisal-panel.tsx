@@ -26,6 +26,7 @@ import {
   submitGoals,
   submitMidYear,
   submitSelfAssessment,
+  updateGoal,
   updateGoalProgress,
   updateKeyResultProgress,
 } from "../actions";
@@ -36,7 +37,12 @@ const DEV_STATUS_LABEL: Record<"planned" | "in_progress" | "done", string> = {
   done: "Done",
 };
 
-const EDITABLE = new Set(["not_started", "draft", "returned_for_correction"]);
+const EDITABLE = new Set([
+  "not_started",
+  "draft",
+  "returned_for_correction",
+  "pending_manager_review",
+]);
 
 export function MyAppraisalPanel({
   appraisal,
@@ -150,45 +156,15 @@ function GoalSetting({
       ) : (
         <ul className="divide-y">
           {appraisal.goals.map((g) => (
-            <li key={g.id} className="py-2">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium">
-                    {g.title}
-                    {g.kind === "development" && (
-                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
-                        development
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {g.weight}%{g.deadline ? ` · due ${g.deadline}` : ""}
-                    {g.alignment ? ` · ${g.alignment}` : ""}
-                    {g.success_indicator ? ` · ${g.success_indicator}` : ""}
-                  </div>
-                </div>
-                {editable && (
-                  <button
-                    type="button"
-                    aria-label="Remove"
-                    disabled={pending}
-                    onClick={() => run(() => deleteGoal({ goalId: g.id, appraisalId: appraisal.id }))}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              <GoalKeyResults goal={g} appraisalId={appraisal.id} editable={editable} pending={pending} run={run} />
-              <GoalReviewers
-                goal={g}
-                appraisalId={appraisal.id}
-                editable={appraisal.status !== "closed"}
-                pending={pending}
-                run={run}
-                colleagues={colleagues}
-              />
-            </li>
+            <GoalRow
+              key={g.id}
+              goal={g}
+              appraisalId={appraisal.id}
+              editable={editable}
+              pending={pending}
+              run={run}
+              colleagues={colleagues}
+            />
           ))}
         </ul>
       )}
@@ -300,12 +276,18 @@ function GoalSetting({
           </div>
         </form>
       )}
-      {editable && appraisal.goals.length > 0 && (
+      {editable && appraisal.goals.length > 0 && appraisal.status !== "pending_manager_review" && (
         <div className="mt-3 flex justify-end border-t pt-3">
           <Button disabled={pending} onClick={() => run(() => submitGoals(appraisal.id))}>
             <Send className="h-4 w-4" /> Submit goals for review
           </Button>
         </div>
+      )}
+      {appraisal.status === "pending_manager_review" && (
+        <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
+          Submitted for review. You can still edit your objectives until your manager starts the
+          review.
+        </p>
       )}
       {appraisal.status === "returned_for_correction" && (
         <p className="mt-2 text-xs text-amber-700">Returned for correction — adjust and resubmit.</p>
@@ -709,6 +691,119 @@ function History({ appraisal }: { appraisal: Appraisal }) {
         ))}
       </ul>
     </details>
+  );
+}
+
+/** One objective in goal-setting: read view + inline edit, KRs and witness. */
+function GoalRow({
+  goal: g,
+  appraisalId,
+  editable,
+  pending,
+  run,
+  colleagues,
+}: {
+  goal: AppraisalGoal;
+  appraisalId: string;
+  editable: boolean;
+  pending: boolean;
+  run: RunFn;
+  colleagues: Colleague[];
+}) {
+  const [edit, setEdit] = useState(false);
+  const [title, setTitle] = useState(g.title);
+  const [description, setDescription] = useState(g.description ?? "");
+  const [weight, setWeight] = useState(String(g.weight ?? 0));
+  const [deadline, setDeadline] = useState(g.deadline ?? "");
+  const [indicator, setIndicator] = useState(g.success_indicator ?? "");
+
+  return (
+    <li className="py-2">
+      {edit ? (
+        <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Objective title" className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input value={weight} onChange={(e) => setWeight(e.target.value)} type="number" min={0} max={100} placeholder="Weight %" className="rounded-md border bg-background px-3 py-2 text-sm" />
+            <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
+          </div>
+          <textarea value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Success indicator" rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setEdit(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={pending || !title.trim()}
+              onClick={() =>
+                run(
+                  () =>
+                    updateGoal({
+                      goalId: g.id,
+                      appraisalId,
+                      title,
+                      description,
+                      weight: Number(weight) || 0,
+                      deadline: deadline || undefined,
+                      successIndicator: indicator,
+                    }),
+                  () => setEdit(false),
+                )
+              }
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-medium">
+              {g.title}
+              {g.kind === "development" && (
+                <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                  development
+                </span>
+              )}
+            </div>
+            {g.description && <div className="text-sm text-muted-foreground">{g.description}</div>}
+            <div className="text-xs text-muted-foreground">
+              {g.weight}%{g.deadline ? ` · due ${g.deadline}` : ""}
+              {g.alignment ? ` · ${g.alignment}` : ""}
+              {g.success_indicator ? ` · ${g.success_indicator}` : ""}
+            </div>
+          </div>
+          {editable && (
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => setEdit(true)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                aria-label="Remove"
+                disabled={pending}
+                onClick={() => run(() => deleteGoal({ goalId: g.id, appraisalId }))}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      <GoalKeyResults goal={g} appraisalId={appraisalId} editable={editable} pending={pending} run={run} />
+      <GoalReviewers
+        goal={g}
+        appraisalId={appraisalId}
+        editable={editable}
+        pending={pending}
+        run={run}
+        colleagues={colleagues}
+      />
+    </li>
   );
 }
 
