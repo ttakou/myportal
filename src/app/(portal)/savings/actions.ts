@@ -2,14 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
 const rev = () => revalidatePath("/savings");
-async function admin() {
-  return isAdminRole(await getCurrentRole());
-}
 async function tenantId(supabase: ReturnType<typeof createClient>) {
   const { data } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   return data?.id as string | undefined;
@@ -17,7 +14,8 @@ async function tenantId(supabase: ReturnType<typeof createClient>) {
 
 /** Create a savings account for a member if they don't have one. */
 export async function ensureAccount(profileId: string): Promise<ActionResult> {
-  if (!(await admin())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("savings", "operate");
+  if (gate) return gate;
   const supabase = createClient();
   const t = await tenantId(supabase);
   if (!t) return { ok: false, error: "No tenant in scope." };
@@ -35,7 +33,8 @@ export async function postTransaction(input: {
   amount: number;
   note?: string;
 }): Promise<ActionResult> {
-  if (!(await admin())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("savings", "create");
+  if (gate) return gate;
   if (!(input.amount > 0)) return { ok: false, error: "Amount must be positive." };
   const supabase = createClient();
   const t = await tenantId(supabase);
@@ -59,7 +58,8 @@ export async function disburseLoan(input: {
   annualRatePct: number;
   termMonths: number;
 }): Promise<ActionResult> {
-  if (!(await admin())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("savings", "approve");
+  if (gate) return gate;
   if (!(input.principal > 0) || !(input.termMonths > 0))
     return { ok: false, error: "Principal and term must be positive." };
 
@@ -88,7 +88,8 @@ export async function disburseLoan(input: {
 }
 
 export async function recordRepayment(loanId: string, amount: number): Promise<ActionResult> {
-  if (!(await admin())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("savings", "operate");
+  if (gate) return gate;
   if (!(amount > 0)) return { ok: false, error: "Amount must be positive." };
   const supabase = createClient();
   const t = await tenantId(supabase);
