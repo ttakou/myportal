@@ -150,6 +150,22 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
 
   // --- My open requests (everyone) ------------------------------------------
   const myRequests: DashboardCount[] = [];
+
+  // Safety first: SOS / incidents I raised that aren't resolved yet.
+  const myIncidents = await countOf(() =>
+    supabase
+      .from("eess_incidents")
+      .select("id", { count: "exact", head: true })
+      .eq("reporter_id", user.id)
+      .neq("status", "resolved"),
+  );
+  if (myIncidents > 0)
+    myRequests.push({
+      label: "My active SOS / incidents",
+      href: "/emergency",
+      count: myIncidents,
+    });
+
   const myTrips = await countOf(() =>
     supabase
       .from("offshore_trips")
@@ -179,6 +195,21 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
   );
   if (myTravel > 0)
     myRequests.push({ label: "My trips in progress", href: "/out-of-town", count: myTravel });
+
+  // Transport / transfer requests I raised that are still open.
+  const myTransfers = await countOf(() =>
+    supabase
+      .from("transport_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("requester_id", user.id)
+      .in("status", ["pending", "assigned", "in_progress"]),
+  );
+  if (myTransfers > 0)
+    myRequests.push({
+      label: "My transport requests",
+      href: "/transportation",
+      count: myTransfers,
+    });
 
   // --- Quick actions (role-aware) -------------------------------------------
   const quickLinks: DashboardQuickLink[] = [{ label: "Emergency support", href: "/emergency" }];
