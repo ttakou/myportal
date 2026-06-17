@@ -1,0 +1,99 @@
+export type CycleStatus = "draft" | "active" | "closed";
+
+export type AppraisalStage =
+  | "goal_setting"
+  | "goal_review"
+  | "self_assessment"
+  | "manager_review"
+  | "hr_review"
+  | "final_discussion"
+  | "acknowledgement"
+  | "closed";
+
+export type AppraisalStatus =
+  | "not_started"
+  | "draft"
+  | "pending_employee_submission"
+  | "pending_manager_review"
+  | "returned_for_correction"
+  | "pending_hr_review"
+  | "pending_second_level"
+  | "ready_for_final_discussion"
+  | "pending_employee_acknowledgement"
+  | "under_appeal"
+  | "completed"
+  | "closed"
+  | "overdue";
+
+export const STAGE_LABEL: Record<AppraisalStage, string> = {
+  goal_setting: "Goal setting",
+  goal_review: "Mid-year review",
+  self_assessment: "Self-assessment",
+  manager_review: "Manager review",
+  hr_review: "HR validation",
+  final_discussion: "Final discussion",
+  acknowledgement: "Acknowledgement",
+  closed: "Closed",
+};
+
+export const STATUS_LABEL: Record<AppraisalStatus, string> = {
+  not_started: "Not started",
+  draft: "Draft",
+  pending_employee_submission: "Pending employee submission",
+  pending_manager_review: "Pending manager review",
+  returned_for_correction: "Returned for correction",
+  pending_hr_review: "Pending HR review",
+  pending_second_level: "Pending second-level approval",
+  ready_for_final_discussion: "Ready for final discussion",
+  pending_employee_acknowledgement: "Pending employee acknowledgement",
+  under_appeal: "Under appeal",
+  completed: "Completed",
+  closed: "Closed",
+  overdue: "Overdue",
+};
+
+export interface AppraisalCycle {
+  id: string;
+  name: string;
+  year: number;
+  period_start: string;
+  period_end: string;
+  goal_setting_deadline: string | null;
+  status: CycleStatus;
+  created_at: string;
+}
+
+export interface AppraisalGoal {
+  id: string;
+  title: string;
+  description: string | null;
+  weight: number;
+  deadline: string | null;
+  success_indicator: string | null;
+  employee_progress: string | null;
+  status: "draft" | "approved";
+}
+
+export interface AppraisalEvent {
+  id: string;
+  actor_name: string | null;
+  stage: string | null;
+  action: string;
+  comment: string | null;
+  created_at: string;
+}
+
+export interface Appraisal {
+  id: string;
+  cycle_id: string;
+  cycle_name: string | null;
+  employee_id: string;
+  employee_name: string | null;
+  manager_id: string | null;
+  manager_name: string | null;
+  stage: AppraisalStage;
+  status: AppraisalStatus;
+  overall_rating: number | null;
+  goals: AppraisalGoal[];
+  events: AppraisalEvent[];
+}
