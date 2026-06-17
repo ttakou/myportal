@@ -41,6 +41,9 @@ export function HrConsole({
   const [start, setStart] = useState(`${year}-01-01`);
   const [end, setEnd] = useState(`${year}-12-31`);
   const [deadline, setDeadline] = useState("");
+  const [wOkr, setWOkr] = useState("70");
+  const [wComp, setWComp] = useState("20");
+  const [wDev, setWDev] = useState("10");
 
   const counts = useMemo(() => {
     const m = new Map<AppraisalStatus, number>();
@@ -74,6 +77,9 @@ export function HrConsole({
               periodStart: start,
               periodEnd: end,
               goalSettingDeadline: deadline || undefined,
+              weightOkr: Number(wOkr),
+              weightCompetency: Number(wComp),
+              weightDevelopment: Number(wDev),
             }),
           );
         }}
@@ -88,6 +94,20 @@ export function HrConsole({
           Goal-setting deadline
           <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" className="mt-1 block w-full rounded-md border bg-background px-3 py-1.5 text-sm" />
         </label>
+        <div className="flex items-end gap-2 lg:col-span-3">
+          <label className="text-xs text-muted-foreground">
+            OKR %
+            <input value={wOkr} onChange={(e) => setWOkr(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-20 rounded-md border bg-background px-2 py-1.5 text-sm" />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Competency %
+            <input value={wComp} onChange={(e) => setWComp(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-24 rounded-md border bg-background px-2 py-1.5 text-sm" />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Development %
+            <input value={wDev} onChange={(e) => setWDev(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-24 rounded-md border bg-background px-2 py-1.5 text-sm" />
+          </label>
+        </div>
       </form>
 
       <div className="overflow-x-auto rounded-lg border">
@@ -265,8 +285,10 @@ function HrRow({ a, kind }: { a: Appraisal; kind: "validate" | "close" }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm">
           <span className="font-medium">{a.employee_name || "—"}</span>
-          {a.overall_rating != null ? (
-            <span className="ml-2 text-xs text-muted-foreground">overall {a.overall_rating}</span>
+          {a.final_score != null ? (
+            <span className="ml-2 text-xs text-muted-foreground">
+              {a.final_score}% · {a.rating_label}
+            </span>
           ) : null}
           {a.status === "under_appeal" ? (
             <span className="ml-2 text-xs text-amber-700">disputed</span>

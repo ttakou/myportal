@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { notifyUsers } from "@/lib/notify";
 import { runAppraisalReminders } from "@/lib/appraisal-reminders";
+import { ratingLabel } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
 
@@ -60,6 +61,11 @@ async function logEvent(
   });
 }
 
+function clampWeight(v: number | undefined, fallback: number): number {
+  if (v === undefined || !Number.isFinite(v)) return fallback;
+  return Math.max(0, Math.min(100, Math.floor(v)));
+}
+
 // --- HR: cycle setup --------------------------------------------------------
 
 export async function createCycle(input: {
@@ -68,6 +74,9 @@ export async function createCycle(input: {
   periodStart: string;
   periodEnd: string;
   goalSettingDeadline?: string;
+  weightOkr?: number;
+  weightCompetency?: number;
+  weightDevelopment?: number;
 }): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;
@@ -84,6 +93,9 @@ export async function createCycle(input: {
     period_start: input.periodStart,
     period_end: input.periodEnd,
     goal_setting_deadline: input.goalSettingDeadline || null,
+    weight_okr: clampWeight(input.weightOkr, 70),
+    weight_competency: clampWeight(input.weightCompetency, 20),
+    weight_development: clampWeight(input.weightDevelopment, 10),
     created_by: await uid(),
   });
   if (error) return { ok: false, error: error.message };
@@ -500,38 +512,88 @@ export async function submitManagerEvaluation(input: {
   const a = guard.a;
   const supabase = createClient();
 
-  const { data: goals } = await supabase
-    .from("appraisal_goals")
-    .select("weight, manager_rating")
-    .eq("appraisal_id", a.id);
-  let wsum = 0;
-  let acc = 0;
-  let count = 0;
-  let plain = 0;
+  const [{ data: goals }, { data: comps }, { data: cycle }] = await Promise.all([
+    supabase.from("appraisal_goals").select("kind, weight, manager_rating").eq("appraisal_id", a.id),
+    supabase
+      .from("appraisal_competency_ratings")
+      .select("manager_rating")
+      .eq("appraisal_id", a.id),
+    supabase
+      .from("appraisal_cycles")
+      .select("weight_okr, weight_competency, weight_development")
+      .eq("id", a.cycle_id)
+      .maybeSingle(),
+  ]);
+
+  // OKR component: weighted (by goal weight) average of objective ratings, 1–5.
+  let okrW = 0;
+  let okrAcc = 0;
+  let okrCount = 0;
+  let okrPlain = 0;
+  // Development component: simple average of development-goal ratings.
+  let devAcc = 0;
+  let devCount = 0;
   for (const g of goals ?? []) {
     const r = g.manager_rating as number | null;
     if (r == null) continue;
-    const w = (g.weight as number) || 0;
-    wsum += w;
-    acc += w * r;
-    plain += r;
-    count += 1;
+    if ((g.kind as string) === "development") {
+      devAcc += r;
+      devCount += 1;
+    } else {
+      const w = (g.weight as number) || 0;
+      okrW += w;
+      okrAcc += w * r;
+      okrPlain += r;
+      okrCount += 1;
+    }
   }
-  if (count === 0) return { ok: false, error: "Rate at least one objective before submitting." };
-  const overall = wsum > 0 ? acc / wsum : plain / count;
+  if (okrCount === 0) return { ok: false, error: "Rate at least one objective before submitting." };
+  const okrAvg = okrW > 0 ? okrAcc / okrW : okrPlain / okrCount; // 1–5
+
+  // Competency component: simple average, 1–5.
+  let compAcc = 0;
+  let compCount = 0;
+  for (const c of comps ?? []) {
+    const r = c.manager_rating as number | null;
+    if (r == null) continue;
+    compAcc += r;
+    compCount += 1;
+  }
+
+  // Component %s (rating/5 → %), then weight by the cycle's configured weights,
+  // normalising over the components that actually have data.
+  const pct = (avg: number) => (avg / 5) * 100;
+  const wOkr = (cycle?.weight_okr as number) ?? 70;
+  const wComp = (cycle?.weight_competency as number) ?? 20;
+  const wDev = (cycle?.weight_development as number) ?? 10;
+  let num = pct(okrAvg) * wOkr;
+  let den = wOkr;
+  if (compCount > 0) {
+    num += pct(compAcc / compCount) * wComp;
+    den += wComp;
+  }
+  if (devCount > 0) {
+    num += pct(devAcc / devCount) * wDev;
+    den += wDev;
+  }
+  const finalScore = den > 0 ? num / den : pct(okrAvg);
+  const overall = okrAvg;
+  const label = ratingLabel(finalScore);
 
   const { error } = await supabase
     .from("appraisals")
     .update({
       manager_summary: input.summary?.trim() || null,
       overall_rating: Math.round(overall * 100) / 100,
+      final_score: Math.round(finalScore * 10) / 10,
+      rating_label: label,
       stage: "hr_review",
       status: "pending_hr_review",
     })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "manager_review" }, "manager_evaluation_submitted",
-    `Overall ${Math.round(overall * 100) / 100}`);
+    `Score ${Math.round(finalScore * 10) / 10}% (${label})`);
   await notifyUsers({
     tenantId: a.tenant_id,
     profileIds: [a.employee_id],

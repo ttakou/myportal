@@ -55,7 +55,7 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
         <div className="font-medium">{a.employee_name || "—"}</div>
         <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
           {STAGE_LABEL[a.stage]} · {STATUS_LABEL[a.status]}
-          {a.overall_rating != null ? ` · overall ${a.overall_rating}` : ""}
+          {a.final_score != null ? ` · ${a.final_score}% · ${a.rating_label ?? ""}` : ""}
         </span>
       </div>
 

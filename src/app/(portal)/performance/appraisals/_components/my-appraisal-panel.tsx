@@ -40,7 +40,9 @@ export function MyAppraisalPanel({ appraisal }: { appraisal: Appraisal }) {
         <h2 className="text-lg font-semibold">My appraisal</h2>
         <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
           {STAGE_LABEL[appraisal.stage]} · {STATUS_LABEL[appraisal.status]}
-          {appraisal.overall_rating != null ? ` · overall ${appraisal.overall_rating}` : ""}
+          {appraisal.final_score != null
+            ? ` · ${appraisal.final_score}% · ${appraisal.rating_label ?? ""}`
+            : ""}
         </span>
       </div>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}

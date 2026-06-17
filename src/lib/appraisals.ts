@@ -12,6 +12,7 @@ import type {
 
 const APPRAISAL_SELECT =
   "id, cycle_id, employee_id, manager_id, stage, status, overall_rating," +
+  " final_score, rating_label," +
   " employee_summary, manager_summary, discussion_date, discussion_notes," +
   " acknowledged_at, employee_agreed, employee_ack_comment," +
   " cycle:appraisal_cycles(name)," +
@@ -30,6 +31,8 @@ function mapAppraisal(r: Record<string, any>): Appraisal {
     stage: r.stage,
     status: r.status,
     overall_rating: r.overall_rating ?? null,
+    final_score: r.final_score ?? null,
+    rating_label: r.rating_label ?? null,
     employee_summary: r.employee_summary ?? null,
     manager_summary: r.manager_summary ?? null,
     discussion_date: r.discussion_date ?? null,
@@ -59,11 +62,14 @@ export async function getActiveCycle(): Promise<AppraisalCycle | null> {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_cycles")
-    .select("id, name, year, period_start, period_end, goal_setting_deadline, status, created_at")
+    .select(
+      "id, name, year, period_start, period_end, goal_setting_deadline, status," +
+        " weight_okr, weight_competency, weight_development, created_at",
+    )
     .order("status", { ascending: true }) // 'active' sorts before 'draft'/'closed'? no — filter instead
     .order("year", { ascending: false })
     .limit(20);
-  const rows = (data ?? []) as AppraisalCycle[];
+  const rows = (data ?? []) as unknown as AppraisalCycle[];
   return rows.find((c) => c.status === "active") ?? rows[0] ?? null;
 }
 
@@ -72,10 +78,13 @@ export async function getCycles(): Promise<AppraisalCycle[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_cycles")
-    .select("id, name, year, period_start, period_end, goal_setting_deadline, status, created_at")
+    .select(
+      "id, name, year, period_start, period_end, goal_setting_deadline, status," +
+        " weight_okr, weight_competency, weight_development, created_at",
+    )
     .order("year", { ascending: false })
     .order("created_at", { ascending: false });
-  return (data ?? []) as AppraisalCycle[];
+  return (data ?? []) as unknown as AppraisalCycle[];
 }
 
 /** The signed-in employee's appraisal for a cycle, with goals + events. */
