@@ -8,6 +8,42 @@ import { today } from "@/lib/canteen";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export interface EmployeeOption {
+  id: string;
+  name: string;
+  email: string | null;
+  lunch_eligible: boolean;
+}
+
+/**
+ * Typeahead search for the serving point: match active employees by name or
+ * email so staff can pick someone from a list instead of typing an exact
+ * address. RLS (`profiles_select_same_tenant`) scopes results to the tenant.
+ */
+export async function searchEmployees(query: string): Promise<EmployeeOption[]> {
+  if (!(await getAccess()).isCanteenStaff) return [];
+  const q = query.trim().replace(/[%_,()]/g, " ").trim();
+  if (q.length < 2) return [];
+
+  const supabase = createClient();
+  const like = `%${q}%`;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, lunch_eligible")
+    .eq("is_active", true)
+    .or(`full_name.ilike.${like},email.ilike.${like}`)
+    .order("full_name")
+    .limit(8);
+  if (error) return [];
+
+  return (data ?? []).map((p) => ({
+    id: p.id as string,
+    name: (p.full_name as string | null) ?? (p.email as string | null) ?? "(no name)",
+    email: (p.email as string | null) ?? null,
+    lunch_eligible: !!p.lunch_eligible,
+  }));
+}
+
 export interface WalkinLookup {
   ok: boolean;
   error?: string;
