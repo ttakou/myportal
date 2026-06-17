@@ -129,6 +129,8 @@ export interface DepartmentObjective {
   title: string;
   description: string | null;
   is_active: boolean;
+  cycle_id: string | null;
+  cycle_name: string | null;
 }
 
 /** A review request shown to the stakeholder being asked to rate. */

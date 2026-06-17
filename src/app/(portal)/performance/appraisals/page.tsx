@@ -56,7 +56,7 @@ export default async function AppraisalsPage() {
   ]);
   const [colleagues, deptObjectives] = await Promise.all([
     myAppraisal ? getTenantColleagues() : Promise.resolve([]),
-    myAppraisal ? getDepartmentObjectivesForMe() : Promise.resolve([]),
+    myAppraisal ? getDepartmentObjectivesForMe(cycle?.id ?? null) : Promise.resolve([]),
   ]);
 
   return (

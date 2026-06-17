@@ -200,19 +200,26 @@ export function HrConsole({
 
       <HrQueue appraisals={appraisals} />
       {cycles.length > 0 && <RatingBandsManager cycles={cycles} />}
-      <DepartmentObjectivesEditor objectives={departmentObjectives} />
+      <DepartmentObjectivesEditor objectives={departmentObjectives} cycles={cycles} />
       <CompetencyEditor competencies={competencies} />
     </section>
   );
 }
 
 /** HR maintains the library of department / company objectives employees align to. */
-function DepartmentObjectivesEditor({ objectives }: { objectives: DepartmentObjective[] }) {
+function DepartmentObjectivesEditor({
+  objectives,
+  cycles,
+}: {
+  objectives: DepartmentObjective[];
+  cycles: AppraisalCycle[];
+}) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [department, setDepartment] = useState("");
   const [description, setDescription] = useState("");
+  const [cycleId, setCycleId] = useState("");
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -237,7 +244,10 @@ function DepartmentObjectivesEditor({ objectives }: { objectives: DepartmentObje
               <div className="min-w-0">
                 <div className={`font-medium ${o.is_active ? "" : "text-muted-foreground line-through"}`}>
                   <span className="mr-2 rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
-                    {o.department || "All"}
+                    {o.department || "All depts"}
+                  </span>
+                  <span className="mr-2 rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                    {o.cycle_name || "All cycles"}
                   </span>
                   {o.title}
                 </div>
@@ -260,21 +270,34 @@ function DepartmentObjectivesEditor({ objectives }: { objectives: DepartmentObje
         onSubmit={(e) => {
           e.preventDefault();
           run(
-            () => addDepartmentObjective({ title, department: department || undefined, description: description || undefined }),
+            () =>
+              addDepartmentObjective({
+                title,
+                department: department || undefined,
+                description: description || undefined,
+                cycleId: cycleId || undefined,
+              }),
             () => {
               setTitle("");
               setDepartment("");
               setDescription("");
+              setCycleId("");
             },
           );
         }}
       >
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Objective title" required className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
         <input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Department (blank = all)" className="rounded-md border bg-background px-3 py-2 text-sm" />
+        <select value={cycleId} onChange={(e) => setCycleId(e.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm">
+          <option value="">All cycles</option>
+          {cycles.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-3" />
         <Button type="submit" size="sm" disabled={pending || !title.trim()}>
           <Plus className="h-4 w-4" /> Add
         </Button>
-        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-4" />
       </form>
     </div>
   );
