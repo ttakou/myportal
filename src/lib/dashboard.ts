@@ -56,10 +56,11 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name")
+    .select("full_name, lunch_eligible")
     .eq("id", user.id)
     .maybeSingle();
   const name = (profile?.full_name as string) ?? "";
+  const lunchEligible = (profile?.lunch_eligible as boolean | null) ?? false;
 
   // Small helper: best-effort exact count, never throws.
   const countOf = async (
@@ -215,8 +216,10 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
     });
 
   // --- Canteen: only relevant if the user can actually dine today -----------
-  // Canteen staff/managers/admins keep the entry point; everyone else needs an
-  // entitlement grant covering today (and it must be a working day).
+  // Canteen staff/managers/admins keep the entry point. Everyone else sees it
+  // when they're entitled to dine today (a working day) — either the standing
+  // `lunch_eligible` entitlement (what booking/serving use) or an explicit
+  // meal-credit grant covering today.
   const canteenGrantsToday = await countOf(() =>
     supabase
       .from("canteen_meal_entitlements")
@@ -229,7 +232,7 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
     access.isAdmin ||
     access.isCanteenManager ||
     access.isCanteenStaff ||
-    (isWorkingDay(today) && canteenGrantsToday > 0);
+    (isWorkingDay(today) && (lunchEligible || canteenGrantsToday > 0));
 
   // --- Quick actions (role-aware) -------------------------------------------
   const quickLinks: DashboardQuickLink[] = [{ label: "Emergency support", href: "/emergency" }];
