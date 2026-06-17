@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAccess, getCurrentRole, type FunctionalRole } from "@/lib/auth";
+import { canAssignAccountRole, canAssignFunctionalRole } from "@/lib/role-permissions";
 import { MODULE_PARAMS } from "@/lib/module-params";
 import { cleanPermissions, viewableSlugs } from "@/lib/permissions";
 import type { EmployeeType } from "@/lib/admin";
@@ -38,9 +39,10 @@ async function requireHr(): Promise<ActionResult | null> {
 }
 
 export async function addUserRole(userId: string, role: FunctionalRole): Promise<ActionResult> {
-  const denied = await requireHr();
-  if (denied) return denied;
   if (!ASSIGNABLE_FUNCTIONAL.includes(role)) return { ok: false, error: "Invalid role." };
+  // Privileged roles (system_admin, hr_admin) are system-admin-only to grant;
+  // others stay at HR level. The single source of truth lives in role-permissions.
+  if (!canAssignFunctionalRole(await getAccess(), role)) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
   const { error } = await supabase.from("profile_roles").insert({ profile_id: userId, role });
   if (error && !error.message.includes("duplicate")) return { ok: false, error: error.message };
@@ -49,8 +51,8 @@ export async function addUserRole(userId: string, role: FunctionalRole): Promise
 }
 
 export async function removeUserRole(userId: string, role: FunctionalRole): Promise<ActionResult> {
-  const denied = await requireHr();
-  if (denied) return denied;
+  // Mirror the grant check: only system admins may revoke privileged roles.
+  if (!canAssignFunctionalRole(await getAccess(), role)) return { ok: false, error: "Not authorized." };
   const supabase = createClient();
   const { error } = await supabase
     .from("profile_roles")
@@ -381,6 +383,17 @@ export async function registerStaff(input: {
   // Without a real email we can't send an invitation — fall back to a password.
   const mode = hasEmail ? input.mode : "password";
   const role: UserRole = input.role && ASSIGNABLE_ROLES.includes(input.role) ? input.role : "employee";
+  // Don't let an HR caller mint an admin account via the service-role client.
+  const access = await getAccess();
+  if (!canAssignAccountRole(access, role)) {
+    return { ok: false, error: "You are not authorized to assign that account role." };
+  }
+  const requestedFunctional = (input.functionalRoles ?? []).filter((r) =>
+    ASSIGNABLE_FUNCTIONAL.includes(r),
+  );
+  if (requestedFunctional.some((r) => !canAssignFunctionalRole(access, r))) {
+    return { ok: false, error: "You are not authorized to assign one or more of the selected roles." };
+  }
 
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
@@ -466,10 +479,8 @@ export async function registerStaff(input: {
   );
   if (profileError) return { ok: false, error: `Account created but profile setup failed: ${profileError.message}` };
 
-  // 3. Pre-assign functional + access roles.
-  const functional = (input.functionalRoles ?? []).filter((r) =>
-    ASSIGNABLE_FUNCTIONAL.includes(r),
-  );
+  // 3. Pre-assign functional + access roles (already authorized above).
+  const functional = requestedFunctional;
   if (functional.length > 0) {
     await admin.from("profile_roles").insert(
       functional.map((r) => ({ profile_id: userId, role: r, tenant_id: tenant.id })),
@@ -521,6 +532,7 @@ export async function bulkRegisterStaff(input: {
   if (denied) return denied;
   if (!input.rows?.length) return { ok: false, error: "No rows to import." };
   if (input.rows.length > 500) return { ok: false, error: "Import is limited to 500 rows at a time." };
+  const access = await getAccess();
 
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
@@ -564,10 +576,15 @@ export async function bulkRegisterStaff(input: {
     const email = hasEmail ? realEmail : `pending-${randomBytes(6).toString("hex")}@no-email.local`;
     const mode = hasEmail ? input.mode : "password";
 
-    const role: UserRole =
+    const requestedRole: UserRole =
       raw.role && (ASSIGNABLE_ROLES as string[]).includes(raw.role.trim())
         ? (raw.role.trim() as UserRole)
         : "employee";
+    if (!canAssignAccountRole(access, requestedRole)) {
+      results.push({ email: label, ok: false, status: "failed", error: "Not authorized to assign that account role." });
+      continue;
+    }
+    const role = requestedRole;
     const employeeType: EmployeeType = ["employee", "contractor", "guest"].includes(
       (raw.employeeType ?? "").trim(),
     )
