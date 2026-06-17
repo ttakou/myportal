@@ -536,3 +536,156 @@ export async function submitManagerEvaluation(input: {
   rev();
   return { ok: true };
 }
+
+// --- Phase 3: HR validation, final discussion, acknowledgement, closure -----
+
+/** HR validates a completed manager evaluation; opens the final discussion. */
+export async function hrValidate(appraisalId: string): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const a = await loadAppraisal(appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (a.stage !== "hr_review" || a.status !== "pending_hr_review")
+    return { ok: false, error: "This appraisal is not awaiting HR validation." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ stage: "final_discussion", status: "ready_for_final_discussion" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "hr_review" }, "hr_validated");
+  const recipients = [a.employee_id, a.manager_id].filter(Boolean) as string[];
+  if (recipients.length)
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: recipients,
+      category: "approval",
+      title: "Appraisal validated by HR",
+      body: "HR validated the appraisal — schedule the final discussion.",
+      url: "/performance/appraisals",
+    });
+  rev();
+  return { ok: true };
+}
+
+/** HR returns the appraisal to the manager for correction. */
+export async function hrReturnToManager(input: {
+  appraisalId: string;
+  comment: string;
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (a.stage !== "hr_review") return { ok: false, error: "Not at HR validation." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ stage: "manager_review", status: "returned_for_correction" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "hr_review" }, "hr_returned", input.comment);
+  if (a.manager_id)
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: [a.manager_id],
+      category: "approval",
+      title: "HR returned an appraisal",
+      body: input.comment?.trim() || "HR asked for corrections to an appraisal.",
+      url: "/performance/appraisals",
+    });
+  rev();
+  return { ok: true };
+}
+
+/** Manager records the final discussion; sends to the employee to acknowledge. */
+export async function recordDiscussion(input: {
+  appraisalId: string;
+  date: string;
+  notes?: string;
+}): Promise<ActionResult> {
+  const guard = await requireManagerAt(input.appraisalId, ["final_discussion"]);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  if (!input.date) return { ok: false, error: "Discussion date is required." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({
+      discussion_date: input.date,
+      discussion_notes: input.notes?.trim() || null,
+      stage: "acknowledgement",
+      status: "pending_employee_acknowledgement",
+    })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "final_discussion" }, "discussion_recorded");
+  await notifyUsers({
+    tenantId: a.tenant_id,
+    profileIds: [a.employee_id],
+    category: "approval",
+    title: "Appraisal ready to acknowledge",
+    body: "Your manager recorded the appraisal discussion — please review and acknowledge.",
+    url: "/performance/appraisals",
+  });
+  rev();
+  return { ok: true };
+}
+
+/** Employee acknowledges the appraisal (agree or disagree). */
+export async function acknowledge(input: {
+  appraisalId: string;
+  agreed: boolean;
+  comment?: string;
+}): Promise<ActionResult> {
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (a.employee_id !== (await uid())) return { ok: false, error: "Only the employee can acknowledge." };
+  if (a.stage !== "acknowledgement" || a.status !== "pending_employee_acknowledgement")
+    return { ok: false, error: "Not awaiting your acknowledgement." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({
+      acknowledged_at: new Date().toISOString(),
+      employee_agreed: input.agreed,
+      employee_ack_comment: input.comment?.trim() || null,
+      status: input.agreed ? "completed" : "under_appeal",
+    })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent(a, input.agreed ? "acknowledged_agree" : "acknowledged_disagree", input.comment);
+  const recipients = [a.manager_id].filter(Boolean) as string[];
+  if (recipients.length)
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: recipients,
+      category: "approval",
+      title: input.agreed ? "Appraisal acknowledged" : "Appraisal disputed",
+      body: input.agreed
+        ? "The employee acknowledged their appraisal."
+        : "The employee acknowledged but disagrees — HR review may be needed.",
+      url: "/performance/appraisals",
+    });
+  rev();
+  return { ok: true };
+}
+
+/** HR closes the appraisal — it becomes read-only and enters performance history. */
+export async function closeAppraisal(appraisalId: string): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const a = await loadAppraisal(appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (!["completed", "under_appeal"].includes(a.status))
+    return { ok: false, error: "Only acknowledged appraisals can be closed." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ stage: "closed", status: "closed" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "acknowledgement" }, "appraisal_closed");
+  rev();
+  return { ok: true };
+}

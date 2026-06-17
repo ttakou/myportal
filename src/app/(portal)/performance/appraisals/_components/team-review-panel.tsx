@@ -7,6 +7,7 @@ import { STAGE_LABEL, STATUS_LABEL, type Appraisal } from "@/types/appraisal";
 import {
   approveGoals,
   completeMidYear,
+  recordDiscussion,
   returnGoals,
   setManagerRating,
   submitManagerEvaluation,
@@ -31,6 +32,8 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
   const [returning, setReturning] = useState(false);
   const [comment, setComment] = useState("");
   const [summary, setSummary] = useState(a.manager_summary ?? "");
+  const [discDate, setDiscDate] = useState("");
+  const [discNotes, setDiscNotes] = useState("");
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -152,6 +155,35 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
           <div className="flex justify-end">
             <Button size="sm" disabled={pending} onClick={() => run(() => submitManagerEvaluation({ appraisalId: a.id, summary }))}>
               <Send className="h-4 w-4" /> Submit evaluation
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {a.stage === "final_discussion" && a.status === "ready_for_final_discussion" && (
+        <div className="mt-3 space-y-2 border-t pt-3">
+          <p className="text-xs text-muted-foreground">
+            Record the final discussion meeting; the employee then acknowledges.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              value={discDate}
+              onChange={(e) => setDiscDate(e.target.value)}
+              className="rounded-md border bg-background px-3 py-2 text-sm"
+            />
+            <input
+              value={discNotes}
+              onChange={(e) => setDiscNotes(e.target.value)}
+              placeholder="Discussion notes / outcome"
+              className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+            />
+            <Button
+              size="sm"
+              disabled={pending || !discDate}
+              onClick={() => run(() => recordDiscussion({ appraisalId: a.id, date: discDate, notes: discNotes }))}
+            >
+              <Check className="h-4 w-4" /> Record discussion
             </Button>
           </div>
         </div>

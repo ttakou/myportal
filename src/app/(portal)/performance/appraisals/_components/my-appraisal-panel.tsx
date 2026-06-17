@@ -5,6 +5,7 @@ import { Plus, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type AppraisalGoal } from "@/types/appraisal";
 import {
+  acknowledge,
   addGoal,
   deleteGoal,
   submitGoals,
@@ -52,6 +53,11 @@ export function MyAppraisalPanel({ appraisal }: { appraisal: Appraisal }) {
       {["manager_review", "hr_review", "final_discussion", "acknowledgement", "closed"].includes(
         appraisal.stage,
       ) && <ReadOnlyGoals appraisal={appraisal} />}
+
+      {appraisal.stage === "acknowledgement" &&
+        appraisal.status === "pending_employee_acknowledgement" && (
+          <Acknowledge appraisal={appraisal} pending={pending} run={run} />
+        )}
 
       <History appraisal={appraisal} />
     </section>
@@ -298,6 +304,61 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
       {appraisal.manager_summary && (
         <p className="border-t pt-2 text-sm"><span className="font-medium">Manager summary: </span>{appraisal.manager_summary}</p>
       )}
+      {appraisal.discussion_notes && (
+        <p className="text-sm"><span className="font-medium">Discussion: </span>{appraisal.discussion_notes}</p>
+      )}
+      {appraisal.acknowledged_at && (
+        <p className="text-xs text-muted-foreground">
+          Acknowledged {appraisal.employee_agreed ? "(agreed)" : "(disagreed)"} on{" "}
+          {new Date(appraisal.acknowledged_at).toLocaleDateString()}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Acknowledge({
+  appraisal,
+  pending,
+  run,
+}: {
+  appraisal: Appraisal;
+  pending: boolean;
+  run: RunFn;
+}) {
+  const [comment, setComment] = useState("");
+  return (
+    <div className="rounded-lg border bg-card p-4 space-y-2">
+      <h3 className="text-sm font-semibold">Acknowledge your appraisal</h3>
+      <p className="text-xs text-muted-foreground">
+        Acknowledging confirms the discussion took place. You can agree, or acknowledge but record
+        your disagreement.
+      </p>
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        disabled={pending}
+        placeholder="Your comments (optional)"
+        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+        rows={2}
+      />
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          onClick={() => run(() => acknowledge({ appraisalId: appraisal.id, agreed: false, comment }))}
+        >
+          Acknowledge — I disagree
+        </Button>
+        <Button
+          size="sm"
+          disabled={pending}
+          onClick={() => run(() => acknowledge({ appraisalId: appraisal.id, agreed: true, comment }))}
+        >
+          Accept appraisal
+        </Button>
+      </div>
     </div>
   );
 }
