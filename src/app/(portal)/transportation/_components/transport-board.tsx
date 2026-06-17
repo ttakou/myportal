@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Car } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/components/permissions-provider";
@@ -11,7 +12,7 @@ import { Checklist, FollowUps, StatusBadge, fmt } from "./task-bits";
 /** Employee view: request a ride and follow your requests. */
 export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
   const { can } = usePermissions();
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   const [pickup, setPickup] = useState("");

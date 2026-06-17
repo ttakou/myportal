@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import {
   CheckCircle2,
   MapPin,
@@ -64,7 +65,7 @@ export function TripsBoard({
   canApprove: boolean;
 }) {
   const { can } = usePermissions();
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   const [travelType, setTravelType] = useState<TravelType>("business");

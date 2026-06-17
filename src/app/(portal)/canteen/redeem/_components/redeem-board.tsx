@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Check, Search, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ export function RedeemBoard({
   board: MealRedemptionRow[];
   serviceDate: string;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Redeeming…");
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 

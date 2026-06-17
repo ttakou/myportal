@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Check, Copy, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,7 @@ export function RegisterStaffPanel({
   managers: TenantUser[];
   accessRoles: AccessRole[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Registering…");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ email: string; tempPassword?: string } | null>(null);
   const [copied, setCopied] = useState(false);
