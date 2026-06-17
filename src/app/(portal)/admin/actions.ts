@@ -132,6 +132,38 @@ export async function setUserLunchEligible(
   return { ok: true };
 }
 
+export async function setUserFullName(
+  userId: string,
+  fullName: string,
+): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ full_name: fullName.trim() || null })
+    .eq("id", userId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+export async function setUserJobTitle(
+  userId: string,
+  jobTitle: string,
+): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ job_title: jobTitle.trim() || null })
+    .eq("id", userId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
 export async function setUserType(
   userId: string,
   employeeType: "employee" | "contractor" | "guest",
