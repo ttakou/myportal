@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/components/permissions-provider";
 import {
   AIRPORT_STATUS_LABEL,
   PICKUP_STATUS_LABEL,
@@ -62,6 +63,7 @@ export function TripsBoard({
   queue: Trip[];
   canApprove: boolean;
 }) {
+  const { can } = usePermissions();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +101,7 @@ export function TripsBoard({
       )}
 
       {/* Declaration */}
+      {can("out-of-town", "create") && (
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Declare a trip</h2>
         <form
@@ -207,6 +210,7 @@ export function TripsBoard({
           </p>
         </form>
       </section>
+      )}
 
       {/* Approvals (managers / admins) */}
       {(canApprove || queue.length > 0) && (

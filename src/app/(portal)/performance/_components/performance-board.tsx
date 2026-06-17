@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Plus, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/components/permissions-provider";
 import {
   NINE_BOX_LABELS,
   type Feedback,
@@ -34,6 +35,7 @@ export function PerformanceBoard({
   nineBox: NineBoxCell[];
   isAdmin: boolean;
 }) {
+  const { can } = usePermissions();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [objTitle, setObjTitle] = useState("");
@@ -55,6 +57,7 @@ export function PerformanceBoard({
       {/* OKRs */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">My OKRs</h2>
+        {can("performance", "create") && (
         <form
           onSubmit={(e) => { e.preventDefault(); run(() => createObjective({ title: objTitle, period: objPeriod }), () => setObjTitle("")); }}
           className="flex flex-wrap gap-2 rounded-lg border bg-card p-4"
@@ -63,6 +66,7 @@ export function PerformanceBoard({
           <input value={objPeriod} onChange={(e) => setObjPeriod(e.target.value)} placeholder="Period" className="w-28 rounded-md border bg-background px-3 py-2 text-sm" />
           <Button type="submit" disabled={pending}><Target className="h-4 w-4" /> Add objective</Button>
         </form>
+        )}
 
         {objectives.map((o) => (
           <ObjectiveCard key={o.id} objective={o} pending={pending} run={run} />
@@ -128,11 +132,13 @@ function ObjectiveCard({ objective: o, pending, run }: { objective: Objective; p
 }
 
 function FeedbackSection({ feedback, users, pending, run }: { feedback: Feedback[]; users: { id: string; name: string }[]; pending: boolean; run: Runner }) {
+  const { can } = usePermissions();
   const [toId, setToId] = useState(users[0]?.id ?? "");
   const [body, setBody] = useState("");
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">Continuous feedback</h2>
+      {can("performance", "create") && (
       <form
         onSubmit={(e) => { e.preventDefault(); run(() => giveFeedback(toId, body), () => setBody("")); }}
         className="flex flex-wrap gap-2 rounded-lg border bg-card p-4"
@@ -143,6 +149,7 @@ function FeedbackSection({ feedback, users, pending, run }: { feedback: Feedback
         <input value={body} onChange={(e) => setBody(e.target.value)} placeholder="Share feedback…" className="flex-1 rounded-md border bg-background px-3 py-2 text-sm" />
         <Button type="submit" disabled={pending}>Send</Button>
       </form>
+      )}
       <div className="space-y-2">
         <p className="text-sm font-medium text-muted-foreground">Received</p>
         {feedback.map((f) => (
