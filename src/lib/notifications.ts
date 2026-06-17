@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getCachedUser } from "@/lib/auth";
 
 export type NotificationCategory =
   | "emergency"
@@ -24,12 +25,10 @@ export interface NotificationFeed {
 
 /** The signed-in user's recent notifications + unread count (RLS-scoped). */
 export async function getMyNotifications(limit = 20): Promise<NotificationFeed> {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCachedUser();
   if (!user) return { items: [], unread: 0 };
 
+  const supabase = createClient();
   const [{ data }, { count }] = await Promise.all([
     supabase
       .from("notifications")
