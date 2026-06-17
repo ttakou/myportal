@@ -982,7 +982,7 @@ export async function startImpersonation(userId: string): Promise<ActionResult> 
   const otp = link?.properties?.email_otp;
   if (lErr || !otp) return { ok: false, error: lErr?.message ?? "Could not generate a session." };
 
-  const store = cookies();
+  const store = await cookies();
   // Save the admin's refresh token *before* the auth cookie is overwritten.
   store.set(IMP_RT, session.refresh_token, {
     httpOnly: true,
@@ -1025,7 +1025,7 @@ export async function startImpersonation(userId: string): Promise<ActionResult> 
 
 /** Restore the super-admin's own session and end impersonation. */
 export async function stopImpersonation(): Promise<ActionResult> {
-  const store = cookies();
+  const store = await cookies();
   const rt = store.get(IMP_RT)?.value;
   if (!rt) return { ok: false, error: "Not impersonating." };
   const actorId = store.get(IMP_ACTOR)?.value ?? null;

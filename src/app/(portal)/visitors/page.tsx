@@ -5,11 +5,12 @@ import { getVisitors } from "@/lib/visitors";
 import { today } from "@/lib/canteen";
 import { VisitorsBoard } from "./_components/visitors-board";
 
-export default async function VisitorsPage({
-  searchParams,
-}: {
-  searchParams: { date?: string };
-}) {
+export default async function VisitorsPage(
+  props: {
+    searchParams: Promise<{ date?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const visitDate =
     searchParams.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date)
       ? searchParams.date

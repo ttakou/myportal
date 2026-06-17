@@ -9,11 +9,12 @@ import {
 } from "@/lib/canteen";
 import { MenuEditor } from "./_components/menu-editor";
 
-export default async function ManageMenuPage({
-  searchParams,
-}: {
-  searchParams: { date?: string };
-}) {
+export default async function ManageMenuPage(
+  props: {
+    searchParams: Promise<{ date?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   if (!(await getAccess()).isCanteenManager) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
