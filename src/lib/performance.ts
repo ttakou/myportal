@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Feedback, NineBoxCell, Objective } from "@/types/performance";
+import type { Feedback, Objective } from "@/types/performance";
 
 export async function getMyObjectives(): Promise<Objective[]> {
   const supabase = createClient();
@@ -62,23 +62,6 @@ export async function getFeedbackReceived(): Promise<Feedback[]> {
       to_name: null,
       body: f.body,
       created_at: f.created_at,
-    };
-  });
-}
-
-export async function getNineBox(): Promise<NineBoxCell[]> {
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("nine_box")
-    .select("profile_id, performance, potential, period, person:profiles!nine_box_profile_id_fkey(full_name)");
-  return (data ?? []).map((r: Record<string, any>) => {
-    const person = Array.isArray(r.person) ? r.person[0] : r.person;
-    return {
-      profile_id: r.profile_id,
-      person_name: person?.full_name ?? null,
-      performance: r.performance,
-      potential: r.potential,
-      period: r.period,
     };
   });
 }

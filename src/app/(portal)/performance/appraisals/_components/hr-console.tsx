@@ -34,12 +34,14 @@ export function HrConsole({
   cycles,
   appraisals,
   activeCycleId,
+  cycleName = null,
   competencies,
   departmentObjectives,
 }: {
   cycles: AppraisalCycle[];
   appraisals: Appraisal[];
   activeCycleId: string | null;
+  cycleName?: string | null;
   competencies: AppraisalCompetency[];
   departmentObjectives: DepartmentObjective[];
 }) {
@@ -184,7 +186,7 @@ export function HrConsole({
       {activeCycleId && appraisals.length > 0 && (
         <div className="rounded-lg border bg-card p-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">Completion — active cycle ({appraisals.length} employees)</h3>
+            <h3 className="text-sm font-semibold">Completion — {cycleName ?? "selected cycle"} ({appraisals.length} employees)</h3>
             <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => sendAppraisalReminders())}>
               Send reminders
             </Button>

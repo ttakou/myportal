@@ -1,24 +1,12 @@
 import Link from "next/link";
 import { ArrowRight, ClipboardCheck } from "lucide-react";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
-import { getNineBox } from "@/lib/performance";
-import { getTenantUsers } from "@/lib/admin";
-import { PerformanceBoard } from "./_components/performance-board";
 
 export default async function PerformancePage() {
-  const isAdmin = isAdminRole(await getCurrentRole());
-  const [users, nineBox] = await Promise.all([
-    isAdmin ? getTenantUsers() : Promise.resolve([]),
-    isAdmin ? getNineBox() : Promise.resolve([]),
-  ]);
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Performance Management</h1>
-        <p className="text-muted-foreground">
-          Annual performance appraisals{isAdmin ? " and the 9-box talent grid" : ""}.
-        </p>
+        <p className="text-muted-foreground">Annual performance appraisals.</p>
       </div>
 
       <Link
@@ -37,13 +25,6 @@ export default async function PerformancePage() {
         </div>
         <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
       </Link>
-
-      {isAdmin && (
-        <PerformanceBoard
-          users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
-          nineBox={nineBox}
-        />
-      )}
     </div>
   );
 }
