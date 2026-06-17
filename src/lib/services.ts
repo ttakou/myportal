@@ -40,8 +40,8 @@ export async function getActiveServices(): Promise<ActiveService[]> {
   }
 
   // The core "Core System & RBAC" module is the admin console (/admin); only
-  // HR/system admins can use it.
-  const canAdmin = access.isHr || access.isSystemAdmin;
+  // system admins can use it.
+  const canAdmin = access.isSystemAdmin;
 
   // Strict allowlist: a user sees a module only when one of their assigned
   // access roles grants its slug. No roles => no modules.
