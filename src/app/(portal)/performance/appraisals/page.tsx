@@ -2,7 +2,6 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import {
-  getActiveCycle,
   getCalibration,
   getCalibrationAdjustments,
   getCalibrationRoster,
@@ -23,14 +22,30 @@ import { HrConsole } from "./_components/hr-console";
 import { CalibrationPanel } from "./_components/calibration-panel";
 import { SecondLevelPanel } from "./_components/second-level-panel";
 import { RaterInbox } from "./_components/rater-inbox";
+import { CycleSwitcher } from "./_components/cycle-switcher";
 
-export default async function AppraisalsPage() {
+export default async function AppraisalsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cycle?: string }>;
+}) {
   const access = await getAccess();
   const isHr = access.isHr || access.isAdmin || access.isSystemAdmin;
-  const cycle = await getActiveCycle();
+
+  // Every cycle (year) the tenant has run, newest first — powers the year switcher.
+  const allCycles = await getCycles();
+  // Employees navigate real (active/closed) years only; HR can also see drafts.
+  const visibleCycles = isHr ? allCycles : allCycles.filter((c) => c.status !== "draft");
+  const activeCycle =
+    visibleCycles.find((c) => c.status === "active") ?? visibleCycles[0] ?? null;
+
+  // Default to the current cycle; `?cycle=` lets the user jump to a past year.
+  const { cycle: requestedId } = await searchParams;
+  const cycle =
+    (requestedId ? visibleCycles.find((c) => c.id === requestedId) : null) ?? activeCycle;
+  const isCurrent = !!cycle && cycle.status === "active";
 
   const [
-    cycles,
     myAppraisal,
     team,
     cycleAppraisals,
@@ -42,7 +57,6 @@ export default async function AppraisalsPage() {
     calibrationAdjustments,
     departmentObjectives,
   ] = await Promise.all([
-    isHr ? getCycles() : Promise.resolve([]),
     cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
     cycle ? getTeamAppraisals(cycle.id) : Promise.resolve([]),
     isHr && cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
@@ -59,6 +73,8 @@ export default async function AppraisalsPage() {
     myAppraisal ? getDepartmentObjectivesForMe(cycle?.id ?? null) : Promise.resolve([]),
   ]);
 
+  const isManager = team.length > 0;
+
   return (
     <div className="space-y-8">
       <div>
@@ -70,27 +86,47 @@ export default async function AppraisalsPage() {
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Performance appraisals</h1>
         <p className="text-muted-foreground">
-          {cycle
-            ? `${cycle.name} · ${cycle.status}`
-            : "No active appraisal cycle yet."}
+          {cycle ? `${cycle.name} · ${cycle.status}` : "No active appraisal cycle yet."}
         </p>
       </div>
 
-      {myAppraisal && (
+      <CycleSwitcher cycles={visibleCycles} selectedId={cycle?.id ?? null} />
+
+      {cycle && !isCurrent && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          You&apos;re viewing the {cycle.year} appraisal cycle ({cycle.status}). Historical cycles are read-only.
+        </p>
+      )}
+
+      {/* Employee view — your own appraisal for the selected year. */}
+      {myAppraisal ? (
         <MyAppraisalPanel
           appraisal={myAppraisal}
           colleagues={colleagues}
           deptObjectives={deptObjectives}
         />
+      ) : (
+        cycle &&
+        !isHr && (
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No appraisal recorded for you in {cycle.year}.
+          </p>
+        )
       )}
+
       {raterAssignments.length > 0 && <RaterInbox assignments={raterAssignments} />}
-      {team.length > 0 && <TeamReviewPanel appraisals={team} />}
+
+      {/* Line-manager dashboard — direct reports for the selected year. */}
+      {isManager && <TeamReviewPanel appraisals={team} />}
       {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
+
+      {/* HR-Admin dashboard — org-wide console + calibration for the selected year. */}
       {isHr && (
         <HrConsole
-          cycles={cycles}
+          cycles={allCycles}
           appraisals={cycleAppraisals}
           activeCycleId={cycle?.id ?? null}
+          cycleName={cycle?.name ?? null}
           competencies={competencies}
           departmentObjectives={departmentObjectives}
         />
