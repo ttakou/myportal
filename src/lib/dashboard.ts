@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { OFFSHORE_STATUS_LABEL, type OffshoreStatus } from "@/types/offshore";
+import { isWorkingDay } from "@/lib/canteen-entitlements";
 import { one } from "@/lib/supabase/row-helpers";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -38,6 +39,8 @@ export interface DashboardData {
   approvals: DashboardCount[];
   myRequests: DashboardCount[];
   quickLinks: DashboardQuickLink[];
+  /** Whether the canteen menu is relevant to this user today (entitled to dine). */
+  canteenEntitledToday: boolean;
 }
 
 /** A personalized snapshot for the signed-in user, tuned to their profile/role. */
@@ -211,10 +214,27 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
       count: myTransfers,
     });
 
+  // --- Canteen: only relevant if the user can actually dine today -----------
+  // Canteen staff/managers/admins keep the entry point; everyone else needs an
+  // entitlement grant covering today (and it must be a working day).
+  const canteenGrantsToday = await countOf(() =>
+    supabase
+      .from("canteen_meal_entitlements")
+      .select("id", { count: "exact", head: true })
+      .eq("profile_id", user.id)
+      .lte("starts_on", today)
+      .gte("ends_on", today),
+  );
+  const canteenEntitledToday =
+    access.isAdmin ||
+    access.isCanteenManager ||
+    access.isCanteenStaff ||
+    (isWorkingDay(today) && canteenGrantsToday > 0);
+
   // --- Quick actions (role-aware) -------------------------------------------
   const quickLinks: DashboardQuickLink[] = [{ label: "Emergency support", href: "/emergency" }];
   if (access.isCanteenStaff) quickLinks.push({ label: "Canteen", href: "/canteen" });
   if (isDriver) quickLinks.push({ label: "My driving tasks", href: "/transportation" });
 
-  return { name, offshore, approvals, myRequests, quickLinks };
+  return { name, offshore, approvals, myRequests, quickLinks, canteenEntitledToday };
 }

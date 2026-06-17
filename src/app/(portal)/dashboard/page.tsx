@@ -80,9 +80,11 @@ export default async function DashboardPage() {
   const focusIds = new Set(focusServices.map((s) => s.id));
   const otherServices = services.filter((s) => !focusIds.has(s.id));
 
-  // Onshore staff lead with today's canteen menu (when the module is on for them).
+  // Onshore staff lead with today's canteen menu — but only when the user is
+  // actually entitled to dine today (has the right/credit) or manages catering.
   const canteenActive = services.some((s) => s.slug === "canteen");
-  const menu = !isOffshore && canteenActive ? await getMenu(today()) : [];
+  const showCanteen = !isOffshore && canteenActive && (me?.canteenEntitledToday ?? false);
+  const menu = showCanteen ? await getMenu(today()) : [];
   const menuPeriods = MEAL_PERIODS.filter((p) => menu.some((d) => d.meal_period === p));
   const menuDateLabel = new Date().toLocaleDateString("en-GB", {
     weekday: "long",
@@ -161,7 +163,7 @@ export default async function DashboardPage() {
       )}
 
       {/* Onshore: lead with today's canteen menu, then quick access */}
-      {!isOffshore && canteenActive && (
+      {showCanteen && (
         <section>
           <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
             {/* Header band */}
