@@ -10,6 +10,7 @@ import type {
 
 const APPRAISAL_SELECT =
   "id, cycle_id, employee_id, manager_id, stage, status, overall_rating," +
+  " employee_summary, manager_summary," +
   " cycle:appraisal_cycles(name)," +
   " employee:profiles!employee_id(full_name)," +
   " manager:profiles!manager_id(full_name)";
@@ -26,6 +27,8 @@ function mapAppraisal(r: Record<string, any>): Appraisal {
     stage: r.stage,
     status: r.status,
     overall_rating: r.overall_rating ?? null,
+    employee_summary: r.employee_summary ?? null,
+    manager_summary: r.manager_summary ?? null,
     goals: [],
     events: [],
   };
@@ -119,7 +122,10 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
   const [{ data: goals }, { data: events }] = await Promise.all([
     supabase
       .from("appraisal_goals")
-      .select("id, title, description, weight, deadline, success_indicator, employee_progress, status")
+      .select(
+        "id, title, description, weight, deadline, success_indicator, employee_progress," +
+          " employee_self_rating, employee_comment, manager_rating, manager_comment, at_risk, status",
+      )
       .eq("appraisal_id", appraisal.id)
       .order("created_at"),
     supabase
@@ -128,7 +134,7 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
       .eq("appraisal_id", appraisal.id)
       .order("created_at", { ascending: false }),
   ]);
-  appraisal.goals = (goals ?? []) as AppraisalGoal[];
+  appraisal.goals = (goals ?? []) as unknown as AppraisalGoal[];
   appraisal.events = ((events ?? []) as Record<string, any>[]).map(
     (e): AppraisalEvent => ({
       id: e.id,

@@ -330,3 +330,209 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
   rev();
   return { ok: true };
 }
+
+// --- Phase 2: mid-year review, self-assessment, manager evaluation ----------
+
+async function requireEmployeeAt(
+  id: string,
+  stages: string[],
+): Promise<{ a: AppraisalRow } | ActionResult> {
+  const a = await loadAppraisal(id);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  const me = await uid();
+  const access = await getAccess();
+  const owner = a.employee_id === me || access.isHr || access.isAdmin || access.isSystemAdmin;
+  if (!owner) return { ok: false, error: "Not your appraisal." };
+  if (!stages.includes(a.stage)) return { ok: false, error: "Not editable at this stage." };
+  if (!EDITABLE.has(a.status)) return { ok: false, error: "This stage has already been submitted." };
+  return { a };
+}
+
+async function requireManagerAt(
+  id: string,
+  stages: string[],
+): Promise<{ a: AppraisalRow } | ActionResult> {
+  const guard = await requireManager(id);
+  if ("ok" in guard) return guard;
+  if (!stages.includes(guard.a.stage)) return { ok: false, error: "Not your stage to action." };
+  return guard;
+}
+
+/** Employee records progress (mid-year) or self-rating (final) on a goal. */
+export async function updateGoalProgress(input: {
+  appraisalId: string;
+  goalId: string;
+  progress?: string;
+  atRisk?: boolean;
+  employeeComment?: string;
+  selfRating?: number;
+}): Promise<ActionResult> {
+  const guard = await requireEmployeeAt(input.appraisalId, ["goal_review", "self_assessment"]);
+  if ("ok" in guard) return guard;
+  const supabase = createClient();
+  const patch: Record<string, unknown> = {};
+  if (input.progress !== undefined) patch.employee_progress = input.progress.trim() || null;
+  if (input.atRisk !== undefined) patch.at_risk = input.atRisk;
+  if (input.employeeComment !== undefined) patch.employee_comment = input.employeeComment.trim() || null;
+  if (input.selfRating !== undefined)
+    patch.employee_self_rating = Math.max(0, Math.min(5, input.selfRating));
+  const { error } = await supabase.from("appraisal_goals").update(patch).eq("id", input.goalId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Employee submits mid-year progress for the manager. */
+export async function submitMidYear(appraisalId: string): Promise<ActionResult> {
+  const guard = await requireEmployeeAt(appraisalId, ["goal_review"]);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ status: "pending_manager_review" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent(a, "midyear_submitted");
+  if (a.manager_id)
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: [a.manager_id],
+      category: "approval",
+      title: "Mid-year progress submitted",
+      body: "A team member submitted mid-year progress for review.",
+      url: "/performance/appraisals",
+    });
+  rev();
+  return { ok: true };
+}
+
+/** Manager completes the mid-year review; advances to the self-assessment stage. */
+export async function completeMidYear(input: {
+  appraisalId: string;
+  comment?: string;
+}): Promise<ActionResult> {
+  const guard = await requireManagerAt(input.appraisalId, ["goal_review"]);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  if (a.status !== "pending_manager_review")
+    return { ok: false, error: "Mid-year progress is not awaiting your review." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ stage: "self_assessment", status: "not_started" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent(a, "midyear_reviewed", input.comment);
+  await notifyUsers({
+    tenantId: a.tenant_id,
+    profileIds: [a.employee_id],
+    category: "approval",
+    title: "Mid-year review complete",
+    body: "Your manager completed the mid-year review. Year-end self-assessment is open when ready.",
+    url: "/performance/appraisals",
+  });
+  rev();
+  return { ok: true };
+}
+
+/** Employee submits the final self-assessment; advances to the manager's evaluation. */
+export async function submitSelfAssessment(input: {
+  appraisalId: string;
+  summary?: string;
+}): Promise<ActionResult> {
+  const guard = await requireEmployeeAt(input.appraisalId, ["self_assessment"]);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ employee_summary: input.summary?.trim() || null, stage: "manager_review", status: "not_started" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "self_assessment" }, "self_assessment_submitted");
+  if (a.manager_id)
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: [a.manager_id],
+      category: "approval",
+      title: "Self-assessment submitted",
+      body: "A team member submitted their year-end self-assessment for evaluation.",
+      url: "/performance/appraisals",
+    });
+  rev();
+  return { ok: true };
+}
+
+/** Manager rates a goal during the final evaluation. */
+export async function setManagerRating(input: {
+  appraisalId: string;
+  goalId: string;
+  rating?: number;
+  comment?: string;
+}): Promise<ActionResult> {
+  const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
+  if ("ok" in guard) return guard;
+  const supabase = createClient();
+  const patch: Record<string, unknown> = {};
+  if (input.rating !== undefined) patch.manager_rating = Math.max(0, Math.min(5, input.rating));
+  if (input.comment !== undefined) patch.manager_comment = input.comment.trim() || null;
+  const { error } = await supabase.from("appraisal_goals").update(patch).eq("id", input.goalId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Manager submits the final evaluation; computes the weighted overall rating. */
+export async function submitManagerEvaluation(input: {
+  appraisalId: string;
+  summary?: string;
+}): Promise<ActionResult> {
+  const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const supabase = createClient();
+
+  const { data: goals } = await supabase
+    .from("appraisal_goals")
+    .select("weight, manager_rating")
+    .eq("appraisal_id", a.id);
+  let wsum = 0;
+  let acc = 0;
+  let count = 0;
+  let plain = 0;
+  for (const g of goals ?? []) {
+    const r = g.manager_rating as number | null;
+    if (r == null) continue;
+    const w = (g.weight as number) || 0;
+    wsum += w;
+    acc += w * r;
+    plain += r;
+    count += 1;
+  }
+  if (count === 0) return { ok: false, error: "Rate at least one objective before submitting." };
+  const overall = wsum > 0 ? acc / wsum : plain / count;
+
+  const { error } = await supabase
+    .from("appraisals")
+    .update({
+      manager_summary: input.summary?.trim() || null,
+      overall_rating: Math.round(overall * 100) / 100,
+      stage: "hr_review",
+      status: "pending_hr_review",
+    })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "manager_review" }, "manager_evaluation_submitted",
+    `Overall ${Math.round(overall * 100) / 100}`);
+  await notifyUsers({
+    tenantId: a.tenant_id,
+    profileIds: [a.employee_id],
+    category: "approval",
+    title: "Manager evaluation complete",
+    body: "Your manager completed your evaluation; it is now with HR for validation.",
+    url: "/performance/appraisals",
+  });
+  rev();
+  return { ok: true };
+}
