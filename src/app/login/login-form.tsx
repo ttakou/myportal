@@ -27,8 +27,19 @@ const FEATURES = [
   { icon: ShieldCheck, label: "HSE & offshore" },
 ];
 
-export function LoginForm({ tenantSlug }: { tenantSlug?: string | null }) {
+export function LoginForm({
+  tenantSlug,
+  brandName,
+  logoUrl,
+  cssVars,
+}: {
+  tenantSlug?: string | null;
+  brandName?: string | null;
+  logoUrl?: string | null;
+  cssVars?: React.CSSProperties;
+}) {
   const router = useRouter();
+  const displayName = brandName ?? "MyEnterprisePortal";
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirectTo") ?? "/dashboard";
 
@@ -85,17 +96,27 @@ export function LoginForm({ tenantSlug }: { tenantSlug?: string | null }) {
   }
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-2">
-      <HeroPanel />
+    <div className="min-h-screen lg:grid lg:grid-cols-2" style={cssVars}>
+      <HeroPanel brandName={displayName} />
 
       <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-10">
-        <MobileBrand />
+        <MobileBrand brandName={displayName} />
 
         <div className="w-full max-w-sm space-y-6 rounded-lg border bg-card p-8 shadow-sm">
           <div className="space-y-1 text-center">
-            <h1 className="text-xl font-semibold tracking-tight">
-              MyEnterprisePortal
-            </h1>
+            {logoUrl ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={logoUrl}
+                  alt={displayName}
+                  className="mx-auto mb-1 h-10 w-auto object-contain"
+                />
+                <h1 className="sr-only">{displayName}</h1>
+              </>
+            ) : (
+              <h1 className="text-xl font-semibold tracking-tight">{displayName}</h1>
+            )}
             <p className="text-sm text-muted-foreground">Sign in to your account</p>
             {tenantSlug && (
               <p className="text-xs text-muted-foreground">
@@ -184,7 +205,7 @@ export function LoginForm({ tenantSlug }: { tenantSlug?: string | null }) {
  * Compact branded banner shown ABOVE the sign-in card on small screens, where
  * the full-height HeroPanel is hidden. Keeps the redesign visible on mobile.
  */
-function MobileBrand() {
+function MobileBrand({ brandName }: { brandName: string }) {
   return (
     <div className="w-full max-w-sm lg:hidden">
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-900 via-slate-800 to-rose-900 p-6 text-center text-white shadow-sm">
@@ -200,7 +221,7 @@ function MobileBrand() {
         />
         <div className="relative">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
-            MyEnterprisePortal
+            {brandName}
           </p>
           <h2 className="mt-2 text-lg font-semibold leading-snug">
             Everything your team needs, in one portal.
@@ -223,7 +244,7 @@ function MobileBrand() {
 }
 
 /** Branded marketing panel shown beside the sign-in card on large screens. */
-function HeroPanel() {
+function HeroPanel({ brandName }: { brandName: string }) {
   return (
     <aside className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-rose-900 p-12 text-white lg:flex">
       {/* Photo + legibility overlay; gradient shows through / as fallback. */}
@@ -238,7 +259,7 @@ function HeroPanel() {
       />
 
       <p className="relative text-sm font-semibold uppercase tracking-[0.2em] text-white/70">
-        MyEnterprisePortal
+        {brandName}
       </p>
 
       <div className="relative space-y-6">
