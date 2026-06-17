@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { ClipboardList, Truck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/components/permissions-provider";
 import {
   PRIORITY_LABEL,
   TASK_TYPE_LABEL,
@@ -46,6 +47,7 @@ export function DispatchBoard({
   allVehicles: Vehicle[];
   profiles: { id: string; full_name: string }[];
 }) {
+  const { can } = usePermissions();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -92,7 +94,9 @@ export function DispatchBoard({
 
       <TransportAnalytics all={all} drivers={drivers} />
 
-      <NewTaskForm drivers={drivers} vehicles={vehicles} pending={pending} run={run} />
+      {can("transportation", "manage") && (
+        <NewTaskForm drivers={drivers} vehicles={vehicles} pending={pending} run={run} />
+      )}
 
       <div className="space-y-3">
         {active.map((r) => (
@@ -126,8 +130,12 @@ export function DispatchBoard({
         </details>
       )}
 
-      <DriversPanel drivers={drivers} profiles={profiles} pending={pending} run={run} />
-      <VehiclesPanel vehicles={allVehicles} pending={pending} run={run} />
+      {can("transportation", "manage") && (
+        <DriversPanel drivers={drivers} profiles={profiles} pending={pending} run={run} />
+      )}
+      {can("transportation", "manage") && (
+        <VehiclesPanel vehicles={allVehicles} pending={pending} run={run} />
+      )}
     </section>
   );
 }
