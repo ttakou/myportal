@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState, useTransition, type ComponentType } from "react";
+import { useMemo, useState, type ComponentType } from "react";
+import { useStatusTransition } from "@/components/activity";
 import {
   BellRing,
   Flame,
@@ -87,7 +88,7 @@ export function CommandCenter({
   deliveries: DeliveryLog[];
   eventTitle: string | null;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {

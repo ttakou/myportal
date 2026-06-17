@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +18,7 @@ export function CanteenSettingsPanel({
   served: MealPeriod[];
   cutoffHour: number | null;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [selected, setSelected] = useState<Set<MealPeriod>>(new Set(served));

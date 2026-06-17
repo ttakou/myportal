@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CrewChangeSuggestion } from "@/types/offshore";
@@ -8,7 +9,7 @@ import { demobiliseCrew, mobiliseCrew } from "../actions";
 
 /** Schedule-driven prompts shown to offshore managers on the dashboard. */
 export function CrewChangeSuggestions({ items }: { items: CrewChangeSuggestion[] }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 

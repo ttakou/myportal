@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { ClipboardList, Truck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/components/permissions-provider";
@@ -48,7 +49,7 @@ export function DispatchBoard({
   profiles: { id: string; full_name: string }[];
 }) {
   const { can } = usePermissions();
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 

@@ -171,6 +171,7 @@ function RouteActivity({
  */
 export function useStatusTransition(
   message = "Saving…",
+  kind: Exclude<ActivityKind, "nav"> = "save",
 ): [boolean, React.TransitionStartFunction] {
   const [isPending, startTransition] = useTransition();
   const { start, stop } = useActivity();
@@ -178,12 +179,12 @@ export function useStatusTransition(
 
   useEffect(() => {
     if (isPending && idRef.current === null) {
-      idRef.current = start(message, "save");
+      idRef.current = start(message, kind);
     } else if (!isPending && idRef.current !== null) {
       stop(idRef.current);
       idRef.current = null;
     }
-  }, [isPending, message, start, stop]);
+  }, [isPending, message, kind, start, stop]);
 
   // Clean up if the component unmounts mid-transition.
   useEffect(() => {

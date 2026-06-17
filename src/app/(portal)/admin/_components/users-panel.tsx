@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useState, useTransition, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Check, Copy, KeyRound, SlidersHorizontal, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
@@ -49,7 +50,7 @@ export function UsersPanel({
   canImpersonate?: boolean;
   selfId?: string;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -500,7 +501,7 @@ function InlineText({
 /** Inline "add email" for accounts created without one. */
 function EmailCell({ userId }: { userId: string }) {
   const [value, setValue] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   return (
@@ -538,7 +539,7 @@ function EmailCell({ userId }: { userId: string }) {
 function SetPasswordControl({ userId }: { userId: string }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<string | null>(null);
   const [done, setDone] = useState(false);

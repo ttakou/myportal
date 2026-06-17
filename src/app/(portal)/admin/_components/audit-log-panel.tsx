@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useState, useTransition } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { fetchAuditLog, type AuditEntry } from "../actions";
 
 const TABLES = [
@@ -24,7 +25,7 @@ const OP_STYLE: Record<string, string> = {
 
 /** Tenant-wide audit trail (super/tenant admins). */
 export function AuditLogPanel() {
-  const [pending, start] = useTransition();
+  const [pending, start] = useStatusTransition("Loading…", "load");
   const [table, setTable] = useState("");
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [error, setError] = useState<string | null>(null);

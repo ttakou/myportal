@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { TenantModule } from "@/lib/admin";
@@ -39,7 +40,7 @@ export function ModuleParamsPanel({ modules }: { modules: TenantModule[] }) {
 function ModuleForm({ module }: { module: TenantModule }) {
   const defs = MODULE_PARAMS[module.slug] ?? [];
   const [values, setValues] = useState(() => withDefaults(module.slug, module.settings));
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 

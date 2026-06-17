@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { AlertTriangle, CheckCircle2, HandHelping } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ export function SafetyStatusBanner({
   broadcast: Broadcast;
   initialStatus: CheckinStatus | null;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Updating…");
   const [status, setStatus] = useState<CheckinStatus | null>(initialStatus);
   const [error, setError] = useState<string | null>(null);
   const [needHelpNote, setNeedHelpNote] = useState("");

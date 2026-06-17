@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Navigation, Power } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from
 
 /** The signed-in driver's live task list: start, complete, follow up. */
 export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: TransportRequest[] }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [onDuty, setOnDuty] = useState(driver.on_duty);
 

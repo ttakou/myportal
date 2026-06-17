@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { ArrowLeftRight, CalendarCog, GitMerge, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ export function CrewAssign({
   employees: AssignableEmployee[];
   crews: Crew[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
@@ -175,7 +176,7 @@ function NewEmployee({ crewId, crewName }: { crewId: string; crewName?: string }
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
   const [toCrew, setToCrew] = useState(true);
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [temp, setTemp] = useState<string | null>(null);
 
@@ -251,7 +252,7 @@ function ScheduleAssign({
   const [proposeName, setProposeName] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [info, setInfo] = useState<string | null>(null);
-  const [pend, startT] = useTransition();
+  const [pend, startT] = useStatusTransition("Saving…");
 
   const list = useMemo(() => {
     const ql = q.trim().toLowerCase();

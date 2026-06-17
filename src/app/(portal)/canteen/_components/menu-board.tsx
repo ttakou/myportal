@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Check, CheckCircle2, Minus, Plus, Users, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,7 @@ export function MenuBoard({
 }) {
   const { can } = usePermissions();
   const canBook = can("canteen", "create");
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   // Per-dish option selection: dishId -> set of option ids.
   const [selections, setSelections] = useState<Record<string, Set<string>>>({});

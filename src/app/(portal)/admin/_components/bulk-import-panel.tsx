@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Download, FileUp, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -72,7 +73,7 @@ function parseCsv(text: string): { rows: BulkRow[]; error?: string } {
 }
 
 export function BulkImportPanel() {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Importing…");
   const [rows, setRows] = useState<BulkRow[]>([]);
   const [mode, setMode] = useState<"invite" | "password">("password");
   const [error, setError] = useState<string | null>(null);

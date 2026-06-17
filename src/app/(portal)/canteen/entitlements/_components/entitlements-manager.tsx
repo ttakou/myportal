@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { CalendarPlus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ export function EntitlementsManager({
   entitlements: MealEntitlement[];
   employees: EntitlementCandidate[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   function run(fn: () => Promise<Result>, onOk?: () => void) {

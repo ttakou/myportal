@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { ImageUp, Palette, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { TenantBranding } from "@/lib/branding";
@@ -10,7 +11,7 @@ const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
 /** Tenant branding: logo upload + name and brand colours. System admins. */
 export function BrandingPanel({ branding }: { branding: TenantBranding }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(branding.logoUrl);

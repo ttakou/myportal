@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import type { CalibrationAdjustment, CalibrationRosterRow } from "@/types/appraisal";
 import { applyCalibration } from "../actions";
@@ -60,7 +61,7 @@ export function CalibrationCommittee({
 }
 
 function CommitteeRow({ row, adjusted }: { row: CalibrationRosterRow; adjusted: boolean }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [score, setScore] = useState(row.final_score != null ? String(row.final_score) : "");

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Bell, Smartphone, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -16,7 +17,7 @@ import { setNotificationPref } from "../actions";
  */
 export function NotificationPreferences({ initial }: { initial: PrefMap }) {
   const [prefs, setPrefs] = useState<PrefMap>(initial);
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   function toggle(category: MutableCategory, channel: "in_app" | "push" | "email") {

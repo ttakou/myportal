@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Check, Send, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { STAGE_LABEL, STATUS_LABEL, type Appraisal } from "@/types/appraisal";
@@ -28,7 +29,7 @@ export function TeamReviewPanel({ appraisals }: { appraisals: Appraisal[] }) {
 }
 
 function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [returning, setReturning] = useState(false);
   const [comment, setComment] = useState("");

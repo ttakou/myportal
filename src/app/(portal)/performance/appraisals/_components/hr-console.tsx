@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Play, Lock, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,7 +43,7 @@ export function HrConsole({
   competencies: AppraisalCompetency[];
   departmentObjectives: DepartmentObjective[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const year = new Date().getFullYear();
   const [name, setName] = useState(`${year} Annual Appraisal`);
@@ -214,7 +215,7 @@ function DepartmentObjectivesEditor({
   objectives: DepartmentObjective[];
   cycles: AppraisalCycle[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [department, setDepartment] = useState("");
@@ -305,7 +306,7 @@ function DepartmentObjectivesEditor({
 
 /** Edit an existing cycle's rating bands. */
 function RatingBandsManager({ cycles }: { cycles: AppraisalCycle[] }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [cycleId, setCycleId] = useState(cycles[0]?.id ?? "");
@@ -425,7 +426,7 @@ function BandsEditor({
 }
 
 function CompetencyEditor({ competencies }: { competencies: AppraisalCompetency[] }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
 
@@ -534,7 +535,7 @@ function StakeholderFeedback({ appraisal }: { appraisal: Appraisal }) {
 }
 
 function HrRow({ a, kind }: { a: Appraisal; kind: "validate" | "close" }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [returning, setReturning] = useState(false);
   const [comment, setComment] = useState("");
