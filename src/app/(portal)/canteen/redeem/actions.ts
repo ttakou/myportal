@@ -2,16 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
 
 async function requireStaff(): Promise<ActionResult | null> {
-  if (!(await getAccess()).isCanteenStaff) {
-    return { ok: false, error: "Only canteen staff can record meals." };
-  }
-  return null;
+  // Canteen staff keep serving; otherwise the canteen "operate" verb is required.
+  return requireModule("canteen", "operate", (a) => a.isCanteenStaff);
 }
 
 /** Record that an entitled employee took a meal on the given date. */

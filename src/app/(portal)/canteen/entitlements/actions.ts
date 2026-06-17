@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -13,10 +13,8 @@ function clampMeals(n: number): number {
 }
 
 async function requireHr(): Promise<ActionResult | null> {
-  if (!(await getAccess()).isHr) {
-    return { ok: false, error: "Only HR can manage meal entitlements." };
-  }
-  return null;
+  // HR keep managing entitlements; otherwise the canteen "manage" verb is required.
+  return requireModule("canteen", "manage", (a) => a.isHr);
 }
 
 /**

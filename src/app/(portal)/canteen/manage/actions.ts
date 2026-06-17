@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 import type { MealPeriod } from "@/types/canteen";
 
 import type { ActionResult } from "@/types/actions";
@@ -18,9 +18,8 @@ export async function addDish(input: {
   description?: string;
   capacity?: number | null;
 }): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) {
-    return { ok: false, error: "Not authorized." };
-  }
+  const gate = await requireModule("canteen", "manage", (a) => a.isCanteenManager);
+  if (gate) return gate;
   if (!MEALS.includes(input.mealPeriod)) {
     return { ok: false, error: "Invalid meal period." };
   }
@@ -61,9 +60,8 @@ export async function setDishActive(
   dishId: string,
   isActive: boolean,
 ): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) {
-    return { ok: false, error: "Not authorized." };
-  }
+  const gate = await requireModule("canteen", "edit", (a) => a.isCanteenManager);
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("canteen_dishes")
@@ -84,7 +82,8 @@ export async function addOptionGroup(input: {
   minSelect: number;
   maxSelect: number;
 }): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("canteen", "manage", (a) => a.isCanteenManager);
+  if (gate) return gate;
   if (!input.name.trim()) return { ok: false, error: "Group name is required." };
   const min = Math.max(0, Math.floor(input.minSelect));
   const max = Math.max(1, Math.floor(input.maxSelect));
@@ -107,7 +106,8 @@ export async function addOption(
   groupId: string,
   name: string,
 ): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("canteen", "manage", (a) => a.isCanteenManager);
+  if (gate) return gate;
   if (!name.trim()) return { ok: false, error: "Option name is required." };
   const supabase = createClient();
   const { error } = await supabase
@@ -120,7 +120,8 @@ export async function addOption(
 }
 
 export async function deleteOption(optionId: string): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("canteen", "manage", (a) => a.isCanteenManager);
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("canteen_options").delete().eq("id", optionId);
   if (error) return { ok: false, error: error.message };
@@ -138,7 +139,8 @@ export async function updateDishDetails(input: {
   available?: boolean;
   changeNote?: string;
 }): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("canteen", "edit", (a) => a.isCanteenManager);
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.description !== undefined) patch.description = input.description.trim() || null;
@@ -161,7 +163,8 @@ export async function updateDishDetails(input: {
 }
 
 export async function setDishPhoto(dishId: string, photoUrl: string | null): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("canteen", "edit", (a) => a.isCanteenManager);
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("canteen_dishes")
@@ -174,7 +177,8 @@ export async function setDishPhoto(dishId: string, photoUrl: string | null): Pro
 }
 
 export async function copyMenu(fromDate: string, toDate: string): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("canteen", "manage", (a) => a.isCanteenManager);
+  if (gate) return gate;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate))
     return { ok: false, error: "Invalid date." };
   if (fromDate === toDate) return { ok: false, error: "Pick a different target date." };
@@ -187,7 +191,8 @@ export async function copyMenu(fromDate: string, toDate: string): Promise<Action
 }
 
 export async function deleteOptionGroup(groupId: string): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("canteen", "manage", (a) => a.isCanteenManager);
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("canteen_option_groups")

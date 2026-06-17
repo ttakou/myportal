@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -17,6 +18,8 @@ export async function bookDish(
   guestNames: string[] = [],
   optionIds: string[] = [],
 ): Promise<ActionResult> {
+  const gate = await requireModule("canteen", "create");
+  if (gate) return gate;
   const supabase = createClient();
 
   // Atomic: validates option rules, enforces the 1-dish rule, and records
@@ -39,6 +42,8 @@ export async function bookDish(
 
 /** Finalise the current user's booking — locks it (no further changes). */
 export async function finalizeBooking(bookingId: string): Promise<ActionResult> {
+  const gate = await requireModule("canteen", "edit");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("canteen_bookings")
@@ -51,6 +56,8 @@ export async function finalizeBooking(bookingId: string): Promise<ActionResult> 
 
 /** Cancel one of the current user's bookings. */
 export async function cancelBooking(bookingId: string): Promise<ActionResult> {
+  const gate = await requireModule("canteen", "edit");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("canteen_bookings")
@@ -68,6 +75,8 @@ export async function updateGuests(
   guestCount: number,
   guestNames: string[] = [],
 ): Promise<ActionResult> {
+  const gate = await requireModule("canteen", "edit");
+  if (gate) return gate;
   const supabase = createClient();
   const clamped = Math.max(0, Math.min(10, guestCount));
   const { error } = await supabase

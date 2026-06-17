@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess } from "@/lib/auth";
+import { getAccess, type Access } from "@/lib/auth";
 import type { ActionResult } from "@/types/actions";
 import { hasPermission, type PermissionMap, type Verb } from "@/lib/permissions";
 
@@ -43,9 +43,21 @@ export async function requirePermission(
   module: string,
   verb: Verb,
 ): Promise<ActionResult | null> {
+  return requireModule(module, verb);
+}
+
+/**
+ * Like requirePermission, but also lets an existing functional role bypass the
+ * check (e.g. canteen staff keep serving regardless of access-role grants).
+ */
+export async function requireModule(
+  module: string,
+  verb: Verb,
+  bypass?: (a: Access) => boolean,
+): Promise<ActionResult | null> {
   const access = await getAccess();
   if (access.isAdmin || access.isSystemAdmin) return null;
-  const perms = await getMyPermissions();
-  if (hasPermission(perms, module, verb)) return null;
+  if (bypass && bypass(access)) return null;
+  if (hasPermission(await getMyPermissions(), module, verb)) return null;
   return { ok: false, error: "You don't have permission to do this." };
 }
