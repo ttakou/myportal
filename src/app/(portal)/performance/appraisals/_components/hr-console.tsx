@@ -44,6 +44,7 @@ export function HrConsole({
   const [wOkr, setWOkr] = useState("70");
   const [wComp, setWComp] = useState("20");
   const [wDev, setWDev] = useState("10");
+  const [requireSecond, setRequireSecond] = useState(false);
 
   const counts = useMemo(() => {
     const m = new Map<AppraisalStatus, number>();
@@ -80,6 +81,7 @@ export function HrConsole({
               weightOkr: Number(wOkr),
               weightCompetency: Number(wComp),
               weightDevelopment: Number(wDev),
+              requireSecondLevel: requireSecond,
             }),
           );
         }}
@@ -106,6 +108,10 @@ export function HrConsole({
           <label className="text-xs text-muted-foreground">
             Development %
             <input value={wDev} onChange={(e) => setWDev(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-24 rounded-md border bg-background px-2 py-1.5 text-sm" />
+          </label>
+          <label className="flex items-center gap-2 self-end text-xs text-muted-foreground">
+            <input type="checkbox" checked={requireSecond} onChange={(e) => setRequireSecond(e.target.checked)} />
+            Require second-level approval
           </label>
         </div>
       </form>

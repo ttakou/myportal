@@ -31,6 +31,7 @@ type AppraisalRow = {
   cycle_id: string;
   employee_id: string;
   manager_id: string | null;
+  second_level_id: string | null;
   stage: string;
   status: string;
 };
@@ -39,7 +40,7 @@ async function loadAppraisal(id: string): Promise<AppraisalRow | null> {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisals")
-    .select("id, tenant_id, cycle_id, employee_id, manager_id, stage, status")
+    .select("id, tenant_id, cycle_id, employee_id, manager_id, second_level_id, stage, status")
     .eq("id", id)
     .maybeSingle();
   return (data as AppraisalRow | null) ?? null;
@@ -77,6 +78,7 @@ export async function createCycle(input: {
   weightOkr?: number;
   weightCompetency?: number;
   weightDevelopment?: number;
+  requireSecondLevel?: boolean;
 }): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;
@@ -96,6 +98,7 @@ export async function createCycle(input: {
     weight_okr: clampWeight(input.weightOkr, 70),
     weight_competency: clampWeight(input.weightCompetency, 20),
     weight_development: clampWeight(input.weightDevelopment, 10),
+    require_second_level: Boolean(input.requireSecondLevel),
     created_by: await uid(),
   });
   if (error) return { ok: false, error: error.message };
@@ -520,7 +523,7 @@ export async function submitManagerEvaluation(input: {
       .eq("appraisal_id", a.id),
     supabase
       .from("appraisal_cycles")
-      .select("weight_okr, weight_competency, weight_development")
+      .select("weight_okr, weight_competency, weight_development, require_second_level")
       .eq("id", a.cycle_id)
       .maybeSingle(),
   ]);
@@ -580,6 +583,25 @@ export async function submitManagerEvaluation(input: {
   const overall = okrAvg;
   const label = ratingLabel(finalScore);
 
+  // Route to a second-level approver (the manager's manager) when the cycle
+  // requires it and one exists; otherwise straight to HR validation.
+  let secondLevelId: string | null = null;
+  let nextStage = "hr_review";
+  let nextStatus = "pending_hr_review";
+  if (cycle?.require_second_level && a.manager_id) {
+    const { data: mgr } = await supabase
+      .from("profiles")
+      .select("manager_id")
+      .eq("id", a.manager_id)
+      .maybeSingle();
+    const sl = (mgr?.manager_id as string | null) ?? null;
+    if (sl) {
+      secondLevelId = sl;
+      nextStage = "manager_review";
+      nextStatus = "pending_second_level";
+    }
+  }
+
   const { error } = await supabase
     .from("appraisals")
     .update({
@@ -587,21 +609,33 @@ export async function submitManagerEvaluation(input: {
       overall_rating: Math.round(overall * 100) / 100,
       final_score: Math.round(finalScore * 10) / 10,
       rating_label: label,
-      stage: "hr_review",
-      status: "pending_hr_review",
+      second_level_id: secondLevelId,
+      stage: nextStage,
+      status: nextStatus,
     })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "manager_review" }, "manager_evaluation_submitted",
     `Score ${Math.round(finalScore * 10) / 10}% (${label})`);
-  await notifyUsers({
-    tenantId: a.tenant_id,
-    profileIds: [a.employee_id],
-    category: "approval",
-    title: "Manager evaluation complete",
-    body: "Your manager completed your evaluation; it is now with HR for validation.",
-    url: "/performance/appraisals",
-  });
+  if (secondLevelId) {
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: [secondLevelId],
+      category: "approval",
+      title: "Appraisal needs your approval",
+      body: "An appraisal from your team needs second-level approval.",
+      url: "/performance/appraisals",
+    });
+  } else {
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: [a.employee_id],
+      category: "approval",
+      title: "Manager evaluation complete",
+      body: "Your manager completed your evaluation; it is now with HR for validation.",
+      url: "/performance/appraisals",
+    });
+  }
   rev();
   return { ok: true };
 }
@@ -962,6 +996,64 @@ export async function updateKeyResultProgress(input: {
   if (input.progress !== undefined) patch.progress = Math.max(0, Math.min(100, Math.floor(input.progress)));
   const { error } = await supabase.from("appraisal_key_results").update(patch).eq("id", input.krId);
   if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+// --- Second-level approval --------------------------------------------------
+
+async function requireSecondLevelApprover(
+  id: string,
+): Promise<{ a: AppraisalRow } | ActionResult> {
+  const a = await loadAppraisal(id);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  const me = await uid();
+  const access = await getAccess();
+  const ok = a.second_level_id === me || access.isHr || access.isAdmin || access.isSystemAdmin;
+  if (!ok) return { ok: false, error: "Only the second-level approver can action this." };
+  if (a.status !== "pending_second_level")
+    return { ok: false, error: "Not awaiting second-level approval." };
+  return { a };
+}
+
+export async function secondLevelApprove(appraisalId: string): Promise<ActionResult> {
+  const guard = await requireSecondLevelApprover(appraisalId);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ stage: "hr_review", status: "pending_hr_review" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "manager_review" }, "second_level_approved");
+  rev();
+  return { ok: true };
+}
+
+export async function secondLevelReturn(input: {
+  appraisalId: string;
+  comment: string;
+}): Promise<ActionResult> {
+  const guard = await requireSecondLevelApprover(input.appraisalId);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ status: "returned_for_correction" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "manager_review" }, "second_level_returned", input.comment);
+  if (a.manager_id)
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: [a.manager_id],
+      category: "approval",
+      title: "Appraisal returned by second-level approver",
+      body: input.comment?.trim() || "The second-level approver asked for corrections.",
+      url: "/performance/appraisals",
+    });
   rev();
   return { ok: true };
 }
