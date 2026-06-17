@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -12,9 +12,8 @@ export async function setReservationPrepared(
   bookingId: string,
   prepared: boolean,
 ): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenStaff) {
-    return { ok: false, error: "Not authorized." };
-  }
+  const gate = await requireModule("canteen", "operate", (a) => a.isCanteenStaff);
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("canteen_bookings")
@@ -32,9 +31,8 @@ export async function setReservationCollected(
   bookingId: string,
   collected: boolean,
 ): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenStaff) {
-    return { ok: false, error: "Not authorized." };
-  }
+  const gate = await requireModule("canteen", "operate", (a) => a.isCanteenStaff);
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("canteen_bookings")

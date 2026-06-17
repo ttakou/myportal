@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 import type { IssueType } from "@/types/feedback";
 
 import type { ActionResult } from "@/types/actions";
@@ -14,6 +14,8 @@ export async function submitFeedback(input: {
   issueType: IssueType;
   comment?: string;
 }): Promise<ActionResult> {
+  const gate = await requireModule("canteen", "create");
+  if (gate) return gate;
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -36,7 +38,8 @@ export async function submitFeedback(input: {
 }
 
 export async function resolveFeedback(id: string, resolved: boolean): Promise<ActionResult> {
-  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("canteen", "approve", (a) => a.isCanteenManager);
+  if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
