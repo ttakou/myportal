@@ -4,7 +4,6 @@ import {
   ALWAYS_ALLOWED_PREFIXES,
   matchModuleRoute,
 } from "@/lib/navigation";
-import { isBaselineOnshoreSlug, isOffshoreUser } from "@/lib/onshore";
 
 const PUBLIC_PATHS = ["/login", "/auth", "/_next", "/favicon.ico"];
 
@@ -91,30 +90,18 @@ export async function middleware(request: NextRequest) {
       .eq("is_active", true)
       .eq("services_catalog.slug", matched.slug)
       .maybeSingle(),
-    // ---- 3. Role gate: users with access roles are limited to the union of
-    // their roles' modules; users with none are unrestricted.
+    // ---- 3. Role gate (strict allowlist): a module is reachable only when one
+    // of the user's assigned access roles grants its slug. No roles => denied.
     supabase
       .from("profile_access_roles")
       .select("tenant_roles(module_slugs)")
       .eq("profile_id", user.id),
   ]);
 
-  let roleAllowed = true;
-  if (myRoles && myRoles.length > 0) {
-    roleAllowed = myRoles.some((row) => {
-      const role = Array.isArray(row.tenant_roles) ? row.tenant_roles[0] : row.tenant_roles;
-      return ((role?.module_slugs as string[]) ?? []).includes(matched.slug);
-    });
-  }
-
-  // Onshore staff always keep access to the baseline onshore modules, even when
-  // their access roles wouldn't otherwise grant them. The tenant subscription
-  // check above still applies.
-  if (!roleAllowed && isBaselineOnshoreSlug(matched.slug)) {
-    if (!(await isOffshoreUser(supabase, user.id))) {
-      roleAllowed = true;
-    }
-  }
+  const roleAllowed = (myRoles ?? []).some((row) => {
+    const role = Array.isArray(row.tenant_roles) ? row.tenant_roles[0] : row.tenant_roles;
+    return ((role?.module_slugs as string[]) ?? []).includes(matched.slug);
+  });
 
   if (error || !data || !roleAllowed) {
     const denied = request.nextUrl.clone();
