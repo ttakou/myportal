@@ -167,6 +167,9 @@ export async function addGoal(input: {
   weight?: number;
   deadline?: string;
   successIndicator?: string;
+  alignment?: string;
+  evidenceRequired?: string;
+  kind?: "objective" | "development";
 }): Promise<ActionResult> {
   const guard = await requireEmployeeEditable(input.appraisalId);
   if ("ok" in guard) return guard;
@@ -181,6 +184,9 @@ export async function addGoal(input: {
     weight: Math.max(0, Math.min(100, Math.floor(input.weight ?? 0))),
     deadline: input.deadline || null,
     success_indicator: input.successIndicator?.trim() || null,
+    alignment: input.alignment?.trim() || null,
+    evidence_required: input.evidenceRequired?.trim() || null,
+    kind: input.kind === "development" ? "development" : "objective",
   });
   if (error) return { ok: false, error: error.message };
   if (a.status === "not_started")
@@ -835,6 +841,65 @@ export async function sendAppraisalReminders(): Promise<ActionResult> {
   if (!tenant) return { ok: false, error: "No tenant in scope." };
   const res = await runAppraisalReminders(tenant.id as string);
   if (!res.ok) return { ok: false, error: res.error ?? "Could not send reminders." };
+  rev();
+  return { ok: true };
+}
+
+// --- OKR key results (define during goal-setting, track during the year) ----
+
+export async function addKeyResult(input: {
+  appraisalId: string;
+  goalId: string;
+  title: string;
+  target?: string;
+  unit?: string;
+}): Promise<ActionResult> {
+  const guard = await requireEmployeeEditable(input.appraisalId);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  if (!input.title.trim()) return { ok: false, error: "Key result is required." };
+  const supabase = createClient();
+  const { error } = await supabase.from("appraisal_key_results").insert({
+    tenant_id: a.tenant_id,
+    appraisal_id: a.id,
+    goal_id: input.goalId,
+    title: input.title.trim(),
+    target: input.target?.trim() || null,
+    unit: input.unit?.trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function deleteKeyResult(input: {
+  appraisalId: string;
+  krId: string;
+}): Promise<ActionResult> {
+  const guard = await requireEmployeeEditable(input.appraisalId);
+  if ("ok" in guard) return guard;
+  const supabase = createClient();
+  const { error } = await supabase.from("appraisal_key_results").delete().eq("id", input.krId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Continuous tracking: employee updates a key result's progress during the year. */
+export async function updateKeyResultProgress(input: {
+  appraisalId: string;
+  krId: string;
+  currentValue?: string;
+  progress?: number;
+}): Promise<ActionResult> {
+  const guard = await requireEmployeeAt(input.appraisalId, ["goal_review", "self_assessment"]);
+  if ("ok" in guard) return guard;
+  const supabase = createClient();
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.currentValue !== undefined) patch.current_value = input.currentValue.trim() || null;
+  if (input.progress !== undefined) patch.progress = Math.max(0, Math.min(100, Math.floor(input.progress)));
+  const { error } = await supabase.from("appraisal_key_results").update(patch).eq("id", input.krId);
+  if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
 }
