@@ -88,6 +88,15 @@ export interface AppraisalEvent {
   created_at: string;
 }
 
+export interface AppraisalAppeal {
+  id: string;
+  reason: string | null;
+  status: "open" | "resolved";
+  decision: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
 export interface Appraisal {
   id: string;
   cycle_id: string;
@@ -106,6 +115,7 @@ export interface Appraisal {
   acknowledged_at: string | null;
   employee_agreed: boolean | null;
   employee_ack_comment: string | null;
+  appeal: AppraisalAppeal | null;
   goals: AppraisalGoal[];
   events: AppraisalEvent[];
 }

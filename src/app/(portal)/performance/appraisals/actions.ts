@@ -654,6 +654,14 @@ export async function acknowledge(input: {
     })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
+  if (!input.agreed) {
+    await supabase.from("appraisal_appeals").insert({
+      tenant_id: a.tenant_id,
+      appraisal_id: a.id,
+      reason: input.comment?.trim() || null,
+      opened_by: await uid(),
+    });
+  }
   await logEvent(a, input.agreed ? "acknowledged_agree" : "acknowledged_disagree", input.comment);
   const recipients = [a.manager_id].filter(Boolean) as string[];
   if (recipients.length)
@@ -686,6 +694,48 @@ export async function closeAppraisal(appraisalId: string): Promise<ActionResult>
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "acknowledgement" }, "appraisal_closed");
+  rev();
+  return { ok: true };
+}
+
+/** HR resolves an open appeal on a disputed appraisal. */
+export async function resolveAppeal(input: {
+  appraisalId: string;
+  decision: string;
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  const supabase = createClient();
+  const { data: appeal } = await supabase
+    .from("appraisal_appeals")
+    .select("id")
+    .eq("appraisal_id", a.id)
+    .eq("status", "open")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!appeal) return { ok: false, error: "No open appeal to resolve." };
+  const { error } = await supabase
+    .from("appraisal_appeals")
+    .update({
+      status: "resolved",
+      decision: input.decision?.trim() || null,
+      resolved_by: await uid(),
+      resolved_at: new Date().toISOString(),
+    })
+    .eq("id", appeal.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent(a, "appeal_resolved", input.decision);
+  await notifyUsers({
+    tenantId: a.tenant_id,
+    profileIds: [a.employee_id],
+    category: "approval",
+    title: "Appeal resolved",
+    body: input.decision?.trim() || "HR recorded a decision on your appeal.",
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
