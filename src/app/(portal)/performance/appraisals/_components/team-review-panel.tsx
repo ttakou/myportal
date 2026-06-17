@@ -79,6 +79,29 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
                   {g.employee_progress || g.employee_comment}
                 </p>
               )}
+              {g.raters.length > 0 && (
+                <div className="mt-1 rounded-md bg-muted/50 px-2 py-1 text-xs">
+                  <span className="font-medium">Stakeholder feedback</span>
+                  <span className="text-muted-foreground"> (confidential)</span>
+                  <ul className="mt-0.5 space-y-0.5">
+                    {g.raters.map((r) => (
+                      <li key={r.id}>
+                        {r.rater_name ?? "—"}:{" "}
+                        {r.status === "submitted" ? (
+                          <>
+                            <span className="font-medium">{r.rating ?? "—"}/5</span>
+                            {r.comment ? (
+                              <span className="text-muted-foreground"> — {r.comment}</span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">awaiting response</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {evaluating && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <select

@@ -3,16 +3,24 @@
 import { useState, useTransition } from "react";
 import { Plus, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type AppraisalGoal } from "@/types/appraisal";
+import {
+  STAGE_LABEL,
+  STATUS_LABEL,
+  type Appraisal,
+  type AppraisalGoal,
+  type Colleague,
+} from "@/types/appraisal";
 import {
   acknowledge,
   addDevelopmentItem,
   addGoal,
+  addGoalRater,
   addKeyResult,
   deleteDevelopmentItem,
   deleteGoal,
   deleteKeyResult,
   rateCompetencySelf,
+  removeGoalRater,
   setDevelopmentStatus,
   submitGoals,
   submitMidYear,
@@ -29,7 +37,13 @@ const DEV_STATUS_LABEL: Record<"planned" | "in_progress" | "done", string> = {
 
 const EDITABLE = new Set(["not_started", "draft", "returned_for_correction"]);
 
-export function MyAppraisalPanel({ appraisal }: { appraisal: Appraisal }) {
+export function MyAppraisalPanel({
+  appraisal,
+  colleagues = [],
+}: {
+  appraisal: Appraisal;
+  colleagues?: Colleague[];
+}) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const editable = EDITABLE.has(appraisal.status);
@@ -57,13 +71,25 @@ export function MyAppraisalPanel({ appraisal }: { appraisal: Appraisal }) {
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
       {appraisal.stage === "goal_setting" && (
-        <GoalSetting appraisal={appraisal} editable={editable} pending={pending} run={run} />
+        <GoalSetting
+          appraisal={appraisal}
+          editable={editable}
+          pending={pending}
+          run={run}
+          colleagues={colleagues}
+        />
       )}
       {appraisal.stage === "goal_review" && (
         <MidYear appraisal={appraisal} editable={editable} pending={pending} run={run} />
       )}
       {appraisal.stage === "self_assessment" && (
-        <SelfAssessment appraisal={appraisal} editable={editable} pending={pending} run={run} />
+        <SelfAssessment
+          appraisal={appraisal}
+          editable={editable}
+          pending={pending}
+          run={run}
+          colleagues={colleagues}
+        />
       )}
       {["manager_review", "hr_review", "final_discussion", "acknowledgement", "closed"].includes(
         appraisal.stage,
@@ -88,11 +114,13 @@ function GoalSetting({
   editable,
   pending,
   run,
+  colleagues,
 }: {
   appraisal: Appraisal;
   editable: boolean;
   pending: boolean;
   run: RunFn;
+  colleagues: Colleague[];
 }) {
   const [title, setTitle] = useState("");
   const [weight, setWeight] = useState("");
@@ -145,6 +173,14 @@ function GoalSetting({
                 )}
               </div>
               <GoalKeyResults goal={g} appraisalId={appraisal.id} editable={editable} pending={pending} run={run} />
+              <GoalReviewers
+                goal={g}
+                appraisalId={appraisal.id}
+                editable={appraisal.status !== "closed"}
+                pending={pending}
+                run={run}
+                colleagues={colleagues}
+              />
             </li>
           ))}
         </ul>
@@ -264,11 +300,13 @@ function SelfAssessment({
   editable,
   pending,
   run,
+  colleagues,
 }: {
   appraisal: Appraisal;
   editable: boolean;
   pending: boolean;
   run: RunFn;
+  colleagues: Colleague[];
 }) {
   const [summary, setSummary] = useState(appraisal.employee_summary ?? "");
   return (
@@ -302,6 +340,14 @@ function SelfAssessment({
             rows={2}
           />
           <KrProgress goal={g} appraisalId={appraisal.id} editable={editable} pending={pending} run={run} />
+          <GoalReviewers
+            goal={g}
+            appraisalId={appraisal.id}
+            editable={appraisal.status !== "closed"}
+            pending={pending}
+            run={run}
+            colleagues={colleagues}
+          />
         </div>
       ))}
       {appraisal.competencies.length > 0 && (
@@ -372,6 +418,14 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
               </ul>
             )}
             {g.manager_comment && <p className="mt-1 text-xs text-muted-foreground">{g.manager_comment}</p>}
+            {g.raters.length > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Stakeholder reviewers:{" "}
+                {g.raters
+                  .map((r) => `${r.rater_name ?? "—"} (${r.status === "submitted" ? "responded" : "invited"})`)
+                  .join(", ")}
+              </p>
+            )}
           </li>
         ))}
       </ul>
@@ -639,6 +693,111 @@ function GoalKeyResults({
             + KR
           </button>
         </form>
+      )}
+    </div>
+  );
+}
+
+/** Attach business stakeholders to an objective to rate the employee on it.
+ *  The employee sees who is attached and whether they responded, but never the
+ *  rating or comment — those are confidential to the line manager. */
+function GoalReviewers({
+  goal,
+  appraisalId,
+  editable,
+  pending,
+  run,
+  colleagues,
+}: {
+  goal: AppraisalGoal;
+  appraisalId: string;
+  editable: boolean;
+  pending: boolean;
+  run: RunFn;
+  colleagues: Colleague[];
+}) {
+  const [raterId, setRaterId] = useState("");
+  const attached = new Set(goal.raters.map((r) => r.rater_id));
+  const options = colleagues.filter((c) => !attached.has(c.id));
+
+  if (!editable && goal.raters.length === 0) return null;
+
+  return (
+    <div className="mt-2 space-y-1 pl-3">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Stakeholder reviewers
+      </div>
+      {goal.raters.length > 0 ? (
+        <ul className="space-y-0.5">
+          {goal.raters.map((r) => (
+            <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
+              <span>
+                {r.rater_name ?? "—"}
+                <span
+                  className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${
+                    r.status === "submitted"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {r.status === "submitted" ? "responded" : "invited"}
+                </span>
+              </span>
+              {editable && (
+                <button
+                  type="button"
+                  aria-label="Remove reviewer"
+                  disabled={pending}
+                  onClick={() => run(() => removeGoalRater({ appraisalId, raterRowId: r.id }))}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  ✕
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">No reviewers yet.</p>
+      )}
+      {editable && (
+        <form
+          className="flex flex-wrap gap-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!raterId) return;
+            run(
+              () => addGoalRater({ appraisalId, goalId: goal.id, raterId }),
+              () => setRaterId(""),
+            );
+          }}
+        >
+          <select
+            value={raterId}
+            onChange={(e) => setRaterId(e.target.value)}
+            className="flex-1 rounded-md border bg-background px-2 py-1 text-xs"
+          >
+            <option value="">Add a reviewer…</option>
+            {options.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.full_name ?? "—"}
+                {c.department ? ` · ${c.department}` : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={pending || !raterId}
+            className="rounded-md border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
+          >
+            Invite
+          </button>
+        </form>
+      )}
+      {editable && (
+        <p className="text-[11px] text-muted-foreground">
+          Their rating and comments are shared only with your line manager.
+        </p>
       )}
     </div>
   );

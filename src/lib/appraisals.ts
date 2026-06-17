@@ -8,6 +8,9 @@ import type {
   AppraisalEvent,
   AppraisalGoal,
   AppraisalKeyResult,
+  Colleague,
+  GoalRater,
+  RaterAssignment,
 } from "@/types/appraisal";
 
 const APPRAISAL_SELECT =
@@ -107,7 +110,45 @@ export async function getMyAppraisal(cycleId: string): Promise<Appraisal | null>
   if (!data) return null;
   const appraisal = mapAppraisal(data as Record<string, any>);
   await hydrate(appraisal);
+  // Employee view: overlay who is reviewing each goal + whether they responded,
+  // but never the rating or comment (those are confidential to the manager).
+  const { data: er } = await supabase.rpc("goal_raters_for_employee", {
+    p_appraisal: appraisal.id,
+  });
+  const byGoal = new Map<string, GoalRater[]>();
+  for (const r of (er ?? []) as Record<string, any>[]) {
+    const arr = byGoal.get(r.goal_id) ?? [];
+    arr.push({
+      id: r.id,
+      rater_id: r.rater_id,
+      rater_name: r.rater_name ?? null,
+      rating: null,
+      comment: null,
+      status: r.status,
+    });
+    byGoal.set(r.goal_id, arr);
+  }
+  for (const g of appraisal.goals) g.raters = byGoal.get(g.id) ?? [];
   return appraisal;
+}
+
+/** Goals the signed-in user has been asked to review (as a stakeholder rater). */
+export async function getMyRaterAssignments(): Promise<RaterAssignment[]> {
+  const supabase = createClient();
+  const { data } = await supabase.rpc("my_goal_rater_assignments");
+  return (data ?? []) as RaterAssignment[];
+}
+
+/** Active people in the tenant, for the stakeholder-reviewer picker. */
+export async function getTenantColleagues(): Promise<Colleague[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, full_name, department")
+    .eq("is_active", true)
+    .order("full_name")
+    .limit(500);
+  return (data ?? []) as Colleague[];
 }
 
 /** Appraisals the signed-in manager owns (their direct reports). */
@@ -243,6 +284,7 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
   const goalsList = ((goals ?? []) as unknown as AppraisalGoal[]).map((g) => ({
     ...g,
     key_results: [] as AppraisalKeyResult[],
+    raters: [] as GoalRater[],
   }));
   const { data: krs } = await supabase
     .from("appraisal_key_results")
@@ -263,6 +305,28 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
     byGoal.set(k.goal_id, arr);
   }
   for (const g of goalsList) g.key_results = byGoal.get(g.id) ?? [];
+
+  // Stakeholder reviewers. RLS returns full rows (incl. rating/comment) only to
+  // evaluators (manager/second-level/HR/admin); for the employee's own view this
+  // query returns nothing, and getMyAppraisal overlays a redacted list instead.
+  const { data: raterRows } = await supabase
+    .from("appraisal_goal_raters")
+    .select("id, goal_id, rater_id, rating, comment, status, rater:profiles!rater_id(full_name)")
+    .eq("appraisal_id", appraisal.id);
+  const ratersByGoal = new Map<string, GoalRater[]>();
+  for (const r of (raterRows ?? []) as Record<string, any>[]) {
+    const arr = ratersByGoal.get(r.goal_id) ?? [];
+    arr.push({
+      id: r.id,
+      rater_id: r.rater_id,
+      rater_name: one<{ full_name?: string }>(r.rater)?.full_name ?? null,
+      rating: r.rating ?? null,
+      comment: r.comment ?? null,
+      status: r.status,
+    });
+    ratersByGoal.set(r.goal_id, arr);
+  }
+  for (const g of goalsList) g.raters = ratersByGoal.get(g.id) ?? [];
   appraisal.goals = goalsList;
 
   const { data: dev } = await supabase
