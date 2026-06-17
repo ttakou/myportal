@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 import { notifyProfiles } from "@/lib/eess-notify";
 import { seedTaskChecklist } from "@/lib/task-checklist";
 import { getModuleSettings } from "@/lib/module-settings";
@@ -122,7 +122,8 @@ export async function createTransportTask(input: {
   driverId?: string;
   vehicleId?: string;
 }): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
   if (!input.pickup.trim() || !input.dropoff.trim())
     return { ok: false, error: "Pickup and drop-off are required." };
   if (!input.departAt) return { ok: false, error: "Departure time is required." };
@@ -219,7 +220,8 @@ export async function assignTransport(
   driverId: string | null,
   vehicleId: string | null,
 ): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("transportation", "approve");
+  if (gate) return gate;
   const supabase = createClient();
   const cfg = await getModuleSettings("transportation");
 
@@ -258,7 +260,8 @@ export async function addVehicle(input: {
   plate?: string;
   capacity?: number;
 }): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
   if (!input.name.trim()) return { ok: false, error: "Vehicle name is required." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -278,7 +281,8 @@ export async function setVehicleStatus(
   id: string,
   status: VehicleStatus,
 ): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("transport_vehicles")
@@ -432,7 +436,8 @@ export async function addChecklistItem(
   label: string,
 ): Promise<ActionResult> {
   if (!label.trim()) return { ok: false, error: "Label is empty." };
-  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
   const supabase = createClient();
   const { data: req } = await supabase
     .from("transport_requests")
@@ -463,7 +468,8 @@ export async function addDriver(input: {
   phone?: string;
   profileId?: string;
 }): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
   if (!input.fullName.trim()) return { ok: false, error: "Driver name is required." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -484,7 +490,8 @@ export async function linkDriverProfile(
   driverId: string,
   profileId: string | null,
 ): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Not authorized." };
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("transport_drivers")

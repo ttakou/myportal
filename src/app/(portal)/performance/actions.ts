@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -92,8 +92,8 @@ export async function setNineBox(input: {
   potential: number;
   period: string;
 }): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole()))
-    return { ok: false, error: "Only managers/admins can set the 9-box." };
+  const gate = await requireModule("performance", "approve");
+  if (gate) return gate;
   const supabase = createClient();
   const t = await tenantId(supabase);
   if (!t) return { ok: false, error: "No tenant in scope." };
