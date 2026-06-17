@@ -1,7 +1,17 @@
 import type { CalibrationData } from "@/lib/appraisals";
+import type { CalibrationAdjustment, CalibrationRosterRow } from "@/types/appraisal";
+import { CalibrationCommittee } from "./calibration-committee";
 
-export function CalibrationPanel({ data }: { data: CalibrationData }) {
-  if (data.total === 0) return null;
+export function CalibrationPanel({
+  data,
+  roster = [],
+  adjustments = [],
+}: {
+  data: CalibrationData;
+  roster?: CalibrationRosterRow[];
+  adjustments?: CalibrationAdjustment[];
+}) {
+  if (data.total === 0 && roster.length === 0) return null;
   const max = Math.max(1, ...data.buckets.map((b) => b.count));
 
   return (
@@ -13,23 +23,27 @@ export function CalibrationPanel({ data }: { data: CalibrationData }) {
         </span>
       </div>
 
-      <div className="rounded-lg border bg-card p-4">
-        <h3 className="mb-3 text-sm font-semibold">Overall rating distribution</h3>
-        <div className="space-y-2">
-          {data.buckets.map((b) => (
-            <div key={b.label} className="flex items-center gap-3 text-sm">
-              <span className="w-44 shrink-0 text-muted-foreground">{b.label}</span>
-              <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
-                <div
-                  className="h-full bg-primary"
-                  style={{ width: `${(b.count / max) * 100}%` }}
-                />
+      {data.total > 0 && (
+        <div className="rounded-lg border bg-card p-4">
+          <h3 className="mb-3 text-sm font-semibold">Overall rating distribution</h3>
+          <div className="space-y-2">
+            {data.buckets.map((b) => (
+              <div key={b.label} className="flex items-center gap-3 text-sm">
+                <span className="w-44 shrink-0 text-muted-foreground">{b.label}</span>
+                <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${(b.count / max) * 100}%` }}
+                  />
+                </div>
+                <span className="w-8 text-right font-medium">{b.count}</span>
               </div>
-              <span className="w-8 text-right font-medium">{b.count}</span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      <CalibrationCommittee roster={roster} adjustments={adjustments} />
 
       {data.byDept.length > 0 && (
         <div className="overflow-x-auto rounded-lg border">

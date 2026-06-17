@@ -196,6 +196,64 @@ export async function closeCycle(cycleId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/** Calibration committee adjusts an appraisal's final score, with an audit log. */
+export async function applyCalibration(input: {
+  appraisalId: string;
+  newScore: number;
+  reason?: string;
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  if (!Number.isFinite(input.newScore) || input.newScore < 0 || input.newScore > 100)
+    return { ok: false, error: "Score must be between 0 and 100." };
+  const supabase = createClient();
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (a.status === "closed") return { ok: false, error: "This appraisal is closed." };
+
+  const [{ data: ap }, { data: cyc }] = await Promise.all([
+    supabase.from("appraisals").select("final_score, rating_label").eq("id", a.id).maybeSingle(),
+    supabase.from("appraisal_cycles").select("rating_bands").eq("id", a.cycle_id).maybeSingle(),
+  ]);
+  if (ap?.final_score == null)
+    return { ok: false, error: "This appraisal has no score to calibrate yet." };
+
+  const newScore = Math.round(input.newScore * 10) / 10;
+  const newLabel = ratingLabelFromBands(
+    newScore,
+    (cyc?.rating_bands as RatingBand[] | undefined) ?? null,
+  );
+
+  const { error: insErr } = await supabase.from("appraisal_calibration_adjustments").insert({
+    tenant_id: a.tenant_id,
+    appraisal_id: a.id,
+    cycle_id: a.cycle_id,
+    previous_score: ap?.final_score ?? null,
+    previous_label: ap?.rating_label ?? null,
+    new_score: newScore,
+    new_label: newLabel,
+    reason: input.reason?.trim() || null,
+    adjusted_by: await uid(),
+  });
+  if (insErr) return { ok: false, error: insErr.message };
+
+  const { error: updErr } = await supabase
+    .from("appraisals")
+    .update({ final_score: newScore, rating_label: newLabel })
+    .eq("id", a.id);
+  if (updErr) return { ok: false, error: updErr.message };
+
+  await logEvent(
+    a,
+    "calibration_adjusted",
+    `Score ${ap?.final_score ?? "—"}% → ${newScore}% (${newLabel})${
+      input.reason?.trim() ? ` — ${input.reason.trim()}` : ""
+    }`,
+  );
+  rev();
+  return { ok: true };
+}
+
 // --- Employee: goal setting -------------------------------------------------
 
 const EDITABLE = new Set(["not_started", "draft", "returned_for_correction"]);

@@ -4,6 +4,8 @@ import { getAccess } from "@/lib/auth";
 import {
   getActiveCycle,
   getCalibration,
+  getCalibrationAdjustments,
+  getCalibrationRoster,
   getCompetencies,
   getCycleAppraisals,
   getCycles,
@@ -34,6 +36,8 @@ export default async function AppraisalsPage() {
     calibration,
     secondLevel,
     raterAssignments,
+    calibrationRoster,
+    calibrationAdjustments,
   ] = await Promise.all([
     isHr ? getCycles() : Promise.resolve([]),
     cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
@@ -43,6 +47,8 @@ export default async function AppraisalsPage() {
     isHr && cycle ? getCalibration(cycle.id) : Promise.resolve(null),
     cycle ? getSecondLevelQueue(cycle.id) : Promise.resolve([]),
     getMyRaterAssignments(),
+    isHr && cycle ? getCalibrationRoster(cycle.id) : Promise.resolve([]),
+    isHr && cycle ? getCalibrationAdjustments(cycle.id) : Promise.resolve([]),
   ]);
   const colleagues = myAppraisal ? await getTenantColleagues() : [];
 
@@ -75,7 +81,13 @@ export default async function AppraisalsPage() {
           competencies={competencies}
         />
       )}
-      {isHr && calibration && <CalibrationPanel data={calibration} />}
+      {isHr && calibration && (
+        <CalibrationPanel
+          data={calibration}
+          roster={calibrationRoster}
+          adjustments={calibrationAdjustments}
+        />
+      )}
 
       {!cycle && !isHr && (
         <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
