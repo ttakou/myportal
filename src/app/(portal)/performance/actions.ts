@@ -4,10 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 const rev = () => revalidatePath("/performance");
 async function tenantId(supabase: ReturnType<typeof createClient>) {
   const { data } = await supabase.from("tenants").select("id").limit(1).maybeSingle();

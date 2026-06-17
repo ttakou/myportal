@@ -13,9 +13,9 @@ import {
   type Severity,
 } from "@/types/emergency";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
+import type { ActionResult as BaseActionResult } from "@/types/actions";
+
+export interface ActionResult extends BaseActionResult {
   incidentId?: string;
 }
 

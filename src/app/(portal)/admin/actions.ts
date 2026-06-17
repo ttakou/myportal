@@ -11,10 +11,8 @@ import { MODULE_ROUTES } from "@/lib/navigation";
 import type { EmployeeType } from "@/lib/admin";
 import type { UserRole } from "@/types/database";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 
 const ASSIGNABLE_ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
 const ASSIGNABLE_FUNCTIONAL: FunctionalRole[] = [

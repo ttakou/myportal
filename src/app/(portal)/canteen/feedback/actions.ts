@@ -5,10 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import type { IssueType } from "@/types/feedback";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 
 export async function submitFeedback(input: {
   foodQuality?: number | null;

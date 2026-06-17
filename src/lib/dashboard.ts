@@ -2,10 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { OFFSHORE_STATUS_LABEL, type OffshoreStatus } from "@/types/offshore";
-
-function one<T>(v: T | T[] | null | undefined): T | null {
-  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
-}
+import { one } from "@/lib/supabase/row-helpers";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 

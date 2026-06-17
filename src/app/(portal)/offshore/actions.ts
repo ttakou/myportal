@@ -9,10 +9,8 @@ import { getMealSheet, getPobAsOf, getRoomHistory, searchBedAvailability } from 
 import { notifyUsers } from "@/lib/notify";
 import type { MealEntry, PobAsOf, RoomAvailability, RoomHistoryRow } from "@/types/offshore";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 const rev = () => revalidatePath("/offshore");
 async function admin() {
   return isAdminRole(await getCurrentRole());

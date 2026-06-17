@@ -5,10 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import type { FitnessStatus } from "@/types/medical";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 
 export async function recordMedical(input: {
   profileId: string;

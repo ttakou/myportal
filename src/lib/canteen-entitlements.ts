@@ -6,6 +6,7 @@ import type {
   MealEntitlement,
   MealRedemptionRow,
 } from "@/types/canteen";
+import { one } from "@/lib/supabase/row-helpers";
 
 /** Mon–Fri is a working day; weekends carry no entitlement. */
 export function isWorkingDay(isoDate: string): boolean {
@@ -17,12 +18,6 @@ function statusFor(startsOn: string, endsOn: string, ref: string): EntitlementSt
   if (ref < startsOn) return "upcoming";
   if (ref > endsOn) return "expired";
   return "active";
-}
-
-/** Embedded to-one rows can arrive as an object or a single-element array. */
-function one<T>(value: T | T[] | null | undefined): T | null {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
 }
 
 type ProfileLite = {

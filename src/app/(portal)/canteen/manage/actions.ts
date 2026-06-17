@@ -5,10 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import type { MealPeriod } from "@/types/canteen";
 
-export interface ActionResult {
-  ok: boolean;
-  error?: string;
-}
+import type { ActionResult } from "@/types/actions";
+export type { ActionResult };
 
 const MEALS: MealPeriod[] = ["breakfast", "lunch", "dinner"];
 
