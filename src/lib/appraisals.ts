@@ -45,6 +45,7 @@ function mapAppraisal(r: Record<string, any>): Appraisal {
     employee_ack_comment: r.employee_ack_comment ?? null,
     appeal: null,
     competencies: [],
+    development_plan: [],
     goals: [],
     events: [],
   };
@@ -263,6 +264,13 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
   }
   for (const g of goalsList) g.key_results = byGoal.get(g.id) ?? [];
   appraisal.goals = goalsList;
+
+  const { data: dev } = await supabase
+    .from("appraisal_development_plans")
+    .select("id, area, action, target_date, status")
+    .eq("appraisal_id", appraisal.id)
+    .order("created_at");
+  appraisal.development_plan = (dev ?? []) as Appraisal["development_plan"];
   const { data: appeal } = await supabase
     .from("appraisal_appeals")
     .select("id, reason, status, decision, created_at, resolved_at")

@@ -1057,3 +1057,79 @@ export async function secondLevelReturn(input: {
   rev();
   return { ok: true };
 }
+
+// --- Development plans (IDPs) -----------------------------------------------
+
+async function requireParticipantOpen(id: string): Promise<{ a: AppraisalRow } | ActionResult> {
+  const a = await loadAppraisal(id);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  const me = await uid();
+  const access = await getAccess();
+  const ok =
+    a.employee_id === me ||
+    a.manager_id === me ||
+    a.second_level_id === me ||
+    access.isHr ||
+    access.isAdmin ||
+    access.isSystemAdmin;
+  if (!ok) return { ok: false, error: "Not your appraisal." };
+  if (a.status === "closed") return { ok: false, error: "This appraisal is closed." };
+  return { a };
+}
+
+export async function addDevelopmentItem(input: {
+  appraisalId: string;
+  area: string;
+  action?: string;
+  targetDate?: string;
+}): Promise<ActionResult> {
+  const guard = await requireParticipantOpen(input.appraisalId);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  if (!input.area.trim()) return { ok: false, error: "Development area is required." };
+  const supabase = createClient();
+  const { error } = await supabase.from("appraisal_development_plans").insert({
+    tenant_id: a.tenant_id,
+    appraisal_id: a.id,
+    area: input.area.trim(),
+    action: input.action?.trim() || null,
+    target_date: input.targetDate || null,
+    created_by: await uid(),
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function setDevelopmentStatus(input: {
+  appraisalId: string;
+  itemId: string;
+  status: "planned" | "in_progress" | "done";
+}): Promise<ActionResult> {
+  const guard = await requireParticipantOpen(input.appraisalId);
+  if ("ok" in guard) return guard;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_development_plans")
+    .update({ status: input.status })
+    .eq("id", input.itemId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function deleteDevelopmentItem(input: {
+  appraisalId: string;
+  itemId: string;
+}): Promise<ActionResult> {
+  const guard = await requireParticipantOpen(input.appraisalId);
+  if ("ok" in guard) return guard;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_development_plans")
+    .delete()
+    .eq("id", input.itemId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
