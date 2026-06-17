@@ -3,12 +3,14 @@
 import { useState, useTransition } from "react";
 import { Car } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/components/permissions-provider";
 import type { TransportRequest } from "@/types/transport";
 import { cancelTransportRequest, createTransportRequest } from "../actions";
 import { Checklist, FollowUps, StatusBadge, fmt } from "./task-bits";
 
 /** Employee view: request a ride and follow your requests. */
 export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
+  const { can } = usePermissions();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +35,7 @@ export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
         <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
       )}
 
+      {can("transportation", "create") && (
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -65,6 +68,7 @@ export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
           <Car className="h-4 w-4" /> Request
         </Button>
       </form>
+      )}
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">My requests</h2>
