@@ -23,6 +23,15 @@ import { CalibrationPanel } from "./_components/calibration-panel";
 import { SecondLevelPanel } from "./_components/second-level-panel";
 import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
+import { SummaryCards } from "./_components/summary-cards";
+
+const COMPLETED_STATUSES = new Set(["completed", "closed"]);
+
+function avgRating(ratings: (number | null)[]): string {
+  const xs = ratings.filter((n): n is number => n != null);
+  if (xs.length === 0) return "—";
+  return (xs.reduce((s, n) => s + n, 0) / xs.length).toFixed(1);
+}
 
 export default async function AppraisalsPage({
   searchParams,
@@ -75,6 +84,43 @@ export default async function AppraisalsPage({
 
   const isManager = team.length > 0;
 
+  // Line-manager dashboard metrics for the selected year.
+  const teamCards = isManager
+    ? [
+        { label: "Direct reports", value: String(team.length) },
+        {
+          label: "Awaiting your review",
+          value: String(team.filter((a) => a.status === "pending_manager_review").length),
+        },
+        {
+          label: "Completed",
+          value: String(team.filter((a) => COMPLETED_STATUSES.has(a.status)).length),
+        },
+        { label: "Avg rating", value: avgRating(team.map((a) => a.overall_rating)), hint: "out of 5" },
+      ]
+    : [];
+
+  // HR-Admin dashboard metrics for the selected year.
+  const hrCompleted = cycleAppraisals.filter((a) => COMPLETED_STATUSES.has(a.status)).length;
+  const hrCards =
+    isHr && cycle
+      ? [
+          { label: "Employees", value: String(cycleAppraisals.length) },
+          { label: "Completed", value: String(hrCompleted) },
+          {
+            label: "Completion",
+            value: cycleAppraisals.length
+              ? `${Math.round((hrCompleted / cycleAppraisals.length) * 100)}%`
+              : "—",
+          },
+          {
+            label: "Avg rating",
+            value: calibration?.averageOverall != null ? calibration.averageOverall.toFixed(1) : "—",
+            hint: "out of 5",
+          },
+        ]
+      : [];
+
   return (
     <div className="space-y-8">
       <div>
@@ -117,10 +163,16 @@ export default async function AppraisalsPage({
       {raterAssignments.length > 0 && <RaterInbox assignments={raterAssignments} />}
 
       {/* Line-manager dashboard — direct reports for the selected year. */}
+      {isManager && (
+        <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
+      )}
       {isManager && <TeamReviewPanel appraisals={team} />}
       {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
 
       {/* HR-Admin dashboard — org-wide console + calibration for the selected year. */}
+      {isHr && cycle && cycleAppraisals.length > 0 && (
+        <SummaryCards title={`HR dashboard — ${cycle.year}`} cards={hrCards} />
+      )}
       {isHr && (
         <HrConsole
           cycles={allCycles}

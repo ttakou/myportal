@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -82,32 +81,6 @@ export async function giveFeedback(toId: string, body: string): Promise<ActionRe
     .from("perf_feedback")
     .insert({ tenant_id: t, to_id: toId, body: body.trim() });
   if (error) return { ok: false, error: error.message };
-  rev();
-  return { ok: true };
-}
-
-export async function setNineBox(input: {
-  profileId: string;
-  performance: number;
-  potential: number;
-  period: string;
-}): Promise<ActionResult> {
-  const gate = await requireModule("performance", "approve");
-  if (gate) return gate;
-  const supabase = createClient();
-  const t = await tenantId(supabase);
-  if (!t) return { ok: false, error: "No tenant in scope." };
-  const { error } = await supabase.from("nine_box").upsert(
-    {
-      tenant_id: t,
-      profile_id: input.profileId,
-      period: input.period,
-      performance: input.performance,
-      potential: input.potential,
-    },
-    { onConflict: "tenant_id,profile_id,period" },
-  );
-  if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, "") };
   rev();
   return { ok: true };
 }
