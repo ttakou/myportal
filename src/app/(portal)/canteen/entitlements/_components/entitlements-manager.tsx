@@ -311,6 +311,7 @@ function EntitlementsTable({
                 <th className="px-4 py-2 font-medium">Period</th>
                 <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium">Reason</th>
+                <th className="px-4 py-2 font-medium">Granted by</th>
                 <th className="px-4 py-2" />
               </tr>
             </thead>
@@ -338,6 +339,10 @@ function EntitlementsTable({
                     </span>
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">{e.reason ?? "—"}</td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {e.granted_by_name ?? "—"}
+                    <div className="text-xs">{e.granted_at?.slice(0, 10)}</div>
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <button
                       type="button"

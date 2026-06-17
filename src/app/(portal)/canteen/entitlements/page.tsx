@@ -1,10 +1,19 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
-import { getActiveEmployees, getEntitlements } from "@/lib/canteen-entitlements";
+import {
+  getActiveEmployees,
+  getEntitlements,
+  getRedemptionHistory,
+} from "@/lib/canteen-entitlements";
 import { EntitlementsManager } from "./_components/entitlements-manager";
+import { RedemptionHistory } from "./_components/redemption-history";
 
-export default async function EntitlementsPage() {
+export default async function EntitlementsPage({
+  searchParams,
+}: {
+  searchParams: { from?: string; to?: string };
+}) {
   if (!(await getAccess()).isHr) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
@@ -20,9 +29,17 @@ export default async function EntitlementsPage() {
     );
   }
 
-  const [entitlements, employees] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultFrom = new Date(Date.now() - 30 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const from = searchParams.from || defaultFrom;
+  const to = searchParams.to || today;
+
+  const [entitlements, employees, redemptions] = await Promise.all([
     getEntitlements(),
     getActiveEmployees(),
+    getRedemptionHistory(from, to),
   ]);
 
   return (
@@ -44,6 +61,8 @@ export default async function EntitlementsPage() {
       </div>
 
       <EntitlementsManager entitlements={entitlements} employees={employees} />
+
+      <RedemptionHistory rows={redemptions} from={from} to={to} />
     </div>
   );
 }

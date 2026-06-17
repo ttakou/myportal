@@ -4,6 +4,7 @@ import type {
   EntitlementCandidate,
   EntitlementStatus,
   MealEntitlement,
+  MealRedemptionHistoryRow,
   MealRedemptionRow,
 } from "@/types/canteen";
 import { one } from "@/lib/supabase/row-helpers";
@@ -36,12 +37,15 @@ export async function getEntitlements(): Promise<MealEntitlement[]> {
   const { data } = await supabase
     .from("canteen_meal_entitlements")
     .select(
-      "id, profile_id, daily_meals, starts_on, ends_on, reason, profiles!profile_id(full_name, email, job_title)",
+      "id, profile_id, daily_meals, starts_on, ends_on, reason, created_at," +
+        " profiles!profile_id(full_name, email, job_title)," +
+        " granter:profiles!granted_by(full_name)",
     )
     .order("starts_on", { ascending: false });
 
-  return (data ?? []).map((r) => {
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
     const p = one<ProfileLite>(r.profiles as ProfileLite | ProfileLite[] | null);
+    const granter = one<{ full_name: string | null }>(r.granter);
     const starts_on = r.starts_on as string;
     const ends_on = r.ends_on as string;
     return {
@@ -55,6 +59,47 @@ export async function getEntitlements(): Promise<MealEntitlement[]> {
       ends_on,
       reason: (r.reason as string | null) ?? null,
       status: statusFor(starts_on, ends_on, ref),
+      granted_by_name: granter?.full_name ?? null,
+      granted_at: r.created_at as string,
+    };
+  });
+}
+
+/**
+ * Historical meal redemptions (allocations actually taken) over [from, to],
+ * newest first — who ate, on which day, and who served it. RLS scopes rows to
+ * the tenant. Capped to keep the page responsive.
+ */
+export async function getRedemptionHistory(
+  from: string,
+  to: string,
+): Promise<MealRedemptionHistoryRow[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("canteen_meal_redemptions")
+    .select(
+      "id, profile_id, redeemed_on, note, created_at," +
+        " eater:profiles!profile_id(full_name, email)," +
+        " server:profiles!redeemed_by(full_name)",
+    )
+    .gte("redeemed_on", from)
+    .lte("redeemed_on", to)
+    .order("redeemed_on", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1000);
+
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const eater = one<{ full_name: string | null; email: string | null }>(r.eater);
+    const server = one<{ full_name: string | null }>(r.server);
+    return {
+      id: r.id as string,
+      profile_id: r.profile_id as string,
+      full_name: eater?.full_name ?? null,
+      email: eater?.email ?? "",
+      redeemed_on: r.redeemed_on as string,
+      served_by_name: server?.full_name ?? null,
+      note: (r.note as string | null) ?? null,
+      created_at: r.created_at as string,
     };
   });
 }
