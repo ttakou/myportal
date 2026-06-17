@@ -2,14 +2,15 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { canManageOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, rev, tenantId } from "./_shared";
 
 /** Assign people to a crew (crewId null = remove from crew). Upserts the roster row. */
 export async function assignToCrew(
   profileIds: string[],
   crewId: string | null,
 ): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!profileIds.length) return { ok: false, error: "No employees selected." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -46,7 +47,8 @@ export async function setTripCategory(
   tripId: string,
   category: "staff" | "visitor",
 ): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("edit");
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = { category };
   // A visitor isn't part of a crew rotation — clear any crew on the trip.
@@ -59,7 +61,8 @@ export async function setTripCategory(
 
 /** Offboard one person (demobilise their live trip) — removes them from POB. */
 export async function offboardTrip(tripId: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
   const { error } = await supabase
@@ -76,7 +79,8 @@ export async function setBackToBack(
   profileId: string,
   b2bProfileId: string | null,
 ): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("edit");
+  if (gate) return gate;
   if (profileId === b2bProfileId) return { ok: false, error: "A person can't be their own back-to-back." };
   const supabase = createClient();
   const { error } = await supabase
@@ -94,7 +98,8 @@ export async function setBackToBack(
  * (who shares the cabin on the opposite rotation) gets the same fixed room.
  */
 export async function setRoomDefaultOwners(roomId: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   const supabase = createClient();
   const { data: trips } = await supabase
     .from("offshore_trips")
@@ -127,7 +132,8 @@ export async function setRoomDefaultOwners(roomId: string): Promise<ActionResult
 
 /** Set every room's default owners from the current allocation in one pass. */
 export async function setAllRoomDefaults(): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   const supabase = createClient();
   const { data: trips } = await supabase
     .from("offshore_trips")
@@ -164,7 +170,8 @@ export async function reassignTripRoom(
   roomId: string | null,
   bedNo?: string | null,
 ): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = { room_id: roomId || null };
   if (bedNo !== undefined) patch.bed_no = bedNo?.trim() || null;
@@ -193,7 +200,8 @@ export async function autoAssignBySchedule(input: {
   /** When no crew matches and no name is given, create an auto-named crew. */
   autoName?: boolean;
 }): Promise<AutoAssignResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!input.profileIds.length) return { ok: false, error: "Select at least one employee." };
   if (!input.cycleStartDate) return { ok: false, error: "Cycle start date is required." };
   const supabase = createClient();
@@ -251,7 +259,8 @@ export async function autoAssignBySchedule(input: {
 
 /** Merge crews that share a calendar: move members to target, delete the rest. */
 export async function mergeCrews(targetId: string, sourceIds: string[]): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   const sources = sourceIds.filter((id) => id && id !== targetId);
   if (!sources.length) return { ok: false, error: "Nothing to merge." };
   const supabase = createClient();

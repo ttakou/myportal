@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { canManageOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, rev, tenantId } from "./_shared";
 
 /** Set/clear one evacuation or head-count role for a muster group in a window. */
 export async function setEmergencyRole(input: {
@@ -12,7 +12,8 @@ export async function setEmergencyRole(input: {
   role: "evac_leader" | "evac_assistant" | "headcount_principal" | "headcount_assistant";
   profileId: string | null;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!input.fromDate || !input.toDate) return { ok: false, error: "Rotation window dates are required." };
   if (!input.lifeboat) return { ok: false, error: "Muster group is required." };
   const supabase = createClient();
@@ -49,7 +50,8 @@ export async function setEmergencyRole(input: {
 
 /** Remove every role row for a rotation window. */
 export async function deleteEmergencyWindow(fromDate: string, toDate: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };

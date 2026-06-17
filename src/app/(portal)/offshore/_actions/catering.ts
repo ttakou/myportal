@@ -4,14 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 import { getMealSheet } from "@/lib/offshore";
 import type { ActionResult } from "@/types/actions";
 import type { MealEntry } from "@/types/offshore";
-import { canManageCatering, rev, tenantId } from "./_shared";
+import { requireOffshoreCatering, rev, tenantId } from "./_shared";
 
 /** Read the saved meal sheet (server-action wrapper for client date switching). */
 export async function fetchMealSheet(
   installationId: string,
   date: string,
 ): Promise<{ ok: boolean; entries?: MealEntry[]; error?: string }> {
-  if (!(await canManageCatering())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshoreCatering("view");
+  if (gate) return gate;
   return { ok: true, entries: await getMealSheet(installationId, date) };
 }
 
@@ -25,7 +26,8 @@ export async function generateMealSheet(
   installationId: string,
   date: string,
 ): Promise<ActionResult> {
-  if (!(await canManageCatering())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshoreCatering("operate");
+  if (gate) return gate;
   if (!installationId || !date) return { ok: false, error: "Installation and date are required." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -100,7 +102,8 @@ export async function updateMealEntry(input: {
   dinner?: boolean;
   lodging?: boolean;
 }): Promise<ActionResult> {
-  if (!(await canManageCatering())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshoreCatering("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   for (const k of ["breakfast", "snack", "lunch", "dinner", "lodging"] as const) {
@@ -117,7 +120,8 @@ export async function addCasualMeal(input: {
   date: string;
   personName: string;
 }): Promise<ActionResult> {
-  if (!(await canManageCatering())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshoreCatering("operate");
+  if (gate) return gate;
   if (!input.personName.trim()) return { ok: false, error: "Name is required." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -139,7 +143,8 @@ export async function addCasualMeal(input: {
 }
 
 export async function removeMealEntry(id: string): Promise<ActionResult> {
-  if (!(await canManageCatering())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshoreCatering("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_meal_entries").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };

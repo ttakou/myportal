@@ -2,14 +2,15 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { canManageOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, rev, tenantId } from "./_shared";
 
 export async function upsertInstallation(input: {
   id?: string;
   name: string;
   pobCapacity?: number;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!input.name.trim()) return { ok: false, error: "Installation name is required." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -28,7 +29,8 @@ export async function upsertInstallation(input: {
 }
 
 export async function setInstallationActive(id: string, isActive: boolean): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("offshore_installations")
