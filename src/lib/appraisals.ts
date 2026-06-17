@@ -8,6 +8,8 @@ import type {
   AppraisalEvent,
   AppraisalGoal,
   AppraisalKeyResult,
+  CalibrationAdjustment,
+  CalibrationRosterRow,
   Colleague,
   GoalRater,
   RaterAssignment,
@@ -251,6 +253,61 @@ export async function getCalibration(cycleId: string): Promise<CalibrationData> 
       }))
       .sort((a, b) => b.count - a.count),
   };
+}
+
+/** Appraisals with a computed score, for the calibration committee (HR only). */
+export async function getCalibrationRoster(cycleId: string): Promise<CalibrationRosterRow[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("appraisals")
+    .select(
+      "id, overall_rating, final_score, rating_label, status," +
+        " employee:profiles!employee_id(full_name, department)",
+    )
+    .eq("cycle_id", cycleId)
+    .not("final_score", "is", null)
+    .order("final_score", { ascending: false });
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const emp = one<{ full_name?: string; department?: string }>(r.employee);
+    return {
+      id: r.id,
+      employee_name: emp?.full_name ?? null,
+      department: emp?.department ?? null,
+      overall_rating: r.overall_rating ?? null,
+      final_score: r.final_score ?? null,
+      rating_label: r.rating_label ?? null,
+      status: r.status,
+    };
+  });
+}
+
+/** Calibration adjustment log for a cycle (HR/committee only via RLS). */
+export async function getCalibrationAdjustments(cycleId: string): Promise<CalibrationAdjustment[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("appraisal_calibration_adjustments")
+    .select(
+      "id, appraisal_id, previous_score, previous_label, new_score, new_label, reason, created_at," +
+        " adjuster:profiles!adjusted_by(full_name)," +
+        " appraisal:appraisals(employee:profiles!employee_id(full_name))",
+    )
+    .eq("cycle_id", cycleId)
+    .order("created_at", { ascending: false });
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const ap = one<{ employee?: { full_name?: string } | { full_name?: string }[] }>(r.appraisal);
+    return {
+      id: r.id,
+      appraisal_id: r.appraisal_id,
+      employee_name: one<{ full_name?: string }>(ap?.employee)?.full_name ?? null,
+      previous_score: r.previous_score ?? null,
+      previous_label: r.previous_label ?? null,
+      new_score: r.new_score ?? null,
+      new_label: r.new_label ?? null,
+      reason: r.reason ?? null,
+      adjusted_by_name: one<{ full_name?: string }>(r.adjuster)?.full_name ?? null,
+      created_at: r.created_at,
+    };
+  });
 }
 
 /** One appraisal with goals + event history (for manager/HR detail). */

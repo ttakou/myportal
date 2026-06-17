@@ -135,6 +135,31 @@ export interface RaterAssignment {
   status: "invited" | "submitted";
 }
 
+/** One row in the calibration committee roster. */
+export interface CalibrationRosterRow {
+  id: string;
+  employee_name: string | null;
+  department: string | null;
+  overall_rating: number | null;
+  final_score: number | null;
+  rating_label: string | null;
+  status: AppraisalStatus;
+}
+
+/** A logged calibration adjustment (committee-confidential). */
+export interface CalibrationAdjustment {
+  id: string;
+  appraisal_id: string;
+  employee_name: string | null;
+  previous_score: number | null;
+  previous_label: string | null;
+  new_score: number | null;
+  new_label: string | null;
+  reason: string | null;
+  adjusted_by_name: string | null;
+  created_at: string;
+}
+
 export interface AppraisalGoal {
   id: string;
   title: string;
