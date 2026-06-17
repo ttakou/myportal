@@ -128,6 +128,58 @@ export async function getCycleAppraisals(cycleId: string): Promise<Appraisal[]> 
   return list;
 }
 
+export interface CalibrationData {
+  total: number;
+  averageOverall: number | null;
+  buckets: { label: string; count: number }[];
+  byDept: { department: string; count: number; avg: number }[];
+}
+
+/** Rating distribution for a cycle (HR calibration view). RLS limits rows to HR. */
+export async function getCalibration(cycleId: string): Promise<CalibrationData> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("appraisals")
+    .select("overall_rating, employee:profiles!employee_id(department)")
+    .eq("cycle_id", cycleId)
+    .not("overall_rating", "is", null);
+
+  const rows = (data ?? []) as Record<string, any>[];
+  const bucketDefs = [
+    { label: "1 – Needs improvement", min: 0, max: 1.5 },
+    { label: "2 – Below expectations", min: 1.5, max: 2.5 },
+    { label: "3 – Meets expectations", min: 2.5, max: 3.5 },
+    { label: "4 – Exceeds", min: 3.5, max: 4.5 },
+    { label: "5 – Outstanding", min: 4.5, max: 5.01 },
+  ];
+  const buckets = bucketDefs.map((b) => ({ label: b.label, count: 0 }));
+  const dept = new Map<string, { count: number; sum: number }>();
+  let sum = 0;
+  for (const r of rows) {
+    const rating = Number(r.overall_rating);
+    sum += rating;
+    const bi = bucketDefs.findIndex((b) => rating >= b.min && rating < b.max);
+    if (bi >= 0) buckets[bi].count += 1;
+    const d = one<{ department?: string }>(r.employee)?.department || "Unassigned";
+    const cur = dept.get(d) ?? { count: 0, sum: 0 };
+    cur.count += 1;
+    cur.sum += rating;
+    dept.set(d, cur);
+  }
+  return {
+    total: rows.length,
+    averageOverall: rows.length ? Math.round((sum / rows.length) * 100) / 100 : null,
+    buckets,
+    byDept: [...dept.entries()]
+      .map(([department, v]) => ({
+        department,
+        count: v.count,
+        avg: Math.round((v.sum / v.count) * 100) / 100,
+      }))
+      .sort((a, b) => b.count - a.count),
+  };
+}
+
 /** One appraisal with goals + event history (for manager/HR detail). */
 export async function getAppraisal(id: string): Promise<Appraisal | null> {
   const supabase = createClient();

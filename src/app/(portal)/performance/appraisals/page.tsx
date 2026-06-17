@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import {
   getActiveCycle,
+  getCalibration,
   getCompetencies,
   getCycleAppraisals,
   getCycles,
@@ -12,19 +13,22 @@ import {
 import { MyAppraisalPanel } from "./_components/my-appraisal-panel";
 import { TeamReviewPanel } from "./_components/team-review-panel";
 import { HrConsole } from "./_components/hr-console";
+import { CalibrationPanel } from "./_components/calibration-panel";
 
 export default async function AppraisalsPage() {
   const access = await getAccess();
   const isHr = access.isHr || access.isAdmin || access.isSystemAdmin;
   const cycle = await getActiveCycle();
 
-  const [cycles, myAppraisal, team, cycleAppraisals, competencies] = await Promise.all([
-    isHr ? getCycles() : Promise.resolve([]),
-    cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
-    cycle ? getTeamAppraisals(cycle.id) : Promise.resolve([]),
-    isHr && cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
-    isHr ? getCompetencies() : Promise.resolve([]),
-  ]);
+  const [cycles, myAppraisal, team, cycleAppraisals, competencies, calibration] =
+    await Promise.all([
+      isHr ? getCycles() : Promise.resolve([]),
+      cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
+      cycle ? getTeamAppraisals(cycle.id) : Promise.resolve([]),
+      isHr && cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
+      isHr ? getCompetencies() : Promise.resolve([]),
+      isHr && cycle ? getCalibration(cycle.id) : Promise.resolve(null),
+    ]);
 
   return (
     <div className="space-y-8">
@@ -53,6 +57,7 @@ export default async function AppraisalsPage() {
           competencies={competencies}
         />
       )}
+      {isHr && calibration && <CalibrationPanel data={calibration} />}
 
       {!cycle && !isHr && (
         <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
