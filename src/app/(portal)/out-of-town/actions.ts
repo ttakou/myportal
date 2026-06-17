@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule } from "@/lib/permissions-server";
 import { lookupFlight } from "@/lib/flight-api";
 import { notify, notifyProfiles } from "@/lib/eess-notify";
 import { seedTaskChecklist } from "@/lib/task-checklist";
@@ -45,6 +46,8 @@ export async function createTrip(input: {
   terminal?: string;
   flightArrivalAt?: string;
 }): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "create");
+  if (gate) return gate;
   if (!input.destination.trim()) return { ok: false, error: "Destination is required." };
   if (!input.departDate) return { ok: false, error: "Departure date is required." };
   const supabase = createClient();
@@ -117,6 +120,8 @@ export async function requestAirportAssistance(input: {
   tripId: string;
   serviceType?: AirportServiceType;
 }): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -181,6 +186,8 @@ export async function updateAirportAssistance(input: {
   language?: string;
   notes?: string;
 }): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "operate");
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.serviceType !== undefined) patch.service_type = input.serviceType;
@@ -208,6 +215,8 @@ export async function updateAirportAssistance(input: {
  * write it back (status, arrival estimate, terminal, airline if missing).
  */
 export async function refreshFlightStatus(tripId: string): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { data: trip, error: readError } = await supabase
     .from("out_of_town_trips")
@@ -247,6 +256,8 @@ export async function updateTripLogistics(input: {
   driverPhone?: string;
   vehicle?: string;
 }): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "edit");
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.accommodation !== undefined) patch.accommodation = input.accommodation.trim() || null;
@@ -269,6 +280,8 @@ export async function updateFlight(input: {
   flightArrivalAt?: string;
   flightStatus?: FlightStatus;
 }): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "edit");
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.airline !== undefined) patch.airline = input.airline.trim() || null;
@@ -284,6 +297,8 @@ export async function updateFlight(input: {
 }
 
 export async function managerApproveTrip(id: string): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "approve");
+  if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
@@ -302,6 +317,8 @@ export async function managerApproveTrip(id: string): Promise<ActionResult> {
 }
 
 export async function rejectTrip(id: string, reason: string): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "approve");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("out_of_town_trips")
@@ -319,6 +336,8 @@ export async function tripCheckin(input: {
   kind: TripCheckinKind;
   note?: string;
 }): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "operate");
+  if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
@@ -408,6 +427,8 @@ export async function addEmergencyContact(input: {
   phone?: string;
   note?: string;
 }): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "edit");
+  if (gate) return gate;
   if (!input.destination.trim() || !input.name.trim()) {
     return { ok: false, error: "Destination and name are required." };
   }
@@ -428,6 +449,8 @@ export async function addEmergencyContact(input: {
 }
 
 export async function deleteEmergencyContact(id: string): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "edit");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("travel_emergency_contacts").delete().eq("id", id);
   if (error) return { ok: false, error: clean(error.message) };
@@ -443,6 +466,8 @@ export async function addTripExpense(input: {
   amount: number;
   note?: string;
 }): Promise<ActionResult> {
+  const gate = await requireModule("out-of-town", "create");
+  if (gate) return gate;
   if (!input.category.trim()) return { ok: false, error: "Category is required." };
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();

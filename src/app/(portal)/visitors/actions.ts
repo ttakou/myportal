@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -17,6 +18,8 @@ export async function preRegisterVisitor(input: {
   purpose?: string;
   visitDate: string;
 }): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "create");
+  if (gate) return gate;
   if (!input.fullName.trim()) return { ok: false, error: "Visitor name is required." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.visitDate)) {
     return { ok: false, error: "Invalid visit date." };
@@ -45,6 +48,8 @@ export async function checkInVisitor(
   id: string,
   badgeNo?: string,
 ): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("visitors")
@@ -60,6 +65,8 @@ export async function checkInVisitor(
 }
 
 export async function checkOutVisitor(id: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("visitors")
@@ -71,6 +78,8 @@ export async function checkOutVisitor(id: string): Promise<ActionResult> {
 }
 
 export async function cancelVisitor(id: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "edit");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("visitors")
