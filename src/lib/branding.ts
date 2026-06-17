@@ -125,6 +125,41 @@ export async function getTenantBranding(): Promise<TenantBranding> {
 }
 
 /**
+ * Resolve branding for a tenant by its subdomain slug, WITHOUT a signed-in user.
+ * Backed by the `tenant_public_branding` SECURITY DEFINER RPC (anon-callable,
+ * exact-slug only). Returns null when the slug is unknown so callers can fall
+ * back to the default brand. Used by the pre-auth login page.
+ */
+export async function getTenantBrandingBySlug(
+  slug: string | null | undefined,
+): Promise<TenantBranding | null> {
+  if (!slug) return null;
+  try {
+    const supabase = createClient();
+    const { data } = await supabase.rpc("tenant_public_branding", { p_slug: slug });
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | {
+          name?: string;
+          logo_url?: string | null;
+          primary_color?: string | null;
+          primary_dark?: string | null;
+          charcoal?: string | null;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      name: row.name ?? DEFAULT_BRAND.name,
+      primary: row.primary_color ?? DEFAULT_BRAND.red,
+      primaryDark: row.primary_dark ?? DEFAULT_BRAND.redDark,
+      charcoal: row.charcoal ?? DEFAULT_BRAND.charcoal,
+      logoUrl: row.logo_url ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Convert resolved branding into the CSS-variable overrides the theme consumes.
  * Returned as a style object to spread onto a layout wrapper; it overrides the
  * defaults declared in globals.css for everything nested inside.
