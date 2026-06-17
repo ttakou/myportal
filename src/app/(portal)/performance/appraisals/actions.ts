@@ -250,6 +250,19 @@ export async function applyCalibration(input: {
       input.reason?.trim() ? ` — ${input.reason.trim()}` : ""
     }`,
   );
+  // Tell the evaluators (manager + second-level) the committee adjusted the
+  // score. The reason stays committee-confidential; this is just a heads-up.
+  const recipients = [a.manager_id, a.second_level_id].filter(Boolean) as string[];
+  if (recipients.length) {
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: recipients,
+      category: "approval",
+      title: "Appraisal score calibrated",
+      body: `The calibration committee set the final score to ${newScore}% (${newLabel}).`,
+      url: "/performance/appraisals",
+    });
+  }
   rev();
   return { ok: true };
 }
@@ -260,6 +273,7 @@ export async function addDepartmentObjective(input: {
   title: string;
   department?: string;
   description?: string;
+  cycleId?: string;
 }): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;
@@ -272,6 +286,7 @@ export async function addDepartmentObjective(input: {
     department: input.department?.trim() || null,
     title: input.title.trim(),
     description: input.description?.trim() || null,
+    cycle_id: input.cycleId || null,
     created_by: await uid(),
   });
   if (error) return { ok: false, error: error.message };

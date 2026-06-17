@@ -453,6 +453,14 @@ function SelfAssessment({
 function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
   return (
     <div className="rounded-lg border bg-card p-4 space-y-2">
+      {appraisal.final_score != null && (
+        <div className="flex items-center justify-between rounded-md bg-primary/5 px-3 py-2">
+          <span className="text-sm font-medium">Final outcome</span>
+          <span className="text-sm font-semibold text-primary">
+            {appraisal.final_score}%{appraisal.rating_label ? ` · ${appraisal.rating_label}` : ""}
+          </span>
+        </div>
+      )}
       <h3 className="text-sm font-semibold">Objectives &amp; ratings</h3>
       <ul className="divide-y text-sm">
         {appraisal.goals.map((g) => (

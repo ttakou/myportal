@@ -154,9 +154,11 @@ export async function getTenantColleagues(): Promise<Colleague[]> {
   return (data ?? []) as Colleague[];
 }
 
-/** Department objectives the signed-in employee can align goals to
- *  (their department + company-wide), active only. */
-export async function getDepartmentObjectivesForMe(): Promise<DepartmentObjective[]> {
+/** Department objectives the signed-in employee can align goals to: their
+ *  department (or company-wide), scoped to the cycle (or evergreen), active. */
+export async function getDepartmentObjectivesForMe(
+  cycleId?: string | null,
+): Promise<DepartmentObjective[]> {
   const supabase = createClient();
   const {
     data: { user },
@@ -170,12 +172,22 @@ export async function getDepartmentObjectivesForMe(): Promise<DepartmentObjectiv
   const dept = (me?.department as string | null) ?? null;
   let q = supabase
     .from("appraisal_department_objectives")
-    .select("id, department, title, description, is_active")
+    .select("id, department, title, description, is_active, cycle_id, cycle:appraisal_cycles(name)")
     .eq("is_active", true)
     .order("title");
   q = dept ? q.or(`department.is.null,department.eq.${dept}`) : q.is("department", null);
+  if (cycleId) q = q.or(`cycle_id.is.null,cycle_id.eq.${cycleId}`);
+  else q = q.is("cycle_id", null);
   const { data } = await q;
-  return (data ?? []) as DepartmentObjective[];
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    id: r.id,
+    department: r.department ?? null,
+    title: r.title,
+    description: r.description ?? null,
+    is_active: r.is_active,
+    cycle_id: r.cycle_id ?? null,
+    cycle_name: one<{ name?: string }>(r.cycle)?.name ?? null,
+  }));
 }
 
 /** All department objectives for the HR management UI. */
@@ -183,10 +195,18 @@ export async function getDepartmentObjectives(): Promise<DepartmentObjective[]> 
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_department_objectives")
-    .select("id, department, title, description, is_active")
+    .select("id, department, title, description, is_active, cycle_id, cycle:appraisal_cycles(name)")
     .order("department", { nullsFirst: true })
     .order("title");
-  return (data ?? []) as DepartmentObjective[];
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    id: r.id,
+    department: r.department ?? null,
+    title: r.title,
+    description: r.description ?? null,
+    is_active: r.is_active,
+    cycle_id: r.cycle_id ?? null,
+    cycle_name: one<{ name?: string }>(r.cycle)?.name ?? null,
+  }));
 }
 
 /** Appraisals the signed-in manager owns (their direct reports). */
