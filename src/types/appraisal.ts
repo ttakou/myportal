@@ -52,6 +52,11 @@ export const STATUS_LABEL: Record<AppraisalStatus, string> = {
   overdue: "Overdue",
 };
 
+export interface RatingBand {
+  min: number;
+  label: string;
+}
+
 export interface AppraisalCycle {
   id: string;
   name: string;
@@ -64,11 +69,12 @@ export interface AppraisalCycle {
   weight_competency: number;
   weight_development: number;
   require_second_level: boolean;
+  rating_bands: RatingBand[];
   created_at: string;
 }
 
-/** Configurable score → rating bands (spec defaults; thresholds are inclusive minimums). */
-export const RATING_BANDS: { min: number; label: string }[] = [
+/** Default score → rating bands (spec defaults; thresholds are inclusive minimums). */
+export const RATING_BANDS: RatingBand[] = [
   { min: 90, label: "Exceptional" },
   { min: 80, label: "Exceeds Expectations" },
   { min: 70, label: "Meets Expectations" },
@@ -77,7 +83,15 @@ export const RATING_BANDS: { min: number; label: string }[] = [
 ];
 
 export function ratingLabel(score: number): string {
-  return RATING_BANDS.find((b) => score >= b.min)?.label ?? "—";
+  return ratingLabelFromBands(score, RATING_BANDS);
+}
+
+/** Resolve a score (0–100) to a label using a cycle's configured bands. */
+export function ratingLabelFromBands(score: number, bands?: RatingBand[] | null): string {
+  const list = (bands && bands.length ? bands : RATING_BANDS)
+    .slice()
+    .sort((a, b) => b.min - a.min);
+  return list.find((b) => score >= b.min)?.label ?? "—";
 }
 
 export interface AppraisalKeyResult {

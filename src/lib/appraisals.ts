@@ -71,7 +71,7 @@ export async function getActiveCycle(): Promise<AppraisalCycle | null> {
     .from("appraisal_cycles")
     .select(
       "id, name, year, period_start, period_end, goal_setting_deadline, status," +
-        " weight_okr, weight_competency, weight_development, require_second_level, created_at",
+        " weight_okr, weight_competency, weight_development, require_second_level, rating_bands, created_at",
     )
     .order("status", { ascending: true }) // 'active' sorts before 'draft'/'closed'? no — filter instead
     .order("year", { ascending: false })
@@ -87,7 +87,7 @@ export async function getCycles(): Promise<AppraisalCycle[]> {
     .from("appraisal_cycles")
     .select(
       "id, name, year, period_start, period_end, goal_setting_deadline, status," +
-        " weight_okr, weight_competency, weight_development, require_second_level, created_at",
+        " weight_okr, weight_competency, weight_development, require_second_level, rating_bands, created_at",
     )
     .order("year", { ascending: false })
     .order("created_at", { ascending: false });

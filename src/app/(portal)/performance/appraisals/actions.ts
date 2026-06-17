@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { notifyUsers } from "@/lib/notify";
 import { runAppraisalReminders } from "@/lib/appraisal-reminders";
-import { ratingLabel } from "@/types/appraisal";
+import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
 
@@ -67,6 +67,21 @@ function clampWeight(v: number | undefined, fallback: number): number {
   return Math.max(0, Math.min(100, Math.floor(v)));
 }
 
+/** Clean + order rating bands (highest threshold first). Returns undefined when
+ *  nothing usable is supplied, so the DB default applies. */
+function normalizeBands(bands?: RatingBand[]): RatingBand[] | undefined {
+  if (!bands || !bands.length) return undefined;
+  const clean = bands
+    .map((b) => ({
+      min: Math.max(0, Math.min(100, Math.floor(Number(b.min) || 0))),
+      label: (b.label ?? "").trim(),
+    }))
+    .filter((b) => b.label);
+  if (!clean.length) return undefined;
+  clean.sort((a, b) => b.min - a.min);
+  return clean;
+}
+
 // --- HR: cycle setup --------------------------------------------------------
 
 export async function createCycle(input: {
@@ -79,6 +94,7 @@ export async function createCycle(input: {
   weightCompetency?: number;
   weightDevelopment?: number;
   requireSecondLevel?: boolean;
+  ratingBands?: RatingBand[];
 }): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;
@@ -88,6 +104,7 @@ export async function createCycle(input: {
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const bands = normalizeBands(input.ratingBands);
   const { error } = await supabase.from("appraisal_cycles").insert({
     tenant_id: tenant.id,
     name: input.name.trim(),
@@ -99,8 +116,28 @@ export async function createCycle(input: {
     weight_competency: clampWeight(input.weightCompetency, 20),
     weight_development: clampWeight(input.weightDevelopment, 10),
     require_second_level: Boolean(input.requireSecondLevel),
+    ...(bands ? { rating_bands: bands } : {}),
     created_by: await uid(),
   });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** HR edits a cycle's score → rating bands. */
+export async function updateCycleBands(input: {
+  cycleId: string;
+  bands: RatingBand[];
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const bands = normalizeBands(input.bands);
+  if (!bands) return { ok: false, error: "Add at least one band with a label." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_cycles")
+    .update({ rating_bands: bands })
+    .eq("id", input.cycleId);
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
@@ -523,7 +560,7 @@ export async function submitManagerEvaluation(input: {
       .eq("appraisal_id", a.id),
     supabase
       .from("appraisal_cycles")
-      .select("weight_okr, weight_competency, weight_development, require_second_level")
+      .select("weight_okr, weight_competency, weight_development, require_second_level, rating_bands")
       .eq("id", a.cycle_id)
       .maybeSingle(),
   ]);
@@ -581,7 +618,10 @@ export async function submitManagerEvaluation(input: {
   }
   const finalScore = den > 0 ? num / den : pct(okrAvg);
   const overall = okrAvg;
-  const label = ratingLabel(finalScore);
+  const label = ratingLabelFromBands(
+    finalScore,
+    (cycle?.rating_bands as RatingBand[] | undefined) ?? null,
+  );
 
   // Route to a second-level approver (the manager's manager) when the cycle
   // requires it and one exists; otherwise straight to HR validation.
