@@ -60,7 +60,23 @@ export interface AppraisalCycle {
   period_end: string;
   goal_setting_deadline: string | null;
   status: CycleStatus;
+  weight_okr: number;
+  weight_competency: number;
+  weight_development: number;
   created_at: string;
+}
+
+/** Configurable score → rating bands (spec defaults; thresholds are inclusive minimums). */
+export const RATING_BANDS: { min: number; label: string }[] = [
+  { min: 90, label: "Exceptional" },
+  { min: 80, label: "Exceeds Expectations" },
+  { min: 70, label: "Meets Expectations" },
+  { min: 60, label: "Partially Meets Expectations" },
+  { min: 0, label: "Does Not Meet Expectations" },
+];
+
+export function ratingLabel(score: number): string {
+  return RATING_BANDS.find((b) => score >= b.min)?.label ?? "—";
 }
 
 export interface AppraisalKeyResult {
@@ -136,6 +152,8 @@ export interface Appraisal {
   stage: AppraisalStage;
   status: AppraisalStatus;
   overall_rating: number | null;
+  final_score: number | null;
+  rating_label: string | null;
   employee_summary: string | null;
   manager_summary: string | null;
   discussion_date: string | null;
