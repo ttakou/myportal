@@ -1,4 +1,4 @@
-import { headers } from "next/headers";
+import { headers, type UnsafeUnwrappedHeaders } from "next/headers";
 import { resolveTenantSlug } from "@/lib/tenant-domain";
 
 export { RESERVED_SUBDOMAINS, ROOT_DOMAIN, resolveTenantSlug } from "@/lib/tenant-domain";
@@ -14,7 +14,7 @@ export { RESERVED_SUBDOMAINS, ROOT_DOMAIN, resolveTenantSlug } from "@/lib/tenan
  * `headers()` is synchronous on Next 14.
  */
 export function getCurrentTenantSlug(): string | null {
-  const h = headers();
+  const h = (headers() as unknown as UnsafeUnwrappedHeaders);
   // On Vercel the original host arrives as `x-forwarded-host`.
   const host = h.get("x-forwarded-host") ?? h.get("host");
   return resolveTenantSlug(host);

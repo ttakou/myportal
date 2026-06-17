@@ -4,11 +4,12 @@ import { getCanteenCutoff, getMenu, getMyBookings, getServedMealPeriods, resolve
 import { getAccess } from "@/lib/auth";
 import { MenuBoard } from "./_components/menu-board";
 
-export default async function CanteenPage({
-  searchParams,
-}: {
-  searchParams: { date?: string };
-}) {
+export default async function CanteenPage(
+  props: {
+    searchParams: Promise<{ date?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const serviceDate = resolveServiceDate(searchParams.date);
   const [dishes, bookings, access, mealPeriods, cutoff] = await Promise.all([
     getMenu(serviceDate),

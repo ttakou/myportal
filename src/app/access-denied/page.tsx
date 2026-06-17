@@ -2,11 +2,12 @@ import Link from "next/link";
 import { ShieldX } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 
-export default function AccessDeniedPage({
-  searchParams,
-}: {
-  searchParams: { module?: string };
-}) {
+export default async function AccessDeniedPage(
+  props: {
+    searchParams: Promise<{ module?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const moduleName = searchParams.module;
 
   return (

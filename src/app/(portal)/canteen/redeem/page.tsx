@@ -5,11 +5,12 @@ import { resolveServiceDate, today } from "@/lib/canteen";
 import { getRedemptionBoard, isWorkingDay } from "@/lib/canteen-entitlements";
 import { RedeemBoard } from "./_components/redeem-board";
 
-export default async function RedeemPage({
-  searchParams,
-}: {
-  searchParams: { date?: string };
-}) {
+export default async function RedeemPage(
+  props: {
+    searchParams: Promise<{ date?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   if (!(await getAccess()).isCanteenStaff) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">

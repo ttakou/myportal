@@ -9,11 +9,12 @@ import {
 import { EntitlementsManager } from "./_components/entitlements-manager";
 import { RedemptionHistory } from "./_components/redemption-history";
 
-export default async function EntitlementsPage({
-  searchParams,
-}: {
-  searchParams: { from?: string; to?: string };
-}) {
+export default async function EntitlementsPage(
+  props: {
+    searchParams: Promise<{ from?: string; to?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   if (!(await getAccess()).isHr) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">

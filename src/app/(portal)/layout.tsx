@@ -50,7 +50,7 @@ export default async function PortalLayout({
 
   const displayName = profile?.full_name || profile?.email || "User";
   const role = profile?.role ?? "employee";
-  const impersonating = cookies().get("imp_active")?.value;
+  const impersonating = (await cookies()).get("imp_active")?.value;
 
   const permAccess = {
     isAdmin: access.isAdmin,

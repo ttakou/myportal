@@ -10,11 +10,12 @@ import {
 } from "@/lib/canteen";
 import { RealtimeDashboard } from "./realtime-dashboard";
 
-export default async function CampbossPage({
-  searchParams,
-}: {
-  searchParams: { date?: string };
-}) {
+export default async function CampbossPage(
+  props: {
+    searchParams: Promise<{ date?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   if (!(await getAccess()).isCanteenManager) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
