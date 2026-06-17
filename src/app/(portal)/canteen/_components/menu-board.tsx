@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Check, CheckCircle2, Minus, Plus, Users, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/components/permissions-provider";
 import {
   MEAL_PERIOD_LABEL,
   type CanteenBooking,
@@ -27,6 +28,8 @@ export function MenuBoard({
   bookingClosed?: boolean;
   cutoffHour?: number | null;
 }) {
+  const { can } = usePermissions();
+  const canBook = can("canteen", "create");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   // Per-dish option selection: dishId -> set of option ids.
@@ -274,6 +277,7 @@ export function MenuBoard({
                           className="mt-auto"
                           disabled={
                             pending ||
+                            !canBook ||
                             mealLocked ||
                             bookingClosed ||
                             !dish.available ||
