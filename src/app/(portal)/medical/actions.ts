@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { requireModule } from "@/lib/permissions-server";
 import type { FitnessStatus } from "@/types/medical";
 
 import type { ActionResult } from "@/types/actions";
@@ -16,8 +16,8 @@ export async function recordMedical(input: {
   restrictions?: string;
   notes?: string;
 }): Promise<ActionResult> {
-  if (!isAdminRole(await getCurrentRole()))
-    return { ok: false, error: "Only medical officers can record fitness." };
+  const gate = await requireModule("medical", "create");
+  if (gate) return gate;
   if (!input.profileId) return { ok: false, error: "Select an employee." };
 
   const supabase = createClient();
