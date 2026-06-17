@@ -313,6 +313,12 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
           {new Date(appraisal.acknowledged_at).toLocaleDateString()}
         </p>
       )}
+      {appraisal.appeal && (
+        <p className="text-xs text-amber-700">
+          Appeal {appraisal.appeal.status === "resolved" ? "resolved" : "under review"}
+          {appraisal.appeal.decision ? ` — ${appraisal.appeal.decision}` : ""}
+        </p>
+      )}
     </div>
   );
 }

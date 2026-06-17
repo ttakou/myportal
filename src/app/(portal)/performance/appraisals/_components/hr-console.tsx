@@ -16,6 +16,7 @@ import {
   hrReturnToManager,
   hrValidate,
   launchCycle,
+  resolveAppeal,
 } from "../actions";
 
 export function HrConsole({
@@ -178,6 +179,8 @@ function HrRow({ a, kind }: { a: Appraisal; kind: "validate" | "close" }) {
   const [error, setError] = useState<string | null>(null);
   const [returning, setReturning] = useState(false);
   const [comment, setComment] = useState("");
+  const [decision, setDecision] = useState("");
+  const openAppeal = a.appeal && a.appeal.status === "open" ? a.appeal : null;
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -217,6 +220,30 @@ function HrRow({ a, kind }: { a: Appraisal; kind: "validate" | "close" }) {
           )}
         </div>
       </div>
+      {openAppeal && (
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2">
+          <p className="text-xs text-amber-800">
+            <span className="font-medium">Appeal: </span>
+            {openAppeal.reason || "No reason given."}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <input
+              value={decision}
+              onChange={(e) => setDecision(e.target.value)}
+              placeholder="Decision / outcome"
+              className="flex-1 rounded-md border bg-background px-2 py-1 text-xs"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending || !decision.trim()}
+              onClick={() => run(() => resolveAppeal({ appraisalId: a.id, decision }))}
+            >
+              Record decision
+            </Button>
+          </div>
+        </div>
+      )}
       {returning && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input

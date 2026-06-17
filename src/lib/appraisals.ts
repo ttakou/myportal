@@ -35,6 +35,7 @@ function mapAppraisal(r: Record<string, any>): Appraisal {
     acknowledged_at: r.acknowledged_at ?? null,
     employee_agreed: r.employee_agreed ?? null,
     employee_ack_comment: r.employee_ack_comment ?? null,
+    appeal: null,
     goals: [],
     events: [],
   };
@@ -109,7 +110,10 @@ export async function getCycleAppraisals(cycleId: string): Promise<Appraisal[]> 
     .select(APPRAISAL_SELECT)
     .eq("cycle_id", cycleId)
     .order("status");
-  return (data ?? []).map((r) => mapAppraisal(r as Record<string, any>));
+  const list = (data ?? []).map((r) => mapAppraisal(r as Record<string, any>));
+  // Hydrate the disputed ones so HR sees the appeal reason in the queue.
+  await Promise.all(list.filter((a) => a.status === "under_appeal").map((a) => hydrate(a)));
+  return list;
 }
 
 /** One appraisal with goals + event history (for manager/HR detail). */
@@ -141,6 +145,14 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
       .order("created_at", { ascending: false }),
   ]);
   appraisal.goals = (goals ?? []) as unknown as AppraisalGoal[];
+  const { data: appeal } = await supabase
+    .from("appraisal_appeals")
+    .select("id, reason, status, decision, created_at, resolved_at")
+    .eq("appraisal_id", appraisal.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  appraisal.appeal = (appeal as Appraisal["appeal"]) ?? null;
   appraisal.events = ((events ?? []) as Record<string, any>[]).map(
     (e): AppraisalEvent => ({
       id: e.id,
