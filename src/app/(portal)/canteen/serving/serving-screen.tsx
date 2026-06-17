@@ -1,13 +1,18 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ScanLine, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { CanteenDish, Reservation } from "@/types/canteen";
 import { setReservationCollected } from "../campboss/actions";
-import { lookupWalkin, serveWalkin } from "./actions";
+import {
+  lookupWalkin,
+  searchEmployees,
+  serveWalkin,
+  type EmployeeOption,
+} from "./actions";
 
 type WalkinPerson = { id: string; name: string; email: string };
 
@@ -23,9 +28,12 @@ export function ServingScreen({
   const [query, setQuery] = useState("");
   const [code, setCode] = useState("");
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
-  // When a scan finds no booking but an entitled employee, we prompt the staff
-  // to pick a dish and serve them as a walk-in.
+  // When a scan/selection finds no booking but an entitled employee, we prompt
+  // the staff to pick a dish and serve them as a walk-in.
   const [walkin, setWalkin] = useState<WalkinPerson | null>(null);
+  // Typeahead suggestions for the validate box (search the employee directory).
+  const [options, setOptions] = useState<EmployeeOption[]>([]);
+  const [showOptions, setShowOptions] = useState(false);
 
   const served = reservations.filter((r) => r.collected_at).length;
 
@@ -44,6 +52,34 @@ export function ServingScreen({
     );
   }, [reservations, query]);
 
+  // Debounced directory search as the staff type a name into the validate box.
+  useEffect(() => {
+    const q = code.trim();
+    if (q.length < 2) {
+      setOptions([]);
+      return;
+    }
+    let active = true;
+    const t = setTimeout(async () => {
+      const res = await searchEmployees(q);
+      if (active) {
+        setOptions(res);
+        setShowOptions(true);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [code]);
+
+  /** Find a today's reservation for this person (matched by email). */
+  function reservationFor(email: string | null): Reservation | undefined {
+    if (!email) return undefined;
+    const e = email.toLowerCase();
+    return reservations.find((r) => r.person_email.toLowerCase() === e);
+  }
+
   function collect(r: Reservation) {
     if (r.collected_at) return;
     setFlash(null);
@@ -55,6 +91,34 @@ export function ServingScreen({
       } else {
         setFlash({ ok: false, msg: res.error ?? "Failed." });
       }
+    });
+  }
+
+  /** Act on a chosen person: collect their booking, or open the walk-in picker. */
+  function choosePerson(person: EmployeeOption) {
+    setShowOptions(false);
+    setOptions([]);
+    setCode("");
+    setFlash(null);
+    const r = reservationFor(person.email);
+    if (r) {
+      if (r.collected_at) {
+        setFlash({ ok: false, msg: `${person.name} already collected` });
+        return;
+      }
+      collect(r);
+      return;
+    }
+    // No booking — serve as a walk-in if entitled. Resolve by id (always
+    // present; email can be missing) and let the server confirm entitlement.
+    if (!person.lunch_eligible) {
+      setFlash({ ok: false, msg: `${person.name} is not entitled to lunch. Contact HR.` });
+      return;
+    }
+    startTransition(async () => {
+      const res = await lookupWalkin(person.id);
+      if (res.ok && res.person) setWalkin(res.person);
+      else setFlash({ ok: false, msg: res.error ?? "Not entitled." });
     });
   }
 
@@ -70,6 +134,7 @@ export function ServingScreen({
         (r.person_name ?? "").toLowerCase() === c,
     );
     if (match) {
+      setShowOptions(false);
       setCode("");
       if (match.collected_at) {
         setFlash({ ok: false, msg: `${match.person_name ?? match.person_email} already collected` });
@@ -81,6 +146,7 @@ export function ServingScreen({
     // No booking — see if this is an entitled employee we can serve as a walk-in.
     setFlash(null);
     setWalkin(null);
+    setShowOptions(false);
     startTransition(async () => {
       const res = await lookupWalkin(code.trim());
       setCode("");
@@ -120,17 +186,53 @@ export function ServingScreen({
         <Counter label="Remaining" value={reservations.length - served} tone="amber" />
       </div>
 
-      {/* Scan / badge input (works with keyboard-wedge QR/badge scanners) */}
+      {/* Scan / badge input + name typeahead (keyboard-wedge scanners still work) */}
       <form onSubmit={scan} className="flex gap-2 rounded-lg border bg-card p-4">
         <div className="relative flex-1">
           <ScanLine className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={code}
             onChange={(e) => setCode(e.target.value)}
+            onFocus={() => options.length > 0 && setShowOptions(true)}
+            onBlur={() => setTimeout(() => setShowOptions(false), 150)}
             autoFocus
-            placeholder="Scan QR / badge or type employee email, then Enter"
+            autoComplete="off"
+            placeholder="Scan QR / badge or type a name, then pick or press Enter"
             className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm"
           />
+          {showOptions && options.length > 0 && (
+            <ul className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
+              {options.map((o) => {
+                const r = reservationFor(o.email);
+                const badge = r
+                  ? r.collected_at
+                    ? { text: "Collected", cls: "text-green-700" }
+                    : { text: r.kitchen_name + " · " + r.dish_name, cls: "text-muted-foreground" }
+                  : o.lunch_eligible
+                    ? { text: "Walk-in", cls: "text-primary" }
+                    : { text: "Not entitled", cls: "text-destructive" };
+                return (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      // onMouseDown (not onClick) so it fires before the input's blur.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        choosePerson(o);
+                      }}
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-accent"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{o.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{o.email ?? "—"}</span>
+                      </span>
+                      <span className={cn("shrink-0 text-xs font-medium", badge.cls)}>{badge.text}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
         <Button type="submit" disabled={pending}>Validate</Button>
       </form>
