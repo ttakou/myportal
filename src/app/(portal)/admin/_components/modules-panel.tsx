@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TenantModule } from "@/lib/admin";
 import { setModuleActive } from "../actions";
 
 export function ModulesPanel({ modules }: { modules: TenantModule[] }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   function toggle(m: TenantModule) {

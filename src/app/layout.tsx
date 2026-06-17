@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
+import { ActivityProvider } from "@/components/activity";
 
 export const metadata: Metadata = {
   title: "MyEnterprisePortal",
@@ -30,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen antialiased">
-        {children}
+        <ActivityProvider>{children}</ActivityProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

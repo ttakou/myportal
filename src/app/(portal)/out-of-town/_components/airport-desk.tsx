@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { PlaneTakeoff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,7 +56,7 @@ export function AirportDesk({ trips }: { trips: Trip[] }) {
 
 function DeskCard({ trip }: { trip: Trip }) {
   const a = trip.assistance;
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 

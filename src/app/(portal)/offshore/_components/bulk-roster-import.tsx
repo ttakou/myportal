@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Download, FileUp, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { bulkUpsertRoster, type BulkRosterResult, type BulkRosterRow } from "../actions";
@@ -84,7 +85,7 @@ function download(content: string, filename: string) {
 }
 
 export function BulkRosterImport() {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Importing…");
   const [rows, setRows] = useState<BulkRosterRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");

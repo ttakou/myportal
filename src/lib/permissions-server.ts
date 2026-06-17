@@ -1,6 +1,7 @@
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess, type Access } from "@/lib/auth";
+import { getAccess, getCachedUser, type Access } from "@/lib/auth";
 import type { ActionResult } from "@/types/actions";
 import { hasPermission, type PermissionMap, type Verb } from "@/lib/permissions";
 
@@ -8,13 +9,11 @@ import { hasPermission, type PermissionMap, type Verb } from "@/lib/permissions"
  * Effective permissions for the signed-in user — the union of the verb grants
  * across every access role assigned to them.
  */
-export async function getMyPermissions(): Promise<PermissionMap> {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export const getMyPermissions = cache(async (): Promise<PermissionMap> => {
+  const user = await getCachedUser();
   if (!user) return {};
 
+  const supabase = createClient();
   const { data } = await supabase
     .from("profile_access_roles")
     .select("tenant_roles(permissions)")
@@ -32,7 +31,7 @@ export async function getMyPermissions(): Promise<PermissionMap> {
   const out: PermissionMap = {};
   for (const [slug, set] of Object.entries(acc)) out[slug] = [...set];
   return out;
-}
+});
 
 /**
  * Server-action guard: returns a denial ActionResult when the signed-in user

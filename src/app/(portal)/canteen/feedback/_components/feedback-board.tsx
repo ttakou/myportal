@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,7 @@ export function FeedbackBoard({
   all: Feedback[];
   isAdmin: boolean;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Submitting…");
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState(false);
 

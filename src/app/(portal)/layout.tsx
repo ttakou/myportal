@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { createClient } from "@/lib/supabase/server";
-import { getAccess } from "@/lib/auth";
+import { getAccess, getCachedUser } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { PermissionsProvider } from "@/components/permissions-provider";
 import { getTenantBranding, brandingToCssVars } from "@/lib/branding";
@@ -25,16 +25,14 @@ export default async function PortalLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCachedUser();
 
   // Defense in depth — middleware already guards this, but never trust a single layer.
   if (!user) {
     redirect("/login");
   }
 
+  const supabase = createClient();
   const [branding, profile, notifications, perms, access] = await Promise.all([
     getTenantBranding(),
     supabase

@@ -1,12 +1,12 @@
 "use client";
 
-import { useTransition } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { UserCog } from "lucide-react";
 import { stopImpersonation } from "@/app/(portal)/admin/actions";
 
 /** Banner shown while a super-admin is acting as another user. */
 export function ImpersonationBanner({ name }: { name: string }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useStatusTransition("Switching…", "load");
   return (
     <div className="flex flex-wrap items-center justify-center gap-3 bg-amber-500 px-4 py-1.5 text-sm font-medium text-amber-950">
       <span className="inline-flex items-center gap-1.5">

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Check, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Appraisal } from "@/types/appraisal";
@@ -23,7 +24,7 @@ export function SecondLevelPanel({ appraisals }: { appraisals: Appraisal[] }) {
 }
 
 function Row({ a }: { a: Appraisal }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [returning, setReturning] = useState(false);
   const [comment, setComment] = useState("");

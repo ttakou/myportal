@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { RaterAssignment } from "@/types/appraisal";
@@ -26,7 +27,7 @@ export function RaterInbox({ assignments }: { assignments: RaterAssignment[] }) 
 }
 
 function AssignmentRow({ assignment: a }: { assignment: RaterAssignment }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [rating, setRating] = useState<string>(a.rating != null ? String(a.rating) : "");
   const [comment, setComment] = useState(a.comment ?? "");

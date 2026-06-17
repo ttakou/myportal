@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ const field = "rounded-md border bg-background px-3 py-2 text-sm";
 const isoDaysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 
 export function HistoryPanel() {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Loading…", "load");
 
   // POB as-of
   const [pobDate, setPobDate] = useState(() => new Date().toISOString().slice(0, 10));

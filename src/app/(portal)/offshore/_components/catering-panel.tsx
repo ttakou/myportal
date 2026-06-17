@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Download, Trash2, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ export function CateringPanel({ installations }: { installations: Installation[]
   const [installationId, setInstallationId] = useState(installations[0]?.id ?? "");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [entries, setEntries] = useState<MealEntry[]>([]);
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [casual, setCasual] = useState("");
 

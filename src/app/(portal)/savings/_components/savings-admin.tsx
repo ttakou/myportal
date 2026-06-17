@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { PiggyBank } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { money, type AccountSummary } from "@/types/savings";
@@ -13,7 +14,7 @@ export function SavingsAdmin({
   accounts: AccountSummary[];
   users: { id: string; name: string }[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   const [newMember, setNewMember] = useState(users[0]?.id ?? "");

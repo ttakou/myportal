@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,7 +77,7 @@ export function Checklist({
   canTick: boolean;
   canAdd?: boolean;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const items = task.checklist;
@@ -146,7 +147,7 @@ export function Checklist({
 /** Collapsible two-way message thread plus an "add message" box. */
 export function FollowUps({ task, canPost }: { task: TransportRequest; canPost: boolean }) {
   const [note, setNote] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const count = task.updates.length;
 

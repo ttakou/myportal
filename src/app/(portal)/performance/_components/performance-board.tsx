@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { NINE_BOX_LABELS, type NineBoxCell } from "@/types/performance";
 import { setNineBox } from "../actions";
@@ -16,7 +17,7 @@ export function PerformanceBoard({
   users: { id: string; name: string }[];
   nineBox: NineBoxCell[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [profileId, setProfileId] = useState(users[0]?.id ?? "");
   const [perf, setPerf] = useState("2");

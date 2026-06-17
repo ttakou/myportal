@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useStatusTransition } from "@/components/activity";
 import {
   AlertTriangle,
   Anchor,
@@ -1872,7 +1873,7 @@ function Dashboard({
 }
 
 function useRun() {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => {
     setError(null);

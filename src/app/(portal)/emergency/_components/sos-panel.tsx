@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, useTransition, type ComponentType } from "react";
+import { useRef, useState, type ComponentType } from "react";
+import { useStatusTransition } from "@/components/activity";
 import {
   Camera,
   Check,
@@ -51,7 +52,7 @@ function getLocation(timeout = 10000): Promise<Coords> {
 }
 
 export function SosPanel() {
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Sending SOS…");
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<IncidentType | null>(null);
   const [sentCoords, setSentCoords] = useState<Coords>(null);

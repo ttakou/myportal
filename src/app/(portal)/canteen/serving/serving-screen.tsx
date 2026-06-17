@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useStatusTransition } from "@/components/activity";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ScanLine, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,7 +25,7 @@ export function ServingScreen({
   dishes: CanteenDish[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useStatusTransition("Saving…");
   const [query, setQuery] = useState("");
   const [code, setCode] = useState("");
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
