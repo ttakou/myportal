@@ -403,6 +403,33 @@ function HrQueue({ appraisals }: { appraisals: Appraisal[] }) {
   );
 }
 
+/** Confidential stakeholder feedback per goal (HR view during validation). */
+function StakeholderFeedback({ appraisal }: { appraisal: Appraisal }) {
+  const goals = appraisal.goals.filter((g) => g.raters.length > 0);
+  if (goals.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-md bg-muted/50 px-2 py-1 text-xs">
+      <span className="font-medium">Stakeholder feedback</span>
+      <span className="text-muted-foreground"> (confidential)</span>
+      <ul className="mt-0.5 space-y-0.5">
+        {goals.map((g) => (
+          <li key={g.id}>
+            <span className="text-foreground">{g.title}</span>
+            {": "}
+            {g.raters
+              .map((r) =>
+                r.status === "submitted"
+                  ? `${r.rater_name ?? "—"} ${r.rating ?? "—"}/5${r.comment ? ` (${r.comment})` : ""}`
+                  : `${r.rater_name ?? "—"} — awaiting`,
+              )
+              .join("; ")}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function HrRow({ a, kind }: { a: Appraisal; kind: "validate" | "close" }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -451,6 +478,7 @@ function HrRow({ a, kind }: { a: Appraisal; kind: "validate" | "close" }) {
           )}
         </div>
       </div>
+      {kind === "validate" && <StakeholderFeedback appraisal={a} />}
       {openAppeal && (
         <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2">
           <p className="text-xs text-amber-800">

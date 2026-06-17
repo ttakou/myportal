@@ -1326,6 +1326,21 @@ export async function submitGoalRating(input: {
   if (error) return { ok: false, error: error.message };
   if (!data || data.length === 0)
     return { ok: false, error: "This review request isn't assigned to you." };
+  // Let the line manager know stakeholder feedback has come in.
+  const { data: tgt } = await supabase.rpc("goal_rating_target", {
+    p_assignment: input.assignmentId,
+  });
+  const t = Array.isArray(tgt) ? tgt[0] : tgt;
+  if (t?.manager_id) {
+    await notifyUsers({
+      tenantId: t.tenant_id,
+      profileIds: [t.manager_id],
+      category: "general",
+      title: "Stakeholder feedback received",
+      body: `A reviewer rated ${t.employee_name ?? "an employee"}'s objective “${t.goal_title}”.`,
+      url: "/performance/appraisals",
+    });
+  }
   rev();
   return { ok: true };
 }
