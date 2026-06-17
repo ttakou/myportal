@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Ship, ShieldCheck, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/components/permissions-provider";
 import {
   OFFSHORE_STATUS_LABEL,
   type Flight,
@@ -51,6 +52,7 @@ export function OffshoreBoard({
   people: { id: string; name: string }[];
   meId: string;
 }) {
+  const { can } = usePermissions();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -115,6 +117,7 @@ export function OffshoreBoard({
         </section>
       )}
 
+      {can("offshore", "create") && (
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Request an offshore trip</h2>
         <form
@@ -209,6 +212,7 @@ export function OffshoreBoard({
           </p>
         </form>
       </section>
+      )}
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">My offshore trips</h2>

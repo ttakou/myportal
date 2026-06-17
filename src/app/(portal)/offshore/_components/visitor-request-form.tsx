@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Plane, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/components/permissions-provider";
 import type { Installation } from "@/types/offshore";
 import { VISIT_STATUS_LABEL, type VisitRequest } from "@/types/offshore";
 import { createVisitGroup } from "../actions";
@@ -67,6 +68,7 @@ export function VisitorRequestForm({
   nameSuggestions: string[];
   companySuggestions: string[];
 }) {
+  const { can } = usePermissions();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -136,14 +138,16 @@ export function VisitorRequestForm({
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Offshore visitor requests</h2>
-        <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((o) => !o)}>
-          <Plane className="h-4 w-4" /> {open ? "Close" : "Request a visit"}
-        </Button>
+        {can("offshore", "create") && (
+          <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((o) => !o)}>
+            <Plane className="h-4 w-4" /> {open ? "Close" : "Request a visit"}
+          </Button>
+        )}
       </div>
 
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
-      {open && (
+      {open && can("offshore", "create") && (
         <form onSubmit={submit} className="space-y-3 rounded-lg border bg-card p-4">
           <datalist id="visitor-names">
             {nameSuggestions.map((n) => <option key={n} value={n} />)}
