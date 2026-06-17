@@ -143,6 +143,21 @@ export interface MealEntitlement {
   ends_on: string;
   reason: string | null;
   status: EntitlementStatus;
+  /** Audit: who granted this entitlement and when. */
+  granted_by_name: string | null;
+  granted_at: string;
+}
+
+/** One redeemed meal (allocation taken), for the historical trace. */
+export interface MealRedemptionHistoryRow {
+  id: string;
+  profile_id: string;
+  full_name: string | null;
+  email: string;
+  redeemed_on: string;
+  served_by_name: string | null;
+  note: string | null;
+  created_at: string;
 }
 
 /** One entitled person's standing on a given day, for the serving point. */
