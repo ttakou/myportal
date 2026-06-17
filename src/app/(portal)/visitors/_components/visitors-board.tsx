@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/components/permissions-provider";
 import {
   VISITOR_STATUS_LABEL,
   type Visitor,
@@ -32,6 +33,7 @@ export function VisitorsBoard({
   visitors: Visitor[];
   isAdmin: boolean;
 }) {
+  const { can } = usePermissions();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +70,7 @@ export function VisitorsBoard({
         </p>
       )}
 
+      {can("visitors", "create") && (
       <form
         onSubmit={register}
         className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
@@ -95,6 +98,7 @@ export function VisitorsBoard({
           <UserPlus className="h-4 w-4" /> Pre-register
         </Button>
       </form>
+      )}
 
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
