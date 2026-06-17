@@ -88,7 +88,9 @@ export function LoginForm({ tenantSlug }: { tenantSlug?: string | null }) {
     <div className="min-h-screen lg:grid lg:grid-cols-2">
       <HeroPanel />
 
-      <div className="flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-10">
+        <MobileBrand />
+
         <div className="w-full max-w-sm space-y-6 rounded-lg border bg-card p-8 shadow-sm">
           <div className="space-y-1 text-center">
             <h1 className="text-xl font-semibold tracking-tight">
@@ -178,13 +180,55 @@ export function LoginForm({ tenantSlug }: { tenantSlug?: string | null }) {
   );
 }
 
+/**
+ * Compact branded banner shown ABOVE the sign-in card on small screens, where
+ * the full-height HeroPanel is hidden. Keeps the redesign visible on mobile.
+ */
+function MobileBrand() {
+  return (
+    <div className="w-full max-w-sm lg:hidden">
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-900 via-slate-800 to-rose-900 p-6 text-center text-white shadow-sm">
+        {/* Photo behind a legibility gradient; gradient shows if it fails. */}
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-40"
+          style={{ backgroundImage: `url('${HERO_IMAGE}')` }}
+          aria-hidden
+        />
+        <div
+          className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-900/45 to-slate-900/20"
+          aria-hidden
+        />
+        <div className="relative">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
+            MyEnterprisePortal
+          </p>
+          <h2 className="mt-2 text-lg font-semibold leading-snug">
+            Everything your team needs, in one portal.
+          </h2>
+          <ul className="mt-4 grid grid-cols-3 gap-2">
+            {FEATURES.map(({ icon: Icon, label }) => (
+              <li
+                key={label}
+                className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2 py-2 text-[11px] font-medium backdrop-blur-sm"
+              >
+                <Icon className="h-4 w-4 text-white/90" />
+                <span className="leading-tight">{label}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Branded marketing panel shown beside the sign-in card on large screens. */
 function HeroPanel() {
   return (
     <aside className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-rose-900 p-12 text-white lg:flex">
-      {/* Photo + legibility overlays. Falls back to the gradient if it fails. */}
+      {/* Photo + legibility overlay; gradient shows through / as fallback. */}
       <div
-        className="absolute inset-0 bg-cover bg-center opacity-25"
+        className="absolute inset-0 bg-cover bg-center opacity-30"
         style={{ backgroundImage: `url('${HERO_IMAGE}')` }}
         aria-hidden
       />
