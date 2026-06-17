@@ -8,6 +8,7 @@ import {
   acknowledge,
   addGoal,
   deleteGoal,
+  rateCompetencySelf,
   submitGoals,
   submitMidYear,
   submitSelfAssessment,
@@ -263,6 +264,29 @@ function SelfAssessment({
           />
         </div>
       ))}
+      {appraisal.competencies.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Competencies
+          </h4>
+          {appraisal.competencies.map((c) => (
+            <div key={c.competency_id} className="flex items-center justify-between gap-2 rounded-md border p-2">
+              <span className="text-sm">{c.name}</span>
+              <select
+                defaultValue={c.employee_rating ?? ""}
+                disabled={!editable || pending}
+                onChange={(e) =>
+                  run(() => rateCompetencySelf({ appraisalId: appraisal.id, competencyId: c.competency_id, rating: Number(e.target.value) }))
+                }
+                className="rounded-md border bg-background px-2 py-1 text-sm"
+              >
+                <option value="">Rate 1–5</option>
+                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
       <textarea
         value={summary}
         onChange={(e) => setSummary(e.target.value)}
@@ -301,6 +325,19 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
           </li>
         ))}
       </ul>
+      {appraisal.competencies.length > 0 && (
+        <ul className="border-t pt-2 text-sm">
+          {appraisal.competencies.map((c) => (
+            <li key={c.competency_id} className="flex justify-between py-0.5">
+              <span>{c.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {c.employee_rating != null ? `self ${c.employee_rating}` : ""}
+                {c.manager_rating != null ? ` · mgr ${c.manager_rating}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       {appraisal.manager_summary && (
         <p className="border-t pt-2 text-sm"><span className="font-medium">Manager summary: </span>{appraisal.manager_summary}</p>
       )}

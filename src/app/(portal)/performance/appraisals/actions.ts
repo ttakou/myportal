@@ -739,3 +739,88 @@ export async function resolveAppeal(input: {
   rev();
   return { ok: true };
 }
+
+// --- Phase 4b: competency framework -----------------------------------------
+
+export async function addCompetency(input: {
+  name: string;
+  description?: string;
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  if (!input.name.trim()) return { ok: false, error: "Competency name is required." };
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const { error } = await supabase.from("appraisal_competencies").insert({
+    tenant_id: tenant.id,
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function setCompetencyActive(id: string, isActive: boolean): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_competencies")
+    .update({ is_active: isActive })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function rateCompetencySelf(input: {
+  appraisalId: string;
+  competencyId: string;
+  rating: number;
+}): Promise<ActionResult> {
+  const guard = await requireEmployeeAt(input.appraisalId, ["self_assessment"]);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const supabase = createClient();
+  const { error } = await supabase.from("appraisal_competency_ratings").upsert(
+    {
+      tenant_id: a.tenant_id,
+      appraisal_id: a.id,
+      competency_id: input.competencyId,
+      employee_rating: Math.max(0, Math.min(5, input.rating)),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "appraisal_id,competency_id" },
+  );
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function rateCompetencyManager(input: {
+  appraisalId: string;
+  competencyId: string;
+  rating?: number;
+  comment?: string;
+}): Promise<ActionResult> {
+  const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const supabase = createClient();
+  const row: Record<string, unknown> = {
+    tenant_id: a.tenant_id,
+    appraisal_id: a.id,
+    competency_id: input.competencyId,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.rating !== undefined) row.manager_rating = Math.max(0, Math.min(5, input.rating));
+  if (input.comment !== undefined) row.manager_comment = input.comment.trim() || null;
+  const { error } = await supabase
+    .from("appraisal_competency_ratings")
+    .upsert(row, { onConflict: "appraisal_id,competency_id" });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}

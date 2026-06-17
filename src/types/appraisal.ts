@@ -88,6 +88,21 @@ export interface AppraisalEvent {
   created_at: string;
 }
 
+export interface AppraisalCompetency {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+}
+
+export interface CompetencyRating {
+  competency_id: string;
+  name: string;
+  employee_rating: number | null;
+  manager_rating: number | null;
+  manager_comment: string | null;
+}
+
 export interface AppraisalAppeal {
   id: string;
   reason: string | null;
@@ -116,6 +131,7 @@ export interface Appraisal {
   employee_agreed: boolean | null;
   employee_ack_comment: string | null;
   appeal: AppraisalAppeal | null;
+  competencies: CompetencyRating[];
   goals: AppraisalGoal[];
   events: AppraisalEvent[];
 }

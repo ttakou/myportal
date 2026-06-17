@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
 import type {
   Appraisal,
+  AppraisalCompetency,
   AppraisalCycle,
   AppraisalEvent,
   AppraisalGoal,
@@ -36,9 +37,20 @@ function mapAppraisal(r: Record<string, any>): Appraisal {
     employee_agreed: r.employee_agreed ?? null,
     employee_ack_comment: r.employee_ack_comment ?? null,
     appeal: null,
+    competencies: [],
     goals: [],
     events: [],
   };
+}
+
+/** All competencies for the HR framework editor. */
+export async function getCompetencies(): Promise<AppraisalCompetency[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("appraisal_competencies")
+    .select("id, name, description, is_active")
+    .order("name");
+  return (data ?? []) as AppraisalCompetency[];
 }
 
 /** The tenant's active cycle (or the most recent one). */
@@ -153,6 +165,29 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
     .limit(1)
     .maybeSingle();
   appraisal.appeal = (appeal as Appraisal["appeal"]) ?? null;
+
+  const [{ data: comps }, { data: ratings }] = await Promise.all([
+    supabase
+      .from("appraisal_competencies")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name"),
+    supabase
+      .from("appraisal_competency_ratings")
+      .select("competency_id, employee_rating, manager_rating, manager_comment")
+      .eq("appraisal_id", appraisal.id),
+  ]);
+  const rmap = new Map(((ratings ?? []) as Record<string, any>[]).map((r) => [r.competency_id, r]));
+  appraisal.competencies = ((comps ?? []) as Record<string, any>[]).map((c) => {
+    const r = rmap.get(c.id);
+    return {
+      competency_id: c.id as string,
+      name: c.name as string,
+      employee_rating: r?.employee_rating ?? null,
+      manager_rating: r?.manager_rating ?? null,
+      manager_comment: r?.manager_comment ?? null,
+    };
+  });
   appraisal.events = ((events ?? []) as Record<string, any>[]).map(
     (e): AppraisalEvent => ({
       id: e.id,
