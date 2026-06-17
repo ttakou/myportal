@@ -277,23 +277,94 @@ export function UsersPanel({
                             onSave={(v) => run(() => setUserJobTitle(u.id, v))}
                           />
                         </Field>
-                        <Field label="Email">{u.email || "—"}</Field>
-                        <Field label="Department">{u.department || "—"}</Field>
+                        <Field label="Email">
+                          <InlineText
+                            value={u.email ?? ""}
+                            placeholder="email@company.com"
+                            pending={pending}
+                            onSave={(v) => run(() => updateUserEmail(u.id, v))}
+                          />
+                        </Field>
+                        <Field label="Department">
+                          <InlineText
+                            value={u.department ?? ""}
+                            placeholder="Department"
+                            pending={pending}
+                            onSave={(v) => run(() => setUserDepartment(u.id, v))}
+                          />
+                        </Field>
                         <Field label="Type">
-                          <span className="capitalize">{u.employee_type}</span>
+                          <select
+                            value={u.employee_type}
+                            disabled={pending}
+                            onChange={(e) => run(() => setUserType(u.id, e.target.value as EmployeeType))}
+                            className="w-full rounded-md border bg-background px-2 py-1 text-sm capitalize"
+                          >
+                            {TYPES.map((t) => (
+                              <option key={t} value={t}>{t}</option>
+                            ))}
+                          </select>
                         </Field>
                         <Field label="Account role">
-                          <span className="capitalize">{u.role.replace(/_/g, " ")}</span>
+                          <select
+                            value={u.role}
+                            disabled={pending || u.role === "super_admin"}
+                            onChange={(e) => run(() => setUserRole(u.id, e.target.value as UserRole))}
+                            className="w-full rounded-md border bg-background px-2 py-1 text-sm capitalize disabled:opacity-50"
+                          >
+                            {u.role === "super_admin" && (
+                              <option value="super_admin">super admin</option>
+                            )}
+                            {ROLES.map((r) => (
+                              <option key={r} value={r}>{r.replace(/_/g, " ")}</option>
+                            ))}
+                          </select>
                         </Field>
                         <Field label="Manager">
-                          {users.find((m) => m.id === u.manager_id)?.full_name ||
-                            users.find((m) => m.id === u.manager_id)?.email ||
-                            "—"}
+                          <select
+                            value={u.manager_id ?? ""}
+                            disabled={pending}
+                            onChange={(e) => run(() => setUserManager(u.id, e.target.value || null))}
+                            className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                          >
+                            <option value="">— none —</option>
+                            {managerOptions
+                              .filter((m) => m.id !== u.id)
+                              .map((m) => (
+                                <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                              ))}
+                          </select>
                         </Field>
                         <Field label="Lunch">
-                          {u.lunch_eligible ? "Eligible" : "Not eligible"}
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => run(() => setUserLunchEligible(u.id, !u.lunch_eligible))}
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-medium",
+                              u.lunch_eligible
+                                ? "bg-green-100 text-green-700"
+                                : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {u.lunch_eligible ? "Eligible" : "Not eligible"}
+                          </button>
                         </Field>
-                        <Field label="Status">{u.is_active ? "Active" : "Inactive"}</Field>
+                        <Field label="Status">
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => run(() => setUserActive(u.id, !u.is_active))}
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-medium",
+                              u.is_active
+                                ? "bg-primary/10 text-primary"
+                                : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {u.is_active ? "Active" : "Inactive"}
+                          </button>
+                        </Field>
                       </div>
                     </div>
                     <div className="grid gap-5 md:grid-cols-3">
@@ -357,7 +428,7 @@ export function UsersPanel({
                               );
                             })}
                             {u.access_role_ids.length === 0 && (
-                              <span className="text-[11px] text-muted-foreground">unrestricted</span>
+                              <span className="text-[11px] text-muted-foreground">no module access yet</span>
                             )}
                           </div>
                         </div>
