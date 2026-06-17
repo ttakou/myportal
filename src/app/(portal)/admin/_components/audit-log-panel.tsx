@@ -12,7 +12,7 @@ const TABLES = [
   "canteen_bookings", "canteen_dishes", "canteen_options", "canteen_feedback",
   "transport_requests", "transport_vehicles", "transport_drivers",
   "loans", "loan_repayments", "savings_accounts", "savings_transactions",
-  "medical_records", "perf_feedback", "okr_objectives", "okr_key_results", "nine_box",
+  "medical_records",
   "out_of_town_trips", "trip_expenses", "trip_checkins", "visitors", "airport_assistance",
   "eess_incidents", "eess_broadcasts",
 ];
