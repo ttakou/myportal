@@ -63,6 +63,15 @@ export interface AppraisalCycle {
   created_at: string;
 }
 
+export interface AppraisalKeyResult {
+  id: string;
+  title: string;
+  target: string | null;
+  current_value: string | null;
+  unit: string | null;
+  progress: number;
+}
+
 export interface AppraisalGoal {
   id: string;
   title: string;
@@ -70,6 +79,9 @@ export interface AppraisalGoal {
   weight: number;
   deadline: string | null;
   success_indicator: string | null;
+  alignment: string | null;
+  evidence_required: string | null;
+  kind: "objective" | "development";
   employee_progress: string | null;
   employee_self_rating: number | null;
   employee_comment: string | null;
@@ -77,6 +89,7 @@ export interface AppraisalGoal {
   manager_comment: string | null;
   at_risk: boolean;
   status: "draft" | "approved";
+  key_results: AppraisalKeyResult[];
 }
 
 export interface AppraisalEvent {

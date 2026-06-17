@@ -7,6 +7,7 @@ import type {
   AppraisalCycle,
   AppraisalEvent,
   AppraisalGoal,
+  AppraisalKeyResult,
 } from "@/types/appraisal";
 
 const APPRAISAL_SELECT =
@@ -197,8 +198,8 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
     supabase
       .from("appraisal_goals")
       .select(
-        "id, title, description, weight, deadline, success_indicator, employee_progress," +
-          " employee_self_rating, employee_comment, manager_rating, manager_comment, at_risk, status",
+        "id, title, description, weight, deadline, success_indicator, alignment, evidence_required, kind," +
+          " employee_progress, employee_self_rating, employee_comment, manager_rating, manager_comment, at_risk, status",
       )
       .eq("appraisal_id", appraisal.id)
       .order("created_at"),
@@ -208,7 +209,30 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
       .eq("appraisal_id", appraisal.id)
       .order("created_at", { ascending: false }),
   ]);
-  appraisal.goals = (goals ?? []) as unknown as AppraisalGoal[];
+  const goalsList = ((goals ?? []) as unknown as AppraisalGoal[]).map((g) => ({
+    ...g,
+    key_results: [] as AppraisalKeyResult[],
+  }));
+  const { data: krs } = await supabase
+    .from("appraisal_key_results")
+    .select("id, goal_id, title, target, current_value, unit, progress")
+    .eq("appraisal_id", appraisal.id)
+    .order("created_at");
+  const byGoal = new Map<string, AppraisalKeyResult[]>();
+  for (const k of (krs ?? []) as Record<string, any>[]) {
+    const arr = byGoal.get(k.goal_id) ?? [];
+    arr.push({
+      id: k.id,
+      title: k.title,
+      target: k.target ?? null,
+      current_value: k.current_value ?? null,
+      unit: k.unit ?? null,
+      progress: k.progress ?? 0,
+    });
+    byGoal.set(k.goal_id, arr);
+  }
+  for (const g of goalsList) g.key_results = byGoal.get(g.id) ?? [];
+  appraisal.goals = goalsList;
   const { data: appeal } = await supabase
     .from("appraisal_appeals")
     .select("id, reason, status, decision, created_at, resolved_at")

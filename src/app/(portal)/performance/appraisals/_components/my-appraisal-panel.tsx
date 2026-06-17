@@ -7,12 +7,15 @@ import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type AppraisalGoal } from "@
 import {
   acknowledge,
   addGoal,
+  addKeyResult,
   deleteGoal,
+  deleteKeyResult,
   rateCompetencySelf,
   submitGoals,
   submitMidYear,
   submitSelfAssessment,
   updateGoalProgress,
+  updateKeyResultProgress,
 } from "../actions";
 
 const EDITABLE = new Set(["not_started", "draft", "returned_for_correction"]);
@@ -82,6 +85,8 @@ function GoalSetting({
   const [weight, setWeight] = useState("");
   const [deadline, setDeadline] = useState("");
   const [indicator, setIndicator] = useState("");
+  const [alignment, setAlignment] = useState("");
+  const [kind, setKind] = useState<"objective" | "development">("objective");
   const totalWeight = appraisal.goals.reduce((s, g) => s + (g.weight ?? 0), 0);
 
   return (
@@ -97,25 +102,36 @@ function GoalSetting({
       ) : (
         <ul className="divide-y">
           {appraisal.goals.map((g) => (
-            <li key={g.id} className="flex items-start justify-between gap-3 py-2">
-              <div className="min-w-0">
-                <div className="font-medium">{g.title}</div>
-                <div className="text-xs text-muted-foreground">
-                  {g.weight}%{g.deadline ? ` · due ${g.deadline}` : ""}
-                  {g.success_indicator ? ` · ${g.success_indicator}` : ""}
+            <li key={g.id} className="py-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    {g.title}
+                    {g.kind === "development" && (
+                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                        development
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {g.weight}%{g.deadline ? ` · due ${g.deadline}` : ""}
+                    {g.alignment ? ` · ${g.alignment}` : ""}
+                    {g.success_indicator ? ` · ${g.success_indicator}` : ""}
+                  </div>
                 </div>
+                {editable && (
+                  <button
+                    type="button"
+                    aria-label="Remove"
+                    disabled={pending}
+                    onClick={() => run(() => deleteGoal({ goalId: g.id, appraisalId: appraisal.id }))}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-              {editable && (
-                <button
-                  type="button"
-                  aria-label="Remove"
-                  disabled={pending}
-                  onClick={() => run(() => deleteGoal({ goalId: g.id, appraisalId: appraisal.id }))}
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
+              <GoalKeyResults goal={g} appraisalId={appraisal.id} editable={editable} pending={pending} run={run} />
             </li>
           ))}
         </ul>
@@ -133,12 +149,16 @@ function GoalSetting({
                   weight: Number(weight) || 0,
                   deadline: deadline || undefined,
                   successIndicator: indicator || undefined,
+                  alignment: alignment || undefined,
+                  kind,
                 }),
               () => {
                 setTitle("");
                 setWeight("");
                 setDeadline("");
                 setIndicator("");
+                setAlignment("");
+                setKind("objective");
               },
             );
           }}
@@ -146,7 +166,12 @@ function GoalSetting({
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Objective" required className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
           <input value={weight} onChange={(e) => setWeight(e.target.value)} type="number" min={0} max={100} placeholder="Weight %" className="rounded-md border bg-background px-3 py-2 text-sm" />
           <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
-          <input value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Success indicator (optional)" className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-3" />
+          <select value={kind} onChange={(e) => setKind(e.target.value as "objective" | "development")} className="rounded-md border bg-background px-3 py-2 text-sm">
+            <option value="objective">Objective</option>
+            <option value="development">Development</option>
+          </select>
+          <input value={alignment} onChange={(e) => setAlignment(e.target.value)} placeholder="Business alignment (optional)" className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
+          <input value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Success indicator (optional)" className="rounded-md border bg-background px-3 py-2 text-sm" />
           <Button type="submit" disabled={pending}><Plus className="h-4 w-4" /> Add</Button>
         </form>
       )}
@@ -204,6 +229,7 @@ function MidYear({
             />
             At risk / delayed
           </label>
+          <KrProgress goal={g} appraisalId={appraisal.id} editable={editable} pending={pending} run={run} />
         </div>
       ))}
       {editable && (
@@ -262,6 +288,7 @@ function SelfAssessment({
             className="mt-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
             rows={2}
           />
+          <KrProgress goal={g} appraisalId={appraisal.id} editable={editable} pending={pending} run={run} />
         </div>
       ))}
       {appraisal.competencies.length > 0 && (
@@ -321,6 +348,16 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
                 {g.manager_rating != null ? ` · mgr ${g.manager_rating}` : ""}
               </span>
             </div>
+            {g.key_results.length > 0 && (
+              <ul className="mt-1 space-y-0.5 pl-3 text-xs text-muted-foreground">
+                {g.key_results.map((k) => (
+                  <li key={k.id}>
+                    • {k.title} — {k.progress}%
+                    {k.current_value ? ` (${k.current_value}${k.target ? ` / ${k.target}` : ""})` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
             {g.manager_comment && <p className="mt-1 text-xs text-muted-foreground">{g.manager_comment}</p>}
           </li>
         ))}
@@ -421,5 +458,116 @@ function History({ appraisal }: { appraisal: Appraisal }) {
         ))}
       </ul>
     </details>
+  );
+}
+
+/** Define key results for an objective during goal-setting. */
+function GoalKeyResults({
+  goal,
+  appraisalId,
+  editable,
+  pending,
+  run,
+}: {
+  goal: AppraisalGoal;
+  appraisalId: string;
+  editable: boolean;
+  pending: boolean;
+  run: RunFn;
+}) {
+  const [title, setTitle] = useState("");
+  const [target, setTarget] = useState("");
+  return (
+    <div className="mt-2 space-y-1 pl-3">
+      {goal.key_results.map((k) => (
+        <div key={k.id} className="flex items-center justify-between gap-2 text-xs">
+          <span>
+            • {k.title}
+            {k.target ? <span className="text-muted-foreground"> → {k.target}{k.unit ? ` ${k.unit}` : ""}</span> : null}
+          </span>
+          {editable && (
+            <button
+              type="button"
+              aria-label="Remove key result"
+              disabled={pending}
+              onClick={() => run(() => deleteKeyResult({ appraisalId, krId: k.id }))}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      ))}
+      {editable && (
+        <form
+          className="flex flex-wrap gap-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            run(
+              () => addKeyResult({ appraisalId, goalId: goal.id, title, target: target || undefined }),
+              () => {
+                setTitle("");
+                setTarget("");
+              },
+            );
+          }}
+        >
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Key result" className="flex-1 rounded-md border bg-background px-2 py-1 text-xs" />
+          <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="Target" className="w-28 rounded-md border bg-background px-2 py-1 text-xs" />
+          <button type="submit" disabled={pending || !title.trim()} className="rounded-md border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50">
+            + KR
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+/** Track key-result progress continuously (mid-year / self-assessment). */
+function KrProgress({
+  goal,
+  appraisalId,
+  editable,
+  pending,
+  run,
+}: {
+  goal: AppraisalGoal;
+  appraisalId: string;
+  editable: boolean;
+  pending: boolean;
+  run: RunFn;
+}) {
+  if (goal.key_results.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1 pl-3">
+      {goal.key_results.map((k) => (
+        <div key={k.id} className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="min-w-[120px] flex-1">• {k.title}{k.target ? ` (→ ${k.target})` : ""}</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            defaultValue={k.progress}
+            disabled={!editable || pending}
+            onBlur={(e) => {
+              const v = Number(e.target.value);
+              if (v !== k.progress) run(() => updateKeyResultProgress({ appraisalId, krId: k.id, progress: v }));
+            }}
+            className="w-16 rounded-md border bg-background px-2 py-1 text-xs"
+          />
+          <span className="text-muted-foreground">%</span>
+          <input
+            defaultValue={k.current_value ?? ""}
+            disabled={!editable || pending}
+            placeholder="Actual"
+            onBlur={(e) => {
+              if (e.target.value !== (k.current_value ?? ""))
+                run(() => updateKeyResultProgress({ appraisalId, krId: k.id, currentValue: e.target.value }));
+            }}
+            className="w-24 rounded-md border bg-background px-2 py-1 text-xs"
+          />
+        </div>
+      ))}
+    </div>
   );
 }
