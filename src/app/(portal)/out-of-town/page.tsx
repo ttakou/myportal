@@ -1,4 +1,6 @@
 import { getAccess } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import {
   getAirportDesk,
   getApprovalQueue,
@@ -13,7 +15,7 @@ import { EmergencyContacts } from "./_components/emergency-contacts";
 import { AirportDesk } from "./_components/airport-desk";
 
 export default async function OutOfTownPage() {
-  const access = await getAccess();
+  const [access, perms] = await Promise.all([getAccess(), getMyPermissions()]);
   const isCoordinator = access.isAdmin;
 
   const [mine, queue, dashboard, contacts, manager, desk] = await Promise.all([
@@ -27,7 +29,11 @@ export default async function OutOfTownPage() {
 
   const canApprove = access.isAdmin || manager;
   const canManageContacts = access.isAdmin || access.isSafetyAdmin;
-  const showDashboard = access.isAdmin || access.isSafetyAdmin || manager;
+  // Travel safety dashboard is operational data (who's away, overdue, moving
+  // today) — limit it to admins and the travel desk: the "Travel Assistance"
+  // and "Dispatcher" roles both carry out-of-town `operate`.
+  const showDashboard =
+    access.isAdmin || hasPermission(perms, "out-of-town", "operate");
 
   return (
     <div className="space-y-8">
