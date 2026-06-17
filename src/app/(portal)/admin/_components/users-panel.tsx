@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
+import { Fragment, useState, useTransition, type ReactNode } from "react";
 import { Check, Copy, KeyRound, SlidersHorizontal, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
@@ -14,6 +14,8 @@ import {
   setUserActive,
   setUserDepartment,
   setUserLunchEligible,
+  setUserFullName,
+  setUserJobTitle,
   setUserManager,
   setUserPassword,
   setUserRole,
@@ -89,7 +91,18 @@ export function UsersPanel({
               <Fragment key={u.id}>
               <tr className={cn(!u.is_active && "opacity-60")}>
                 <td className="px-4 py-3">
-                  <div className="font-medium">{u.full_name || "—"}</div>
+                  {canAssignRoles ? (
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(expanded === u.id ? null : u.id)}
+                      className="text-left font-medium hover:underline"
+                      title="View full profile & assign roles"
+                    >
+                      {u.full_name || "—"}
+                    </button>
+                  ) : (
+                    <div className="font-medium">{u.full_name || "—"}</div>
+                  )}
                   {u.email ? (
                     <div className="text-xs text-muted-foreground">{u.email}</div>
                   ) : canAssignRoles ? (
@@ -242,6 +255,47 @@ export function UsersPanel({
               {canAssignRoles && expanded === u.id && (
                 <tr className="bg-muted/30">
                   <td colSpan={8} className="px-4 py-4">
+                    <div className="space-y-5">
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Profile details
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <Field label="Full name">
+                          <InlineText
+                            value={u.full_name ?? ""}
+                            placeholder="Full name"
+                            pending={pending}
+                            onSave={(v) => run(() => setUserFullName(u.id, v))}
+                          />
+                        </Field>
+                        <Field label="Job title">
+                          <InlineText
+                            value={u.job_title ?? ""}
+                            placeholder="Job title"
+                            pending={pending}
+                            onSave={(v) => run(() => setUserJobTitle(u.id, v))}
+                          />
+                        </Field>
+                        <Field label="Email">{u.email || "—"}</Field>
+                        <Field label="Department">{u.department || "—"}</Field>
+                        <Field label="Type">
+                          <span className="capitalize">{u.employee_type}</span>
+                        </Field>
+                        <Field label="Account role">
+                          <span className="capitalize">{u.role.replace(/_/g, " ")}</span>
+                        </Field>
+                        <Field label="Manager">
+                          {users.find((m) => m.id === u.manager_id)?.full_name ||
+                            users.find((m) => m.id === u.manager_id)?.email ||
+                            "—"}
+                        </Field>
+                        <Field label="Lunch">
+                          {u.lunch_eligible ? "Eligible" : "Not eligible"}
+                        </Field>
+                        <Field label="Status">{u.is_active ? "Active" : "Inactive"}</Field>
+                      </div>
+                    </div>
                     <div className="grid gap-5 md:grid-cols-3">
                       <div>
                         <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -315,6 +369,7 @@ export function UsersPanel({
                         <SetPasswordControl userId={u.id} />
                       </div>
                     </div>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -331,6 +386,43 @@ export function UsersPanel({
         </table>
       </div>
     </section>
+  );
+}
+
+/** A labelled read/edit field in the profile detail grid. */
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <div className="mt-0.5 text-sm">{children}</div>
+    </div>
+  );
+}
+
+/** Text input that saves on blur when the value changed. */
+function InlineText({
+  value,
+  onSave,
+  pending,
+  placeholder,
+}: {
+  value: string;
+  onSave: (v: string) => void;
+  pending: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <input
+      defaultValue={value}
+      disabled={pending}
+      placeholder={placeholder}
+      onBlur={(e) => {
+        if (e.target.value !== value) onSave(e.target.value);
+      }}
+      className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+    />
   );
 }
 
