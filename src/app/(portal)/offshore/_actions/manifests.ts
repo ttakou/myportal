@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { canManageOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, rev, tenantId } from "./_shared";
 import { boardMember } from "./mobilise";
 
 /**
@@ -13,7 +13,8 @@ export async function generateNextCrewChange(
   crewId: string,
   direction: "out" | "in",
 ): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { data: crew } = await supabase
     .from("offshore_crews")
@@ -50,7 +51,8 @@ export async function createManifest(input: {
   profileIds: string[];
   visitRequestIds?: string[];
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   if (!input.scheduledDate) return { ok: false, error: "Scheduled date is required." };
   const visitorIds = input.visitRequestIds ?? [];
   if (!input.profileIds.length && !visitorIds.length)
@@ -148,7 +150,8 @@ export async function generateCrewManifest(input: {
   direction: "out" | "in";
   scheduledDate: string;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   if (!input.scheduledDate) return { ok: false, error: "Scheduled date is required." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -205,7 +208,8 @@ export async function setManifestStatus(
   id: string,
   status: "draft" | "approved" | "locked" | "cancelled",
 ): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("approve");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_manifests").update({ status }).eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -219,7 +223,8 @@ export async function updateManifestTransport(input: {
   transportMode?: "helicopter" | "boat";
   seatCapacity?: number;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("edit");
+  if (gate) return gate;
   const patch: Record<string, unknown> = {};
   if (input.transportMode === "helicopter" || input.transportMode === "boat") {
     patch.transport_mode = input.transportMode;
@@ -238,7 +243,8 @@ export async function updateManifestTransport(input: {
 }
 
 export async function togglePaxNoShow(id: string, noShow: boolean): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("offshore_manifest_pax")
@@ -250,7 +256,8 @@ export async function togglePaxNoShow(id: string, noShow: boolean): Promise<Acti
 }
 
 export async function removeManifestPax(id: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_manifest_pax").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -264,7 +271,8 @@ export async function removeManifestPax(id: string): Promise<ActionResult> {
  * Seat capacity is enforced. Manifest must be locked first.
  */
 export async function confirmManifestMovement(id: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("approve");
+  if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -372,7 +380,8 @@ export async function confirmManifestMovement(id: string): Promise<ActionResult>
  * (leaving) → they stayed aboard, put them back on POB.
  */
 export async function reverseManifestPax(input: { paxId: string }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("approve");
+  if (gate) return gate;
   const supabase = createClient();
   const { data: p } = await supabase
     .from("offshore_manifest_pax")

@@ -5,7 +5,7 @@ import { searchBedAvailability } from "@/lib/offshore";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import type { RoomAvailability } from "@/types/offshore";
-import { canApproveVisits, canManageOffshore, rev, tenantId, VISITOR_TYPES } from "./_shared";
+import { VISITOR_TYPES, requireOffshore, rev, tenantId } from "./_shared";
 
 export async function createVisitRequest(input: {
   visitorName: string;
@@ -21,6 +21,8 @@ export async function createVisitRequest(input: {
   overnight?: boolean;
   emergencyContact?: string;
 }): Promise<ActionResult> {
+  const gate = await requireOffshore("create");
+  if (gate) return gate;
   if (!input.visitorName.trim()) return { ok: false, error: "Visitor name is required." };
   if (!input.departDate) return { ok: false, error: "Departure date is required." };
   const supabase = createClient();
@@ -53,7 +55,8 @@ export async function decideVisitRequest(
   decision: "approved" | "rejected",
   reason?: string,
 ): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("approve");
+  if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
@@ -103,6 +106,8 @@ export async function createVisitGroup(input: {
   overnight?: boolean;
   visitors: { name: string; company?: string; gender?: string; emergencyContact?: string }[];
 }): Promise<ActionResult> {
+  const gate = await requireOffshore("create");
+  if (gate) return gate;
   if (!input.departDate) return { ok: false, error: "Departure date is required." };
   const visitors = (input.visitors ?? []).filter((v) => v.name?.trim());
   if (!visitors.length) return { ok: false, error: "Add at least one visitor name." };
@@ -145,7 +150,8 @@ export async function decideVisitGroup(
   decision: "approved" | "rejected",
   reason?: string,
 ): Promise<ActionResult> {
-  if (!(await canApproveVisits())) return { ok: false, error: "Only the OIM can approve visit requests." };
+  const gate = await requireOffshore("approve");
+  if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
@@ -196,7 +202,8 @@ export async function findAvailableBeds(input: {
   to: string;
   gender?: string;
 }): Promise<{ ok: boolean; error?: string; rooms?: RoomAvailability[] }> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   if (!input.installationId || !input.from || !input.to)
     return { ok: false, error: "Installation and dates are required." };
   const rooms = await searchBedAvailability(input);
@@ -208,7 +215,8 @@ export async function allocateVisitorBed(input: {
   visitRequestId: string;
   roomId: string;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -258,7 +266,8 @@ export async function setVisitorMovement(
   id: string,
   movement: "onboard" | "returned",
 ): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("offshore_visit_requests")

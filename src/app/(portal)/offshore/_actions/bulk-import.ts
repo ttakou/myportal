@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { canManageOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, rev, tenantId } from "./_shared";
 
 export interface BulkRoomRow {
   installation: string;
@@ -28,7 +28,8 @@ export interface BulkRoomResult {
 export async function bulkUpsertRooms(
   rows: BulkRoomRow[],
 ): Promise<ActionResult & { results?: BulkRoomResult[] }> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!rows?.length) return { ok: false, error: "No rows to import." };
   if (rows.length > 500) return { ok: false, error: "Import is limited to 500 rows." };
 
@@ -123,7 +124,8 @@ export interface BulkRosterResult {
 export async function bulkUpsertRoster(
   rows: BulkRosterRow[],
 ): Promise<ActionResult & { results?: BulkRosterResult[] }> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!rows?.length) return { ok: false, error: "No rows to import." };
   if (rows.length > 500) return { ok: false, error: "Import is limited to 500 rows." };
 

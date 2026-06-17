@@ -3,13 +3,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/types/actions";
-import { admin, rev } from "./_shared";
+import { requireOffshore, rev } from "./_shared";
 
 export async function requestOffshoreTrip(input: {
   installationId: string;
   mobilizeDate: string;
   demobDate?: string;
 }): Promise<ActionResult> {
+  const gate = await requireOffshore("create");
+  if (gate) return gate;
   if (!input.mobilizeDate) return { ok: false, error: "Mobilise date is required." };
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
@@ -41,6 +43,8 @@ export async function requestOffshoreTripGroup(input: {
    */
   people: { profileId?: string | null; name?: string | null }[];
 }): Promise<ActionResult> {
+  const gate = await requireOffshore("create");
+  if (gate) return gate;
   if (!input.mobilizeDate) return { ok: false, error: "Mobilise date is required." };
 
   // Split the entries into employee ids and free-text names.
@@ -106,7 +110,8 @@ export async function requestOffshoreTripGroup(input: {
 }
 
 export async function clearHse(id: string): Promise<ActionResult> {
-  if (!(await admin())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("approve");
+  if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
@@ -129,7 +134,8 @@ export async function assignManifest(
   flightId: string | null,
   bedNo: string | null,
 ): Promise<ActionResult> {
-  if (!(await admin())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("offshore_trips")
@@ -144,7 +150,8 @@ export async function setOffshoreStatus(
   id: string,
   status: "onboard" | "demobilised" | "cancelled",
 ): Promise<ActionResult> {
-  if (!(await admin())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("approve");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_trips").update({ status }).eq("id", id);
   if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, "") };
@@ -157,7 +164,8 @@ export async function addFlight(input: {
   route: string;
   seats: number;
 }): Promise<ActionResult> {
-  if (!(await admin())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!input.route.trim() || !input.flightDate)
     return { ok: false, error: "Route and date are required." };
   const supabase = createClient();

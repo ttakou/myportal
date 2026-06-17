@@ -2,11 +2,12 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { canManageOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, rev, tenantId } from "./_shared";
 
 /** Start a roll-call: snapshot everyone on board into check-ins (unaccounted). */
 export async function startMusterDrill(kind: "drill" | "real" = "drill"): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -70,7 +71,8 @@ export async function startMusterDrill(kind: "drill" | "real" = "drill"): Promis
 
 /** Tick a person accounted/unaccounted at their muster station. */
 export async function setMusterCheckin(checkinId: string, accounted: boolean): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
@@ -90,7 +92,8 @@ export async function setMusterCheckin(checkinId: string, accounted: boolean): P
 
 /** Close the roll-call. */
 export async function endMusterDrill(drillId: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
     .from("offshore_muster_drills")

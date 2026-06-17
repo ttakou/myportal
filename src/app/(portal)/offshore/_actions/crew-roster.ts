@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { canManageOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, rev, tenantId } from "./_shared";
 
 export async function upsertCrew(input: {
   id?: string;
@@ -15,7 +15,8 @@ export async function upsertCrew(input: {
   departureLocation?: string;
   cycleStartDate?: string | null;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!input.name.trim()) return { ok: false, error: "Crew name is required." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -44,7 +45,8 @@ export async function upsertCrew(input: {
 }
 
 export async function deleteCrew(id: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_crews").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -66,7 +68,8 @@ export async function upsertRoom(input: {
   specialFlag?: string;
   notes?: string;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!input.installationId) return { ok: false, error: "Installation is required." };
   if (!input.roomNumber.trim()) return { ok: false, error: "Room number is required." };
   const supabase = createClient();
@@ -104,7 +107,8 @@ export async function upsertRoom(input: {
 }
 
 export async function setRoomStatus(id: string, status: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("edit");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_rooms").update({ status }).eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -126,7 +130,8 @@ export async function updateRoomFields(input: {
   notes?: string;
   lifeboat?: string;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("edit");
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.block !== undefined) patch.block = input.block.trim() || null;
@@ -164,7 +169,8 @@ export async function updateRoomFields(input: {
 }
 
 export async function addRosterMember(profileId: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   if (!profileId) return { ok: false, error: "Choose a person." };
   const supabase = createClient();
   const tenant = await tenantId();
@@ -178,7 +184,8 @@ export async function addRosterMember(profileId: string): Promise<ActionResult> 
 }
 
 export async function removeRosterMember(id: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_staff").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -201,7 +208,8 @@ export async function updateRosterMember(input: {
   emergencyContact?: string;
   travelEligible?: boolean;
 }): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("edit");
+  if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.crewId !== undefined) patch.crew_id = input.crewId || null;

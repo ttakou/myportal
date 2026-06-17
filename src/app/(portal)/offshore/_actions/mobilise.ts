@@ -2,11 +2,12 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { canManageOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, rev, tenantId } from "./_shared";
 
 /** Board a single member now (late arrival joining colleagues already offshore). */
 export async function boardMember(profileId: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -76,7 +77,8 @@ export async function boardMember(profileId: string): Promise<ActionResult> {
 
 /** Board a crew for its current offshore window (idempotent). */
 export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -144,7 +146,8 @@ export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
 
 /** Offboard everyone currently on board for a crew. */
 export async function demobiliseCrew(crewId: string): Promise<ActionResult> {
-  if (!(await canManageOffshore())) return { ok: false, error: "Not authorized." };
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
   const { error } = await supabase
