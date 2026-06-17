@@ -64,7 +64,9 @@ export default async function AdminPage() {
 
       {access.isSystemAdmin && <BrandingPanel branding={branding} />}
       {access.isSystemAdmin && <ModulesPanel modules={modules} />}
-      {access.isSystemAdmin && <RolesPanel roles={accessRoles} modules={modules} />}
+      {access.isSystemAdmin && (
+        <RolesPanel roles={accessRoles} modules={modules} users={users} />
+      )}
       {access.isSystemAdmin && <ModuleParamsPanel modules={modules} />}
       {showCanteen && <CanteenSettingsPanel served={servedMeals} cutoffHour={cutoffHour} />}
       {access.isHr && (

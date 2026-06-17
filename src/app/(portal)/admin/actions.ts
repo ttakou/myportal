@@ -732,7 +732,7 @@ export async function createAccessRole(input: {
   name: string;
   description?: string;
   permissions: Record<string, string[]>;
-}): Promise<ActionResult> {
+}): Promise<ActionResult & { id?: string }> {
   const denied = await requireAdmin();
   if (denied) return denied;
   if (!input.name.trim()) return { ok: false, error: "Role name is required." };
@@ -742,13 +742,17 @@ export async function createAccessRole(input: {
   if (!tenant) return { ok: false, error: "No tenant in scope." };
 
   const perms = cleanPermissions(input.permissions);
-  const { error } = await supabase.from("tenant_roles").insert({
-    tenant_id: tenant.id,
-    name: input.name.trim(),
-    description: input.description?.trim() || null,
-    permissions: perms,
-    module_slugs: viewableSlugs(perms),
-  });
+  const { data, error } = await supabase
+    .from("tenant_roles")
+    .insert({
+      tenant_id: tenant.id,
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
+      permissions: perms,
+      module_slugs: viewableSlugs(perms),
+    })
+    .select("id")
+    .maybeSingle();
   if (error)
     return {
       ok: false,
@@ -757,7 +761,7 @@ export async function createAccessRole(input: {
         : error.message,
     };
   revalidatePath("/admin");
-  return { ok: true };
+  return { ok: true, id: data?.id as string | undefined };
 }
 
 export async function updateAccessRole(input: {
