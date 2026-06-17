@@ -1201,6 +1201,9 @@ export async function addGoalRater(input: {
       return { ok: false, error: "That person is already reviewing this goal." };
     return { ok: false, error: error.message };
   }
+  // Grant the assessor the view-only "Witness" role so they can reach the
+  // appraisals page and rate the goal under strict module gating.
+  await supabase.rpc("ensure_witness_role", { p_rater: input.raterId });
   await notifyUsers({
     tenantId: a.tenant_id,
     profileIds: [input.raterId],
@@ -1221,11 +1224,20 @@ export async function removeGoalRater(input: {
   const guard = await requireParticipantOpen(input.appraisalId);
   if ("ok" in guard) return guard;
   const supabase = createClient();
+  const { data: row } = await supabase
+    .from("appraisal_goal_raters")
+    .select("rater_id")
+    .eq("id", input.raterRowId)
+    .maybeSingle();
   const { error } = await supabase
     .from("appraisal_goal_raters")
     .delete()
     .eq("id", input.raterRowId);
   if (error) return { ok: false, error: error.message };
+  // Drop the auto Witness role if this was their last assessment.
+  if (row?.rater_id) {
+    await supabase.rpc("revoke_witness_role_if_unused", { p_rater: row.rater_id });
+  }
   rev();
   return { ok: true };
 }
