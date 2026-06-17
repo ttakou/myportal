@@ -2,6 +2,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { createClient } from "@/lib/supabase/server";
+import { getAccess } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { PermissionsProvider } from "@/components/permissions-provider";
 import { getTenantBranding, brandingToCssVars } from "@/lib/branding";
 import { getMyNotifications } from "@/lib/notifications";
 import { UserMenu } from "./_components/user-menu";
@@ -32,7 +35,7 @@ export default async function PortalLayout({
     redirect("/login");
   }
 
-  const [branding, profile, notifications] = await Promise.all([
+  const [branding, profile, notifications, perms, access] = await Promise.all([
     getTenantBranding(),
     supabase
       .from("profiles")
@@ -41,15 +44,28 @@ export default async function PortalLayout({
       .maybeSingle()
       .then((r) => r.data),
     getMyNotifications(),
+    getMyPermissions(),
+    getAccess(),
   ]);
 
   const displayName = profile?.full_name || profile?.email || "User";
   const role = profile?.role ?? "employee";
   const impersonating = cookies().get("imp_active")?.value;
 
+  const permAccess = {
+    isAdmin: access.isAdmin,
+    isSystemAdmin: access.isSystemAdmin,
+    isSafetyAdmin: access.isSafetyAdmin,
+    isOim: access.isOim,
+    isCanteenStaff: access.isCanteenStaff,
+    isCanteenManager: access.isCanteenManager,
+    isHr: access.isHr,
+  };
+
   return (
     <div style={brandingToCssVars(branding)}>
       {impersonating && <ImpersonationBanner name={displayName} />}
+      <PermissionsProvider perms={perms} access={permAccess}>
       <PortalShell
         sidebar={<Sidebar brandName={branding.name} logoUrl={branding.logoUrl} />}
         header={
@@ -61,6 +77,7 @@ export default async function PortalLayout({
       >
         {children}
       </PortalShell>
+      </PermissionsProvider>
     </div>
   );
 }
