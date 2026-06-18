@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, FileBarChart, Plane, ShieldCheck } from "lucide-react";
+import { ArrowRight, Banknote, FileBarChart, Plane, ShieldCheck } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -20,6 +20,14 @@ export default async function ReportsPage() {
       description:
         "Estimated vs actual travel spend per trip with a per-department roll-up. Filter by period, department and traveller.",
       icon: Plane,
+      show: access.isSystemAdmin || access.isAdmin || access.isFinance,
+    },
+    {
+      href: "/reports/loan-arrears",
+      title: "Savings & loan arrears",
+      description:
+        "Loan portfolio with arrears (scheduled-to-date vs repayments) and savings balances. Filter by period, department and borrower.",
+      icon: Banknote,
       show: access.isSystemAdmin || access.isAdmin || access.isFinance,
     },
   ].filter((t) => t.show);

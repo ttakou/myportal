@@ -1,4 +1,6 @@
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import Link from "next/link";
+import { FileBarChart } from "lucide-react";
+import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getAccounts, getMyAccount } from "@/lib/savings";
 import { getTenantUsers } from "@/lib/admin";
 import { money, type SavingsTxn } from "@/types/savings";
@@ -6,7 +8,8 @@ import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
 
 export default async function SavingsPage() {
-  const isAdmin = isAdminRole(await getCurrentRole());
+  const [access, role] = await Promise.all([getAccess(), getCurrentRole()]);
+  const isAdmin = isAdminRole(role);
   const [mine, accounts, users] = await Promise.all([
     getMyAccount(),
     isAdmin ? getAccounts() : Promise.resolve([]),
@@ -18,6 +21,14 @@ export default async function SavingsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Employees Saving Management</h1>
         <p className="text-muted-foreground">Cooperative fund, ledger and loans.</p>
+        {(access.isFinance || access.isAdmin) && (
+          <Link
+            href="/reports/loan-arrears"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+          >
+            <FileBarChart className="h-4 w-4" /> Savings &amp; loan arrears report
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
