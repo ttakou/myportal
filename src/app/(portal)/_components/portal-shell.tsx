@@ -28,7 +28,7 @@ export function PortalShell({
   return (
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
-      <div className="hidden md:block">{sidebar}</div>
+      <div className="hidden md:block print:hidden">{sidebar}</div>
 
       {/* Mobile drawer */}
       {open && (
@@ -51,7 +51,7 @@ export function PortalShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center gap-3 border-b bg-card px-4 sm:px-6">
+        <header className="flex h-16 items-center gap-3 border-b bg-card px-4 print:hidden sm:px-6">
           <button
             type="button"
             aria-label="Open menu"
