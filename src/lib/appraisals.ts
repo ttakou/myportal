@@ -26,7 +26,35 @@ const APPRAISAL_SELECT =
   " manager:profiles!manager_id(full_name)," +
   " second_level:profiles!second_level_id(full_name)";
 
-function mapAppraisal(r: Record<string, any>): Appraisal {
+/** A Supabase relationship comes back as a single row or an array of rows. */
+type Joined<T> = T | T[] | null;
+
+/** Shape of an `appraisals` row selected with APPRAISAL_SELECT. */
+interface RawAppraisalRow {
+  id: string;
+  cycle_id: string;
+  cycle?: Joined<{ name?: string }>;
+  employee_id: string;
+  employee?: Joined<{ full_name?: string }>;
+  manager_id?: string | null;
+  manager?: Joined<{ full_name?: string }>;
+  second_level_id?: string | null;
+  second_level?: Joined<{ full_name?: string }>;
+  stage: Appraisal["stage"];
+  status: Appraisal["status"];
+  overall_rating?: number | null;
+  final_score?: number | null;
+  rating_label?: string | null;
+  employee_summary?: string | null;
+  manager_summary?: string | null;
+  discussion_date?: string | null;
+  discussion_notes?: string | null;
+  acknowledged_at?: string | null;
+  employee_agreed?: boolean | null;
+  employee_ack_comment?: string | null;
+}
+
+function mapAppraisal(r: RawAppraisalRow): Appraisal {
   return {
     id: r.id,
     cycle_id: r.cycle_id,
@@ -146,7 +174,7 @@ export async function getMyAppraisal(cycleId: string): Promise<Appraisal | null>
     .eq("employee_id", user.id)
     .maybeSingle();
   if (!data) return null;
-  const appraisal = mapAppraisal(data as Record<string, any>);
+  const appraisal = mapAppraisal(data as unknown as RawAppraisalRow);
   await hydrate(appraisal);
   // Employee view: overlay who is reviewing each goal + whether they responded,
   // but never the rating or comment (those are confidential to the manager).
@@ -257,7 +285,7 @@ export async function getTeamAppraisals(cycleId: string): Promise<Appraisal[]> {
     .eq("cycle_id", cycleId)
     .eq("manager_id", user.id)
     .order("status");
-  const list = (data ?? []).map((r) => mapAppraisal(r as Record<string, any>));
+  const list = (data ?? []).map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
   await Promise.all(list.map((ap) => hydrate(ap)));
   return list;
 }
@@ -275,7 +303,7 @@ export async function getSecondLevelQueue(cycleId: string): Promise<Appraisal[]>
     .eq("cycle_id", cycleId)
     .eq("second_level_id", user.id)
     .eq("status", "pending_second_level");
-  const list = (data ?? []).map((r) => mapAppraisal(r as Record<string, any>));
+  const list = (data ?? []).map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
   await Promise.all(list.map((ap) => hydrate(ap)));
   return list;
 }
@@ -288,7 +316,7 @@ export async function getCycleAppraisals(cycleId: string): Promise<Appraisal[]> 
     .select(APPRAISAL_SELECT)
     .eq("cycle_id", cycleId)
     .order("status");
-  const list = (data ?? []).map((r) => mapAppraisal(r as Record<string, any>));
+  const list = (data ?? []).map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
   // Hydrate the rows HR acts on so the queue shows the appeal reason and the
   // (confidential) stakeholder feedback during validation.
   await Promise.all(
@@ -411,7 +439,7 @@ export async function getAppraisal(id: string): Promise<Appraisal | null> {
   const supabase = createClient();
   const { data } = await supabase.from("appraisals").select(APPRAISAL_SELECT).eq("id", id).maybeSingle();
   if (!data) return null;
-  const appraisal = mapAppraisal(data as Record<string, any>);
+  const appraisal = mapAppraisal(data as unknown as RawAppraisalRow);
   await hydrate(appraisal);
   return appraisal;
 }
