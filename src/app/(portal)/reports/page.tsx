@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, FileBarChart, ShieldCheck } from "lucide-react";
+import { ArrowRight, FileBarChart, Plane, ShieldCheck } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -13,6 +13,14 @@ export default async function ReportsPage() {
         "Medical / BOSIET / HUET expiry status per person, with expired and upcoming certs flagged. Filter by period and department.",
       icon: ShieldCheck,
       show: access.isSystemAdmin || access.isAdmin || access.isSafetyAdmin || access.isOim,
+    },
+    {
+      href: "/reports/travel-expense",
+      title: "Out-of-town travel & expense",
+      description:
+        "Estimated vs actual travel spend per trip with a per-department roll-up. Filter by period, department and traveller.",
+      icon: Plane,
+      show: access.isSystemAdmin || access.isAdmin || access.isFinance,
     },
   ].filter((t) => t.show);
 

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
+import { ReportHeader } from "../_components/report-header";
 
 const STATUS_STYLE: Record<CertStatus, string> = {
   expired: "bg-destructive/10 text-destructive",
@@ -71,27 +72,31 @@ export default async function OffshoreCertReportPage({
     ]),
   ];
 
+  const meta = [
+    `Upcoming-expiry window: ${from} → ${to}`,
+    department ? `Department: ${department}` : "All departments",
+  ];
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link
-            href="/reports"
-            className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground print:hidden"
-          >
-            <ArrowLeft className="h-4 w-4" /> Reports
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">Offshore certification compliance</h1>
-          <p className="text-muted-foreground">
-            Medical / BOSIET / HUET status as of today. Expired or missing certs are always listed;
-            the period filters which upcoming expiries to include.
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-3 print:hidden">
+        <Link
+          href="/reports"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> Reports
+        </Link>
         <div className="flex items-center gap-2">
           <CsvExportButton filename={`offshore-certifications-${from}_${to}.csv`} table={csv} />
           <PrintButton />
         </div>
       </div>
+
+      <ReportHeader
+        title="Offshore certification compliance"
+        subtitle="Medical / BOSIET / HUET status as of today. Expired or missing certs are always listed; the period filters which upcoming expiries to include."
+        meta={meta}
+      />
 
       <div className="print:hidden">
         <ReportFilters
