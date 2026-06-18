@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { LazySelect } from "@/components/ui/lazy-select";
 import type { Installation } from "@/types/offshore";
 import {
   GENDER_LABEL,
@@ -325,19 +326,18 @@ function EmergencyRolesPanel({
                 {EMERGENCY_ORDER.map((role) => (
                   <label key={role} className="flex items-center gap-2 text-sm">
                     <span className="w-40 shrink-0 text-xs text-muted-foreground">{EMERGENCY_ROLE_LABEL[role]}</span>
-                    <select
-                      value={holder(g, role)}
+                    <LazySelect
+                      value={holder(g, role) || null}
+                      options={people}
+                      getOptionValue={(p) => p.id}
+                      getOptionLabel={(p) => p.name}
+                      placeholder="— none —"
                       disabled={pending || !from || !to}
-                      onChange={(e) =>
-                        run(() => setEmergencyRole({ fromDate: from, toDate: to, lifeboat: g, role, profileId: e.target.value || null }))
-                      }
                       className={cn(field, "flex-1 py-1")}
-                    >
-                      <option value="">— none —</option>
-                      {people.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
+                      onChange={(v) =>
+                        run(() => setEmergencyRole({ fromDate: from, toDate: to, lifeboat: g, role, profileId: v }))
+                      }
+                    />
                   </label>
                 ))}
               </div>
@@ -1807,18 +1807,16 @@ function Dashboard({
                     <div key={o.trip_id} className="flex flex-wrap items-center gap-2 text-sm">
                       <span>{o.name}</span>
                       {o.bed_no && <span className="text-xs text-muted-foreground">{o.bed_no}</span>}
-                      <select
-                        defaultValue={r.room_id}
+                      <LazySelect
+                        value={r.room_id}
+                        options={rooms}
+                        getOptionValue={(rm) => rm.id}
+                        getOptionLabel={(rm) => [rm.block, rm.room_number].filter(Boolean).join(" ")}
+                        placeholder="— none —"
                         disabled={pending}
-                        onChange={(e) => run(() => reassignTripRoom(o.trip_id, e.target.value || null))}
                         className={cn(field, "ml-auto py-1 text-xs")}
-                      >
-                        {rooms.map((rm) => (
-                          <option key={rm.id} value={rm.id}>
-                            {[rm.block, rm.room_number].filter(Boolean).join(" ")}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => run(() => reassignTripRoom(o.trip_id, v))}
+                      />
                     </div>
                   ))}
                 </div>
@@ -2821,34 +2819,26 @@ function RosterPanel({
                 }}
                 className={field}
               />
-              <select
-                value={m.back_to_back_id ?? ""}
+              <LazySelect
+                value={m.back_to_back_id ?? null}
+                options={roster.filter((o) => o.profile_id !== m.profile_id)}
+                getOptionValue={(o) => o.profile_id}
+                getOptionLabel={(o) => o.full_name || o.email || ""}
+                placeholder="Back-to-back…"
                 disabled={pending}
-                onChange={(e) => run(() => updateRosterMember({ id: m.id, backToBackId: e.target.value || null }))}
                 className={field}
-              >
-                <option value="">Back-to-back…</option>
-                {roster
-                  .filter((o) => o.profile_id !== m.profile_id)
-                  .map((o) => (
-                    <option key={o.profile_id} value={o.profile_id}>
-                      {o.full_name || o.email}
-                    </option>
-                  ))}
-              </select>
-              <select
-                value={m.fixed_room_id ?? ""}
+                onChange={(v) => run(() => updateRosterMember({ id: m.id, backToBackId: v }))}
+              />
+              <LazySelect
+                value={m.fixed_room_id ?? null}
+                options={rooms}
+                getOptionValue={(r) => r.id}
+                getOptionLabel={(r) => [r.block, r.room_number].filter(Boolean).join(" ")}
+                placeholder="Fixed room…"
                 disabled={pending}
-                onChange={(e) => run(() => updateRosterMember({ id: m.id, fixedRoomId: e.target.value || null }))}
                 className={field}
-              >
-                <option value="">Fixed room…</option>
-                {rooms.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {[r.block, r.room_number].filter(Boolean).join(" ")}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => run(() => updateRosterMember({ id: m.id, fixedRoomId: v }))}
+              />
               <input
                 defaultValue={m.fixed_bed ?? ""}
                 disabled={pending}

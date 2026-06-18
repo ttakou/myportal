@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { ClipboardList, Truck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LazySelect } from "@/components/ui/lazy-select";
 import { usePermissions } from "@/components/permissions-provider";
 import {
   PRIORITY_LABEL,
@@ -245,32 +246,26 @@ function TaskRow({
       {r.notes && <p className="mt-1 text-sm">{r.notes}</p>}
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <select
-          value={r.driver_id ?? ""}
+        <LazySelect
+          value={r.driver_id ?? null}
+          options={drivers}
+          getOptionValue={(d) => d.id}
+          getOptionLabel={(d) => `${d.full_name}${d.on_duty ? "" : " (off duty)"}`}
+          placeholder="Driver…"
           disabled={pending || r.status === "in_progress"}
-          onChange={(e) => run(() => assignTransport(r.id, e.target.value || null, r.vehicle_id))}
           className="rounded-md border bg-background px-1.5 py-1 text-xs"
-        >
-          <option value="">Driver…</option>
-          {drivers.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.full_name}{d.on_duty ? "" : " (off duty)"}
-            </option>
-          ))}
-        </select>
-        <select
-          value={r.vehicle_id ?? ""}
+          onChange={(v) => run(() => assignTransport(r.id, v, r.vehicle_id))}
+        />
+        <LazySelect
+          value={r.vehicle_id ?? null}
+          options={vehicles}
+          getOptionValue={(v) => v.id}
+          getOptionLabel={(v) => v.name}
+          placeholder="Vehicle…"
           disabled={pending || r.status === "in_progress"}
-          onChange={(e) => run(() => assignTransport(r.id, r.driver_id, e.target.value || null))}
           className="rounded-md border bg-background px-1.5 py-1 text-xs"
-        >
-          <option value="">Vehicle…</option>
-          {vehicles.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => run(() => assignTransport(r.id, r.driver_id, v))}
+        />
         <div className="ml-auto flex gap-1">
           {r.status === "assigned" && (
             <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setTransportStatus(r.id, "in_progress"))}>
@@ -423,19 +418,16 @@ function DriversPanel({
           <div key={d.id} className="flex flex-wrap items-center gap-2 text-sm">
             <span className="font-medium">{d.full_name}</span>
             {d.phone && <span className="text-xs text-muted-foreground">{d.phone}</span>}
-            <select
-              value={d.profile_id ?? ""}
+            <LazySelect
+              value={d.profile_id ?? null}
+              options={profiles}
+              getOptionValue={(p) => p.id}
+              getOptionLabel={(p) => p.full_name ?? ""}
+              placeholder="No portal account"
               disabled={pending}
-              onChange={(e) => run(() => linkDriverProfile(d.id, e.target.value || null))}
               className="ml-auto rounded-md border bg-background px-1.5 py-1 text-xs"
-            >
-              <option value="">No portal account</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.full_name}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => run(() => linkDriverProfile(d.id, v))}
+            />
           </div>
         ))}
       </div>
