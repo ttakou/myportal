@@ -139,8 +139,88 @@ export async function getTravelExpenseReport(
   };
 }
 
-// --- Savings & loan arrears -----------------------------------------------
+// --- Admin access review --------------------------------------------------
 
+export interface AccessReviewRow {
+  id: string;
+  name: string | null;
+  department: string | null;
+  account_role: string;
+  functional_roles: string[];
+  access_roles: string[];
+  is_active: boolean;
+  privileged: boolean;
+}
+
+export interface AccessReviewReport {
+  rows: AccessReviewRow[];
+  summary: { users: number; privileged: number; withAccessRoles: number; inactive: number };
+}
+
+export interface AccessReviewFilters {
+  department: string | null;
+  userId: string | null;
+}
+
+const PRIVILEGED_FUNCTIONAL_REVIEW = new Set(["system_admin", "hr_admin"]);
+const PRIVILEGED_ACCOUNT_REVIEW = new Set(["tenant_admin", "super_admin"]);
+
+/**
+ * Access review (governance): each user's account role, functional roles and
+ * assigned access roles, with privileged holders flagged for audit. Filter by
+ * department and/or person. RLS scopes rows to the tenant.
+ */
+export async function getAccessReview(f: AccessReviewFilters): Promise<AccessReviewReport> {
+  const supabase = createClient();
+  let q = supabase
+    .from("profiles")
+    .select(
+      "id, full_name, department, role, is_active," +
+        " profile_roles(role), profile_access_roles(tenant_roles(name))",
+    );
+  if (f.userId) q = q.eq("id", f.userId);
+  const { data } = await q.order("full_name");
+
+  const rows: AccessReviewRow[] = [];
+  for (const p of (data ?? []) as Record<string, any>[]) {
+    const department = p.department ?? null;
+    if (f.department && department !== f.department) continue;
+    const functional = ((p.profile_roles ?? []) as { role: string }[]).map((r) => r.role);
+    const access = ((p.profile_access_roles ?? []) as Record<string, any>[])
+      .map((r) => one<{ name?: string }>(r.tenant_roles)?.name)
+      .filter((n): n is string => !!n);
+    const privileged =
+      PRIVILEGED_ACCOUNT_REVIEW.has(p.role) ||
+      functional.some((r) => PRIVILEGED_FUNCTIONAL_REVIEW.has(r));
+    rows.push({
+      id: p.id,
+      name: p.full_name ?? null,
+      department,
+      account_role: p.role,
+      functional_roles: functional,
+      access_roles: access,
+      is_active: !!p.is_active,
+      privileged,
+    });
+  }
+
+  rows.sort(
+    (a, b) =>
+      Number(b.privileged) - Number(a.privileged) || (a.name ?? "").localeCompare(b.name ?? ""),
+  );
+
+  return {
+    rows,
+    summary: {
+      users: rows.length,
+      privileged: rows.filter((r) => r.privileged).length,
+      withAccessRoles: rows.filter((r) => r.access_roles.length > 0).length,
+      inactive: rows.filter((r) => !r.is_active).length,
+    },
+  };
+}
+
+// --- Savings & loan arrears -----------------------------------------------
 export interface LoanArrearsRow {
   loan_id: string;
   borrower: string | null;

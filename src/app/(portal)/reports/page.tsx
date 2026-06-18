@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Banknote, FileBarChart, Plane, ShieldCheck } from "lucide-react";
+import { ArrowRight, Banknote, FileBarChart, Plane, ShieldCheck, Users } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -29,6 +29,14 @@ export default async function ReportsPage() {
         "Loan portfolio with arrears (scheduled-to-date vs repayments) and savings balances. Filter by period, department and borrower.",
       icon: Banknote,
       show: access.isSystemAdmin || access.isAdmin || access.isFinance,
+    },
+    {
+      href: "/reports/access-review",
+      title: "Access review",
+      description:
+        "Account role, functional roles and access roles per user, with privileged holders flagged. Filter by department and person.",
+      icon: Users,
+      show: access.isSystemAdmin || access.isAdmin,
     },
   ].filter((t) => t.show);
 
