@@ -17,6 +17,128 @@ export async function getDepartments(): Promise<string[]> {
   return [...set];
 }
 
+export interface ReportPerson {
+  id: string;
+  name: string;
+}
+
+/** Active people in the tenant — for the per-person report filter. */
+export async function getReportPeople(): Promise<ReportPerson[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("is_active", true)
+    .order("full_name");
+  return ((data ?? []) as { id: string; full_name: string | null }[]).map((p) => ({
+    id: p.id,
+    name: p.full_name || "—",
+  }));
+}
+
+// --- Out-of-town travel & expense -----------------------------------------
+
+export interface TravelExpenseRow {
+  trip_id: string;
+  traveller: string | null;
+  department: string | null;
+  destination: string;
+  purpose: string | null;
+  depart_date: string;
+  return_date: string | null;
+  status: string;
+  estimated: number;
+  actual: number;
+}
+
+export interface TravelExpenseReport {
+  rows: TravelExpenseRow[];
+  summary: { trips: number; estimated: number; actual: number; variance: number };
+  byDept: { department: string; trips: number; estimated: number; actual: number }[];
+}
+
+export interface TravelExpenseFilters {
+  from: string;
+  to: string;
+  department: string | null;
+  userId: string | null;
+}
+
+/**
+ * Out-of-town travel spend: estimated vs actual (summed trip_expenses) per trip,
+ * filtered by departure-date period, department and/or traveller, with a
+ * per-department roll-up. RLS scopes rows to the tenant.
+ */
+export async function getTravelExpenseReport(
+  f: TravelExpenseFilters,
+): Promise<TravelExpenseReport> {
+  const supabase = createClient();
+  let q = supabase
+    .from("out_of_town_trips")
+    .select(
+      "id, destination, purpose, depart_date, return_date, status, estimated_cost, requester_id," +
+        " requester:profiles!out_of_town_trips_requester_id_fkey(full_name, department)",
+    )
+    .gte("depart_date", f.from)
+    .lte("depart_date", f.to);
+  if (f.userId) q = q.eq("requester_id", f.userId);
+  const { data: trips } = await q.order("depart_date", { ascending: false });
+  const tripRows = (trips ?? []) as Record<string, any>[];
+
+  // Actual spend per trip from the expense lines.
+  const actualByTrip = new Map<string, number>();
+  const ids = tripRows.map((t) => t.id as string);
+  if (ids.length) {
+    const { data: exp } = await supabase
+      .from("trip_expenses")
+      .select("trip_id, amount")
+      .in("trip_id", ids);
+    for (const e of (exp ?? []) as { trip_id: string; amount: number }[]) {
+      actualByTrip.set(e.trip_id, (actualByTrip.get(e.trip_id) ?? 0) + Number(e.amount));
+    }
+  }
+
+  const rows: TravelExpenseRow[] = [];
+  for (const t of tripRows) {
+    const prof = one<{ full_name?: string; department?: string }>(t.requester);
+    const department = prof?.department ?? null;
+    if (f.department && department !== f.department) continue;
+    rows.push({
+      trip_id: t.id,
+      traveller: prof?.full_name ?? null,
+      department,
+      destination: t.destination,
+      purpose: t.purpose ?? null,
+      depart_date: t.depart_date,
+      return_date: t.return_date ?? null,
+      status: t.status,
+      estimated: Number(t.estimated_cost ?? 0),
+      actual: actualByTrip.get(t.id) ?? 0,
+    });
+  }
+
+  const deptMap = new Map<string, { trips: number; est: number; act: number }>();
+  for (const r of rows) {
+    const d = r.department || "Unassigned";
+    const cur = deptMap.get(d) ?? { trips: 0, est: 0, act: 0 };
+    cur.trips += 1;
+    cur.est += r.estimated;
+    cur.act += r.actual;
+    deptMap.set(d, cur);
+  }
+  const byDept = [...deptMap.entries()]
+    .map(([department, v]) => ({ department, trips: v.trips, estimated: v.est, actual: v.act }))
+    .sort((a, b) => b.actual - a.actual);
+
+  const estimated = rows.reduce((s, r) => s + r.estimated, 0);
+  const actual = rows.reduce((s, r) => s + r.actual, 0);
+  return {
+    rows,
+    summary: { trips: rows.length, estimated, actual, variance: actual - estimated },
+    byDept,
+  };
+}
+
 // --- Offshore certification compliance ------------------------------------
 
 export type CertStatus = "expired" | "expiring" | "valid" | "missing";

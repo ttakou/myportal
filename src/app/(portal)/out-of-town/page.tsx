@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { FileBarChart } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
@@ -42,6 +44,14 @@ export default async function OutOfTownPage() {
         <p className="text-muted-foreground">
           Declare travel, arrange airport assistance, check in along the way, and reach help fast.
         </p>
+        {(access.isFinance || access.isAdmin) && (
+          <Link
+            href="/reports/travel-expense"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+          >
+            <FileBarChart className="h-4 w-4" /> Travel &amp; expense report
+          </Link>
+        )}
       </div>
 
       {showDashboard && <TravelDashboardView data={dashboard} />}

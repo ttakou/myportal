@@ -29,7 +29,11 @@ export async function Sidebar({
 
   // Reports hub: visible to roles that can see at least one report today.
   const canSeeReports =
-    access.isSystemAdmin || access.isAdmin || access.isSafetyAdmin || access.isOim;
+    access.isSystemAdmin ||
+    access.isAdmin ||
+    access.isSafetyAdmin ||
+    access.isOim ||
+    access.isFinance;
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-card">

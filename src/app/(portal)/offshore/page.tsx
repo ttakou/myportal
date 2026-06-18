@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { FileBarChart } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -100,6 +102,14 @@ export default async function OffshorePage() {
         <p className="text-muted-foreground">
           Crew rotations, offshore-staff roster, room/bed accommodation, and live persons-on-board.
         </p>
+        {canManage && (
+          <Link
+            href="/reports/offshore-certifications"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+          >
+            <FileBarChart className="h-4 w-4" /> Certification compliance report
+          </Link>
+        )}
       </div>
 
       {canManage && suggestions.length > 0 && <CrewChangeSuggestions items={suggestions} />}
