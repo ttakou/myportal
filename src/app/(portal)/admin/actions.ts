@@ -26,6 +26,25 @@ const ASSIGNABLE_FUNCTIONAL: FunctionalRole[] = [
   "system_admin",
 ];
 
+/**
+ * Capability-bearing access roles whose membership should also grant the
+ * matching functional role. Functional roles drive `getAccess()` flags and DB
+ * `is_*()` RLS, so without this an access role like "HR Admin" wouldn't actually
+ * unlock HR oversight. Keyed by the access role's name. See issue #148.
+ */
+const ACCESS_ROLE_FUNCTIONAL: Partial<Record<string, FunctionalRole>> = {
+  "HR Admin": "hr_admin",
+  "Super Admin": "system_admin",
+  Finance: "finance",
+  "Safety Admin": "safety_admin",
+};
+
+/** Read the name of a `tenant_roles` join result that may be array or object. */
+function roleName(rel: unknown): string | null {
+  const r = Array.isArray(rel) ? rel[0] : rel;
+  return (r as { name?: string } | null)?.name ?? null;
+}
+
 /** System-admin level (roles, modules, settings). */
 async function requireAdmin(): Promise<ActionResult | null> {
   if (!(await getAccess()).isSystemAdmin) return { ok: false, error: "Not authorized." };
@@ -829,6 +848,15 @@ export async function setUserAccessRole(
   if (denied) return denied;
   const supabase = createClient();
 
+  // The functional capability this access role implies (e.g. "HR Admin" →
+  // hr_admin), kept in sync below so the matching UI + RLS actually unlock.
+  const { data: role } = await supabase
+    .from("tenant_roles")
+    .select("name")
+    .eq("id", roleId)
+    .maybeSingle();
+  const fn = role?.name ? ACCESS_ROLE_FUNCTIONAL[role.name] : undefined;
+
   if (assigned) {
     const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
     if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -838,6 +866,12 @@ export async function setUserAccessRole(
       tenant_id: tenant.id,
     });
     if (error && !error.message.includes("duplicate")) return { ok: false, error: error.message };
+    if (fn) {
+      const { error: fe } = await supabase
+        .from("profile_roles")
+        .insert({ profile_id: userId, role: fn });
+      if (fe && !fe.message.includes("duplicate")) return { ok: false, error: fe.message };
+    }
   } else {
     const { error } = await supabase
       .from("profile_access_roles")
@@ -845,6 +879,27 @@ export async function setUserAccessRole(
       .eq("profile_id", userId)
       .eq("role_id", roleId);
     if (error) return { ok: false, error: error.message };
+    // Drop the implied functional role — unless another assigned access role
+    // still implies the same one.
+    if (fn) {
+      const { data: remaining } = await supabase
+        .from("profile_access_roles")
+        .select("tenant_roles(name)")
+        .eq("profile_id", userId);
+      const stillImplied = (remaining ?? []).some(
+        (r) => {
+          const n = roleName((r as { tenant_roles?: unknown }).tenant_roles);
+          return !!n && ACCESS_ROLE_FUNCTIONAL[n] === fn;
+        },
+      );
+      if (!stillImplied) {
+        await supabase
+          .from("profile_roles")
+          .delete()
+          .eq("profile_id", userId)
+          .eq("role", fn);
+      }
+    }
   }
   revalidatePath("/admin");
   return { ok: true };
