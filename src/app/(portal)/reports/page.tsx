@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Banknote, FileBarChart, Plane, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, Banknote, ClipboardCheck, FileBarChart, Plane, ShieldCheck, Users } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -37,6 +37,14 @@ export default async function ReportsPage() {
         "Account role, functional roles and access roles per user, with privileged holders flagged. Filter by department and person.",
       icon: Users,
       show: access.isSystemAdmin || access.isAdmin,
+    },
+    {
+      href: "/reports/performance-appraisals",
+      title: "Appraisal completion & SLA",
+      description:
+        "Per-employee appraisal stage/status for a cycle, with overdue cases flagged and a completion rate. Filter by cycle, department and employee.",
+      icon: ClipboardCheck,
+      show: access.isHr || access.isSystemAdmin || access.isAdmin,
     },
   ].filter((t) => t.show);
 

@@ -13,12 +13,14 @@ export function ReportFilters({
   show,
   departments = [],
   users = [],
+  cycles = [],
   from,
   to,
 }: {
-  show: { period?: boolean; department?: boolean; user?: boolean };
+  show: { period?: boolean; department?: boolean; user?: boolean; cycle?: boolean };
   departments?: string[];
   users?: { id: string; name: string }[];
+  cycles?: { id: string; name: string }[];
   /** Effective period values (e.g. the page's defaults when the URL is empty). */
   from?: string;
   to?: string;
@@ -38,6 +40,23 @@ export function ReportFilters({
 
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
+      {show.cycle && cycles.length > 0 && (
+        <label className="text-xs text-muted-foreground">
+          Cycle
+          <select
+            value={params.get("cycle") ?? cycles[0]?.id ?? ""}
+            onChange={(e) => setParam("cycle", e.target.value || null)}
+            className={`mt-1 block ${input}`}
+          >
+            {cycles.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {show.period && (
         <>
           <label className="text-xs text-muted-foreground">
