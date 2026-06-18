@@ -37,6 +37,55 @@ const FUNCTIONAL: { role: FunctionalRole; label: string }[] = [
   { role: "system_admin", label: "Sys admin" },
 ];
 
+/**
+ * Manager picker that defers rendering its options until the dropdown is first
+ * focused. Rendering every active user as an <option> for every row is
+ * O(users²) — with a few hundred staff that produced hundreds of thousands of
+ * DOM nodes and made the admin page take minutes to load/hydrate. Until focus
+ * we render only the currently-selected option, so the value still displays.
+ */
+function ManagerSelect({
+  value,
+  options,
+  excludeId,
+  disabled,
+  className,
+  onChange,
+}: {
+  value: string | null;
+  options: TenantUser[];
+  excludeId: string;
+  disabled: boolean;
+  className: string;
+  onChange: (managerId: string | null) => void;
+}) {
+  const [ready, setReady] = useState(false);
+  const selected = options.find((m) => m.id === value);
+  return (
+    <select
+      value={value ?? ""}
+      disabled={disabled}
+      onFocus={() => setReady(true)}
+      onChange={(e) => onChange(e.target.value || null)}
+      className={className}
+    >
+      <option value="">— none —</option>
+      {ready
+        ? options
+            .filter((m) => m.id !== excludeId)
+            .map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.full_name || m.email}
+              </option>
+            ))
+        : selected &&
+          selected.id !== excludeId && (
+            <option value={selected.id}>{selected.full_name || selected.email}</option>
+          )}
+    </select>
+  );
+}
+
 export function UsersPanel({
   users,
   canAssignRoles,
@@ -173,23 +222,14 @@ export function UsersPanel({
                   </select>
                 </td>
                 <td className="px-4 py-3">
-                  <select
-                    value={u.manager_id ?? ""}
+                  <ManagerSelect
+                    value={u.manager_id ?? null}
+                    options={managerOptions}
+                    excludeId={u.id}
                     disabled={pending}
-                    onChange={(e) =>
-                      run(() => setUserManager(u.id, e.target.value || null))
-                    }
                     className="rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
-                  >
-                    <option value="">— none —</option>
-                    {managerOptions
-                      .filter((m) => m.id !== u.id)
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.full_name || m.email}
-                        </option>
-                      ))}
-                  </select>
+                    onChange={(mid) => run(() => setUserManager(u.id, mid))}
+                  />
                 </td>
                 <td className="px-4 py-3">
                   <button
@@ -322,19 +362,14 @@ export function UsersPanel({
                           </select>
                         </Field>
                         <Field label="Manager">
-                          <select
-                            value={u.manager_id ?? ""}
+                          <ManagerSelect
+                            value={u.manager_id ?? null}
+                            options={managerOptions}
+                            excludeId={u.id}
                             disabled={pending}
-                            onChange={(e) => run(() => setUserManager(u.id, e.target.value || null))}
                             className="w-full rounded-md border bg-background px-2 py-1 text-sm"
-                          >
-                            <option value="">— none —</option>
-                            {managerOptions
-                              .filter((m) => m.id !== u.id)
-                              .map((m) => (
-                                <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
-                              ))}
-                          </select>
+                            onChange={(mid) => run(() => setUserManager(u.id, mid))}
+                          />
                         </Field>
                         <Field label="Lunch">
                           <button
