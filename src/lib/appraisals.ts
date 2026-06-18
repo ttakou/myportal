@@ -97,6 +97,41 @@ export async function getCycles(): Promise<AppraisalCycle[]> {
   return (data ?? []) as unknown as AppraisalCycle[];
 }
 
+export interface AppraisalHistoryEntry {
+  cycle_id: string;
+  cycle_name: string | null;
+  year: number;
+  status: string;
+  overall_rating: number | null;
+  rating_label: string | null;
+}
+
+/** The signed-in employee's appraisals across all cycles, oldest→newest. */
+export async function getMyAppraisalHistory(): Promise<AppraisalHistoryEntry[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("appraisals")
+    .select("cycle_id, status, overall_rating, rating_label, cycle:appraisal_cycles(name, year)")
+    .eq("employee_id", user.id);
+  return ((data ?? []) as Record<string, any>[])
+    .map((r) => {
+      const cyc = one<{ name?: string; year?: number }>(r.cycle);
+      return {
+        cycle_id: r.cycle_id,
+        cycle_name: cyc?.name ?? null,
+        year: cyc?.year ?? 0,
+        status: r.status,
+        overall_rating: r.overall_rating ?? null,
+        rating_label: r.rating_label ?? null,
+      };
+    })
+    .sort((a, b) => a.year - b.year);
+}
+
 /** The signed-in employee's appraisal for a cycle, with goals + events. */
 export async function getMyAppraisal(cycleId: string): Promise<Appraisal | null> {
   const supabase = createClient();

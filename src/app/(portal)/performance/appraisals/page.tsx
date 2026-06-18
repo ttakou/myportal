@@ -11,6 +11,7 @@ import {
   getDepartmentObjectives,
   getDepartmentObjectivesForMe,
   getMyAppraisal,
+  getMyAppraisalHistory,
   getMyRaterAssignments,
   getSecondLevelQueue,
   getTeamAppraisals,
@@ -24,6 +25,7 @@ import { SecondLevelPanel } from "./_components/second-level-panel";
 import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
 import { SummaryCards } from "./_components/summary-cards";
+import { AppraisalHistory } from "./_components/appraisal-history";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
 
@@ -77,6 +79,7 @@ export default async function AppraisalsPage({
     isHr && cycle ? getCalibrationAdjustments(cycle.id) : Promise.resolve([]),
     isHr ? getDepartmentObjectives() : Promise.resolve([]),
   ]);
+  const myHistory = await getMyAppraisalHistory();
   const [colleagues, deptObjectives] = await Promise.all([
     myAppraisal ? getTenantColleagues() : Promise.resolve([]),
     myAppraisal ? getDepartmentObjectivesForMe(cycle?.id ?? null) : Promise.resolve([]),
@@ -159,6 +162,8 @@ export default async function AppraisalsPage({
           </p>
         )
       )}
+
+      <AppraisalHistory history={myHistory} />
 
       {raterAssignments.length > 0 && <RaterInbox assignments={raterAssignments} />}
 
