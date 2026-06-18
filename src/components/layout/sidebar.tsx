@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { LayoutDashboard } from "lucide-react";
+import { LayoutDashboard, FileBarChart } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
+import { getAccess } from "@/lib/auth";
 import { NavLinks, type NavLink } from "./nav-links";
 
 /**
@@ -18,13 +19,17 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const services = await getActiveServices();
+  const [services, access] = await Promise.all([getActiveServices(), getAccess()]);
 
   const links: NavLink[] = services.map((s) => ({
     name: s.name,
     href: s.route_path,
     icon: s.icon,
   }));
+
+  // Reports hub: visible to roles that can see at least one report today.
+  const canSeeReports =
+    access.isSystemAdmin || access.isAdmin || access.isSafetyAdmin || access.isOim;
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-card">
@@ -60,6 +65,15 @@ export async function Sidebar({
             <LayoutDashboard className="h-4 w-4 shrink-0" />
             <span>Dashboard</span>
           </Link>
+          {canSeeReports && (
+            <Link
+              href="/reports"
+              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <FileBarChart className="h-4 w-4 shrink-0" />
+              <span>Reports</span>
+            </Link>
+          )}
         </div>
 
         {links.length > 0 && (
