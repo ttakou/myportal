@@ -97,7 +97,7 @@ export default async function AnalyticsPage() {
               />
               <Kpi label="Avg rating" value={perf.avgRating ?? "—"} hint="out of 5" />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-lg border bg-card p-4">
                 <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Rating distribution
@@ -139,6 +139,33 @@ export default async function AnalyticsPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="rounded-lg border bg-card p-4">
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  By department
+                </div>
+                {perf.byDept.length > 0 ? (
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <tr>
+                        <th className="py-1 font-medium">Department</th>
+                        <th className="py-1 font-medium">Rated</th>
+                        <th className="py-1 font-medium">Avg</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {perf.byDept.map((d) => (
+                        <tr key={d.department}>
+                          <td className="py-1">{d.department}</td>
+                          <td className="py-1 tabular-nums">{d.count}</td>
+                          <td className="py-1 tabular-nums">{d.avg}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No rated appraisals yet.</p>
+                )}
               </div>
             </div>
           </>

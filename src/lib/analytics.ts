@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { one } from "@/lib/supabase/row-helpers";
 
 export interface ExecMetrics {
   pob: number;
@@ -69,8 +70,24 @@ export interface PerformanceMetrics {
   pending: number;
   avgRating: number | null;
   distribution: { label: string; count: number }[];
+  /** Average rating per department for the headline cycle, busiest first. */
+  byDept: { department: string; count: number; avg: number }[];
   /** Recent cycles oldest→newest, for a year-over-year trend. */
   trend: { year: number; avgRating: number | null; completionPct: number }[];
+}
+
+/** Minimal cycle/appraisal shapes the aggregation needs (decoupled from the DB). */
+export interface PerfCycleRow {
+  id: string;
+  name: string;
+  year: number;
+  status: string;
+}
+export interface PerfAppraisalRow {
+  cycle_id: string;
+  status: string;
+  overall_rating: number | null;
+  department: string | null;
 }
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
@@ -86,30 +103,22 @@ function avg(xs: number[]): number | null {
   return xs.length ? Math.round((xs.reduce((s, n) => s + n, 0) / xs.length) * 100) / 100 : null;
 }
 
+/** Count of ratings falling in each 1–5 bucket. */
+export function ratingDistribution(ratings: number[]): { label: string; count: number }[] {
+  return RATING_BUCKETS.map((b) => ({
+    label: b.label,
+    count: ratings.filter((r) => r >= b.min && r < b.max).length,
+  }));
+}
+
 /**
- * Appraisal KPIs for the executive dashboard: completion, average rating and
- * rating distribution for the active (or most recent) cycle, plus a
- * year-over-year trend across recent cycles. Admin-only page; RLS scopes rows
- * to the tenant.
+ * Pure aggregation of appraisal rows into executive performance metrics. Kept
+ * free of the database so it can be unit-tested directly.
  */
-export async function getPerformanceMetrics(): Promise<PerformanceMetrics> {
-  const supabase = createClient();
-  const [{ data: cycleRows }, { data: appraisalRows }] = await Promise.all([
-    supabase
-      .from("appraisal_cycles")
-      .select("id, name, year, status")
-      .order("year", { ascending: false }),
-    supabase.from("appraisals").select("cycle_id, status, overall_rating"),
-  ]);
-
-  const cycles = (cycleRows ?? []) as { id: string; name: string; year: number; status: string }[];
-  const appraisals = (appraisalRows ?? []) as {
-    cycle_id: string;
-    status: string;
-    overall_rating: number | null;
-  }[];
-
-  // Aggregate per cycle once.
+export function aggregatePerformance(
+  cycles: PerfCycleRow[],
+  appraisals: PerfAppraisalRow[],
+): PerformanceMetrics {
   const byCycle = new Map<string, { total: number; completed: number; ratings: number[] }>();
   for (const a of appraisals) {
     const g = byCycle.get(a.cycle_id) ?? { total: 0, completed: 0, ratings: [] };
@@ -122,10 +131,23 @@ export async function getPerformanceMetrics(): Promise<PerformanceMetrics> {
   const headline = cycles.find((c) => c.status === "active") ?? cycles[0] ?? null;
   const hg = headline ? byCycle.get(headline.id) ?? { total: 0, completed: 0, ratings: [] } : null;
 
-  const distribution = RATING_BUCKETS.map((b) => ({
-    label: b.label,
-    count: (hg?.ratings ?? []).filter((r) => r >= b.min && r < b.max).length,
-  }));
+  // Average rating per department, within the headline cycle.
+  const deptMap = new Map<string, { count: number; sum: number }>();
+  for (const a of appraisals) {
+    if (!headline || a.cycle_id !== headline.id || a.overall_rating == null) continue;
+    const d = a.department || "Unassigned";
+    const cur = deptMap.get(d) ?? { count: 0, sum: 0 };
+    cur.count += 1;
+    cur.sum += Number(a.overall_rating);
+    deptMap.set(d, cur);
+  }
+  const byDept = [...deptMap.entries()]
+    .map(([department, v]) => ({
+      department,
+      count: v.count,
+      avg: Math.round((v.sum / v.count) * 100) / 100,
+    }))
+    .sort((a, b) => b.count - a.count);
 
   const trend = [...cycles]
     .slice(0, 5)
@@ -148,8 +170,37 @@ export async function getPerformanceMetrics(): Promise<PerformanceMetrics> {
     completionPct: total ? Math.round((completed / total) * 100) : 0,
     pending: total - completed,
     avgRating: avg(hg?.ratings ?? []),
-    distribution,
+    distribution: ratingDistribution(hg?.ratings ?? []),
+    byDept,
     trend,
   };
+}
+
+/**
+ * Appraisal KPIs for the executive dashboard: completion, average rating,
+ * rating distribution and per-department averages for the active (or most
+ * recent) cycle, plus a year-over-year trend. Admin-only page; RLS scopes rows
+ * to the tenant.
+ */
+export async function getPerformanceMetrics(): Promise<PerformanceMetrics> {
+  const supabase = createClient();
+  const [{ data: cycleRows }, { data: appraisalRows }] = await Promise.all([
+    supabase
+      .from("appraisal_cycles")
+      .select("id, name, year, status")
+      .order("year", { ascending: false }),
+    supabase
+      .from("appraisals")
+      .select("cycle_id, status, overall_rating, employee:profiles!employee_id(department)"),
+  ]);
+
+  const cycles = (cycleRows ?? []) as PerfCycleRow[];
+  const appraisals: PerfAppraisalRow[] = ((appraisalRows ?? []) as Record<string, any>[]).map((r) => ({
+    cycle_id: r.cycle_id as string,
+    status: r.status as string,
+    overall_rating: r.overall_rating ?? null,
+    department: one<{ department?: string }>(r.employee)?.department ?? null,
+  }));
+  return aggregatePerformance(cycles, appraisals);
 }
 
