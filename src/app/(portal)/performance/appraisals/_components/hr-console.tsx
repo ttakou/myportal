@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Play, Lock, Plus, Trash2 } from "lucide-react";
@@ -199,6 +200,10 @@ export function HrConsole({
             ))}
           </div>
         </div>
+      )}
+
+      {activeCycleId && appraisals.length > 0 && (
+        <HrAppraisalList appraisals={appraisals} cycleName={cycleName} />
       )}
 
       <HrQueue appraisals={appraisals} />
@@ -481,6 +486,67 @@ function CompetencyEditor({ competencies }: { competencies: AppraisalCompetency[
           <Plus className="h-4 w-4" /> Add
         </Button>
       </form>
+    </div>
+  );
+}
+
+/** Every appraisal in the cycle with the final rating per staff member. */
+function HrAppraisalList({
+  appraisals,
+  cycleName,
+}: {
+  appraisals: Appraisal[];
+  cycleName: string | null;
+}) {
+  if (appraisals.length === 0) return null;
+  // Highest final score first; unscored staff fall to the bottom.
+  const rows = [...appraisals].sort((a, b) => (b.final_score ?? -1) - (a.final_score ?? -1));
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <h3 className="mb-2 text-sm font-semibold">
+        Overall appraisals — {cycleName ?? "selected cycle"} ({appraisals.length})
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="py-2 pr-2 font-medium">Employee</th>
+              <th className="py-2 pr-2 font-medium">Status</th>
+              <th className="py-2 pr-2 font-medium">Manager rating</th>
+              <th className="py-2 pr-2 font-medium">Final score</th>
+              <th className="py-2 pr-2 font-medium">Rating</th>
+              <th className="py-2" />
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map((a) => {
+              const hasOutcome =
+                a.final_score != null || a.status === "completed" || a.status === "closed";
+              return (
+                <tr key={a.id}>
+                  <td className="py-2 pr-2 font-medium">{a.employee_name || "—"}</td>
+                  <td className="py-2 pr-2 text-muted-foreground">{STATUS_LABEL[a.status]}</td>
+                  <td className="py-2 pr-2 tabular-nums">{a.overall_rating ?? "—"}</td>
+                  <td className="py-2 pr-2 tabular-nums">
+                    {a.final_score != null ? `${a.final_score}%` : "—"}
+                  </td>
+                  <td className="py-2 pr-2">{a.rating_label || "—"}</td>
+                  <td className="py-2 text-right">
+                    {hasOutcome && (
+                      <Link
+                        href={`/performance/appraisals/${a.id}/outcome`}
+                        className="rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
+                      >
+                        Outcome
+                      </Link>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
