@@ -139,8 +139,138 @@ export async function getTravelExpenseReport(
   };
 }
 
-// --- Offshore certification compliance ------------------------------------
+// --- Savings & loan arrears -----------------------------------------------
 
+export interface LoanArrearsRow {
+  loan_id: string;
+  borrower: string | null;
+  department: string | null;
+  savings_balance: number;
+  principal: number;
+  outstanding: number;
+  monthly_payment: number;
+  expected_paid: number;
+  actual_paid: number;
+  arrears: number;
+  status: string;
+  start_date: string;
+}
+
+export interface LoanArrearsReport {
+  rows: LoanArrearsRow[];
+  summary: { loans: number; outstanding: number; arrears: number; inArrears: number };
+  byDept: { department: string; loans: number; outstanding: number; arrears: number }[];
+}
+
+export interface LoanArrearsFilters {
+  from: string;
+  to: string;
+  department: string | null;
+  userId: string | null;
+}
+
+/** Whole months elapsed from `start` (yyyy-mm-dd) to today, never negative. */
+function monthsSince(start: string): number {
+  const s = new Date(start);
+  const now = new Date();
+  let m = (now.getFullYear() - s.getFullYear()) * 12 + (now.getMonth() - s.getMonth());
+  if (now.getDate() < s.getDate()) m -= 1;
+  return Math.max(0, m);
+}
+
+/**
+ * Loan portfolio with arrears. Arrears = scheduled-to-date (monthly payment ×
+ * months elapsed, capped at the principal/term) minus actual repayments, for
+ * active loans. Period filters by loan start date; department and borrower
+ * narrow the list. RLS scopes rows to the tenant.
+ */
+export async function getLoanArrearsReport(f: LoanArrearsFilters): Promise<LoanArrearsReport> {
+  const supabase = createClient();
+  const { data: loanData } = await supabase
+    .from("loans")
+    .select(
+      "id, principal, outstanding, monthly_payment, term_months, status, start_date," +
+        " account:savings_accounts!loans_account_id_fkey(balance, profile_id," +
+        " profile:profiles!savings_accounts_profile_id_fkey(full_name, department))",
+    )
+    .gte("start_date", f.from)
+    .lte("start_date", f.to);
+
+  const loans = (loanData ?? []) as Record<string, any>[];
+
+  // Repayments per loan.
+  const paidByLoan = new Map<string, number>();
+  const ids = loans.map((l) => l.id as string);
+  if (ids.length) {
+    const { data: reps } = await supabase
+      .from("loan_repayments")
+      .select("loan_id, amount")
+      .in("loan_id", ids);
+    for (const r of (reps ?? []) as { loan_id: string; amount: number }[]) {
+      paidByLoan.set(r.loan_id, (paidByLoan.get(r.loan_id) ?? 0) + Number(r.amount));
+    }
+  }
+
+  const rows: LoanArrearsRow[] = [];
+  for (const l of loans) {
+    const account = one<Record<string, any>>(l.account);
+    const profile = one<{ full_name?: string; department?: string }>(account?.profile);
+    const department = profile?.department ?? null;
+    if (f.department && department !== f.department) continue;
+    if (f.userId && account?.profile_id !== f.userId) continue;
+
+    const principal = Number(l.principal ?? 0);
+    const monthly = Number(l.monthly_payment ?? 0);
+    const term = Number(l.term_months ?? 0);
+    const elapsed = Math.min(term || Infinity, monthsSince(l.start_date));
+    const expected = Math.min(principal, Math.round(monthly * elapsed * 100) / 100);
+    const actual = paidByLoan.get(l.id) ?? 0;
+    const arrears = l.status === "active" ? Math.max(0, Math.round((expected - actual) * 100) / 100) : 0;
+
+    rows.push({
+      loan_id: l.id,
+      borrower: profile?.full_name ?? null,
+      department,
+      savings_balance: Number(account?.balance ?? 0),
+      principal,
+      outstanding: Number(l.outstanding ?? 0),
+      monthly_payment: monthly,
+      expected_paid: expected,
+      actual_paid: actual,
+      arrears,
+      status: l.status,
+      start_date: l.start_date,
+    });
+  }
+
+  rows.sort((a, b) => b.arrears - a.arrears || (a.borrower ?? "").localeCompare(b.borrower ?? ""));
+
+  const deptMap = new Map<string, { loans: number; outstanding: number; arrears: number }>();
+  for (const r of rows) {
+    const d = r.department || "Unassigned";
+    const cur = deptMap.get(d) ?? { loans: 0, outstanding: 0, arrears: 0 };
+    cur.loans += 1;
+    cur.outstanding += r.outstanding;
+    cur.arrears += r.arrears;
+    deptMap.set(d, cur);
+  }
+  const byDept = [...deptMap.entries()]
+    .map(([department, v]) => ({ department, ...v }))
+    .sort((a, b) => b.arrears - a.arrears);
+
+  return {
+    rows,
+    summary: {
+      loans: rows.length,
+      outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
+      arrears: rows.reduce((s, r) => s + r.arrears, 0),
+      inArrears: rows.filter((r) => r.arrears > 0).length,
+    },
+    byDept,
+  };
+}
+
+// --- Offshore certification compliance ------------------------------------
 export type CertStatus = "expired" | "expiring" | "valid" | "missing";
 
 export interface CertCell {
