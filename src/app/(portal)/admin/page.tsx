@@ -57,9 +57,14 @@ export default async function AdminPage() {
         <p className="text-muted-foreground">
           Manage your organization&apos;s modules and people.
         </p>
-        <Link href="/analytics" className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent">
-          <BarChart3 className="h-4 w-4" /> Executive dashboard
-        </Link>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Link href="/analytics" className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent">
+            <BarChart3 className="h-4 w-4" /> Executive dashboard
+          </Link>
+          <Link href="/reports/access-review" className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent">
+            <BarChart3 className="h-4 w-4" /> Access review report
+          </Link>
+        </div>
       </div>
 
       {access.isSystemAdmin && <BrandingPanel branding={branding} />}
