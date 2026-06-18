@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Check, Send, Undo2 } from "lucide-react";
@@ -54,10 +55,20 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
     <div className="rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium">{a.employee_name || "—"}</div>
-        <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-          {STAGE_LABEL[a.stage]} · {STATUS_LABEL[a.status]}
-          {a.final_score != null ? ` · ${a.final_score}% · ${a.rating_label ?? ""}` : ""}
-        </span>
+        <div className="flex items-center gap-2">
+          {(a.status === "completed" || a.status === "closed") && (
+            <Link
+              href={`/performance/appraisals/${a.id}/outcome`}
+              className="rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
+            >
+              Outcome
+            </Link>
+          )}
+          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+            {STAGE_LABEL[a.stage]} · {STATUS_LABEL[a.status]}
+            {a.final_score != null ? ` · ${a.final_score}% · ${a.rating_label ?? ""}` : ""}
+          </span>
+        </div>
       </div>
 
       {/* Goals + progress + ratings */}

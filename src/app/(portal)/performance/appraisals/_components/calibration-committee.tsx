@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
@@ -99,11 +100,19 @@ function CommitteeRow({ row, adjusted }: { row: CalibrationRosterRow; adjusted: 
         <td className="px-4 py-2">{row.final_score != null ? `${row.final_score}%` : "—"}</td>
         <td className="px-4 py-2 text-muted-foreground">{row.rating_label || "—"}</td>
         <td className="px-4 py-2 text-right">
-          {!closed && (
-            <Button size="sm" variant="outline" disabled={pending} onClick={() => setOpen((v) => !v)}>
-              {open ? "Cancel" : "Adjust"}
-            </Button>
-          )}
+          <div className="flex items-center justify-end gap-2">
+            <Link
+              href={`/performance/appraisals/${row.id}/outcome`}
+              className="rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
+            >
+              Outcome
+            </Link>
+            {!closed && (
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => setOpen((v) => !v)}>
+                {open ? "Cancel" : "Adjust"}
+              </Button>
+            )}
+          </div>
         </td>
       </tr>
       {open && !closed && (
