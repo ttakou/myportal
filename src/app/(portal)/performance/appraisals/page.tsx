@@ -11,6 +11,7 @@ import {
   getDepartmentObjectives,
   getDepartmentObjectivesForMe,
   getMyAppraisal,
+  getMyAppraisalHistory,
   getMyRaterAssignments,
   getSecondLevelQueue,
   getTeamAppraisals,
@@ -24,6 +25,7 @@ import { SecondLevelPanel } from "./_components/second-level-panel";
 import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
 import { SummaryCards } from "./_components/summary-cards";
+import { AppraisalHistory } from "./_components/appraisal-history";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
 
@@ -77,6 +79,7 @@ export default async function AppraisalsPage({
     isHr && cycle ? getCalibrationAdjustments(cycle.id) : Promise.resolve([]),
     isHr ? getDepartmentObjectives() : Promise.resolve([]),
   ]);
+  const myHistory = await getMyAppraisalHistory();
   const [colleagues, deptObjectives] = await Promise.all([
     myAppraisal ? getTenantColleagues() : Promise.resolve([]),
     myAppraisal ? getDepartmentObjectivesForMe(cycle?.id ?? null) : Promise.resolve([]),
@@ -146,11 +149,21 @@ export default async function AppraisalsPage({
 
       {/* Employee view — your own appraisal for the selected year. */}
       {myAppraisal ? (
-        <MyAppraisalPanel
-          appraisal={myAppraisal}
-          colleagues={colleagues}
-          deptObjectives={deptObjectives}
-        />
+        <div className="space-y-3">
+          <MyAppraisalPanel
+            appraisal={myAppraisal}
+            colleagues={colleagues}
+            deptObjectives={deptObjectives}
+          />
+          {COMPLETED_STATUSES.has(myAppraisal.status) && (
+            <Link
+              href={`/performance/appraisals/${myAppraisal.id}/outcome`}
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              View / print outcome
+            </Link>
+          )}
+        </div>
       ) : (
         cycle &&
         !isHr && (
@@ -159,6 +172,8 @@ export default async function AppraisalsPage({
           </p>
         )
       )}
+
+      <AppraisalHistory history={myHistory} />
 
       {raterAssignments.length > 0 && <RaterInbox assignments={raterAssignments} />}
 

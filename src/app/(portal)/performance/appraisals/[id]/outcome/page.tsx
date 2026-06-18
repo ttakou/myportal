@@ -1,0 +1,148 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
+import { getAppraisal } from "@/lib/appraisals";
+import { STATUS_LABEL } from "@/types/appraisal";
+import { PrintButton } from "./print-button";
+
+function fmtDate(value: string | null): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-GB", { timeZone: "UTC" });
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-sm">{children}</div>
+    </div>
+  );
+}
+
+export default async function AppraisalOutcomePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const appraisal = await getAppraisal(id);
+  if (!appraisal) notFound();
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      <div className="flex items-center justify-between gap-3 print:hidden">
+        <Link
+          href="/performance/appraisals"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> Appraisals
+        </Link>
+        <PrintButton />
+      </div>
+
+      <header className="space-y-1 border-b pb-4">
+        <h1 className="text-2xl font-semibold tracking-tight">Appraisal outcome</h1>
+        <p className="text-muted-foreground">
+          {appraisal.cycle_name ?? "Appraisal"} · {STATUS_LABEL[appraisal.status]}
+        </p>
+      </header>
+
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Field label="Employee">{appraisal.employee_name ?? "—"}</Field>
+        <Field label="Manager">{appraisal.manager_name ?? "—"}</Field>
+        <Field label="Final score">{appraisal.final_score ?? "—"}</Field>
+        <Field label="Rating">{appraisal.rating_label ?? "—"}</Field>
+      </section>
+
+      {(appraisal.manager_summary || appraisal.employee_summary) && (
+        <section className="space-y-3">
+          {appraisal.manager_summary && (
+            <Field label="Manager summary">
+              <p className="whitespace-pre-wrap">{appraisal.manager_summary}</p>
+            </Field>
+          )}
+          {appraisal.employee_summary && (
+            <Field label="Employee summary">
+              <p className="whitespace-pre-wrap">{appraisal.employee_summary}</p>
+            </Field>
+          )}
+        </section>
+      )}
+
+      {appraisal.goals.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">Objectives</h2>
+          <table className="w-full text-sm">
+            <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="py-1.5 font-medium">Objective</th>
+                <th className="py-1.5 font-medium">Weight</th>
+                <th className="py-1.5 font-medium">Rating</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {appraisal.goals.map((g) => (
+                <tr key={g.id}>
+                  <td className="py-1.5 pr-2">{g.title}</td>
+                  <td className="py-1.5 tabular-nums">{g.weight != null ? `${g.weight}%` : "—"}</td>
+                  <td className="py-1.5 tabular-nums">{g.manager_rating ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {appraisal.competencies.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">Competencies</h2>
+          <table className="w-full text-sm">
+            <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="py-1.5 font-medium">Competency</th>
+                <th className="py-1.5 font-medium">Rating</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {appraisal.competencies.map((c) => (
+                <tr key={c.competency_id}>
+                  <td className="py-1.5 pr-2">{c.name}</td>
+                  <td className="py-1.5 tabular-nums">{c.manager_rating ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {appraisal.development_plan.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">Development plan</h2>
+          <ul className="space-y-1 text-sm">
+            {appraisal.development_plan.map((d) => (
+              <li key={d.id}>
+                <span className="font-medium">{d.area}</span> — {d.action}
+                {d.target_date ? ` (by ${fmtDate(d.target_date)})` : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="grid grid-cols-2 gap-4 border-t pt-4 sm:grid-cols-3">
+        <Field label="Discussion date">{fmtDate(appraisal.discussion_date)}</Field>
+        <Field label="Employee agreed">
+          {appraisal.employee_agreed == null ? "—" : appraisal.employee_agreed ? "Yes" : "No"}
+        </Field>
+        <Field label="Acknowledged">{fmtDate(appraisal.acknowledged_at)}</Field>
+        {appraisal.employee_ack_comment && (
+          <div className="col-span-2 sm:col-span-3">
+            <Field label="Employee comment">
+              <p className="whitespace-pre-wrap">{appraisal.employee_ack_comment}</p>
+            </Field>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

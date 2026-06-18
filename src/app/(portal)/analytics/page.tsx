@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
-import { getExecMetrics } from "@/lib/analytics";
+import { getExecMetrics, getPerformanceMetrics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 function Kpi({ label, value, hint, tone }: { label: string; value: number | string; hint?: string; tone?: "amber" | "green" }) {
@@ -26,7 +26,8 @@ export default async function AnalyticsPage() {
       </div>
     );
   }
-  const m = await getExecMetrics();
+  const [m, perf] = await Promise.all([getExecMetrics(), getPerformanceMetrics()]);
+  const maxBucket = Math.max(1, ...perf.distribution.map((d) => d.count));
 
   return (
     <div className="space-y-8">
@@ -74,6 +75,78 @@ export default async function AnalyticsPage() {
           <Kpi label="Transport requests" value={m.transportRequests} />
           <Kpi label="Canteen bookings" value={m.canteenBookings} />
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Performance{perf.cycle ? ` — ${perf.cycle.name}` : ""}
+        </h2>
+        {perf.cycle ? (
+          <>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <Kpi label="Appraisals" value={perf.total} />
+              <Kpi
+                label="Completion"
+                value={`${perf.completionPct}%`}
+                tone={perf.completionPct >= 90 ? "green" : undefined}
+              />
+              <Kpi
+                label="Pending"
+                value={perf.pending}
+                tone={perf.pending > 0 ? "amber" : undefined}
+              />
+              <Kpi label="Avg rating" value={perf.avgRating ?? "—"} hint="out of 5" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border bg-card p-4">
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Rating distribution
+                </div>
+                <div className="space-y-1.5">
+                  {perf.distribution.map((d) => (
+                    <div key={d.label} className="flex items-center gap-2 text-sm">
+                      <span className="w-3 text-muted-foreground">{d.label}</span>
+                      <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full bg-primary"
+                          style={{ width: `${(d.count / maxBucket) * 100}%` }}
+                        />
+                      </div>
+                      <span className="w-6 text-right tabular-nums text-muted-foreground">{d.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-card p-4">
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Year-over-year
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="py-1 font-medium">Year</th>
+                      <th className="py-1 font-medium">Avg rating</th>
+                      <th className="py-1 font-medium">Completion</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {perf.trend.map((t) => (
+                      <tr key={t.year}>
+                        <td className="py-1 tabular-nums">{t.year}</td>
+                        <td className="py-1 tabular-nums">{t.avgRating ?? "—"}</td>
+                        <td className="py-1 tabular-nums">{t.completionPct}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No appraisal cycle yet.
+          </p>
+        )}
       </section>
 
       <p className="text-xs text-muted-foreground">
