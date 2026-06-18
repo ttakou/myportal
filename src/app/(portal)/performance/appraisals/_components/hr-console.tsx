@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Play, Lock, Plus, Trash2 } from "lucide-react";
+import { Play, Lock, Plus, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   RATING_BANDS,
@@ -490,6 +490,18 @@ function CompetencyEditor({ competencies }: { competencies: AppraisalCompetency[
   );
 }
 
+/** Build and download a CSV client-side. */
+function downloadCsv(filename: string, table: string[][]) {
+  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const csv = table.map((row) => row.map(esc).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** Every appraisal in the cycle with the final rating per staff member. */
 function HrAppraisalList({
   appraisals,
@@ -501,11 +513,30 @@ function HrAppraisalList({
   if (appraisals.length === 0) return null;
   // Highest final score first; unscored staff fall to the bottom.
   const rows = [...appraisals].sort((a, b) => (b.final_score ?? -1) - (a.final_score ?? -1));
+
+  const exportCsv = () => {
+    const header = ["Employee", "Status", "Manager rating", "Final score", "Rating"];
+    const body = rows.map((a) => [
+      a.employee_name ?? "",
+      STATUS_LABEL[a.status],
+      a.overall_rating != null ? String(a.overall_rating) : "",
+      a.final_score != null ? String(a.final_score) : "",
+      a.rating_label ?? "",
+    ]);
+    const slug = (cycleName ?? "cycle").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    downloadCsv(`appraisals-${slug}.csv`, [header, ...body]);
+  };
+
   return (
     <div className="rounded-lg border bg-card p-4">
-      <h3 className="mb-2 text-sm font-semibold">
-        Overall appraisals — {cycleName ?? "selected cycle"} ({appraisals.length})
-      </h3>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">
+          Overall appraisals — {cycleName ?? "selected cycle"} ({appraisals.length})
+        </h3>
+        <Button size="sm" variant="outline" onClick={exportCsv}>
+          <Download className="mr-1.5 h-4 w-4" /> Export CSV
+        </Button>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
