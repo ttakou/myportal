@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, Utensils, UtensilsCrossed, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, UserCheck, Utensils, UtensilsCrossed, Users } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -82,6 +82,14 @@ export default async function ReportsPage() {
         "Ride requests over a period: completion vs cancellation, active backlog and overdue, by status, task type and department.",
       icon: Truck,
       show: access.isSystemAdmin || access.isAdmin,
+    },
+    {
+      href: "/reports/visitors",
+      title: "Visitor throughput",
+      description:
+        "Visits over a period: check-in/out, no-shows, average dwell time and company / host-department breakdowns. For reception and administrators.",
+      icon: UserCheck,
+      show: access.isSystemAdmin || access.isAdmin || access.isOim,
     },
     {
       href: "/reports/emergency",

@@ -518,6 +518,90 @@ export async function getPerformanceCompletionReport(
   };
 }
 
+// --- Visitors throughput --------------------------------------------------
+
+export interface VisitorRow {
+  visit_date: string;
+  name: string;
+  company: string | null;
+  host: string | null;
+  department: string | null;
+  purpose: string | null;
+  status: string;
+  dwellMins: number | null;
+}
+
+export interface VisitorReport {
+  summary: { total: number; checkedIn: number; checkedOut: number; noShow: number; cancelled: number; avgDwellMins: number | null };
+  byCompany: { company: string; count: number }[];
+  byHostDept: { department: string; count: number }[];
+  rows: VisitorRow[];
+}
+
+/** Visitor throughput over a period (by visit date): check-in/out, no-shows,
+ *  average dwell time, and company / host-department breakdowns. Filter by host
+ *  department. RLS scopes rows to the tenant. */
+export async function getVisitorReport(f: CanteenReportFilters): Promise<VisitorReport> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("visitors")
+    .select(
+      "full_name, company, purpose, visit_date, status, check_in_at, check_out_at," +
+        " host:profiles!visitors_host_id_fkey(full_name, department)",
+    )
+    .gte("visit_date", f.from)
+    .lte("visit_date", f.to)
+    .order("visit_date", { ascending: false });
+
+  const today = new Date().toISOString().slice(0, 10);
+  let checkedIn = 0;
+  let checkedOut = 0;
+  let noShow = 0;
+  let cancelled = 0;
+  const dwells: number[] = [];
+  const companyMap = new Map<string, number>();
+  const deptMap = new Map<string, number>();
+
+  const rows: VisitorRow[] = [];
+  for (const v of (data ?? []) as Record<string, any>[]) {
+    const host = one<{ full_name?: string; department?: string }>(v.host);
+    const department = host?.department ?? null;
+    if (f.department && department !== f.department) continue;
+
+    if (v.status === "checked_in") checkedIn += 1;
+    else if (v.status === "checked_out") checkedOut += 1;
+    else if (v.status === "cancelled") cancelled += 1;
+    else if (v.status === "pre_registered" && v.visit_date < today) noShow += 1;
+
+    let dwellMins: number | null = null;
+    if (v.check_in_at && v.check_out_at) {
+      dwellMins = Math.round((new Date(v.check_out_at).getTime() - new Date(v.check_in_at).getTime()) / 60000);
+      if (dwellMins >= 0) dwells.push(dwellMins);
+    }
+
+    companyMap.set(v.company || "—", (companyMap.get(v.company || "—") ?? 0) + 1);
+    deptMap.set(department || "Unassigned", (deptMap.get(department || "Unassigned") ?? 0) + 1);
+    rows.push({
+      visit_date: v.visit_date,
+      name: v.full_name,
+      company: v.company ?? null,
+      host: host?.full_name ?? null,
+      department,
+      purpose: v.purpose ?? null,
+      status: v.status,
+      dwellMins,
+    });
+  }
+
+  const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, n) => s + n, 0) / xs.length) : null);
+  return {
+    summary: { total: rows.length, checkedIn, checkedOut, noShow, cancelled, avgDwellMins: avg(dwells) },
+    byCompany: [...companyMap.entries()].map(([company, count]) => ({ company, count })).sort((a, b) => b.count - a.count),
+    byHostDept: [...deptMap.entries()].map(([department, count]) => ({ department, count })).sort((a, b) => b.count - a.count),
+    rows,
+  };
+}
+
 // --- Emergency (EESS) incidents -------------------------------------------
 
 export interface EmergencyIncidentRow {
