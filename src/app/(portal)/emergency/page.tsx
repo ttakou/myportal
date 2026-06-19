@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Megaphone, MonitorDot } from "lucide-react";
+import { FileBarChart, Megaphone, MonitorDot } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getActiveBroadcasts, getMyCheckin, getMyIncidents } from "@/lib/emergency";
 import {
@@ -38,6 +38,14 @@ export default async function EmergencyPage() {
           <p className="text-muted-foreground">
             Raise an alert, see active warnings, and confirm you are safe.
           </p>
+          {(access.isSafetyAdmin || access.isOim || access.isAdmin) && (
+            <Link
+              href="/reports/emergency"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              <FileBarChart className="h-4 w-4" /> Incidents report
+            </Link>
+          )}
         </div>
         {access.isSafetyAdmin && (
           <Link

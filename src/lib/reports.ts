@@ -518,6 +518,105 @@ export async function getPerformanceCompletionReport(
   };
 }
 
+// --- Emergency (EESS) incidents -------------------------------------------
+
+export interface EmergencyIncidentRow {
+  created_at: string;
+  type: string;
+  severity: string;
+  status: string;
+  sos: boolean;
+  location: string | null;
+  ackMins: number | null;
+  resolveMins: number | null;
+}
+
+export interface EmergencyReport {
+  summary: {
+    total: number;
+    sos: number;
+    open: number;
+    resolved: number;
+    broadcasts: number;
+    avgAckMins: number | null;
+    avgResolveMins: number | null;
+  };
+  byType: { type: string; count: number }[];
+  bySeverity: { severity: string; count: number }[];
+  byStatus: { status: string; count: number }[];
+  rows: EmergencyIncidentRow[];
+}
+
+/** Emergency incidents over a period (by report time): volume, SOS, response
+ *  times (to acknowledge / resolve), and type/severity/status breakdowns, plus
+ *  the broadcast count. RLS scopes rows to the tenant. */
+export async function getEmergencyReport(f: { from: string; to: string }): Promise<EmergencyReport> {
+  const supabase = createClient();
+  const [{ data: incData }, { count: broadcasts }] = await Promise.all([
+    supabase
+      .from("eess_incidents")
+      .select("created_at, incident_type, severity, status, is_sos, location_text, acknowledged_at, resolved_at")
+      .gte("created_at", `${f.from}T00:00:00`)
+      .lte("created_at", `${f.to}T23:59:59`)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("eess_broadcasts")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", `${f.from}T00:00:00`)
+      .lte("created_at", `${f.to}T23:59:59`),
+  ]);
+
+  const mins = (from: string, to: string | null) =>
+    to ? Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60000) : null;
+
+  const typeMap = new Map<string, number>();
+  const sevMap = new Map<string, number>();
+  const statusMap = new Map<string, number>();
+  const ackTimes: number[] = [];
+  const resolveTimes: number[] = [];
+  let sos = 0;
+  let resolved = 0;
+
+  const rows: EmergencyIncidentRow[] = ((incData ?? []) as Record<string, any>[]).map((r) => {
+    const ackMins = mins(r.created_at, r.acknowledged_at ?? null);
+    const resolveMins = mins(r.created_at, r.resolved_at ?? null);
+    if (r.is_sos) sos += 1;
+    if (r.status === "resolved") resolved += 1;
+    if (ackMins != null) ackTimes.push(ackMins);
+    if (resolveMins != null) resolveTimes.push(resolveMins);
+    typeMap.set(r.incident_type, (typeMap.get(r.incident_type) ?? 0) + 1);
+    sevMap.set(r.severity, (sevMap.get(r.severity) ?? 0) + 1);
+    statusMap.set(r.status, (statusMap.get(r.status) ?? 0) + 1);
+    return {
+      created_at: r.created_at,
+      type: r.incident_type,
+      severity: r.severity,
+      status: r.status,
+      sos: !!r.is_sos,
+      location: r.location_text ?? null,
+      ackMins,
+      resolveMins,
+    };
+  });
+
+  const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, n) => s + n, 0) / xs.length) : null);
+  return {
+    summary: {
+      total: rows.length,
+      sos,
+      open: rows.length - resolved,
+      resolved,
+      broadcasts: broadcasts ?? 0,
+      avgAckMins: avg(ackTimes),
+      avgResolveMins: avg(resolveTimes),
+    },
+    byType: [...typeMap.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count),
+    bySeverity: [...sevMap.entries()].map(([severity, count]) => ({ severity, count })).sort((a, b) => b.count - a.count),
+    byStatus: [...statusMap.entries()].map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
+    rows,
+  };
+}
+
 // --- Admin access review --------------------------------------------------
 export interface AccessReviewRow {
   id: string;
