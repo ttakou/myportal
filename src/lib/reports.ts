@@ -139,8 +139,98 @@ export async function getTravelExpenseReport(
   };
 }
 
-// --- Admin access review --------------------------------------------------
+// --- Performance appraisal completion / SLA -------------------------------
 
+export interface PerfCompletionRow {
+  appraisal_id: string;
+  employee: string | null;
+  department: string | null;
+  manager: string | null;
+  stage: string;
+  status: string;
+  overdue: boolean;
+}
+
+export interface PerformanceCompletionReport {
+  rows: PerfCompletionRow[];
+  summary: { total: number; completed: number; completionPct: number; overdue: number };
+  byStatus: { status: string; count: number }[];
+}
+
+export interface PerfCompletionFilters {
+  cycleId: string;
+  periodEnd: string | null;
+  department: string | null;
+  userId: string | null;
+}
+
+const COMPLETED_APPRAISAL = new Set(["completed", "closed"]);
+
+/**
+ * Appraisal completion / SLA for one cycle: each appraisal's stage and status,
+ * with overdue flagged (not completed and the cycle period has passed, or an
+ * explicit `overdue` status). Filter by department and/or employee.
+ */
+export async function getPerformanceCompletionReport(
+  f: PerfCompletionFilters,
+): Promise<PerformanceCompletionReport> {
+  const supabase = createClient();
+  let q = supabase
+    .from("appraisals")
+    .select(
+      "id, stage, status, employee_id," +
+        " employee:profiles!employee_id(full_name, department)," +
+        " manager:profiles!manager_id(full_name)",
+    )
+    .eq("cycle_id", f.cycleId);
+  if (f.userId) q = q.eq("employee_id", f.userId);
+  const { data } = await q;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const periodPassed = !!f.periodEnd && f.periodEnd < today;
+
+  const rows: PerfCompletionRow[] = [];
+  for (const a of (data ?? []) as Record<string, any>[]) {
+    const emp = one<{ full_name?: string; department?: string }>(a.employee);
+    const department = emp?.department ?? null;
+    if (f.department && department !== f.department) continue;
+    const completed = COMPLETED_APPRAISAL.has(a.status);
+    const overdue = a.status === "overdue" || (!completed && periodPassed);
+    rows.push({
+      appraisal_id: a.id,
+      employee: emp?.full_name ?? null,
+      department,
+      manager: one<{ full_name?: string }>(a.manager)?.full_name ?? null,
+      stage: a.stage,
+      status: a.status,
+      overdue,
+    });
+  }
+
+  rows.sort(
+    (a, b) =>
+      Number(b.overdue) - Number(a.overdue) || (a.employee ?? "").localeCompare(b.employee ?? ""),
+  );
+
+  const statusMap = new Map<string, number>();
+  for (const r of rows) statusMap.set(r.status, (statusMap.get(r.status) ?? 0) + 1);
+
+  const completed = rows.filter((r) => COMPLETED_APPRAISAL.has(r.status)).length;
+  return {
+    rows,
+    summary: {
+      total: rows.length,
+      completed,
+      completionPct: rows.length ? Math.round((completed / rows.length) * 100) : 0,
+      overdue: rows.filter((r) => r.overdue).length,
+    },
+    byStatus: [...statusMap.entries()]
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count),
+  };
+}
+
+// --- Admin access review --------------------------------------------------
 export interface AccessReviewRow {
   id: string;
   name: string | null;
