@@ -22,9 +22,12 @@ export async function ReportHeader({
   });
 
   return (
-    <div className="flex items-start justify-between gap-4 border-b pb-4">
-      <div className="space-y-0.5">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+    <div className="space-y-3">
+      {/* Tenant colour-theme accent (prints) */}
+      <div className="border-t-4 border-brand" />
+      <div className="flex items-start justify-between gap-4 border-b pb-4">
+        <div className="space-y-0.5">
+          <h1 className="text-2xl font-semibold tracking-tight text-brand">{title}</h1>
         {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
         {meta.length > 0 && <p className="text-xs text-muted-foreground">{meta.join(" · ")}</p>}
         <p className="text-xs text-muted-foreground">Generated {generated} (UTC)</p>
@@ -40,6 +43,7 @@ export async function ReportHeader({
         ) : (
           <span className="text-lg font-semibold text-brand">{branding.name}</span>
         )}
+        </div>
       </div>
     </div>
   );

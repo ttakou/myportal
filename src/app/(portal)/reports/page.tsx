@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Banknote, ClipboardCheck, FileBarChart, Plane, ShieldCheck, Truck, UtensilsCrossed, Users } from "lucide-react";
+import { ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, Utensils, UtensilsCrossed, Users } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -47,12 +47,33 @@ export default async function ReportsPage() {
       show: access.isHr || access.isSystemAdmin || access.isAdmin,
     },
     {
+      href: "/reports/my-meals",
+      title: "My meals",
+      description:
+        "Your own canteen bookings and collections — booked, collected, no-show and cancelled. Filter by period (daily/weekly/monthly…).",
+      icon: Utensils,
+      show: true,
+    },
+    {
       href: "/reports/canteen",
       title: "Canteen consumption & no-show",
       description:
-        "Served vs no-show vs cancelled over a period, with department and meal-period breakdowns. Filter by period and department.",
+        "Served vs no-show vs cancelled with department, meal-period and per-person breakdowns. For canteen management and the camp boss. Filter by period and department.",
       icon: UtensilsCrossed,
-      show: access.isSystemAdmin || access.isAdmin || access.isFinance || access.isCanteenManager,
+      show:
+        access.isSystemAdmin ||
+        access.isAdmin ||
+        access.isFinance ||
+        access.isCanteenManager ||
+        access.isOim,
+    },
+    {
+      href: "/reports/canteen-feedback",
+      title: "Canteen feedback",
+      description:
+        "Food/quantity ratings, issue breakdown and feedback entries over a period. For HR and canteen management.",
+      icon: MessageSquare,
+      show: access.isSystemAdmin || access.isAdmin || access.isHr || access.isCanteenManager,
     },
     {
       href: "/reports/transport",
