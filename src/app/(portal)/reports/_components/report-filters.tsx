@@ -3,11 +3,46 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LazySelect } from "@/components/ui/lazy-select";
 
+const PRESETS = [
+  { value: "daily", label: "Today" },
+  { value: "weekly", label: "This week" },
+  { value: "monthly", label: "This month" },
+  { value: "quarterly", label: "This quarter" },
+  { value: "yearly", label: "This year" },
+  { value: "custom", label: "Custom range" },
+] as const;
+
+const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Resolve a preset to a {from,to} range relative to today, or null for custom. */
+function presetRange(preset: string): { from: string; to: string } | null {
+  const today = new Date();
+  const to = isoDate(today);
+  switch (preset) {
+    case "daily":
+      return { from: to, to };
+    case "weekly": {
+      const d = new Date(today);
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // back to Monday
+      return { from: isoDate(d), to };
+    }
+    case "monthly":
+      return { from: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), to };
+    case "quarterly":
+      return { from: isoDate(new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1)), to };
+    case "yearly":
+      return { from: isoDate(new Date(today.getFullYear(), 0, 1)), to };
+    default:
+      return null;
+  }
+}
+
 /**
  * Shared report filter bar. Reports opt into the filters that fit their context
- * via `show`: a period (start/end date), a department, and/or a user. Selections
- * are written to the URL query so the (server-rendered) report re-runs scoped to
- * them — which also makes a filtered report shareable/bookmarkable.
+ * via `show`: a period (with daily/weekly/monthly/quarterly/yearly/custom
+ * presets and start/end dates), a cycle, a department and/or a person.
+ * Selections are written to the URL query so the (server-rendered) report
+ * re-runs scoped to them — which also makes a filtered report shareable.
  */
 export function ReportFilters({
   show,
@@ -21,7 +56,6 @@ export function ReportFilters({
   departments?: string[];
   users?: { id: string; name: string }[];
   cycles?: { id: string; name: string }[];
-  /** Effective period values (e.g. the page's defaults when the URL is empty). */
   from?: string;
   to?: string;
 }) {
@@ -29,11 +63,20 @@ export function ReportFilters({
   const pathname = usePathname();
   const params = useSearchParams();
 
-  const setParam = (key: string, value: string | null) => {
+  const setParams = (updates: Record<string, string | null>) => {
     const next = new URLSearchParams(params.toString());
-    if (value) next.set(key, value);
-    else next.delete(key);
+    for (const [k, v] of Object.entries(updates)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
     router.push(`${pathname}?${next.toString()}`);
+  };
+  const setParam = (key: string, value: string | null) => setParams({ [key]: value });
+
+  const onPreset = (preset: string) => {
+    const range = presetRange(preset);
+    if (range) setParams({ preset, from: range.from, to: range.to });
+    else setParams({ preset: "custom" });
   };
 
   const input = "rounded-md border bg-background px-2 py-1.5 text-sm";
@@ -60,11 +103,25 @@ export function ReportFilters({
       {show.period && (
         <>
           <label className="text-xs text-muted-foreground">
+            Period
+            <select
+              value={params.get("preset") ?? "custom"}
+              onChange={(e) => onPreset(e.target.value)}
+              className={`mt-1 block ${input}`}
+            >
+              {PRESETS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-muted-foreground">
             From
             <input
               type="date"
               value={params.get("from") ?? from ?? ""}
-              onChange={(e) => setParam("from", e.target.value || null)}
+              onChange={(e) => setParams({ from: e.target.value || null, preset: "custom" })}
               className={`mt-1 block ${input}`}
             />
           </label>
@@ -73,7 +130,7 @@ export function ReportFilters({
             <input
               type="date"
               value={params.get("to") ?? to ?? ""}
-              onChange={(e) => setParam("to", e.target.value || null)}
+              onChange={(e) => setParams({ to: e.target.value || null, preset: "custom" })}
               className={`mt-1 block ${input}`}
             />
           </label>

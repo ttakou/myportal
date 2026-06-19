@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { LayoutDashboard, FileBarChart } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
-import { getAccess } from "@/lib/auth";
 import { NavLinks, type NavLink } from "./nav-links";
 
 /**
@@ -19,7 +18,7 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const [services, access] = await Promise.all([getActiveServices(), getAccess()]);
+  const services = await getActiveServices();
 
   const links: NavLink[] = services.map((s) => ({
     name: s.name,
@@ -27,15 +26,8 @@ export async function Sidebar({
     icon: s.icon,
   }));
 
-  // Reports hub: visible to roles that can see at least one report today.
-  const canSeeReports =
-    access.isSystemAdmin ||
-    access.isAdmin ||
-    access.isSafetyAdmin ||
-    access.isOim ||
-    access.isFinance ||
-    access.isHr ||
-    access.isCanteenManager;
+  // Reports hub: every user has at least the personal "My meals" report.
+  const canSeeReports = true;
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-card">

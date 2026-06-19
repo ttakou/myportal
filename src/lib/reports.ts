@@ -233,6 +233,7 @@ export interface CanteenReport {
   summary: { served: number; noShow: number; cancelled: number; pending: number; noShowRate: number };
   byDept: { department: string; served: number; noShow: number }[];
   byMeal: { meal: string; served: number; noShow: number }[];
+  byPerson: { name: string | null; department: string | null; served: number; noShow: number }[];
 }
 
 export interface CanteenReportFilters {
@@ -251,8 +252,8 @@ export async function getCanteenReport(f: CanteenReportFilters): Promise<Canteen
   const { data } = await supabase
     .from("canteen_bookings")
     .select(
-      "status, service_date, meal_period," +
-        " profile:profiles!canteen_bookings_profile_id_fkey(department)",
+      "status, service_date, meal_period, profile_id," +
+        " profile:profiles!canteen_bookings_profile_id_fkey(full_name, department)",
     )
     .gte("service_date", f.from)
     .lte("service_date", f.to);
@@ -264,9 +265,11 @@ export async function getCanteenReport(f: CanteenReportFilters): Promise<Canteen
   let pending = 0;
   const dept = new Map<string, { served: number; noShow: number }>();
   const meal = new Map<string, { served: number; noShow: number }>();
+  const person = new Map<string, { name: string | null; department: string | null; served: number; noShow: number }>();
 
   for (const b of (data ?? []) as Record<string, any>[]) {
-    const department = one<{ department?: string }>(b.profile)?.department ?? null;
+    const profile = one<{ full_name?: string; department?: string }>(b.profile);
+    const department = profile?.department ?? null;
     if (f.department && department !== f.department) continue;
 
     let kind: "served" | "noShow" | "cancelled" | "pending";
@@ -283,10 +286,18 @@ export async function getCanteenReport(f: CanteenReportFilters): Promise<Canteen
       const d = department || "Unassigned";
       const dc = dept.get(d) ?? { served: 0, noShow: 0 };
       const mc = meal.get(b.meal_period) ?? { served: 0, noShow: 0 };
+      const pc = person.get(b.profile_id) ?? {
+        name: profile?.full_name ?? null,
+        department,
+        served: 0,
+        noShow: 0,
+      };
       dc[kind] += 1;
       mc[kind] += 1;
+      pc[kind] += 1;
       dept.set(d, dc);
       meal.set(b.meal_period, mc);
+      person.set(b.profile_id, pc);
     }
   }
 
@@ -299,7 +310,121 @@ export async function getCanteenReport(f: CanteenReportFilters): Promise<Canteen
     byMeal: [...meal.entries()]
       .map(([m, v]) => ({ meal: m, ...v }))
       .sort((a, b) => b.served - a.served),
+    byPerson: [...person.values()].sort((a, b) => b.served - a.served),
   };
+}
+
+// --- Canteen feedback (HR) -------------------------------------------------
+
+export interface CanteenFeedbackRow {
+  service_date: string;
+  person: string | null;
+  department: string | null;
+  food: number | null;
+  quantity: number | null;
+  issue: string;
+  status: string;
+  comment: string | null;
+}
+
+export interface CanteenFeedbackReport {
+  summary: { count: number; avgFood: number | null; avgQuantity: number | null; unresolved: number };
+  byIssue: { issue: string; count: number }[];
+  rows: CanteenFeedbackRow[];
+}
+
+/** Canteen feedback over a period: rating averages, issue breakdown, entries. */
+export async function getCanteenFeedback(f: CanteenReportFilters): Promise<CanteenFeedbackReport> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("canteen_feedback")
+    .select(
+      "service_date, food_quality, quantity_rating, issue_type, status, comment," +
+        " profile:profiles!canteen_feedback_profile_id_fkey(full_name, department)",
+    )
+    .gte("service_date", f.from)
+    .lte("service_date", f.to)
+    .order("service_date", { ascending: false });
+
+  const rows: CanteenFeedbackRow[] = [];
+  const food: number[] = [];
+  const qty: number[] = [];
+  const issueMap = new Map<string, number>();
+  let unresolved = 0;
+
+  for (const r of (data ?? []) as Record<string, any>[]) {
+    const profile = one<{ full_name?: string; department?: string }>(r.profile);
+    const department = profile?.department ?? null;
+    if (f.department && department !== f.department) continue;
+    if (r.food_quality != null) food.push(Number(r.food_quality));
+    if (r.quantity_rating != null) qty.push(Number(r.quantity_rating));
+    if (r.status === "open") unresolved += 1;
+    issueMap.set(r.issue_type, (issueMap.get(r.issue_type) ?? 0) + 1);
+    rows.push({
+      service_date: r.service_date,
+      person: profile?.full_name ?? null,
+      department,
+      food: r.food_quality ?? null,
+      quantity: r.quantity_rating ?? null,
+      issue: r.issue_type,
+      status: r.status,
+      comment: r.comment ?? null,
+    });
+  }
+
+  const avgOf = (xs: number[]) =>
+    xs.length ? Math.round((xs.reduce((s, n) => s + n, 0) / xs.length) * 10) / 10 : null;
+  return {
+    summary: { count: rows.length, avgFood: avgOf(food), avgQuantity: avgOf(qty), unresolved },
+    byIssue: [...issueMap.entries()]
+      .map(([issue, count]) => ({ issue, count }))
+      .sort((a, b) => b.count - a.count),
+    rows,
+  };
+}
+
+// --- My meals (self-service) ----------------------------------------------
+
+export interface MyMealRow {
+  service_date: string;
+  meal: string;
+  status: string;
+}
+
+export interface MyMealsReport {
+  rows: MyMealRow[];
+  summary: { served: number; noShow: number; cancelled: number; booked: number };
+}
+
+/** The signed-in employee's own canteen bookings over a period. */
+export async function getMyMeals(f: { from: string; to: string }): Promise<MyMealsReport> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { rows: [], summary: { served: 0, noShow: 0, cancelled: 0, booked: 0 } };
+  const { data } = await supabase
+    .from("canteen_bookings")
+    .select("service_date, meal_period, status")
+    .eq("profile_id", user.id)
+    .gte("service_date", f.from)
+    .lte("service_date", f.to)
+    .order("service_date", { ascending: false });
+
+  const today = new Date().toISOString().slice(0, 10);
+  let served = 0;
+  let noShow = 0;
+  let cancelled = 0;
+  let booked = 0;
+  const rows: MyMealRow[] = ((data ?? []) as Record<string, any>[]).map((b) => {
+    if (b.status === "served") served += 1;
+    else if (b.status === "cancelled") cancelled += 1;
+    else if (b.service_date < today) noShow += 1;
+    else booked += 1;
+    return { service_date: b.service_date, meal: b.meal_period, status: b.status };
+  });
+
+  return { rows, summary: { served, noShow, cancelled, booked } };
 }
 
 // --- Performance appraisal completion / SLA -------------------------------

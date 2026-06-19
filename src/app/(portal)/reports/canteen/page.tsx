@@ -24,13 +24,21 @@ export default async function CanteenReportPage({
   searchParams: Promise<{ from?: string; to?: string; department?: string }>;
 }) {
   const access = await getAccess();
-  if (!(access.isSystemAdmin || access.isAdmin || access.isFinance || access.isCanteenManager)) {
+  if (
+    !(
+      access.isSystemAdmin ||
+      access.isAdmin ||
+      access.isFinance ||
+      access.isCanteenManager ||
+      access.isOim
+    )
+  ) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
         <h1 className="text-xl font-semibold">Not available</h1>
         <p className="text-muted-foreground">
-          This report is available to canteen management, finance and system administrators.
+          This report is available to canteen management, the camp boss, HR/finance and administrators.
         </p>
         <Link href="/reports" className="text-sm font-medium text-primary hover:underline">
           ← Back to reports
@@ -141,6 +149,37 @@ export default async function CanteenReportPage({
               ))}
               {report.byDept.length === 0 && (
                 <tr><td colSpan={3} className="py-4 text-center text-muted-foreground">No data.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded-lg border bg-card p-4">
+        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          By person (consumption)
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="py-1.5 font-medium">Name</th>
+                <th className="py-1.5 font-medium">Department</th>
+                <th className="py-1.5 text-right font-medium">Served</th>
+                <th className="py-1.5 text-right font-medium">No-show</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {report.byPerson.map((p, i) => (
+                <tr key={`${p.name}-${i}`}>
+                  <td className="py-1.5 font-medium">{p.name ?? "—"}</td>
+                  <td className="py-1.5 text-muted-foreground">{p.department ?? "—"}</td>
+                  <td className="py-1.5 text-right tabular-nums">{p.served}</td>
+                  <td className="py-1.5 text-right tabular-nums">{p.noShow}</td>
+                </tr>
+              ))}
+              {report.byPerson.length === 0 && (
+                <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">No consumption in this period.</td></tr>
               )}
             </tbody>
           </table>

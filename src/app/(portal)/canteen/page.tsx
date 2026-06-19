@@ -106,7 +106,7 @@ export default async function CanteenPage(
               Reports
             </Link>
           )}
-          {canReport && (
+          {(canReport || access.isOim) && (
             <Link
               href="/reports/canteen"
               className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
@@ -115,6 +115,22 @@ export default async function CanteenPage(
               Consumption report
             </Link>
           )}
+          {(access.isHr || canManage) && (
+            <Link
+              href="/reports/canteen-feedback"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Feedback report
+            </Link>
+          )}
+          <Link
+            href="/reports/my-meals"
+            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+          >
+            <BarChart3 className="h-4 w-4" />
+            My meals
+          </Link>
         </div>
       </div>
 
