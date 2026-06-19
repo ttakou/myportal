@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { ClipboardList, Truck, UserPlus } from "lucide-react";
+import { ClipboardList, TriangleAlert, Truck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { usePermissions } from "@/components/permissions-provider";
@@ -70,13 +70,28 @@ export function DispatchBoard({
   const active = all.filter((r) => !["completed", "cancelled"].includes(r.status));
   const closed = all.filter((r) => ["completed", "cancelled"].includes(r.status));
   const stat = (s: string) => all.filter((r) => r.status === s).length;
+  const unassigned = active.filter((r) => !r.driver_id).length;
+
+  // Surface on-duty (available) drivers first in every assign dropdown.
+  const sortedDrivers = useMemo(
+    () =>
+      [...drivers].sort(
+        (a, b) => Number(b.on_duty) - Number(a.on_duty) || a.full_name.localeCompare(b.full_name),
+      ),
+    [drivers],
+  );
 
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
         <ClipboardList className="h-5 w-5 text-primary" />
         <h2 className="text-lg font-semibold">Dispatch board</h2>
-        <div className="ml-auto flex gap-2 text-xs">
+        <div className="ml-auto flex flex-wrap gap-2 text-xs">
+          {unassigned > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">
+              <TriangleAlert className="h-3 w-3" /> {unassigned} unassigned
+            </span>
+          )}
           {(["pending", "assigned", "in_progress"] as const).map((s) => (
             <span key={s} className="rounded-full bg-muted px-2 py-1 font-medium text-muted-foreground">
               {stat(s)} {s.replace("_", " ")}
@@ -97,12 +112,12 @@ export function DispatchBoard({
       <TransportAnalytics all={all} drivers={drivers} />
 
       {can("transportation", "manage") && (
-        <NewTaskForm drivers={drivers} vehicles={vehicles} pending={pending} run={run} />
+        <NewTaskForm drivers={sortedDrivers} vehicles={vehicles} pending={pending} run={run} />
       )}
 
       <div className="space-y-3">
         {active.map((r) => (
-          <TaskRow key={r.id} r={r} drivers={drivers} vehicles={vehicles} pending={pending} run={run} />
+          <TaskRow key={r.id} r={r} drivers={sortedDrivers} vehicles={vehicles} pending={pending} run={run} />
         ))}
         {active.length === 0 && (
           <p className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -232,6 +247,11 @@ function TaskRow({
         <StatusBadge status={r.status} />
         <TypeBadge type={r.task_type} />
         <PriorityBadge priority={r.priority} />
+        {!r.driver_id && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+            Unassigned
+          </span>
+        )}
         <span className="font-medium">
           {r.pickup} → {r.dropoff}
         </span>
@@ -251,9 +271,11 @@ function TaskRow({
           options={drivers}
           getOptionValue={(d) => d.id}
           getOptionLabel={(d) => `${d.full_name}${d.on_duty ? "" : " (off duty)"}`}
-          placeholder="Driver…"
+          placeholder={r.driver_id ? "Driver…" : "Assign driver…"}
           disabled={pending || r.status === "in_progress"}
-          className="rounded-md border bg-background px-1.5 py-1 text-xs"
+          className={`rounded-md border px-1.5 py-1 text-xs ${
+            r.driver_id ? "bg-background" : "border-amber-400 bg-amber-50 font-medium text-amber-900"
+          }`}
           onChange={(v) => run(() => assignTransport(r.id, v, r.vehicle_id))}
         />
         <LazySelect
