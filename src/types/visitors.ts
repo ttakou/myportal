@@ -19,7 +19,20 @@ export interface Visitor {
   visit_date: string;
   status: VisitorStatus;
   badge_no: string | null;
+  vehicle_type: string | null;
+  vehicle_plate: string | null;
   host_name: string | null;
   check_in_at: string | null;
   check_out_at: string | null;
 }
+
+/** Common vehicle types for the reception check-in / pre-registration form. */
+export const VEHICLE_TYPES = [
+  "Car",
+  "Pickup",
+  "Van",
+  "Bus",
+  "Truck",
+  "Motorcycle",
+  "Other",
+] as const;

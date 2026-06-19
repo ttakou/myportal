@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Visitor } from "@/types/visitors";
 
 const SELECT =
-  "id, full_name, company, purpose, visit_date, status, badge_no, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)";
+  "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)";
 
 function mapRow(row: Record<string, unknown>): Visitor {
   const host = Array.isArray(row.host) ? row.host[0] : row.host;
@@ -14,6 +14,8 @@ function mapRow(row: Record<string, unknown>): Visitor {
     visit_date: row.visit_date as string,
     status: row.status as Visitor["status"],
     badge_no: (row.badge_no as string) ?? null,
+    vehicle_type: (row.vehicle_type as string) ?? null,
+    vehicle_plate: (row.vehicle_plate as string) ?? null,
     host_name: (host as { full_name?: string })?.full_name ?? null,
     check_in_at: (row.check_in_at as string) ?? null,
     check_out_at: (row.check_out_at as string) ?? null,
