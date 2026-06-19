@@ -139,6 +139,81 @@ export async function getTravelExpenseReport(
   };
 }
 
+// --- Canteen consumption & no-show ----------------------------------------
+
+export interface CanteenReport {
+  summary: { served: number; noShow: number; cancelled: number; pending: number; noShowRate: number };
+  byDept: { department: string; served: number; noShow: number }[];
+  byMeal: { meal: string; served: number; noShow: number }[];
+}
+
+export interface CanteenReportFilters {
+  from: string;
+  to: string;
+  department: string | null;
+}
+
+/**
+ * Canteen consumption & no-show over a period: served vs no-show (booked, past
+ * service date, never served) vs cancelled, with no-show rate, and breakdowns
+ * by department and meal period. Filter by department. RLS scopes to the tenant.
+ */
+export async function getCanteenReport(f: CanteenReportFilters): Promise<CanteenReport> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("canteen_bookings")
+    .select(
+      "status, service_date, meal_period," +
+        " profile:profiles!canteen_bookings_profile_id_fkey(department)",
+    )
+    .gte("service_date", f.from)
+    .lte("service_date", f.to);
+
+  const today = new Date().toISOString().slice(0, 10);
+  let served = 0;
+  let noShow = 0;
+  let cancelled = 0;
+  let pending = 0;
+  const dept = new Map<string, { served: number; noShow: number }>();
+  const meal = new Map<string, { served: number; noShow: number }>();
+
+  for (const b of (data ?? []) as Record<string, any>[]) {
+    const department = one<{ department?: string }>(b.profile)?.department ?? null;
+    if (f.department && department !== f.department) continue;
+
+    let kind: "served" | "noShow" | "cancelled" | "pending";
+    if (b.status === "served") kind = "served";
+    else if (b.status === "cancelled") kind = "cancelled";
+    else kind = b.service_date < today ? "noShow" : "pending";
+
+    if (kind === "served") served += 1;
+    else if (kind === "noShow") noShow += 1;
+    else if (kind === "cancelled") cancelled += 1;
+    else pending += 1;
+
+    if (kind === "served" || kind === "noShow") {
+      const d = department || "Unassigned";
+      const dc = dept.get(d) ?? { served: 0, noShow: 0 };
+      const mc = meal.get(b.meal_period) ?? { served: 0, noShow: 0 };
+      dc[kind] += 1;
+      mc[kind] += 1;
+      dept.set(d, dc);
+      meal.set(b.meal_period, mc);
+    }
+  }
+
+  const noShowRate = served + noShow ? Math.round((noShow / (served + noShow)) * 100) : 0;
+  return {
+    summary: { served, noShow, cancelled, pending, noShowRate },
+    byDept: [...dept.entries()]
+      .map(([department, v]) => ({ department, ...v }))
+      .sort((a, b) => b.served - a.served),
+    byMeal: [...meal.entries()]
+      .map(([m, v]) => ({ meal: m, ...v }))
+      .sort((a, b) => b.served - a.served),
+  };
+}
+
 // --- Performance appraisal completion / SLA -------------------------------
 
 export interface PerfCompletionRow {
