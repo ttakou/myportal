@@ -40,6 +40,8 @@ export function VisitorsBoard({
   isAdmin: boolean;
 }) {
   const { can } = usePermissions();
+  // Front-line reception/security: may check visitors in and out.
+  const canOperate = isAdmin || can("visitors", "operate");
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
@@ -187,7 +189,7 @@ export function VisitorsBoard({
                   <div className="flex justify-end gap-2">
                     {v.status === "pre_registered" && (
                       <>
-                        {isAdmin && (
+                        {canOperate && (
                           <Button
                             size="sm"
                             disabled={pending}
