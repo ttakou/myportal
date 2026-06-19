@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, Utensils, UtensilsCrossed, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, Utensils, UtensilsCrossed, Users } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -82,6 +82,14 @@ export default async function ReportsPage() {
         "Ride requests over a period: completion vs cancellation, active backlog and overdue, by status, task type and department.",
       icon: Truck,
       show: access.isSystemAdmin || access.isAdmin,
+    },
+    {
+      href: "/reports/emergency",
+      title: "Emergency incidents",
+      description:
+        "Incident volume, SOS, response times and type/severity/status breakdowns over a period. For safety and administrators.",
+      icon: AlertTriangle,
+      show: access.isSystemAdmin || access.isAdmin || access.isSafetyAdmin || access.isOim,
     },
   ].filter((t) => t.show);
 
