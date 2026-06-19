@@ -124,6 +124,71 @@ export async function attachIncidentLocation(input: {
   return { ok: true };
 }
 
+/**
+ * Post a follow-up update to your OWN incident while it is still open. Appends an
+ * entry to the incident's evolution timeline and, when a location is shared,
+ * refreshes the incident's position so the command-center map tracks the
+ * reporter. Resolved incidents are closed to further updates.
+ */
+export async function addIncidentUpdate(input: {
+  incidentId: string;
+  body?: string;
+  lat?: number | null;
+  lng?: number | null;
+  locationText?: string | null;
+}): Promise<ActionResult> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const body = input.body?.trim() || null;
+  const locText = input.locationText?.trim() || null;
+  const hasCoords = input.lat != null && input.lng != null;
+  if (!body && !locText && !hasCoords) {
+    return { ok: false, error: "Add a note or share your location." };
+  }
+
+  // Defence-in-depth: RLS also enforces ownership + the open-status guard.
+  const { data: incident } = await supabase
+    .from("eess_incidents")
+    .select("reporter_id, status")
+    .eq("id", input.incidentId)
+    .maybeSingle();
+  if (!incident) return { ok: false, error: "Incident not found." };
+  if (incident.reporter_id !== user.id) {
+    return { ok: false, error: "You can only update your own SOS." };
+  }
+  if (incident.status === "resolved") {
+    return { ok: false, error: "This incident is resolved and can no longer be updated." };
+  }
+
+  const { error } = await supabase.from("eess_incident_updates").insert({
+    incident_id: input.incidentId,
+    author_id: user.id,
+    kind: hasCoords || locText ? "location" : "note",
+    body,
+    lat: hasCoords ? input.lat : null,
+    lng: hasCoords ? input.lng : null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  // Mirror the latest location onto the incident itself (command-center map).
+  if (hasCoords || locText) {
+    await supabase.rpc("eess_set_incident_location", {
+      p_id: input.incidentId,
+      p_lat: input.lat ?? null,
+      p_lng: input.lng ?? null,
+      p_text: locText,
+    });
+  }
+
+  revalidatePath("/emergency");
+  revalidatePath("/emergency/command");
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // C. Safety check-in / accountability (any employee)
 // ---------------------------------------------------------------------------

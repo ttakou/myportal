@@ -27,6 +27,7 @@ import {
   type Incident,
   type IncidentStatus,
   type IncidentType,
+  type IncidentUpdate,
   type Severity,
 } from "@/types/emergency";
 import { sendBroadcast, setBroadcastActive, setIncidentStatus } from "../../actions";
@@ -80,6 +81,7 @@ export function CommandCenter({
   helpRequests,
   deliveries,
   eventTitle,
+  updatesByIncident,
 }: {
   incidents: Incident[];
   broadcasts: Broadcast[];
@@ -87,6 +89,7 @@ export function CommandCenter({
   helpRequests: Checkin[];
   deliveries: DeliveryLog[];
   eventTitle: string | null;
+  updatesByIncident: Record<string, IncidentUpdate[]>;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +109,12 @@ export function CommandCenter({
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <IncidentStream incidents={incidents} pending={pending} run={run} />
+        <IncidentStream
+          incidents={incidents}
+          updatesByIncident={updatesByIncident}
+          pending={pending}
+          run={run}
+        />
         <GeoMap incidents={incidents} helpRequests={helpRequests} />
         <AccountabilityWidget data={accountability} eventTitle={eventTitle} />
       </div>
@@ -156,10 +164,12 @@ function DeliveryAudit({ deliveries }: { deliveries: DeliveryLog[] }) {
 // --- Left: live incident stream ---------------------------------------------
 function IncidentStream({
   incidents,
+  updatesByIncident,
   pending,
   run,
 }: {
   incidents: Incident[];
+  updatesByIncident: Record<string, IncidentUpdate[]>;
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>) => void;
 }) {
@@ -207,6 +217,7 @@ function IncidentStream({
                       {i.location_text ?? `${i.lat?.toFixed(4)}, ${i.lng?.toFixed(4)}`}
                     </p>
                   )}
+                  <IncidentFollowups updates={updatesByIncident[i.id] ?? []} />
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {i.status === "open" && (
                       <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => setIncidentStatus(i.id, "acknowledged"))}>
@@ -231,6 +242,43 @@ function IncidentStream({
         })}
       </div>
     </section>
+  );
+}
+
+// Follow-up timeline for one incident — reporter updates, location refreshes and
+// status changes after it was first raised (the original report is the card
+// header, so the 'created' entry is omitted here).
+function IncidentFollowups({ updates }: { updates: IncidentUpdate[] }) {
+  const followups = updates.filter((u) => u.kind !== "created");
+  if (followups.length === 0) return null;
+  return (
+    <ol className="mt-2 space-y-1 border-l pl-3">
+      {followups.map((u) => (
+        <li key={u.id} className="text-xs">
+          <span className="font-medium">
+            {u.kind === "status"
+              ? u.status
+                ? STATUS_LABEL[u.status]
+                : "Status updated"
+              : u.kind === "location"
+                ? "Location updated"
+                : "Reporter update"}
+          </span>
+          <span className="text-muted-foreground">
+            {" "}
+            · {new Date(u.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            {u.author_name ? ` · ${u.author_name}` : ""}
+          </span>
+          {u.body && <p className="text-muted-foreground">{u.body}</p>}
+          {u.lat != null && u.lng != null && (
+            <span className="inline-flex items-center gap-1 text-muted-foreground">
+              <MapPin className="h-3 w-3" />
+              {u.lat.toFixed(4)}, {u.lng.toFixed(4)}
+            </span>
+          )}
+        </li>
+      ))}
+    </ol>
   );
 }
 

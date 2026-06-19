@@ -101,6 +101,21 @@ export interface Incident {
   resolved_by_name?: string | null;
 }
 
+export type IncidentUpdateKind = "created" | "note" | "location" | "status";
+
+/** One entry in an incident's evolution timeline. */
+export interface IncidentUpdate {
+  id: string;
+  incident_id: string;
+  kind: IncidentUpdateKind;
+  body: string | null;
+  status: IncidentStatus | null;
+  lat: number | null;
+  lng: number | null;
+  author_name: string | null;
+  created_at: string;
+}
+
 export interface Broadcast {
   id: string;
   title: string;

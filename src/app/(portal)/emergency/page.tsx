@@ -1,17 +1,22 @@
 import Link from "next/link";
 import { FileBarChart, Megaphone, MonitorDot } from "lucide-react";
 import { getAccess } from "@/lib/auth";
-import { getActiveBroadcasts, getMyCheckin, getMyIncidents } from "@/lib/emergency";
 import {
-  INCIDENT_LABEL,
+  getActiveBroadcasts,
+  getIncidentUpdates,
+  getMyCheckin,
+  getMyIncidents,
+} from "@/lib/emergency";
+import {
   SEVERITY_LABEL,
-  STATUS_LABEL,
+  type IncidentUpdate,
   type Severity,
 } from "@/types/emergency";
 import { cn } from "@/lib/utils";
 import { SosPanel } from "./_components/sos-panel";
 import { SafetyStatusBanner } from "./_components/safety-status-banner";
 import { PushToggle } from "./_components/push-toggle";
+import { IncidentTracker } from "./_components/incident-tracker";
 
 const SEVERITY_STYLE: Record<Severity, string> = {
   info: "border-sky-300 bg-sky-50 text-sky-900",
@@ -29,6 +34,12 @@ export default async function EmergencyPage() {
   const checkinBroadcast = broadcasts.find((b) => b.requires_checkin) ?? null;
   const myCheckin = checkinBroadcast ? await getMyCheckin(checkinBroadcast.id) : null;
   const infoBroadcasts = broadcasts.filter((b) => b.id !== checkinBroadcast?.id);
+
+  // Evolution timeline for the user's incidents, keyed by incident id (plain
+  // object so it crosses into the client tracker).
+  const updatesMap = await getIncidentUpdates(myIncidents.map((i) => i.id));
+  const updatesByIncident: Record<string, IncidentUpdate[]> = {};
+  for (const [id, list] of updatesMap) updatesByIncident[id] = list;
 
   return (
     <div className="space-y-6">
@@ -91,37 +102,11 @@ export default async function EmergencyPage() {
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">My recent reports</h2>
-        {myIncidents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">You haven&apos;t raised any alerts.</p>
-        ) : (
-          <div className="space-y-2">
-            {myIncidents.map((i) => (
-              <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium">{INCIDENT_LABEL[i.incident_type]}</span>
-                  {i.is_sos && (
-                    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                      SOS
-                    </span>
-                  )}
-                  <span className="text-muted-foreground">
-                    {new Date(i.created_at).toLocaleString()}
-                  </span>
-                </div>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium",
-                    i.status === "resolved"
-                      ? "bg-green-100 text-green-700"
-                      : "bg-amber-100 text-amber-700",
-                  )}
-                >
-                  {STATUS_LABEL[i.status]}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        <p className="text-sm text-muted-foreground">
+          Track each alert&apos;s progress. While an alert is still open you can add updates or
+          share a refreshed location.
+        </p>
+        <IncidentTracker incidents={myIncidents} updatesByIncident={updatesByIncident} />
       </section>
     </div>
   );
