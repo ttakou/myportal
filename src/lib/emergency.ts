@@ -7,6 +7,7 @@ import type {
   CheckinStatus,
   DeliveryLog,
   Incident,
+  IncidentUpdate,
 } from "@/types/emergency";
 import { one } from "@/lib/supabase/row-helpers";
 
@@ -128,6 +129,48 @@ export async function getMyIncidents(): Promise<Incident[]> {
     .order("created_at", { ascending: false })
     .limit(20);
   return (data ?? []).map((r) => mapIncident(r as Record<string, any>));
+}
+
+/**
+ * The evolution timeline for a set of incidents, oldest-first, keyed by incident
+ * id. Each entry is the incident's creation, a reporter follow-up, a location
+ * refresh, or a status change. RLS scopes rows to the reporter (own incidents)
+ * and safety admins (tenant-wide).
+ */
+export async function getIncidentUpdates(
+  incidentIds: string[],
+): Promise<Map<string, IncidentUpdate[]>> {
+  const byIncident = new Map<string, IncidentUpdate[]>();
+  if (incidentIds.length === 0) return byIncident;
+
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("eess_incident_updates")
+    .select(
+      "id, incident_id, kind, body, status, lat, lng, created_at," +
+        " author:profiles!eess_incident_updates_author_id_fkey(full_name)",
+    )
+    .in("incident_id", incidentIds)
+    .order("created_at", { ascending: true });
+
+  for (const row of (data ?? []) as Record<string, any>[]) {
+    const author = one<{ full_name: string | null }>(row.author);
+    const update: IncidentUpdate = {
+      id: row.id,
+      incident_id: row.incident_id,
+      kind: row.kind,
+      body: row.body ?? null,
+      status: row.status ?? null,
+      lat: row.lat ?? null,
+      lng: row.lng ?? null,
+      author_name: author?.full_name ?? null,
+      created_at: row.created_at,
+    };
+    const list = byIncident.get(row.incident_id) ?? [];
+    list.push(update);
+    byIncident.set(row.incident_id, list);
+  }
+  return byIncident;
 }
 
 // ---------------------------------------------------------------------------

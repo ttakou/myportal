@@ -7,8 +7,10 @@ import {
   getActiveBroadcasts,
   getAllIncidents,
   getHelpRequests,
+  getIncidentUpdates,
   getRecentDeliveries,
 } from "@/lib/emergency";
+import type { IncidentUpdate } from "@/types/emergency";
 import { CommandCenter } from "./_components/command-center";
 import { LiveRefresh } from "@/components/live-refresh";
 
@@ -26,10 +28,13 @@ export default async function CommandCenterPage() {
 
   // Accountability is tracked against the active event that requested check-ins.
   const event = broadcasts.find((b) => b.requires_checkin) ?? null;
-  const [accountability, helpRequests] = await Promise.all([
+  const [accountability, helpRequests, updatesMap] = await Promise.all([
     getAccountability(event?.id ?? null),
     getHelpRequests(event?.id ?? null),
+    getIncidentUpdates(incidents.map((i) => i.id)),
   ]);
+  const updatesByIncident: Record<string, IncidentUpdate[]> = {};
+  for (const [id, list] of updatesMap) updatesByIncident[id] = list;
 
   return (
     <div className="space-y-6">
@@ -65,6 +70,7 @@ export default async function CommandCenterPage() {
         helpRequests={helpRequests}
         deliveries={deliveries}
         eventTitle={event?.title ?? null}
+        updatesByIncident={updatesByIncident}
       />
     </div>
   );
