@@ -16,7 +16,7 @@ export function MusterList({ initial }: { initial: Visitor[] }) {
     const { data } = await supabaseRef.current
       .from("visitors")
       .select(
-        "id, full_name, company, purpose, visit_date, status, badge_no, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)",
+        "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)",
       )
       .eq("status", "checked_in")
       .order("check_in_at", { ascending: true });
@@ -93,6 +93,7 @@ export function MusterList({ initial }: { initial: Visitor[] }) {
               <th className="px-4 py-3 font-medium">Company</th>
               <th className="px-4 py-3 font-medium">Host</th>
               <th className="px-4 py-3 font-medium">Badge</th>
+              <th className="px-4 py-3 font-medium">Vehicle</th>
               <th className="px-4 py-3 font-medium">Checked in</th>
             </tr>
           </thead>
@@ -104,6 +105,9 @@ export function MusterList({ initial }: { initial: Visitor[] }) {
                 <td className="px-4 py-3 text-muted-foreground">{v.host_name ?? "—"}</td>
                 <td className="px-4 py-3 tabular-nums">{v.badge_no ?? "—"}</td>
                 <td className="px-4 py-3 text-muted-foreground">
+                  {[v.vehicle_type, v.vehicle_plate].filter(Boolean).join(" · ") || "—"}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
                   {v.check_in_at
                     ? new Date(v.check_in_at).toLocaleTimeString()
                     : "—"}
@@ -112,7 +116,7 @@ export function MusterList({ initial }: { initial: Visitor[] }) {
             ))}
             {onSite.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                   No visitors currently on site.
                 </td>
               </tr>

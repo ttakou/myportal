@@ -17,6 +17,8 @@ export async function preRegisterVisitor(input: {
   company?: string;
   purpose?: string;
   visitDate: string;
+  vehicleType?: string;
+  vehiclePlate?: string;
 }): Promise<ActionResult> {
   const gate = await requireModule("visitors", "create");
   if (gate) return gate;
@@ -38,6 +40,8 @@ export async function preRegisterVisitor(input: {
     company: input.company?.trim() || null,
     purpose: input.purpose?.trim() || null,
     visit_date: input.visitDate,
+    vehicle_type: input.vehicleType?.trim() || null,
+    vehicle_plate: input.vehiclePlate?.trim() || null,
   });
   if (error) return { ok: false, error: error.message };
   revalidate();
@@ -46,19 +50,23 @@ export async function preRegisterVisitor(input: {
 
 export async function checkInVisitor(
   id: string,
-  badgeNo?: string,
+  opts?: { badgeNo?: string; vehicleType?: string; vehiclePlate?: string },
 ): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
   const supabase = createClient();
-  const { error } = await supabase
-    .from("visitors")
-    .update({
-      status: "checked_in",
-      check_in_at: new Date().toISOString(),
-      badge_no: badgeNo?.trim() || null,
-    })
-    .eq("id", id);
+
+  // Records the arrival time. Vehicle type/plate are only overwritten when
+  // provided at check-in, so a pre-registered plate is never wiped by a blank.
+  const patch: Record<string, unknown> = {
+    status: "checked_in",
+    check_in_at: new Date().toISOString(),
+    badge_no: opts?.badgeNo?.trim() || null,
+  };
+  if (opts?.vehicleType?.trim()) patch.vehicle_type = opts.vehicleType.trim();
+  if (opts?.vehiclePlate?.trim()) patch.vehicle_plate = opts.vehiclePlate.trim();
+
+  const { error } = await supabase.from("visitors").update(patch).eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidate();
   return { ok: true };
