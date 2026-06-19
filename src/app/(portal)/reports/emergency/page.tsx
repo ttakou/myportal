@@ -55,9 +55,11 @@ export default async function EmergencyReportPage({
   const report = await getEmergencyReport({ from, to });
 
   const csv: string[][] = [
-    ["When (UTC)", "Type", "Severity", "Status", "SOS", "Location", "Ack", "Resolve"],
+    ["When (UTC)", "Reported by", "Department", "Type", "Severity", "Status", "SOS", "Location", "Ack", "Resolve"],
     ...report.rows.map((r) => [
       new Date(r.created_at).toISOString().slice(0, 16).replace("T", " "),
+      r.reporter ?? "",
+      r.department ?? "",
       cap(r.type),
       cap(r.severity),
       cap(r.status),
@@ -70,6 +72,8 @@ export default async function EmergencyReportPage({
 
   return (
     <div className="space-y-5">
+      {/* Print this report on A3 (wide incident table fits comfortably). */}
+      <style>{"@media print { @page { size: A3; margin: 12mm; } }"}</style>
       <div className="flex items-center justify-between gap-3 print:hidden">
         <Link
           href="/reports"
@@ -117,6 +121,7 @@ export default async function EmergencyReportPage({
           <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-3 py-2 font-medium">When (UTC)</th>
+              <th className="px-3 py-2 font-medium">Reported by</th>
               <th className="px-3 py-2 font-medium">Type</th>
               <th className="px-3 py-2 font-medium">Severity</th>
               <th className="px-3 py-2 font-medium">Status</th>
@@ -130,6 +135,12 @@ export default async function EmergencyReportPage({
               <tr key={`${r.created_at}-${i}`} className={cn(r.sos && "bg-destructive/5")}>
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">
                   {new Date(r.created_at).toISOString().slice(0, 16).replace("T", " ")}
+                </td>
+                <td className="px-3 py-1.5">
+                  <span className="font-medium">{r.reporter ?? "—"}</span>
+                  {r.department && (
+                    <span className="block text-xs text-muted-foreground">{r.department}</span>
+                  )}
                 </td>
                 <td className="px-3 py-1.5">
                   {cap(r.type)}
@@ -152,7 +163,7 @@ export default async function EmergencyReportPage({
             ))}
             {report.rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
                   No incidents in this period.
                 </td>
               </tr>
