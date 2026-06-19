@@ -610,6 +610,8 @@ export interface EmergencyIncidentRow {
   severity: string;
   status: string;
   sos: boolean;
+  reporter: string | null;
+  department: string | null;
   location: string | null;
   ackMins: number | null;
   resolveMins: number | null;
@@ -639,7 +641,10 @@ export async function getEmergencyReport(f: { from: string; to: string }): Promi
   const [{ data: incData }, { count: broadcasts }] = await Promise.all([
     supabase
       .from("eess_incidents")
-      .select("created_at, incident_type, severity, status, is_sos, location_text, acknowledged_at, resolved_at")
+      .select(
+        "created_at, incident_type, severity, status, is_sos, location_text, acknowledged_at, resolved_at," +
+          " reporter:profiles!eess_incidents_reporter_id_fkey(full_name, department)",
+      )
       .gte("created_at", `${f.from}T00:00:00`)
       .lte("created_at", `${f.to}T23:59:59`)
       .order("created_at", { ascending: false }),
@@ -671,12 +676,15 @@ export async function getEmergencyReport(f: { from: string; to: string }): Promi
     typeMap.set(r.incident_type, (typeMap.get(r.incident_type) ?? 0) + 1);
     sevMap.set(r.severity, (sevMap.get(r.severity) ?? 0) + 1);
     statusMap.set(r.status, (statusMap.get(r.status) ?? 0) + 1);
+    const reporter = one<{ full_name?: string; department?: string }>(r.reporter);
     return {
       created_at: r.created_at,
       type: r.incident_type,
       severity: r.severity,
       status: r.status,
       sos: !!r.is_sos,
+      reporter: reporter?.full_name ?? null,
+      department: reporter?.department ?? null,
       location: r.location_text ?? null,
       ackMins,
       resolveMins,
