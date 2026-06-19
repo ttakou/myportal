@@ -24,6 +24,13 @@ function dur(mins: number | null): string {
   const m = mins % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
 }
+/** HH:MM (UTC) for an ISO timestamp, or "—". */
+function clock(ts: string | null): string {
+  return ts ? new Date(ts).toISOString().slice(11, 16) : "—";
+}
+function vehicle(r: { vehicle_type: string | null; vehicle_plate: string | null }): string {
+  return [r.vehicle_type, r.vehicle_plate].filter(Boolean).join(" · ") || "—";
+}
 
 export default async function VisitorReportPage({
   searchParams,
@@ -55,7 +62,7 @@ export default async function VisitorReportPage({
   ]);
 
   const csv: string[][] = [
-    ["Date", "Visitor", "Company", "Host", "Department", "Purpose", "Status", "Dwell"],
+    ["Date", "Visitor", "Company", "Host", "Department", "Purpose", "Vehicle type", "Plate", "Status", "Arrival (UTC)", "Checkout (UTC)", "Dwell"],
     ...report.rows.map((r) => [
       r.visit_date,
       r.name,
@@ -63,7 +70,11 @@ export default async function VisitorReportPage({
       r.host ?? "",
       r.department ?? "",
       r.purpose ?? "",
+      r.vehicle_type ?? "",
+      r.vehicle_plate ?? "",
       STATUS_LABEL[r.status] ?? r.status,
+      clock(r.check_in_at),
+      clock(r.check_out_at),
       dur(r.dwellMins),
     ]),
   ];
@@ -75,6 +86,8 @@ export default async function VisitorReportPage({
 
   return (
     <div className="space-y-5">
+      {/* Print on A3 — the visitor table is wide (vehicle + arrival/checkout). */}
+      <style>{"@media print { @page { size: A3; margin: 12mm; } }"}</style>
       <div className="flex items-center justify-between gap-3 print:hidden">
         <Link
           href="/reports"
@@ -120,7 +133,10 @@ export default async function VisitorReportPage({
               <th className="px-3 py-2 font-medium">Visitor</th>
               <th className="px-3 py-2 font-medium">Company</th>
               <th className="px-3 py-2 font-medium">Host</th>
+              <th className="px-3 py-2 font-medium">Vehicle</th>
               <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 text-right font-medium">Arrival</th>
+              <th className="px-3 py-2 text-right font-medium">Checkout</th>
               <th className="px-3 py-2 text-right font-medium">Dwell</th>
             </tr>
           </thead>
@@ -131,13 +147,16 @@ export default async function VisitorReportPage({
                 <td className="px-3 py-1.5 font-medium">{r.name}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{r.company ?? "—"}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{r.host ?? "—"}</td>
+                <td className="px-3 py-1.5 text-muted-foreground">{vehicle(r)}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{STATUS_LABEL[r.status] ?? r.status}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{clock(r.check_in_at)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{clock(r.check_out_at)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{dur(r.dwellMins)}</td>
               </tr>
             ))}
             {report.rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                   No visits in this period.
                 </td>
               </tr>

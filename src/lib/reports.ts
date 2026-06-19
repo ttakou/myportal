@@ -528,6 +528,10 @@ export interface VisitorRow {
   department: string | null;
   purpose: string | null;
   status: string;
+  vehicle_type: string | null;
+  vehicle_plate: string | null;
+  check_in_at: string | null;
+  check_out_at: string | null;
   dwellMins: number | null;
 }
 
@@ -546,7 +550,7 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
   const { data } = await supabase
     .from("visitors")
     .select(
-      "full_name, company, purpose, visit_date, status, check_in_at, check_out_at," +
+      "full_name, company, purpose, visit_date, status, vehicle_type, vehicle_plate, check_in_at, check_out_at," +
         " host:profiles!visitors_host_id_fkey(full_name, department)",
     )
     .gte("visit_date", f.from)
@@ -589,6 +593,10 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
       department,
       purpose: v.purpose ?? null,
       status: v.status,
+      vehicle_type: v.vehicle_type ?? null,
+      vehicle_plate: v.vehicle_plate ?? null,
+      check_in_at: v.check_in_at ?? null,
+      check_out_at: v.check_out_at ?? null,
       dwellMins,
     });
   }
