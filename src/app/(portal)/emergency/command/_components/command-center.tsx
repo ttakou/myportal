@@ -64,6 +64,12 @@ const STATUS_BADGE: Record<IncidentStatus, string> = {
   resolved: "bg-green-100 text-green-700",
 };
 
+const AUDIENCE_LABEL: Record<string, string> = {
+  all: "All employees",
+  responders: "Response team",
+  reporter: "Reporter",
+};
+
 const CHANNELS = [
   { id: "push", label: "Push" },
   { id: "sms", label: "SMS" },
@@ -145,7 +151,7 @@ function DeliveryAudit({ deliveries }: { deliveries: DeliveryLog[] }) {
                 {d.source_type === "incident" ? "SOS / incident" : "Broadcast"}
               </span>
               <span className="text-muted-foreground">
-                {d.audience === "all" ? "All employees" : "Response team"} ·{" "}
+                {AUDIENCE_LABEL[d.audience] ?? "Response team"} ·{" "}
                 {new Date(d.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </span>
             </span>
