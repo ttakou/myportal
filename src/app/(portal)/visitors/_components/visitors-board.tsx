@@ -139,6 +139,7 @@ export function VisitorsBoard({
               <th className="px-4 py-3 font-medium">Host</th>
               <th className="px-4 py-3 font-medium">Vehicle</th>
               <th className="px-4 py-3 font-medium">Arrival</th>
+              <th className="px-4 py-3 font-medium">Checkout</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
@@ -168,6 +169,9 @@ export function VisitorsBoard({
                 </td>
                 <td className="px-4 py-3 tabular-nums text-muted-foreground">
                   {v.check_in_at ? new Date(v.check_in_at).toLocaleTimeString() : "—"}
+                </td>
+                <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                  {v.check_out_at ? new Date(v.check_out_at).toLocaleTimeString() : "—"}
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -219,7 +223,7 @@ export function VisitorsBoard({
             })}
             {visitors.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                   No visitors for this date yet.
                 </td>
               </tr>
