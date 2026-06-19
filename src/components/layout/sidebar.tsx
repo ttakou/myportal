@@ -33,7 +33,9 @@ export async function Sidebar({
     access.isAdmin ||
     access.isSafetyAdmin ||
     access.isOim ||
-    access.isFinance;
+    access.isFinance ||
+    access.isHr ||
+    access.isCanteenManager;
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-card">

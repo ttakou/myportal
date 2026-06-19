@@ -106,6 +106,15 @@ export default async function CanteenPage(
               Reports
             </Link>
           )}
+          {canReport && (
+            <Link
+              href="/reports/canteen"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Consumption report
+            </Link>
+          )}
         </div>
       </div>
 

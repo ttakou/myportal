@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Banknote, ClipboardCheck, FileBarChart, Plane, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, Banknote, ClipboardCheck, FileBarChart, Plane, ShieldCheck, UtensilsCrossed, Users } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -45,6 +45,14 @@ export default async function ReportsPage() {
         "Per-employee appraisal stage/status for a cycle, with overdue cases flagged and a completion rate. Filter by cycle, department and employee.",
       icon: ClipboardCheck,
       show: access.isHr || access.isSystemAdmin || access.isAdmin,
+    },
+    {
+      href: "/reports/canteen",
+      title: "Canteen consumption & no-show",
+      description:
+        "Served vs no-show vs cancelled over a period, with department and meal-period breakdowns. Filter by period and department.",
+      icon: UtensilsCrossed,
+      show: access.isSystemAdmin || access.isAdmin || access.isFinance || access.isCanteenManager,
     },
   ].filter((t) => t.show);
 
