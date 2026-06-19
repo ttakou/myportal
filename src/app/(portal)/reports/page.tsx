@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Banknote, ClipboardCheck, FileBarChart, Plane, ShieldCheck, UtensilsCrossed, Users } from "lucide-react";
+import { ArrowRight, Banknote, ClipboardCheck, FileBarChart, Plane, ShieldCheck, Truck, UtensilsCrossed, Users } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 
 export default async function ReportsPage() {
@@ -53,6 +53,14 @@ export default async function ReportsPage() {
         "Served vs no-show vs cancelled over a period, with department and meal-period breakdowns. Filter by period and department.",
       icon: UtensilsCrossed,
       show: access.isSystemAdmin || access.isAdmin || access.isFinance || access.isCanteenManager,
+    },
+    {
+      href: "/reports/transport",
+      title: "Transportation requests & SLA",
+      description:
+        "Ride requests over a period: completion vs cancellation, active backlog and overdue, by status, task type and department.",
+      icon: Truck,
+      show: access.isSystemAdmin || access.isAdmin,
     },
   ].filter((t) => t.show);
 

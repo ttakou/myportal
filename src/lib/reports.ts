@@ -139,8 +139,96 @@ export async function getTravelExpenseReport(
   };
 }
 
-// --- Canteen consumption & no-show ----------------------------------------
+// --- Transportation requests & SLA ----------------------------------------
 
+export interface TransportReport {
+  summary: {
+    total: number;
+    completed: number;
+    cancelled: number;
+    active: number;
+    overdue: number;
+    completionRate: number;
+  };
+  byStatus: { status: string; count: number }[];
+  byDept: { department: string; count: number }[];
+  byTaskType: { taskType: string; count: number }[];
+}
+
+export interface TransportReportFilters {
+  from: string;
+  to: string;
+  department: string | null;
+}
+
+const TRANSPORT_ACTIVE = new Set(["pending", "assigned", "in_progress"]);
+
+/**
+ * Transportation requests over a period (by departure time): completion vs
+ * cancellation, active backlog and overdue (still pending/assigned past the
+ * departure time), with status, department and task-type breakdowns. Filter by
+ * department. RLS scopes rows to the tenant.
+ */
+export async function getTransportReport(f: TransportReportFilters): Promise<TransportReport> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("transport_requests")
+    .select(
+      "status, task_type, depart_at," +
+        " requester:profiles!transport_requests_requester_id_fkey(department)",
+    )
+    .gte("depart_at", `${f.from}T00:00:00`)
+    .lte("depart_at", `${f.to}T23:59:59`);
+
+  const now = new Date().toISOString();
+  let completed = 0;
+  let cancelled = 0;
+  let active = 0;
+  let overdue = 0;
+  const statusMap = new Map<string, number>();
+  const deptMap = new Map<string, number>();
+  const taskMap = new Map<string, number>();
+
+  for (const r of (data ?? []) as Record<string, any>[]) {
+    const department = one<{ department?: string }>(r.requester)?.department ?? null;
+    if (f.department && department !== f.department) continue;
+
+    if (r.status === "completed") completed += 1;
+    else if (r.status === "cancelled") cancelled += 1;
+    else if (TRANSPORT_ACTIVE.has(r.status)) {
+      active += 1;
+      if ((r.status === "pending" || r.status === "assigned") && r.depart_at < now) overdue += 1;
+    }
+
+    statusMap.set(r.status, (statusMap.get(r.status) ?? 0) + 1);
+    deptMap.set(department || "Unassigned", (deptMap.get(department || "Unassigned") ?? 0) + 1);
+    taskMap.set(r.task_type, (taskMap.get(r.task_type) ?? 0) + 1);
+  }
+
+  const total = [...statusMap.values()].reduce((s, n) => s + n, 0);
+  const decided = total - cancelled;
+  return {
+    summary: {
+      total,
+      completed,
+      cancelled,
+      active,
+      overdue,
+      completionRate: decided ? Math.round((completed / decided) * 100) : 0,
+    },
+    byStatus: [...statusMap.entries()]
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count),
+    byDept: [...deptMap.entries()]
+      .map(([department, count]) => ({ department, count }))
+      .sort((a, b) => b.count - a.count),
+    byTaskType: [...taskMap.entries()]
+      .map(([taskType, count]) => ({ taskType, count }))
+      .sort((a, b) => b.count - a.count),
+  };
+}
+
+// --- Canteen consumption & no-show ----------------------------------------
 export interface CanteenReport {
   summary: { served: number; noShow: number; cancelled: number; pending: number; noShowRate: number };
   byDept: { department: string; served: number; noShow: number }[];
