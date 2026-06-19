@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { FileBarChart } from "lucide-react";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import {
   getAllTransportRequests,
@@ -38,6 +40,14 @@ export default async function TransportationPage() {
           <p className="text-muted-foreground">
             Request rides, dispatch tasks to drivers, and follow up live.
           </p>
+          {isAdmin && (
+            <Link
+              href="/reports/transport"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              <FileBarChart className="h-4 w-4" /> Requests & SLA report
+            </Link>
+          )}
         </div>
         <LiveRefresh />
       </div>
