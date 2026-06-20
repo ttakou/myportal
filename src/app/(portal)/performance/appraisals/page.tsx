@@ -14,6 +14,7 @@ import {
   getMyAppraisalHistory,
   getMyRaterAssignments,
   getSecondLevelQueue,
+  getMyAppraisalDelegate,
   getTeamAppraisals,
   getTenantColleagues,
 } from "@/lib/appraisals";
@@ -81,9 +82,11 @@ export default async function AppraisalsPage({
     isHr ? getDepartmentObjectives() : Promise.resolve([]),
   ]);
   const myHistory = await getMyAppraisalHistory();
-  const [colleagues, deptObjectives] = await Promise.all([
-    myAppraisal ? getTenantColleagues() : Promise.resolve([]),
+  const isManagerView = team.length > 0;
+  const [colleagues, deptObjectives, myDelegate] = await Promise.all([
+    myAppraisal || isManagerView ? getTenantColleagues() : Promise.resolve([]),
     myAppraisal ? getDepartmentObjectivesForMe(cycle?.id ?? null) : Promise.resolve([]),
+    isManagerView ? getMyAppraisalDelegate() : Promise.resolve(null),
   ]);
 
   const isManager = team.length > 0;
@@ -152,7 +155,9 @@ export default async function AppraisalsPage({
       {isManager && (
         <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
       )}
-      {isManager && <TeamReviewPanel appraisals={team} />}
+      {isManager && (
+        <TeamReviewPanel appraisals={team} colleagues={colleagues} currentDelegate={myDelegate} />
+      )}
       {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
 
       {/* Employee view — your own appraisal for the selected year. */}

@@ -471,14 +471,58 @@ export async function submitGoals(appraisalId: string): Promise<ActionResult> {
 
 // --- Manager: goal review ---------------------------------------------------
 
+/** Whether `me` is the appraisal delegate the given manager has nominated. */
+async function isDelegateOf(managerId: string | null, me: string | null): Promise<boolean> {
+  if (!managerId || !me || managerId === me) return false;
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("appraisal_delegate_id")
+    .eq("id", managerId)
+    .maybeSingle();
+  return (data?.appraisal_delegate_id ?? null) === me;
+}
+
 async function requireManager(id: string): Promise<{ a: AppraisalRow } | ActionResult> {
   const a = await loadAppraisal(id);
   if (!a) return { ok: false, error: "Appraisal not found." };
   const me = await uid();
   const access = await getAccess();
-  const isReviewer = a.manager_id === me || access.isHr || access.isAdmin || access.isSystemAdmin;
-  if (!isReviewer) return { ok: false, error: "Only the line manager can review this." };
+  const isReviewer =
+    a.manager_id === me ||
+    access.isHr ||
+    access.isAdmin ||
+    access.isSystemAdmin ||
+    (await isDelegateOf(a.manager_id, me));
+  if (!isReviewer) return { ok: false, error: "Only the line manager (or their delegate) can review this." };
   return { a };
+}
+
+/**
+ * A manager nominates (or clears) an appraisal delegate — a colleague who may act
+ * on their team's appraisals while they're unavailable. Pass null to clear.
+ */
+export async function setAppraisalDelegate(delegateId: string | null): Promise<ActionResult> {
+  const me = await uid();
+  if (!me) return { ok: false, error: "You're not signed in." };
+  const supabase = createClient();
+  if (delegateId) {
+    if (delegateId === me) return { ok: false, error: "You can't delegate to yourself." };
+    const { data: d } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", delegateId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!d) return { ok: false, error: "Choose an active colleague to delegate to." };
+  }
+  const { error } = await supabase
+    .from("profiles")
+    .update({ appraisal_delegate_id: delegateId })
+    .eq("id", me);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
 }
 
 export async function returnGoals(input: { appraisalId: string; comment: string }): Promise<ActionResult> {
