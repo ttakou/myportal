@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getAppraisal } from "@/lib/appraisals";
+import { getAccess } from "@/lib/auth";
 import { STATUS_LABEL } from "@/types/appraisal";
 import { PrintButton } from "./print-button";
+import { ReopenControl } from "./reopen-control";
 
 function fmtDate(value: string | null): string {
   if (!value) return "—";
@@ -25,8 +27,10 @@ export default async function AppraisalOutcomePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const appraisal = await getAppraisal(id);
+  const [appraisal, access] = await Promise.all([getAppraisal(id), getAccess()]);
   if (!appraisal) notFound();
+  const canReopen =
+    appraisal.status === "closed" && (access.isHr || access.isSystemAdmin || access.isAdmin);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -37,7 +41,10 @@ export default async function AppraisalOutcomePage({
         >
           <ArrowLeft className="h-4 w-4" /> Appraisals
         </Link>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          {canReopen && <ReopenControl id={id} />}
+          <PrintButton />
+        </div>
       </div>
 
       <header className="space-y-1 border-b pb-4">

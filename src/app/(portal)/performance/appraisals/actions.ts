@@ -1067,6 +1067,32 @@ export async function closeAppraisal(appraisalId: string): Promise<ActionResult>
   return { ok: true };
 }
 
+/**
+ * HR re-opens a closed appraisal to amend it (fix a score/typo, re-calibrate).
+ * It returns to the acknowledged `completed` state so HR can adjust the outcome
+ * and close it again; the reason is logged for audit.
+ */
+export async function reopenAppraisal(input: {
+  appraisalId: string;
+  reason: string;
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  if (!input.reason?.trim()) return { ok: false, error: "Give a reason for re-opening." };
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (a.status !== "closed") return { ok: false, error: "Only a closed appraisal can be re-opened." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ stage: "acknowledgement", status: "completed" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "closed" }, "appraisal_reopened", input.reason.trim());
+  rev();
+  return { ok: true };
+}
+
 /** HR resolves an open appeal on a disputed appraisal. */
 export async function resolveAppeal(input: {
   appraisalId: string;
