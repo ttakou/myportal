@@ -148,6 +148,13 @@ export default async function AppraisalsPage({
         </p>
       )}
 
+      {/* Line-manager view — your team's appraisals first (a manager's main task). */}
+      {isManager && (
+        <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
+      )}
+      {isManager && <TeamReviewPanel appraisals={team} />}
+      {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
+
       {/* Employee view — your own appraisal for the selected year. */}
       {myAppraisal ? (
         <div className="space-y-3">
@@ -177,13 +184,6 @@ export default async function AppraisalsPage({
       <AppraisalHistory history={myHistory} />
 
       {raterAssignments.length > 0 && <RaterInbox assignments={raterAssignments} />}
-
-      {/* Line-manager dashboard — direct reports for the selected year. */}
-      {isManager && (
-        <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
-      )}
-      {isManager && <TeamReviewPanel appraisals={team} />}
-      {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
 
       {/* HR-Admin dashboard — org-wide console + calibration for the selected year.
           Tucked behind a button so HR admins who are also managers see their team
