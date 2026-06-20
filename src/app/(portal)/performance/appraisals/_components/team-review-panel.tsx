@@ -52,7 +52,7 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
   const evaluating = a.stage === "manager_review";
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div id={`appraisal-${a.id}`} className="scroll-mt-24 rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium">{a.employee_name || "—"}</div>
         <div className="flex items-center gap-2">

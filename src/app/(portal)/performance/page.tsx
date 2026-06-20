@@ -1,9 +1,22 @@
 import Link from "next/link";
 import { ArrowRight, ClipboardCheck, FileBarChart } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { getActiveCycle, getMyAppraisal, getMyDirectLine } from "@/lib/appraisals";
+import { DirectLinePanel } from "./_components/direct-line-panel";
+import { MyPerformanceSummary } from "./_components/my-performance-summary";
 
 export default async function PerformancePage() {
   const access = await getAccess();
+
+  // The performance home doubles as the user's dashboard: lead with their own
+  // goals + development plan, then — for line managers — their direct line, so
+  // everyone can see and act on performance without hunting for it.
+  const cycle = await getActiveCycle();
+  const [myAppraisal, directLine] = await Promise.all([
+    cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
+    getMyDirectLine(cycle?.id ?? null),
+  ]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -18,6 +31,14 @@ export default async function PerformancePage() {
           </Link>
         )}
       </div>
+
+      <MyPerformanceSummary
+        appraisal={myAppraisal}
+        cycleName={cycle?.name ?? null}
+        hasCycle={!!cycle}
+      />
+
+      <DirectLinePanel reports={directLine} cycleName={cycle?.name ?? null} />
 
       <Link
         href="/performance/appraisals"
