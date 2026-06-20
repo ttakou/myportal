@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, UserCheck, Utensils, UtensilsCrossed, Users } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 
 export default async function ReportsPage() {
-  const access = await getAccess();
+  const [access, perms] = await Promise.all([getAccess(), getMyPermissions()]);
+  // Visitor operators / emergency responders (security, reception, ERTL).
+  const canOperateVisitors = hasPermission(perms, "visitors", "operate");
 
   const tiles = [
     {
@@ -87,9 +91,9 @@ export default async function ReportsPage() {
       href: "/reports/visitors",
       title: "Visitor throughput",
       description:
-        "Visits over a period: check-in/out, no-shows, average dwell time and company / host-department breakdowns. For reception and administrators.",
+        "Visits over a period: check-in/out, no-shows, average dwell time and company / host-department breakdowns. For reception, security and administrators.",
       icon: UserCheck,
-      show: access.isSystemAdmin || access.isAdmin || access.isOim,
+      show: access.isSystemAdmin || access.isAdmin || access.isOim || canOperateVisitors,
     },
     {
       href: "/reports/emergency",

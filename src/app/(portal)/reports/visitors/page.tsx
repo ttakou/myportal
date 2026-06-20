@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import { getDepartments, getVisitorReport, type VisitorRow } from "@/lib/reports";
 import { cn } from "@/lib/utils";
 import { ReportFilters } from "../_components/report-filters";
@@ -37,13 +39,24 @@ export default async function VisitorReportPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string; department?: string }>;
 }) {
-  const access = await getAccess();
-  if (!(access.isSystemAdmin || access.isAdmin || access.isOim)) {
+  // Available to admins, OIM, and visitor operators / emergency responders
+  // (security, reception, the ERTL access role) — i.e. visitors:operate.
+  const [access, perms] = await Promise.all([getAccess(), getMyPermissions()]);
+  if (
+    !(
+      access.isSystemAdmin ||
+      access.isAdmin ||
+      access.isOim ||
+      hasPermission(perms, "visitors", "operate")
+    )
+  ) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
         <h1 className="text-xl font-semibold">Not available</h1>
-        <p className="text-muted-foreground">This report is available to reception and administrators.</p>
+        <p className="text-muted-foreground">
+          This report is available to reception, security, emergency responders and administrators.
+        </p>
         <Link href="/reports" className="text-sm font-medium text-primary hover:underline">
           ← Back to reports
         </Link>
