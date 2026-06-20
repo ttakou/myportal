@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getOnSite } from "@/lib/visitors";
+import { today } from "@/lib/canteen";
 import { MusterList } from "./muster-list";
 
 export default async function MusterPage() {
@@ -17,7 +18,8 @@ export default async function MusterPage() {
     );
   }
 
-  const onSite = await getOnSite();
+  const date = today();
+  const onSite = await getOnSite(date);
 
   return (
     <div className="space-y-6">
@@ -30,11 +32,12 @@ export default async function MusterPage() {
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Emergency muster list</h1>
         <p className="text-muted-foreground">
-          Everyone currently checked in on site — updates live.
+          Everyone checked in on site today ({date}) — updates live. Earlier days are
+          available in the visitor records.
         </p>
       </div>
 
-      <MusterList initial={onSite} />
+      <MusterList initial={onSite} date={date} />
     </div>
   );
 }

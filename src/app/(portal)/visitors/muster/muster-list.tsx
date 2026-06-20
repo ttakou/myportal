@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Visitor } from "@/types/visitors";
 
-export function MusterList({ initial }: { initial: Visitor[] }) {
+export function MusterList({ initial, date }: { initial: Visitor[]; date: string }) {
   const [onSite, setOnSite] = useState<Visitor[]>(initial);
   const [live, setLive] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
@@ -19,6 +19,7 @@ export function MusterList({ initial }: { initial: Visitor[] }) {
         "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)",
       )
       .eq("status", "checked_in")
+      .eq("visit_date", date)
       .order("check_in_at", { ascending: true });
     if (data) {
       setOnSite(
@@ -32,7 +33,7 @@ export function MusterList({ initial }: { initial: Visitor[] }) {
       );
       setUpdatedAt(new Date());
     }
-  }, []);
+  }, [date]);
 
   useEffect(() => {
     const supabase = supabaseRef.current;
