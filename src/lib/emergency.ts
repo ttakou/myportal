@@ -1,13 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
-import type {
-  Accountability,
-  AccountabilityRow,
-  Broadcast,
-  Checkin,
-  CheckinStatus,
-  DeliveryLog,
-  Incident,
-  IncidentUpdate,
+import {
+  INCIDENT_LABEL,
+  type Accountability,
+  type AccountabilityRow,
+  type Broadcast,
+  type Checkin,
+  type CheckinStatus,
+  type DeliveryLog,
+  type Incident,
+  type IncidentType,
+  type IncidentUpdate,
 } from "@/types/emergency";
 import { one } from "@/lib/supabase/row-helpers";
 
@@ -273,10 +275,74 @@ export async function getRecentDeliveries(limit = 10): Promise<DeliveryLog[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("eess_delivery_log")
-    .select("id, source_type, audience, channel, recipients, sent, delivered, failed, created_at")
+    .select(
+      "id, source_type, source_id, audience, channel, recipients, sent, delivered, failed, created_at",
+    )
     .order("created_at", { ascending: false })
     .limit(limit);
-  return (data ?? []) as DeliveryLog[];
+  const logs = (data ?? []) as Record<string, any>[];
+  if (logs.length === 0) return [];
+
+  // Resolve who/what each fan-out was about: the SOS reporter for incidents,
+  // the alert title for broadcasts. Batched by source to avoid N+1 lookups.
+  const incidentIds = [
+    ...new Set(logs.filter((l) => l.source_type === "incident").map((l) => l.source_id as string)),
+  ];
+  const broadcastIds = [
+    ...new Set(logs.filter((l) => l.source_type === "broadcast").map((l) => l.source_id as string)),
+  ];
+  const [incidents, broadcasts] = await Promise.all([
+    incidentIds.length
+      ? supabase
+          .from("eess_incidents")
+          .select(
+            "id, incident_type, reporter:profiles!eess_incidents_reporter_id_fkey(full_name, department)",
+          )
+          .in("id", incidentIds)
+          .then((r) => r.data ?? [])
+      : Promise.resolve([] as Record<string, any>[]),
+    broadcastIds.length
+      ? supabase
+          .from("eess_broadcasts")
+          .select("id, title, location_label")
+          .in("id", broadcastIds)
+          .then((r) => r.data ?? [])
+      : Promise.resolve([] as Record<string, any>[]),
+  ]);
+  const incById = new Map((incidents as Record<string, any>[]).map((i) => [i.id, i]));
+  const bcById = new Map((broadcasts as Record<string, any>[]).map((b) => [b.id, b]));
+
+  return logs.map((l) => {
+    let subject: string | null = null;
+    let detail: string | null = null;
+    if (l.source_type === "incident") {
+      const inc = incById.get(l.source_id);
+      const reporter = one<{ full_name: string | null; department: string | null }>(inc?.reporter);
+      subject = reporter?.full_name ?? null;
+      const type = inc?.incident_type
+        ? INCIDENT_LABEL[inc.incident_type as IncidentType] ?? inc.incident_type
+        : null;
+      detail = [type, reporter?.department].filter(Boolean).join(" · ") || null;
+    } else if (l.source_type === "broadcast") {
+      const bc = bcById.get(l.source_id);
+      subject = bc?.title ?? null;
+      detail = bc?.location_label ?? null;
+    }
+    return {
+      id: l.id,
+      source_type: l.source_type,
+      source_id: l.source_id,
+      subject,
+      detail,
+      audience: l.audience,
+      channel: l.channel,
+      recipients: l.recipients,
+      sent: l.sent,
+      delivered: l.delivered,
+      failed: l.failed,
+      created_at: l.created_at,
+    } as DeliveryLog;
+  });
 }
 
 /** People who selected "I need assistance" for the given event, with locations. */

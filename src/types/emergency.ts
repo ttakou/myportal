@@ -167,6 +167,11 @@ export interface Accountability {
 export interface DeliveryLog {
   id: string;
   source_type: "incident" | "broadcast";
+  source_id: string;
+  /** Who/what the alert was about: the SOS reporter, or the broadcast title. */
+  subject: string | null;
+  /** Incident type or broadcast severity, for extra context. */
+  detail: string | null;
   audience: "responders" | "all";
   channel: string;
   recipients: number;
