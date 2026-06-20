@@ -369,6 +369,21 @@ async function requireEmployeeEditable(id: string): Promise<{ a: AppraisalRow } 
   return { a };
 }
 
+/**
+ * Objective (OKR) weights must total exactly 100% so the weighted score reflects
+ * the full allocation. Development goals are weighted separately by the cycle, so
+ * they're excluded here. Returns an error message, or null when valid.
+ */
+function objectiveWeightError(goals: { weight: number | null; kind: string }[]): string | null {
+  const objectives = goals.filter((g) => g.kind === "objective");
+  if (objectives.length === 0) return "Add at least one objective (KPI/OKR) before submitting.";
+  const sum = objectives.reduce((s, g) => s + (g.weight ?? 0), 0);
+  if (sum !== 100) {
+    return `Objective weights must total 100% — they currently total ${sum}%.`;
+  }
+  return null;
+}
+
 export async function addGoal(input: {
   appraisalId: string;
   title: string;
@@ -445,11 +460,14 @@ export async function submitGoals(appraisalId: string): Promise<ActionResult> {
   if ("ok" in guard) return guard;
   const a = guard.a;
   const supabase = createClient();
-  const { count } = await supabase
+  const { data: goalRows } = await supabase
     .from("appraisal_goals")
-    .select("id", { count: "exact", head: true })
+    .select("weight, kind")
     .eq("appraisal_id", a.id);
-  if (!count) return { ok: false, error: "Add at least one goal before submitting." };
+  const goals = (goalRows ?? []) as { weight: number | null; kind: string }[];
+  if (goals.length === 0) return { ok: false, error: "Add at least one goal before submitting." };
+  const weightError = objectiveWeightError(goals);
+  if (weightError) return { ok: false, error: weightError };
   const { error } = await supabase
     .from("appraisals")
     .update({ status: "pending_manager_review" })
@@ -561,8 +579,15 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
 
   const { data: goals } = await supabase
     .from("appraisal_goals")
-    .select("id, title, weight, deadline, success_indicator, description")
+    .select("id, title, weight, deadline, success_indicator, description, kind")
     .eq("appraisal_id", a.id);
+
+  const weightError = objectiveWeightError(
+    (goals ?? []) as { weight: number | null; kind: string }[],
+  );
+  if (weightError) {
+    return { ok: false, error: `Can't approve — ${weightError[0].toLowerCase()}${weightError.slice(1)}` };
+  }
 
   await supabase.from("appraisal_goals").update({ status: "approved" }).eq("appraisal_id", a.id);
   // Snapshot the approved plan into history (originals are retained).

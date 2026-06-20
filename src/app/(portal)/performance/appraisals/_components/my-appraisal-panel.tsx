@@ -151,14 +151,20 @@ function GoalSetting({
   const [indicator, setIndicator] = useState("");
   const [alignment, setAlignment] = useState("");
   const [kind, setKind] = useState<"objective" | "development">("objective");
-  const totalWeight = appraisal.goals.reduce((s, g) => s + (g.weight ?? 0), 0);
+  // Objective (OKR) weights must total 100% — development goals are weighted
+  // separately by the cycle, so they're excluded from this total.
+  const objectiveWeight = appraisal.goals
+    .filter((g) => g.kind === "objective")
+    .reduce((s, g) => s + (g.weight ?? 0), 0);
 
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Objectives</h3>
-        <span className={`text-xs ${totalWeight === 100 ? "text-green-600" : "text-muted-foreground"}`}>
-          Total weight: {totalWeight}%
+        <span
+          className={`text-xs font-medium ${objectiveWeight === 100 ? "text-green-600" : "text-amber-600"}`}
+        >
+          Objective weight: {objectiveWeight}%{objectiveWeight === 100 ? "" : " — must total 100%"}
         </span>
       </div>
       {appraisal.goals.length === 0 ? (
