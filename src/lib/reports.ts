@@ -36,6 +36,15 @@ export async function getReportPeople(): Promise<ReportPerson[]> {
   }));
 }
 
+/** Access role (tenant_roles) names in the tenant — for the report filter bar. */
+export async function getAccessRoles(): Promise<string[]> {
+  const supabase = createClient();
+  const { data } = await supabase.from("tenant_roles").select("name").order("name");
+  return ((data ?? []) as { name: string | null }[])
+    .map((r) => r.name)
+    .filter((n): n is string => !!n);
+}
+
 // --- Out-of-town travel & expense -----------------------------------------
 
 export interface TravelExpenseRow {
@@ -737,6 +746,7 @@ export interface AccessReviewReport {
 export interface AccessReviewFilters {
   department: string | null;
   userId: string | null;
+  accessRole: string | null;
 }
 
 const PRIVILEGED_FUNCTIONAL_REVIEW = new Set(["system_admin", "hr_admin"]);
@@ -766,6 +776,7 @@ export async function getAccessReview(f: AccessReviewFilters): Promise<AccessRev
     const access = ((p.profile_access_roles ?? []) as Record<string, any>[])
       .map((r) => one<{ name?: string }>(r.tenant_roles)?.name)
       .filter((n): n is string => !!n);
+    if (f.accessRole && !access.includes(f.accessRole)) continue;
     const privileged =
       PRIVILEGED_ACCOUNT_REVIEW.has(p.role) ||
       functional.some((r) => PRIVILEGED_FUNCTIONAL_REVIEW.has(r));

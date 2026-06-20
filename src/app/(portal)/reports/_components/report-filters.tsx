@@ -49,13 +49,21 @@ export function ReportFilters({
   departments = [],
   users = [],
   cycles = [],
+  accessRoles = [],
   from,
   to,
 }: {
-  show: { period?: boolean; department?: boolean; user?: boolean; cycle?: boolean };
+  show: {
+    period?: boolean;
+    department?: boolean;
+    user?: boolean;
+    cycle?: boolean;
+    accessRole?: boolean;
+  };
   departments?: string[];
   users?: { id: string; name: string }[];
   cycles?: { id: string; name: string }[];
+  accessRoles?: string[];
   from?: string;
   to?: string;
 }) {
@@ -149,6 +157,24 @@ export function ReportFilters({
             {departments.map((d) => (
               <option key={d} value={d}>
                 {d}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {show.accessRole && accessRoles.length > 0 && (
+        <label className="text-xs text-muted-foreground">
+          Access role
+          <select
+            value={params.get("accessRole") ?? ""}
+            onChange={(e) => setParam("accessRole", e.target.value || null)}
+            className={`mt-1 block ${input}`}
+          >
+            <option value="">All access roles</option>
+            {accessRoles.map((r) => (
+              <option key={r} value={r}>
+                {r}
               </option>
             ))}
           </select>
