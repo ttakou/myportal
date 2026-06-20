@@ -5,6 +5,7 @@ import type {
   AttendanceStatus,
   MyAttendance,
   StaffAttendance,
+  StaffOnSite,
 } from "@/types/staff-attendance";
 
 function deriveStatus(checkIn: string | null, checkOut: string | null): AttendanceStatus {
@@ -61,6 +62,35 @@ export async function getStaffRoster(date: string = today()): Promise<StaffAtten
       status: deriveStatus(checkIn, checkOut),
       check_in_at: checkIn,
       check_out_at: checkOut,
+    };
+  });
+}
+
+/**
+ * Staff currently checked in on `date` (checked in, not yet out) — the staff
+ * half of the emergency muster. Admins/operate holders see the whole tenant.
+ */
+export async function getStaffOnSite(date: string = today()): Promise<StaffOnSite[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("staff_attendance")
+    .select("profile_id, check_in_at, profiles(full_name, department, job_title)")
+    .eq("attendance_date", date)
+    .not("check_in_at", "is", null)
+    .is("check_out_at", null)
+    .order("check_in_at", { ascending: true });
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => {
+    const pr = r.profiles as
+      | { full_name?: string; department?: string | null; job_title?: string | null }
+      | { full_name?: string; department?: string | null; job_title?: string | null }[]
+      | null;
+    const p = Array.isArray(pr) ? pr[0] : pr;
+    return {
+      profile_id: r.profile_id as string,
+      full_name: p?.full_name ?? "—",
+      department: p?.department ?? null,
+      job_title: p?.job_title ?? null,
+      check_in_at: (r.check_in_at as string | null) ?? null,
     };
   });
 }
