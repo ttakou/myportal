@@ -36,6 +36,18 @@ export const STAGE_LABEL: Record<AppraisalStage, string> = {
   closed: "Closed",
 };
 
+/** True when an appraisal is sitting in the line-manager's court — i.e. the
+ *  manager is the one who must act next (review goals, run the mid-year, write
+ *  the evaluation, or record the final discussion). Drives the "direct line"
+ *  action prompts on the performance dashboard. */
+export function managerActionNeeded(stage: AppraisalStage, status: AppraisalStatus): boolean {
+  return (
+    status === "pending_manager_review" ||
+    stage === "manager_review" ||
+    (stage === "final_discussion" && status === "ready_for_final_discussion")
+  );
+}
+
 export const STATUS_LABEL: Record<AppraisalStatus, string> = {
   not_started: "Not started",
   draft: "Draft",
@@ -113,6 +125,21 @@ export interface GoalRater {
   rating: number | null;
   comment: string | null;
   status: "invited" | "submitted";
+}
+
+/** One of the signed-in manager's direct reports, with their appraisal state
+ *  for the active cycle. Powers the "My direct line" dashboard section. */
+export interface DirectReport {
+  profile_id: string;
+  name: string;
+  job_title: string | null;
+  avatar_url: string | null;
+  /** The report's appraisal for the active cycle, if one exists yet. */
+  appraisal_id: string | null;
+  stage: AppraisalStage | null;
+  status: AppraisalStatus | null;
+  /** The manager must act next on this report's appraisal. */
+  needs_action: boolean;
 }
 
 /** A person in the tenant, for the stakeholder-reviewer picker. */

@@ -1,19 +1,21 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
-import type {
-  Appraisal,
-  AppraisalCompetency,
-  AppraisalCycle,
-  AppraisalEvent,
-  AppraisalGoal,
-  AppraisalKeyResult,
-  CalibrationAdjustment,
-  CalibrationRosterRow,
-  Colleague,
-  DepartmentObjective,
-  GoalRater,
-  RaterAssignment,
+import {
+  managerActionNeeded,
+  type Appraisal,
+  type AppraisalCompetency,
+  type AppraisalCycle,
+  type AppraisalEvent,
+  type AppraisalGoal,
+  type AppraisalKeyResult,
+  type CalibrationAdjustment,
+  type CalibrationRosterRow,
+  type Colleague,
+  type DepartmentObjective,
+  type DirectReport,
+  type GoalRater,
+  type RaterAssignment,
 } from "@/types/appraisal";
 
 const APPRAISAL_SELECT =
@@ -270,6 +272,60 @@ export async function getDepartmentObjectives(): Promise<DepartmentObjective[]> 
     cycle_id: r.cycle_id ?? null,
     cycle_name: one<{ name?: string }>(r.cycle)?.name ?? null,
   }));
+}
+
+/**
+ * The signed-in manager's direct line — their direct reports (from the
+ * reporting hierarchy on `profiles.manager_id`) overlaid with each report's
+ * appraisal state for the given cycle. Returns an empty list for non-managers.
+ * This is intentionally lightweight (no goal/event hydration) so it can power
+ * the performance dashboard at a glance; the manager acts on the full record
+ * over on the appraisals page.
+ */
+export async function getMyDirectLine(cycleId: string | null): Promise<DirectReport[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: reports } = await supabase
+    .from("profiles")
+    .select("id, full_name, job_title, avatar_url")
+    .eq("manager_id", user.id)
+    .eq("is_active", true)
+    .order("full_name");
+  const reportRows = (reports ?? []) as Record<string, any>[];
+  if (reportRows.length === 0) return [];
+
+  // Overlay each report's appraisal for the active cycle (if one is running).
+  const byEmployee = new Map<
+    string,
+    { id: string; stage: Appraisal["stage"]; status: Appraisal["status"] }
+  >();
+  if (cycleId) {
+    const { data: aps } = await supabase
+      .from("appraisals")
+      .select("id, employee_id, stage, status")
+      .eq("cycle_id", cycleId)
+      .eq("manager_id", user.id);
+    for (const a of (aps ?? []) as Record<string, any>[])
+      byEmployee.set(a.employee_id, { id: a.id, stage: a.stage, status: a.status });
+  }
+
+  return reportRows.map((r) => {
+    const ap = byEmployee.get(r.id);
+    return {
+      profile_id: r.id,
+      name: (r.full_name as string) ?? "—",
+      job_title: (r.job_title as string | null) ?? null,
+      avatar_url: (r.avatar_url as string | null) ?? null,
+      appraisal_id: ap?.id ?? null,
+      stage: ap?.stage ?? null,
+      status: ap?.status ?? null,
+      needs_action: ap ? managerActionNeeded(ap.stage, ap.status) : false,
+    };
+  });
 }
 
 /** Appraisals the signed-in manager owns (their direct reports). */
