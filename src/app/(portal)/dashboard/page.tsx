@@ -98,6 +98,17 @@ export default async function DashboardPage() {
     month: "long",
   });
 
+  // The user's canteen entitlement for the period, shown on the menu card so they
+  // know they're entitled (and for how long).
+  const ent = me?.canteenEntitlement ?? null;
+  const fmtDay = (d: string) =>
+    new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const entitlementLabel = ent
+    ? ent.source === "grant"
+      ? `Entitled · ${ent.dailyMeals} meal${ent.dailyMeals === 1 ? "" : "s"}/working day${ent.endsOn ? ` · until ${fmtDay(ent.endsOn)}` : ""}`
+      : "Entitled to the daily meal"
+    : null;
+
   return (
     <div className="space-y-8">
       <div>
@@ -184,6 +195,11 @@ export default async function DashboardPage() {
                 <div>
                   <h2 className="text-lg font-semibold leading-tight">Today&apos;s canteen menu</h2>
                   <p className="text-sm text-white/85">{menuDateLabel}</p>
+                  {entitlementLabel && (
+                    <span className="mt-1 inline-flex items-center rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium text-white ring-1 ring-white/25">
+                      {entitlementLabel}
+                    </span>
+                  )}
                 </div>
               </div>
               <Link

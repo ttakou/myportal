@@ -33,6 +33,17 @@ export interface DashboardQuickLink {
   href: string;
 }
 
+/** The signed-in user's current canteen entitlement, for the dashboard. */
+export interface CanteenEntitlement {
+  /** Meals per working day. */
+  dailyMeals: number;
+  /** Defined-period grant bounds (null for the standing lunch eligibility). */
+  startsOn: string | null;
+  endsOn: string | null;
+  reason: string | null;
+  source: "grant" | "standing";
+}
+
 export interface DashboardData {
   name: string;
   offshore: DashboardOffshore | null;
@@ -41,6 +52,8 @@ export interface DashboardData {
   quickLinks: DashboardQuickLink[];
   /** Whether the canteen menu is relevant to this user today (entitled to dine). */
   canteenEntitledToday: boolean;
+  /** The user's current canteen entitlement for the period, if any. */
+  canteenEntitlement: CanteenEntitlement | null;
 }
 
 /** A personalized snapshot for the signed-in user, tuned to their profile/role. */
@@ -220,24 +233,56 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
   // when they're entitled to dine today (a working day) — either the standing
   // `lunch_eligible` entitlement (what booking/serving use) or an explicit
   // meal-credit grant covering today.
-  const canteenGrantsToday = await countOf(() =>
-    supabase
-      .from("canteen_meal_entitlements")
-      .select("id", { count: "exact", head: true })
-      .eq("profile_id", user.id)
-      .lte("starts_on", today)
-      .gte("ends_on", today),
-  );
+  // The active defined-period grant covering today (most recent end date wins).
+  const { data: grant } = await supabase
+    .from("canteen_meal_entitlements")
+    .select("daily_meals, starts_on, ends_on, reason")
+    .eq("profile_id", user.id)
+    .lte("starts_on", today)
+    .gte("ends_on", today)
+    .order("ends_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   const canteenEntitledToday =
     access.isAdmin ||
     access.isCanteenManager ||
     access.isCanteenStaff ||
-    (isWorkingDay(today) && (lunchEligible || canteenGrantsToday > 0));
+    (isWorkingDay(today) && (lunchEligible || grant != null));
+
+  // What to show the user about their entitlement: a defined-period grant takes
+  // precedence (it carries meals/day and a validity window); otherwise fall back
+  // to the standing lunch eligibility (a daily meal, no fixed period).
+  let canteenEntitlement: CanteenEntitlement | null = null;
+  if (grant) {
+    canteenEntitlement = {
+      dailyMeals: (grant.daily_meals as number) ?? 1,
+      startsOn: (grant.starts_on as string) ?? null,
+      endsOn: (grant.ends_on as string) ?? null,
+      reason: (grant.reason as string | null) ?? null,
+      source: "grant",
+    };
+  } else if (lunchEligible) {
+    canteenEntitlement = {
+      dailyMeals: 1,
+      startsOn: null,
+      endsOn: null,
+      reason: null,
+      source: "standing",
+    };
+  }
 
   // --- Quick actions (role-aware) -------------------------------------------
   const quickLinks: DashboardQuickLink[] = [{ label: "Emergency support", href: "/emergency" }];
   if (access.isCanteenStaff) quickLinks.push({ label: "Canteen", href: "/canteen" });
   if (isDriver) quickLinks.push({ label: "My driving tasks", href: "/transportation" });
 
-  return { name, offshore, approvals, myRequests, quickLinks, canteenEntitledToday };
+  return {
+    name,
+    offshore,
+    approvals,
+    myRequests,
+    quickLinks,
+    canteenEntitledToday,
+    canteenEntitlement,
+  };
 }
