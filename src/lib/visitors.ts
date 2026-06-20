@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { today } from "@/lib/canteen";
 import type { Visitor } from "@/types/visitors";
 
 const SELECT =
@@ -37,13 +38,18 @@ export async function getVisitors(visitDate: string): Promise<Visitor[]> {
   return (data ?? []).map(mapRow);
 }
 
-/** Everyone currently on site — the emergency muster list. */
-export async function getOnSite(): Promise<Visitor[]> {
+/**
+ * Everyone currently on site for a given day — the emergency muster list.
+ * Defaults to today; the muster is a live, daily roster. Earlier days remain
+ * available as historical visitor records via {@link getVisitors}.
+ */
+export async function getOnSite(visitDate: string = today()): Promise<Visitor[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("visitors")
     .select(SELECT)
     .eq("status", "checked_in")
+    .eq("visit_date", visitDate)
     .order("check_in_at", { ascending: true });
   if (error) {
     console.error("getOnSite:", error.message);
