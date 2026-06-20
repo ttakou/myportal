@@ -118,7 +118,7 @@ export function MyPerformanceSummary({
               {goals.length > 0 ? `Total weight: ${totalWeight}%` : ""}
             </span>
             <Link
-              href="/performance/appraisals"
+              href="/performance/appraisals#my-appraisal"
               className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
             >
               {goals.length > 0 ? "Open my appraisal" : "Set my objectives"}
@@ -172,7 +172,7 @@ export function MyPerformanceSummary({
 
           <div className="mt-3 flex items-center justify-end border-t pt-3">
             <Link
-              href="/performance/appraisals"
+              href="/performance/appraisals#development-plan"
               className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
             >
               {idp.length > 0 ? "Manage my plan" : "Add development actions"}
