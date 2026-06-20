@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { FileBarChart, Siren } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import { getVisitors } from "@/lib/visitors";
+import { getStaffRoster } from "@/lib/staff-attendance";
 import { today } from "@/lib/canteen";
 import { VisitorsBoard } from "./_components/visitors-board";
+import { StaffBoard } from "./_components/staff-board";
 
 export default async function VisitorsPage(
   props: {
@@ -16,13 +20,19 @@ export default async function VisitorsPage(
       ? searchParams.date
       : today();
 
-  const [visitors, role, access] = await Promise.all([
+  const [visitors, role, access, perms] = await Promise.all([
     getVisitors(visitDate),
     getCurrentRole(),
     getAccess(),
+    getMyPermissions(),
   ]);
   const isAdmin = isAdminRole(role);
   const canSeeReport = access.isSystemAdmin || access.isAdmin || access.isOim;
+  // Security / reception (or admins) get the staff check-in roster under the
+  // visitor table — same audience that can operate visitor check-in/out.
+  const canOperate =
+    access.isAdmin || access.isSystemAdmin || hasPermission(perms, "visitors", "operate");
+  const staffRoster = canOperate ? await getStaffRoster(visitDate) : [];
 
   return (
     <div className="space-y-6">
@@ -54,6 +64,8 @@ export default async function VisitorsPage(
       </div>
 
       <VisitorsBoard visitDate={visitDate} visitors={visitors} isAdmin={isAdmin} />
+
+      {canOperate && <StaffBoard rows={staffRoster} />}
     </div>
   );
 }

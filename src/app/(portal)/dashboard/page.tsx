@@ -13,7 +13,9 @@ import {
 } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
 import { getMyDashboard } from "@/lib/dashboard";
+import { getMyAttendance } from "@/lib/staff-attendance";
 import { getMenu, today } from "@/lib/canteen";
+import { SelfCheckIn } from "./_components/self-check-in";
 import { MEAL_PERIODS, MEAL_PERIOD_LABEL } from "@/types/canteen";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +60,11 @@ function focusIcon(slug: string) {
 }
 
 export default async function DashboardPage() {
-  const [services, me] = await Promise.all([getActiveServices(), getMyDashboard()]);
+  const [services, me, myAttendance] = await Promise.all([
+    getActiveServices(),
+    getMyDashboard(),
+    getMyAttendance(),
+  ]);
 
   const firstName = me?.name?.split(/\s+/)[0] ?? "";
   const offshore = me?.offshore ?? null;
@@ -100,6 +106,9 @@ export default async function DashboardPage() {
         </h1>
         <p className="text-muted-foreground">Your day at a glance.</p>
       </div>
+
+      {/* Self check-in — geofenced to the base ("I'm in") */}
+      <SelfCheckIn initial={myAttendance} />
 
       {/* Offshore personalization */}
       {offshore && (
