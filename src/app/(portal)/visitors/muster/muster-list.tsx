@@ -9,7 +9,8 @@ import type { StaffOnSite } from "@/types/staff-attendance";
 
 const VISITOR_SELECT =
   "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)";
-const STAFF_SELECT = "profile_id, check_in_at, profiles(full_name, department, job_title)";
+const STAFF_SELECT =
+  "profile_id, check_in_at, profiles!staff_attendance_profile_id_fkey(full_name, department, job_title)";
 
 function clock(ts: string | null): string {
   return ts ? new Date(ts).toLocaleTimeString() : "—";

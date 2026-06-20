@@ -74,7 +74,9 @@ export async function getStaffOnSite(date: string = today()): Promise<StaffOnSit
   const supabase = createClient();
   const { data } = await supabase
     .from("staff_attendance")
-    .select("profile_id, check_in_at, profiles(full_name, department, job_title)")
+    .select(
+      "profile_id, check_in_at, profiles!staff_attendance_profile_id_fkey(full_name, department, job_title)",
+    )
     .eq("attendance_date", date)
     .not("check_in_at", "is", null)
     .is("check_out_at", null)
