@@ -26,6 +26,7 @@ import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
 import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
+import { AdminToggle } from "./_components/admin-toggle";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
 
@@ -184,26 +185,30 @@ export default async function AppraisalsPage({
       {isManager && <TeamReviewPanel appraisals={team} />}
       {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
 
-      {/* HR-Admin dashboard — org-wide console + calibration for the selected year. */}
-      {isHr && cycle && cycleAppraisals.length > 0 && (
-        <SummaryCards title={`HR dashboard — ${cycle.year}`} cards={hrCards} />
-      )}
+      {/* HR-Admin dashboard — org-wide console + calibration for the selected year.
+          Tucked behind a button so HR admins who are also managers see their team
+          view first and open the admin tools on demand. */}
       {isHr && (
-        <HrConsole
-          cycles={allCycles}
-          appraisals={cycleAppraisals}
-          activeCycleId={cycle?.id ?? null}
-          cycleName={cycle?.name ?? null}
-          competencies={competencies}
-          departmentObjectives={departmentObjectives}
-        />
-      )}
-      {isHr && calibration && (
-        <CalibrationPanel
-          data={calibration}
-          roster={calibrationRoster}
-          adjustments={calibrationAdjustments}
-        />
+        <AdminToggle>
+          {cycle && cycleAppraisals.length > 0 && (
+            <SummaryCards title={`HR dashboard — ${cycle.year}`} cards={hrCards} />
+          )}
+          <HrConsole
+            cycles={allCycles}
+            appraisals={cycleAppraisals}
+            activeCycleId={cycle?.id ?? null}
+            cycleName={cycle?.name ?? null}
+            competencies={competencies}
+            departmentObjectives={departmentObjectives}
+          />
+          {calibration && (
+            <CalibrationPanel
+              data={calibration}
+              roster={calibrationRoster}
+              adjustments={calibrationAdjustments}
+            />
+          )}
+        </AdminToggle>
       )}
 
       {!cycle && !isHr && (

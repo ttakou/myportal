@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Check, Send, Undo2 } from "lucide-react";
+import { Check, ChevronDown, Send, Undo2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { STAGE_LABEL, STATUS_LABEL, type Appraisal } from "@/types/appraisal";
 import {
@@ -37,6 +38,7 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
   const [summary, setSummary] = useState(a.manager_summary ?? "");
   const [discDate, setDiscDate] = useState("");
   const [discNotes, setDiscNotes] = useState("");
+  const [open, setOpen] = useState(false);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -50,11 +52,21 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
   const awaitingGoalReview = a.stage === "goal_setting" && a.status === "pending_manager_review";
   const awaitingMidYear = a.stage === "goal_review" && a.status === "pending_manager_review";
   const evaluating = a.stage === "manager_review";
+  const readyForDiscussion =
+    a.stage === "final_discussion" && a.status === "ready_for_final_discussion";
+  const actionNeeded = awaitingGoalReview || awaitingMidYear || evaluating || readyForDiscussion;
 
   return (
     <div id={`appraisal-${a.id}`} className="scroll-mt-24 rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-medium">{a.employee_name || "—"}</div>
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{a.employee_name || "—"}</span>
+          {actionNeeded && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-700">
+              Action needed
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {(a.status === "completed" || a.status === "closed") && (
             <Link
@@ -68,9 +80,28 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
             {STAGE_LABEL[a.stage]} · {STATUS_LABEL[a.status]}
             {a.final_score != null ? ` · ${a.final_score}% · ${a.rating_label ?? ""}` : ""}
           </span>
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
+          >
+            {open ? "Hide" : "Show details"}
+            <ChevronDown className={cn("h-3.5 w-3.5 transition", open && "rotate-180")} />
+          </button>
         </div>
       </div>
 
+      {!open && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {a.goals.length} goal{a.goals.length === 1 ? "" : "s"}
+          {a.employee_summary ? " · self-assessment submitted" : ""}
+          {actionNeeded ? " · needs your attention — open to act" : ""}
+        </p>
+      )}
+
+      {open && (
+      <>
       {/* Goals + progress + ratings */}
       {a.goals.length > 0 && (
         <ul className="mt-2 divide-y text-sm">
@@ -262,6 +293,8 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
             </Button>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );
