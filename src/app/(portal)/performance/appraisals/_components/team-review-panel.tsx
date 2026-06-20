@@ -3,30 +3,96 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Check, ChevronDown, Send, Undo2 } from "lucide-react";
+import { Check, ChevronDown, Send, Undo2, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { STAGE_LABEL, STATUS_LABEL, type Appraisal } from "@/types/appraisal";
+import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type Colleague } from "@/types/appraisal";
 import {
   approveGoals,
   completeMidYear,
   rateCompetencyManager,
   recordDiscussion,
   returnGoals,
+  setAppraisalDelegate,
   setManagerRating,
   submitManagerEvaluation,
 } from "../actions";
 
-export function TeamReviewPanel({ appraisals }: { appraisals: Appraisal[] }) {
+export function TeamReviewPanel({
+  appraisals,
+  colleagues = [],
+  currentDelegate = null,
+}: {
+  appraisals: Appraisal[];
+  colleagues?: Colleague[];
+  currentDelegate?: { id: string; name: string | null } | null;
+}) {
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold">My team&apos;s appraisals</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">My team&apos;s appraisals</h2>
+        <DelegateControl colleagues={colleagues} current={currentDelegate} />
+      </div>
       <div className="space-y-3">
         {appraisals.map((a) => (
           <TeamRow key={a.id} appraisal={a} />
         ))}
       </div>
     </section>
+  );
+}
+
+/** Nominate a colleague to cover this manager's appraisals while they're away. */
+function DelegateControl({
+  colleagues,
+  current,
+}: {
+  colleagues: Colleague[];
+  current: { id: string; name: string | null } | null;
+}) {
+  const [pending, startTransition] = useStatusTransition("Saving…");
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  function set(id: string | null) {
+    setError(null);
+    startTransition(async () => {
+      const res = await setAppraisalDelegate(id);
+      if (!res.ok) setError(res.error ?? "Couldn't update delegate.");
+      else setOpen(false);
+    });
+  }
+
+  return (
+    <div className="text-right">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent"
+      >
+        <UserCog className="h-3.5 w-3.5" />
+        {current ? `Delegate: ${current.name ?? "—"}` : "Set a delegate"}
+      </button>
+      {open && (
+        <div className="mt-1 flex items-center gap-2">
+          <select
+            defaultValue={current?.id ?? ""}
+            disabled={pending}
+            onChange={(e) => set(e.target.value || null)}
+            className="rounded-md border bg-background px-2 py-1 text-xs"
+          >
+            <option value="">No delegate</option>
+            {colleagues.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.full_name ?? "—"}
+                {c.department ? ` · ${c.department}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+    </div>
   );
 }
 

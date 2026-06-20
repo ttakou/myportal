@@ -351,15 +351,44 @@ export async function getTeamAppraisals(cycleId: string): Promise<Appraisal[]> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
+  // Include appraisals of managers who nominated me as their delegate, so their
+  // team's reviews don't stall while they're unavailable.
+  const { data: delegators } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("appraisal_delegate_id", user.id);
+  const managerIds = [user.id, ...((delegators ?? []) as { id: string }[]).map((d) => d.id)];
   const { data } = await supabase
     .from("appraisals")
     .select(APPRAISAL_SELECT)
     .eq("cycle_id", cycleId)
-    .eq("manager_id", user.id)
+    .in("manager_id", managerIds)
     .order("status");
   const list = (data ?? []).map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
   await hydrateWithYearGoals(list, cycleId);
   return list;
+}
+
+/** The colleague the signed-in manager has nominated as their appraisal delegate. */
+export async function getMyAppraisalDelegate(): Promise<{ id: string; name: string | null } | null> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from("profiles")
+    .select(
+      "appraisal_delegate_id, delegate:profiles!profiles_appraisal_delegate_id_fkey(full_name)",
+    )
+    .eq("id", user.id)
+    .maybeSingle();
+  const id = (data?.appraisal_delegate_id as string | null) ?? null;
+  if (!id) return null;
+  const raw = (data as { delegate?: { full_name?: string } | { full_name?: string }[] | null })
+    .delegate;
+  const d = one<{ full_name?: string }>(raw ?? null);
+  return { id, name: d?.full_name ?? null };
 }
 
 /** Appraisals awaiting the signed-in second-level approver. */
