@@ -287,4 +287,9 @@ export interface Appraisal {
   development_plan: AppraisalDevelopmentItem[];
   goals: AppraisalGoal[];
   events: AppraisalEvent[];
+  /** Set when the goals shown belong to another cycle of the same year (the
+   * year's Annual cycle). In a "gate" cycle (mid-year, final, calibration) the
+   * year's goals are surfaced read-only; they're edited/rated in that cycle. */
+  goalsReadOnly?: boolean;
+  goalsSourceName?: string | null;
 }

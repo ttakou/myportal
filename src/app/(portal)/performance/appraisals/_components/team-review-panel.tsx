@@ -102,6 +102,11 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
 
       {open && (
       <>
+      {a.goalsReadOnly && (
+        <p className="mt-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs text-muted-foreground">
+          Goals for the year{a.goalsSourceName ? ` — set in ${a.goalsSourceName}` : ""}. Read-only here; rated in that cycle.
+        </p>
+      )}
       {/* Goals + progress + ratings */}
       {a.goals.length > 0 && (
         <ul className="mt-2 divide-y text-sm">
@@ -174,7 +179,7 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
                   </ul>
                 </div>
               )}
-              {evaluating && (
+              {evaluating && !a.goalsReadOnly && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <select
                     defaultValue={g.manager_rating ?? ""}

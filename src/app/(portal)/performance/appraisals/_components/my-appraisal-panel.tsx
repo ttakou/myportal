@@ -56,7 +56,9 @@ export function MyAppraisalPanel({
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
-  const editable = EDITABLE.has(appraisal.status);
+  // In a gate cycle the year's goals are shown read-only — they're set/edited in
+  // the Annual cycle — so never offer goal editing here.
+  const editable = !appraisal.goalsReadOnly && EDITABLE.has(appraisal.status);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -79,6 +81,13 @@ export function MyAppraisalPanel({
         </span>
       </div>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+
+      {appraisal.goalsReadOnly && (
+        <p className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+          Showing your goals for the year{appraisal.goalsSourceName ? ` — set in ${appraisal.goalsSourceName}` : ""}.
+          Edit them in that cycle; here they&apos;re read-only.
+        </p>
+      )}
 
       {appraisal.stage === "goal_setting" && (
         <GoalSetting
