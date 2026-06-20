@@ -367,18 +367,16 @@ export async function getSecondLevelQueue(cycleId: string): Promise<Appraisal[]>
 /** Every appraisal in a cycle (HR monitoring; RLS limits to HR/admins). */
 export async function getCycleAppraisals(cycleId: string): Promise<Appraisal[]> {
   const supabase = createClient();
-  const { data } = await supabase
-    .from("appraisals")
-    .select(APPRAISAL_SELECT)
-    .eq("cycle_id", cycleId)
-    .order("status");
-  // The roster is for appraisable staff only — employees and expatriates (both
-  // stored as employee_type 'employee'); contractors and guests are excluded.
-  const staff = (data ?? []).filter((r) => {
-    const emp = (r as unknown as Record<string, unknown>).employee;
-    const e = (Array.isArray(emp) ? emp[0] : emp) as { employee_type?: string } | null;
-    return e?.employee_type === "employee";
-  });
+  const [{ data }, { data: appraisable }] = await Promise.all([
+    supabase.from("appraisals").select(APPRAISAL_SELECT).eq("cycle_id", cycleId).order("status"),
+    // Who belongs on the roster: staff (employee/expat) who can actually access
+    // the Performance module (a performance-view access role, or unrestricted).
+    supabase.rpc("appraisable_profiles"),
+  ]);
+  const ids = new Set(((appraisable ?? []) as { id: string }[]).map((p) => p.id));
+  const staff = (data ?? []).filter((r) =>
+    ids.has((r as unknown as { employee_id: string }).employee_id),
+  );
   const list = staff.map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
   // Hydrate the rows HR acts on so the queue shows the appeal reason and the
   // (confidential) stakeholder feedback during validation.
