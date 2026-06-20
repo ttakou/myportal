@@ -25,3 +25,12 @@ export type MyAttendance = {
   check_in_at: string | null;
   check_out_at: string | null;
 };
+
+/** A staff member currently checked in — for the emergency muster. */
+export type StaffOnSite = {
+  profile_id: string;
+  full_name: string;
+  department: string | null;
+  job_title: string | null;
+  check_in_at: string | null;
+};
