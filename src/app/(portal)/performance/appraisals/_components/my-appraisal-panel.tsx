@@ -68,7 +68,7 @@ export function MyAppraisalPanel({
   }
 
   return (
-    <section className="space-y-3">
+    <section id="my-appraisal" className="scroll-mt-24 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">My appraisal</h2>
         <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
@@ -596,7 +596,7 @@ function DevelopmentPlan({
   if (!editable && items.length === 0) return null;
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div id="development-plan" className="scroll-mt-24 rounded-lg border bg-card p-4">
       <h3 className="mb-3 text-sm font-semibold">Development plan</h3>
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">No development actions yet.</p>
