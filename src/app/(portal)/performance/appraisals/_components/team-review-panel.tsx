@@ -117,6 +117,35 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
                   {g.employee_self_rating != null ? ` · self ${g.employee_self_rating}` : ""}
                 </span>
               </div>
+              {g.description && (
+                <p className="mt-0.5 text-xs text-muted-foreground">{g.description}</p>
+              )}
+              {(g.success_indicator || g.alignment) && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {g.success_indicator ? `KPI: ${g.success_indicator}` : ""}
+                  {g.success_indicator && g.alignment ? " · " : ""}
+                  {g.alignment ? `Aligned to: ${g.alignment}` : ""}
+                </p>
+              )}
+              {g.key_results.length > 0 && (
+                <div className="mt-1 pl-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Key results
+                  </p>
+                  <ul className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                    {g.key_results.map((k) => (
+                      <li key={k.id} className="flex justify-between gap-3">
+                        <span>
+                          • {k.title}
+                          {k.target ? ` (→ ${k.target})` : ""}
+                          {k.current_value ? ` · now ${k.current_value}${k.unit ?? ""}` : ""}
+                        </span>
+                        <span className="shrink-0 tabular-nums">{k.progress}%</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {(g.employee_progress || g.employee_comment) && (
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {g.employee_progress || g.employee_comment}
@@ -124,7 +153,7 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
               )}
               {g.raters.length > 0 && (
                 <div className="mt-1 rounded-md bg-muted/50 px-2 py-1 text-xs">
-                  <span className="font-medium">Stakeholder feedback</span>
+                  <span className="font-medium">Witness feedback</span>
                   <span className="text-muted-foreground"> (confidential)</span>
                   <ul className="mt-0.5 space-y-0.5">
                     {g.raters.map((r) => (
