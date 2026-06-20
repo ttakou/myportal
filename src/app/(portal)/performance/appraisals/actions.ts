@@ -156,7 +156,13 @@ export async function launchCycle(cycleId: string): Promise<ActionResult> {
   if (!cycle) return { ok: false, error: "Cycle not found." };
 
   const [{ data: profiles }, { data: existing }] = await Promise.all([
-    supabase.from("profiles").select("id, manager_id").eq("is_active", true),
+    // Appraise actual staff only — employees and expats (employee_type
+    // 'employee'); contractors and guests are excluded from the roster.
+    supabase
+      .from("profiles")
+      .select("id, manager_id")
+      .eq("is_active", true)
+      .eq("employee_type", "employee"),
     supabase.from("appraisals").select("employee_id").eq("cycle_id", cycleId),
   ]);
   const have = new Set((existing ?? []).map((e) => e.employee_id as string));
@@ -191,6 +197,40 @@ export async function closeCycle(cycleId: string): Promise<ActionResult> {
     .from("appraisal_cycles")
     .update({ status: "closed" })
     .eq("id", cycleId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Delete a stray cycle. Guarded so only an un-launched **draft** cycle with **no
+ * appraisals** can be removed — launched/closed cycles (which carry employee
+ * records) must be closed, never deleted.
+ */
+export async function deleteCycle(cycleId: string): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+
+  const { data: cycle } = await supabase
+    .from("appraisal_cycles")
+    .select("id, status")
+    .eq("id", cycleId)
+    .maybeSingle();
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+  if (cycle.status !== "draft") {
+    return { ok: false, error: "Only draft cycles can be deleted — close active cycles instead." };
+  }
+
+  const { count } = await supabase
+    .from("appraisals")
+    .select("id", { count: "exact", head: true })
+    .eq("cycle_id", cycleId);
+  if ((count ?? 0) > 0) {
+    return { ok: false, error: "This cycle already has appraisals and can't be deleted." };
+  }
+
+  const { error } = await supabase.from("appraisal_cycles").delete().eq("id", cycleId);
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };

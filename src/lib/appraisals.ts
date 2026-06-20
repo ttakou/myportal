@@ -24,7 +24,7 @@ const APPRAISAL_SELECT =
   " employee_summary, manager_summary, discussion_date, discussion_notes," +
   " acknowledged_at, employee_agreed, employee_ack_comment," +
   " cycle:appraisal_cycles(name)," +
-  " employee:profiles!employee_id(full_name)," +
+  " employee:profiles!employee_id(full_name, employee_type)," +
   " manager:profiles!manager_id(full_name)," +
   " second_level:profiles!second_level_id(full_name)";
 
@@ -372,7 +372,14 @@ export async function getCycleAppraisals(cycleId: string): Promise<Appraisal[]> 
     .select(APPRAISAL_SELECT)
     .eq("cycle_id", cycleId)
     .order("status");
-  const list = (data ?? []).map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
+  // The roster is for appraisable staff only — employees and expatriates (both
+  // stored as employee_type 'employee'); contractors and guests are excluded.
+  const staff = (data ?? []).filter((r) => {
+    const emp = (r as unknown as Record<string, unknown>).employee;
+    const e = (Array.isArray(emp) ? emp[0] : emp) as { employee_type?: string } | null;
+    return e?.employee_type === "employee";
+  });
+  const list = staff.map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
   // Hydrate the rows HR acts on so the queue shows the appeal reason and the
   // (confidential) stakeholder feedback during validation.
   await Promise.all(
