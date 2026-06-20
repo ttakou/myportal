@@ -156,23 +156,21 @@ export async function launchCycle(cycleId: string): Promise<ActionResult> {
   if (!cycle) return { ok: false, error: "Cycle not found." };
 
   const [{ data: profiles }, { data: existing }] = await Promise.all([
-    // Appraise actual staff only — employees and expats (employee_type
-    // 'employee'); contractors and guests are excluded from the roster.
-    supabase
-      .from("profiles")
-      .select("id, manager_id")
-      .eq("is_active", true)
-      .eq("employee_type", "employee"),
+    // Appraise only staff who can access the Performance module — employees/
+    // expats with a performance-view access role (or unrestricted). Contractors,
+    // guests and anyone restricted away from Performance are excluded.
+    supabase.rpc("appraisable_profiles"),
     supabase.from("appraisals").select("employee_id").eq("cycle_id", cycleId),
   ]);
   const have = new Set((existing ?? []).map((e) => e.employee_id as string));
-  const rows = (profiles ?? [])
-    .filter((p) => !have.has(p.id as string))
+  const roster = (profiles ?? []) as { id: string; manager_id: string | null }[];
+  const rows = roster
+    .filter((p) => !have.has(p.id))
     .map((p) => ({
       tenant_id: cycle.tenant_id as string,
       cycle_id: cycleId,
-      employee_id: p.id as string,
-      manager_id: (p.manager_id as string | null) ?? null,
+      employee_id: p.id,
+      manager_id: p.manager_id ?? null,
       stage: "goal_setting",
       status: "not_started",
     }));
