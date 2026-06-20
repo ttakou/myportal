@@ -375,7 +375,7 @@ export async function getCycleAppraisals(cycleId: string): Promise<Appraisal[]> 
   // The roster is for appraisable staff only — employees and expatriates (both
   // stored as employee_type 'employee'); contractors and guests are excluded.
   const staff = (data ?? []).filter((r) => {
-    const emp = (r as Record<string, unknown>).employee;
+    const emp = (r as unknown as Record<string, unknown>).employee;
     const e = (Array.isArray(emp) ? emp[0] : emp) as { employee_type?: string } | null;
     return e?.employee_type === "employee";
   });
