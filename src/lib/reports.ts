@@ -527,6 +527,88 @@ export async function getPerformanceCompletionReport(
   };
 }
 
+// --- Performance insights (manager effectiveness, competency gaps, appeals) --
+
+export interface ManagerEffectivenessRow {
+  manager: string;
+  rated: number;
+  avgScore: number | null;
+}
+export interface CompetencyGapRow {
+  competency: string;
+  rated: number;
+  avgRating: number | null;
+}
+export interface PerformanceInsights {
+  byManager: ManagerEffectivenessRow[];
+  competencyGaps: CompetencyGapRow[];
+  appeals: { open: number; resolved: number; total: number };
+  scored: number;
+}
+
+/**
+ * Governance analytics for one cycle (HR/admin): rating consistency by manager,
+ * competency strengths/gaps (weakest first), and the appeal count. RLS scopes
+ * everything to the tenant; HR/admin see all appraisals in the cycle.
+ */
+export async function getPerformanceInsights(cycleId: string): Promise<PerformanceInsights> {
+  const supabase = createClient();
+  const { data: aps } = await supabase
+    .from("appraisals")
+    .select("id, final_score, manager:profiles!manager_id(full_name)")
+    .eq("cycle_id", cycleId);
+  const appraisals = (aps ?? []) as Record<string, any>[];
+  const ids = appraisals.map((a) => a.id as string);
+
+  // Manager effectiveness: average final score of each manager's scored reports.
+  const mgr = new Map<string, { sum: number; n: number }>();
+  for (const a of appraisals) {
+    if (a.final_score == null) continue;
+    const name = one<{ full_name?: string }>(a.manager)?.full_name ?? "—";
+    const cur = mgr.get(name) ?? { sum: 0, n: 0 };
+    cur.sum += a.final_score as number;
+    cur.n += 1;
+    mgr.set(name, cur);
+  }
+  const byManager: ManagerEffectivenessRow[] = [...mgr.entries()]
+    .map(([manager, v]) => ({ manager, rated: v.n, avgScore: Math.round(v.sum / v.n) }))
+    .sort((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
+
+  let competencyGaps: CompetencyGapRow[] = [];
+  const appeals = { open: 0, resolved: 0, total: 0 };
+  if (ids.length) {
+    const [{ data: crs }, { data: apl }] = await Promise.all([
+      supabase
+        .from("appraisal_competency_ratings")
+        .select("manager_rating, competency:appraisal_competencies(name)")
+        .in("appraisal_id", ids),
+      supabase.from("appraisal_appeals").select("status").in("appraisal_id", ids),
+    ]);
+    const comp = new Map<string, { sum: number; n: number }>();
+    for (const c of (crs ?? []) as Record<string, any>[]) {
+      if (c.manager_rating == null) continue;
+      const name = one<{ name?: string }>(c.competency)?.name ?? "—";
+      const cur = comp.get(name) ?? { sum: 0, n: 0 };
+      cur.sum += c.manager_rating as number;
+      cur.n += 1;
+      comp.set(name, cur);
+    }
+    competencyGaps = [...comp.entries()]
+      .map(([competency, v]) => ({
+        competency,
+        rated: v.n,
+        avgRating: Math.round((v.sum / v.n) * 10) / 10,
+      }))
+      .sort((a, b) => (a.avgRating ?? 99) - (b.avgRating ?? 99)); // weakest first
+    for (const ap of (apl ?? []) as { status: string }[]) {
+      appeals.total += 1;
+      if (ap.status === "resolved") appeals.resolved += 1;
+      else appeals.open += 1;
+    }
+  }
+  return { byManager, competencyGaps, appeals, scored: byManager.reduce((s, m) => s + m.rated, 0) };
+}
+
 // --- Visitors throughput --------------------------------------------------
 
 export interface VisitorRow {

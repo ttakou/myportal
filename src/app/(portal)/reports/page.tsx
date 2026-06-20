@@ -51,6 +51,14 @@ export default async function ReportsPage() {
       show: access.isHr || access.isSystemAdmin || access.isAdmin,
     },
     {
+      href: "/reports/performance-insights",
+      title: "Performance insights",
+      description:
+        "Governance analytics for a cycle: rating consistency by manager, competency strengths and gaps, and appeals.",
+      icon: ClipboardCheck,
+      show: access.isHr || access.isSystemAdmin || access.isAdmin,
+    },
+    {
       href: "/reports/my-meals",
       title: "My meals",
       description:
