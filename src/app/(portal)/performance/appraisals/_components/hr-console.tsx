@@ -21,6 +21,7 @@ import {
   closeAppraisal,
   closeCycle,
   createCycle,
+  deleteCycle,
   hrReturnToManager,
   hrValidate,
   launchCycle,
@@ -156,9 +157,22 @@ export function HrConsole({
                 <td className="px-4 py-2 capitalize">{c.status}</td>
                 <td className="px-4 py-2 text-right">
                   {c.status === "draft" && (
-                    <Button size="sm" disabled={pending} onClick={() => run(() => launchCycle(c.id))}>
-                      <Play className="h-4 w-4" /> Launch
-                    </Button>
+                    <span className="inline-flex gap-2">
+                      <Button size="sm" disabled={pending} onClick={() => run(() => launchCycle(c.id))}>
+                        <Play className="h-4 w-4" /> Launch
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => {
+                          if (confirm(`Delete the draft cycle "${c.name}"? This can't be undone.`))
+                            run(() => deleteCycle(c.id));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" /> Delete
+                      </Button>
+                    </span>
                   )}
                   {c.status === "active" && (
                     <Button
