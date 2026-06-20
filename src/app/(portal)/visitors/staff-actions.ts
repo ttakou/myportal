@@ -80,12 +80,6 @@ export async function selfCheckIn(
   if (!user) return { ok: false, error: "You're not signed in." };
 
   const fence = getBaseGeofence();
-  if (!fence) {
-    return {
-      ok: false,
-      error: "Site location isn't configured yet — ask an administrator to set the base coordinates.",
-    };
-  }
   if (!coords) {
     return { ok: false, error: "Turn on location to check yourself in." };
   }

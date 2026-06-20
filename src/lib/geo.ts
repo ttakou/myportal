@@ -17,18 +17,25 @@ export function distanceMeters(
 export type Geofence = { lat: number; lng: number; radiusM: number };
 
 /**
- * The site (Addax base) geofence used for the "I'm in" self check-in, read from
- * server env so it can be set per deployment without code changes:
+ * Addax Petroleum Cameroon, Douala — Sea Port Area, Youpwe (plus code
+ * 2MG9+3M8 / 6FPF2MG9+3M8). The default centre for the "I'm in" geofence.
+ */
+const DEFAULT_BASE = { lat: 4.0254, lng: 9.6683 };
+
+/**
+ * The site geofence used for the "I'm in" self check-in. Defaults to the Addax
+ * Douala base above, but each value can be overridden per deployment via env
+ * without code changes:
  *   ADDAX_BASE_LAT, ADDAX_BASE_LNG  — centre coordinates (decimal degrees)
  *   ADDAX_BASE_RADIUS_M             — radius in metres (defaults to 1000 = 1 km)
- * Returns null when coordinates are not configured.
  */
-export function getBaseGeofence(): Geofence | null {
+export function getBaseGeofence(): Geofence {
   const lat = Number(process.env.ADDAX_BASE_LAT);
   const lng = Number(process.env.ADDAX_BASE_LNG);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const center =
+    Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : DEFAULT_BASE;
   const radiusM = Number(process.env.ADDAX_BASE_RADIUS_M);
-  return { lat, lng, radiusM: Number.isFinite(radiusM) && radiusM > 0 ? radiusM : 1000 };
+  return { ...center, radiusM: Number.isFinite(radiusM) && radiusM > 0 ? radiusM : 1000 };
 }
 
 /** Human-friendly distance for guidance messages. */
