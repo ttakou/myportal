@@ -233,6 +233,7 @@ export interface AppraisalCompetency {
   name: string;
   description: string | null;
   is_active: boolean;
+  weight: number;
 }
 
 export interface CompetencyRating {

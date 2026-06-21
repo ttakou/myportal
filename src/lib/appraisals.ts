@@ -92,7 +92,7 @@ export async function getCompetencies(): Promise<AppraisalCompetency[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_competencies")
-    .select("id, name, description, is_active")
+    .select("id, name, description, is_active, weight")
     .order("name");
   return (data ?? []) as AppraisalCompetency[];
 }
