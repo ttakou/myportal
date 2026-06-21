@@ -3,6 +3,7 @@ import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getDepartments, getOffshoreCertReport, type CertCell, type CertStatus } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
@@ -126,7 +127,7 @@ export default async function OffshoreCertReportPage({
               <th className="px-3 py-2 font-medium">HUET</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={6} className="divide-y" label="Show more staff">
             {report.rows.map((r) => (
               <tr key={r.staff_id}>
                 <td className="px-3 py-1.5 font-medium">{r.name ?? "—"}</td>
@@ -144,7 +145,7 @@ export default async function OffshoreCertReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
     </div>

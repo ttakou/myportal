@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Play, Lock, Plus, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import {
   RATING_BANDS,
   STATUS_LABEL,
@@ -558,9 +559,10 @@ function HrAppraisalList({
   appraisals: Appraisal[];
   cycleName: string | null;
 }) {
-  if (appraisals.length === 0) return null;
   // Highest final score first; unscored staff fall to the bottom.
   const rows = [...appraisals].sort((a, b) => (b.final_score ?? -1) - (a.final_score ?? -1));
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(rows.length);
+  if (appraisals.length === 0) return null;
 
   const exportCsv = () => {
     const header = ["Employee", "Status", "Manager rating", "Final score", "Rating"];
@@ -598,7 +600,7 @@ function HrAppraisalList({
             </tr>
           </thead>
           <tbody className="divide-y">
-            {rows.map((a) => {
+            {rows.slice(0, count).map((a) => {
               const hasOutcome =
                 a.final_score != null || a.status === "completed" || a.status === "closed";
               return (
@@ -626,6 +628,13 @@ function HrAppraisalList({
           </tbody>
         </table>
       </div>
+      <ShowMore
+        ref={sentinelRef}
+        hasMore={hasMore}
+        remaining={remaining}
+        onClick={showMore}
+        label="Show more employees"
+      />
     </div>
   );
 }

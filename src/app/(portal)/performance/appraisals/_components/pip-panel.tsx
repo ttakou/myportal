@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { ShieldAlert, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LazySelect } from "@/components/ui/lazy-select";
 import { cn } from "@/lib/utils";
 import { PIP_STATUS_LABEL, type Pip, type PipData, type PipStatus } from "@/types/pip";
 import { createPip, setPipStatus } from "../pip-actions";
@@ -81,19 +82,15 @@ export function PipPanel({
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="text-xs text-muted-foreground">
               Employee
-              <select
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                required
+              <LazySelect
+                value={employeeId || null}
+                options={employees}
+                getOptionValue={(p) => p.id}
+                getOptionLabel={(p) => p.name}
+                placeholder="Select…"
+                onChange={(v) => setEmployeeId(v ?? "")}
                 className="mt-1 block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-              >
-                <option value="">Select…</option>
-                {employees.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-xs text-muted-foreground">
               Review date

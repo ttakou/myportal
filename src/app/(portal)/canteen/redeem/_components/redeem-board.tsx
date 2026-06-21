@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Check, Search, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { cn } from "@/lib/utils";
 import type { MealRedemptionRow } from "@/types/canteen";
 import { redeemMeal, undoMeal } from "../actions";
@@ -46,6 +47,10 @@ export function RedeemBoard({
   const served = board.reduce((n, r) => n + r.used, 0);
   const entitled = board.reduce((n, r) => n + r.effective, 0);
 
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(rows.length, {
+    resetKey: query,
+  });
+
   return (
     <div className="space-y-4">
       {error && (
@@ -84,7 +89,7 @@ export function RedeemBoard({
               </tr>
             </thead>
             <tbody className="divide-y">
-              {rows.map((r) => {
+              {rows.slice(0, count).map((r) => {
                 const exhausted = r.remaining <= 0;
                 return (
                   <tr key={r.profile_id} className={cn(exhausted && "bg-muted/30")}>
@@ -134,6 +139,13 @@ export function RedeemBoard({
               })}
             </tbody>
           </table>
+          <ShowMore
+            ref={sentinelRef}
+            hasMore={hasMore}
+            remaining={remaining}
+            onClick={showMore}
+            label="Show more employees"
+          />
         </div>
       )}
     </div>

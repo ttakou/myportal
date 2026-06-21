@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Search, Users } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { cn } from "@/lib/utils";
 import {
   ATTENDANCE_LABEL,
@@ -48,6 +49,11 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
         a.full_name.localeCompare(b.full_name),
     );
   }, [rows, query]);
+
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
+    visible.length,
+    { resetKey: query },
+  );
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -95,7 +101,7 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {visible.map((s) => (
+            {visible.slice(0, count).map((s) => (
               <tr key={s.profile_id}>
                 <td className="px-4 py-3">
                   <div className="font-medium">{s.full_name}</div>
@@ -149,6 +155,13 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
           </tbody>
         </table>
       </div>
+      <ShowMore
+        ref={sentinelRef}
+        hasMore={hasMore}
+        remaining={remaining}
+        onClick={showMore}
+        label="Show more staff"
+      />
     </section>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import type { MealRedemptionHistoryRow } from "@/types/canteen";
 
 function personLabel(name: string | null, email: string) {
@@ -26,6 +27,7 @@ export function RedemptionHistory({
   const params = useSearchParams();
   const [f, setF] = useState(from);
   const [t, setT] = useState(to);
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(rows.length);
 
   function apply() {
     const q = new URLSearchParams(params.toString());
@@ -88,7 +90,7 @@ export function RedemptionHistory({
               </tr>
             </thead>
             <tbody className="divide-y">
-              {rows.map((r) => (
+              {rows.slice(0, count).map((r) => (
                 <tr key={r.id}>
                   <td className="px-4 py-2 text-muted-foreground">{r.redeemed_on}</td>
                   <td className="px-4 py-2 font-medium">{personLabel(r.full_name, r.email)}</td>
@@ -98,6 +100,13 @@ export function RedemptionHistory({
               ))}
             </tbody>
           </table>
+          <ShowMore
+            ref={sentinelRef}
+            hasMore={hasMore}
+            remaining={remaining}
+            onClick={showMore}
+            label="Show more meals"
+          />
           <p className="border-t px-4 py-2 text-xs text-muted-foreground">
             {rows.length} meal(s)
           </p>

@@ -5,6 +5,7 @@ import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
 import { getDepartments, getVisitorReport, type VisitorRow } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
@@ -153,7 +154,7 @@ export default async function VisitorReportPage({
               <th className="px-3 py-2 text-right font-medium">Dwell</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={9} className="divide-y" label="Show more visitors">
             {report.rows.map((r: VisitorRow, i) => (
               <tr key={`${r.visit_date}-${i}`}>
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{r.visit_date}</td>
@@ -174,7 +175,7 @@ export default async function VisitorReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
     </div>

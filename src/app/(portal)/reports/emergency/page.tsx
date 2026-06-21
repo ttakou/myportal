@@ -3,6 +3,7 @@ import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getEmergencyReport, type EmergencyIncidentRow } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
@@ -130,7 +131,7 @@ export default async function EmergencyReportPage({
               <th className="px-3 py-2 text-right font-medium">Resolve</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={8} className="divide-y" label="Show more incidents">
             {report.rows.map((r: EmergencyIncidentRow, i) => (
               <tr key={`${r.created_at}-${i}`} className={cn(r.sos && "bg-destructive/5")}>
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">
@@ -168,7 +169,7 @@ export default async function EmergencyReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
     </div>
