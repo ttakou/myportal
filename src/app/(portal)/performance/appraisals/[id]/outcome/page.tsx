@@ -34,6 +34,8 @@ export default async function AppraisalOutcomePage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      {/* A4 with sensible margins when saved as PDF / printed. */}
+      <style>{"@media print { @page { size: A4; margin: 16mm; } body { -webkit-print-color-adjust: exact; } }"}</style>
       <div className="flex items-center justify-between gap-3 print:hidden">
         <Link
           href="/performance/appraisals"
@@ -150,6 +152,27 @@ export default async function AppraisalOutcomePage({
           </div>
         )}
       </section>
+
+      {/* Signature block for the signed copy. */}
+      <section className="grid grid-cols-2 gap-8 pt-8">
+        <Signature role="Employee" name={appraisal.employee_name} />
+        <Signature role="Manager" name={appraisal.manager_name} />
+      </section>
+      <p className="text-right text-[11px] text-muted-foreground">
+        Generated {new Date().toLocaleString("en-GB", { timeZone: "UTC" })} UTC
+      </p>
+    </div>
+  );
+}
+
+function Signature({ role, name }: { role: string; name: string | null }) {
+  return (
+    <div className="space-y-6">
+      <div className="border-b border-foreground/40" />
+      <div className="text-xs text-muted-foreground">
+        {role}
+        {name ? ` — ${name}` : ""} · Signature &amp; date
+      </div>
     </div>
   );
 }

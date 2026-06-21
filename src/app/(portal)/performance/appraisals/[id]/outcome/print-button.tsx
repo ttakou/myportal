@@ -1,13 +1,16 @@
 "use client";
 
-import { Printer } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-/** Triggers the browser print dialog. Hidden in the printed output. */
+/**
+ * Opens the browser print dialog, where the appraisal can be saved as a PDF
+ * (Destination → "Save as PDF"). Hidden in the printed output.
+ */
 export function PrintButton() {
   return (
     <Button size="sm" variant="outline" className="print:hidden" onClick={() => window.print()}>
-      <Printer className="mr-1.5 h-4 w-4" /> Print
+      <FileDown className="mr-1.5 h-4 w-4" /> Download PDF
     </Button>
   );
 }
