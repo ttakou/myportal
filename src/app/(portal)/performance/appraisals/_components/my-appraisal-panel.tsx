@@ -84,7 +84,7 @@ export function MyAppraisalPanel({
 
       {appraisal.goalsReadOnly && (
         <p className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-          Showing your goals for the year{appraisal.goalsSourceName ? ` — set in ${appraisal.goalsSourceName}` : ""}.
+          Showing your goals and development plan for the year{appraisal.goalsSourceName ? ` — set in ${appraisal.goalsSourceName}` : ""}.
           Edit them in that cycle; here they&apos;re read-only.
         </p>
       )}
@@ -605,7 +605,8 @@ function DevelopmentPlan({
   const [area, setArea] = useState("");
   const [action, setAction] = useState("");
   const [targetDate, setTargetDate] = useState("");
-  const editable = appraisal.status !== "closed";
+  // In a gate cycle the IDP (like goals) belongs to the Annual cycle — read-only.
+  const editable = !appraisal.goalsReadOnly && appraisal.status !== "closed";
   const items = appraisal.development_plan;
 
   if (!editable && items.length === 0) return null;

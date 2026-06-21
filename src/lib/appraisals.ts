@@ -684,10 +684,12 @@ async function hydrate(appraisal: Appraisal, goalsAppraisalId?: string): Promise
   for (const g of goalsList) g.raters = ratersByGoal.get(g.id) ?? [];
   appraisal.goals = goalsList;
 
+  // The IDP, like goals, belongs to the year — surface the Annual cycle's plan
+  // across the gate cycles (read-only there) by loading it from `gid`.
   const { data: dev } = await supabase
     .from("appraisal_development_plans")
     .select("id, area, action, target_date, status")
-    .eq("appraisal_id", appraisal.id)
+    .eq("appraisal_id", gid)
     .order("created_at");
   appraisal.development_plan = (dev ?? []) as Appraisal["development_plan"];
   const { data: appeal } = await supabase
