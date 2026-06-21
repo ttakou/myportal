@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { CalendarPlus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { cn } from "@/lib/utils";
 import type {
   EntitlementCandidate,
@@ -264,6 +265,10 @@ function EntitlementsTable({
     return c;
   }, [entitlements]);
 
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(rows.length, {
+    resetKey: `${query}|${filter}`,
+  });
+
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -317,7 +322,7 @@ function EntitlementsTable({
               </tr>
             </thead>
             <tbody className="divide-y">
-              {rows.map((e) => (
+              {rows.slice(0, count).map((e) => (
                 <tr key={e.id} className={cn(e.status === "expired" && "opacity-60")}>
                   <td className="px-4 py-2">
                     <div className="font-medium">{personLabel(e.full_name, e.email)}</div>
@@ -359,6 +364,13 @@ function EntitlementsTable({
               ))}
             </tbody>
           </table>
+          <ShowMore
+            ref={sentinelRef}
+            hasMore={hasMore}
+            remaining={remaining}
+            onClick={showMore}
+            label="Show more entitlements"
+          />
         </div>
       )}
     </section>

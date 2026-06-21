@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import type { Installation } from "@/types/offshore";
 import {
   GENDER_LABEL,
@@ -2425,19 +2426,16 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
                           {o.profile_id && (
                             <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
                               <span>B2B:</span>
-                              <select
-                                value={mates.find((m) => m.name === o.b2b_name)?.id ?? ""}
+                              <LazySelect
+                                value={mates.find((m) => m.name === o.b2b_name)?.id ?? null}
+                                options={mates.filter((m) => m.id !== o.profile_id)}
+                                getOptionValue={(m) => m.id}
+                                getOptionLabel={(m) => m.name}
+                                placeholder="— none —"
                                 disabled={pending}
-                                onChange={(e) => run(() => setBackToBack(o.profile_id as string, e.target.value || null))}
                                 className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
-                              >
-                                <option value="">— none —</option>
-                                {mates
-                                  .filter((m) => m.id !== o.profile_id)
-                                  .map((m) => (
-                                    <option key={m.id} value={m.id}>{m.name}</option>
-                                  ))}
-                              </select>
+                                onChange={(v) => run(() => setBackToBack(o.profile_id as string, v))}
+                              />
                             </div>
                           )}
                         </li>
@@ -2500,6 +2498,7 @@ function RoomsPanel({
   const [beds, setBeds] = useState("2");
   const [gender, setGender] = useState<GenderRestriction>("any");
   const [repDate, setRepDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const roomsReveal = useProgressiveReveal(rooms.length);
 
   return (
     <div className="space-y-3">
@@ -2531,7 +2530,7 @@ function RoomsPanel({
             </tr>
           </thead>
           <tbody className="divide-y">
-            {rooms.map((r) => {
+            {rooms.slice(0, roomsReveal.count).map((r) => {
               const cell = "w-full rounded-md border bg-background px-2 py-1 text-xs";
               return (
                 <tr key={r.id}>
@@ -2642,6 +2641,13 @@ function RoomsPanel({
           </tbody>
         </table>
       </div>
+      <ShowMore
+        ref={roomsReveal.sentinelRef}
+        hasMore={roomsReveal.hasMore}
+        remaining={roomsReveal.remaining}
+        onClick={roomsReveal.showMore}
+        label="Show more rooms"
+      />
 
       <form
         className="grid gap-2 rounded-lg border border-dashed bg-card/50 p-4 sm:grid-cols-2 lg:grid-cols-3"
@@ -2707,6 +2713,7 @@ function RosterPanel({
   const { pending, error, run } = useRun();
   const [newId, setNewId] = useState("");
   const [repDate, setRepDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const rosterReveal = useProgressiveReveal(roster.length);
 
   function expired(date: string | null) {
     return date ? new Date(date) < new Date() : false;
@@ -2735,19 +2742,22 @@ function RosterPanel({
         }}
       >
         <span className="text-sm font-medium">Add to roster:</span>
-        <select value={newId} onChange={(e) => setNewId(e.target.value)} required className={field}>
-          <option value="">Choose person…</option>
-          {addable.map((p) => (
-            <option key={p.id} value={p.id}>{p.full_name}</option>
-          ))}
-        </select>
+        <LazySelect
+          value={newId || null}
+          options={addable}
+          getOptionValue={(p) => p.id}
+          getOptionLabel={(p) => p.full_name}
+          placeholder="Choose person…"
+          className={field}
+          onChange={(v) => setNewId(v ?? "")}
+        />
         <Button type="submit" size="sm" disabled={pending || !newId}>Add</Button>
       </form>
 
       <BulkRosterImport />
 
       <div className="space-y-3">
-        {roster.map((m) => (
+        {roster.slice(0, rosterReveal.count).map((m) => (
           <div key={m.id} className="rounded-lg border bg-card p-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{m.full_name || m.email}</span>
@@ -2879,6 +2889,13 @@ function RosterPanel({
           </p>
         )}
       </div>
+      <ShowMore
+        ref={rosterReveal.sentinelRef}
+        hasMore={rosterReveal.hasMore}
+        remaining={rosterReveal.remaining}
+        onClick={rosterReveal.showMore}
+        label="Show more roster members"
+      />
     </div>
   );
 }

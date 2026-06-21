@@ -5,6 +5,7 @@ import { useStatusTransition } from "@/components/activity";
 import { Car, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
   VEHICLE_TYPES,
@@ -53,6 +54,10 @@ export function VisitorsBoard({
 
   // Reception check-in dialog (captures badge + vehicle type/plate on arrival).
   const [checkIn, setCheckIn] = useState<Visitor | null>(null);
+
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
+    visitors.length,
+  );
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -147,7 +152,7 @@ export function VisitorsBoard({
             </tr>
           </thead>
           <tbody className="divide-y">
-            {visitors.map((v) => {
+            {visitors.slice(0, count).map((v) => {
               const vehicle = vehicleLabel(v);
               return (
               <tr key={v.id}>
@@ -233,6 +238,13 @@ export function VisitorsBoard({
           </tbody>
         </table>
       </div>
+      <ShowMore
+        ref={sentinelRef}
+        hasMore={hasMore}
+        remaining={remaining}
+        onClick={showMore}
+        label="Show more visitors"
+      />
 
       {checkIn && (
         <CheckInDialog

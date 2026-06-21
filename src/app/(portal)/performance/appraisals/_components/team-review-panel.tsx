@@ -6,6 +6,8 @@ import { useStatusTransition } from "@/components/activity";
 import { Check, ChevronDown, Send, Undo2, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { LazySelect } from "@/components/ui/lazy-select";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type Colleague } from "@/types/appraisal";
 import {
   approveGoals,
@@ -27,6 +29,9 @@ export function TeamReviewPanel({
   colleagues?: Colleague[];
   currentDelegate?: { id: string; name: string | null } | null;
 }) {
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
+    appraisals.length,
+  );
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -34,10 +39,17 @@ export function TeamReviewPanel({
         <DelegateControl colleagues={colleagues} current={currentDelegate} />
       </div>
       <div className="space-y-3">
-        {appraisals.map((a) => (
+        {appraisals.slice(0, count).map((a) => (
           <TeamRow key={a.id} appraisal={a} />
         ))}
       </div>
+      <ShowMore
+        ref={sentinelRef}
+        hasMore={hasMore}
+        remaining={remaining}
+        onClick={showMore}
+        label="Show more reports"
+      />
     </section>
   );
 }
@@ -75,20 +87,16 @@ function DelegateControl({
       </button>
       {open && (
         <div className="mt-1 flex items-center gap-2">
-          <select
-            defaultValue={current?.id ?? ""}
+          <LazySelect
+            value={current?.id ?? null}
+            options={colleagues}
+            getOptionValue={(c) => c.id}
+            getOptionLabel={(c) => `${c.full_name ?? "—"}${c.department ? ` · ${c.department}` : ""}`}
+            placeholder="No delegate"
             disabled={pending}
-            onChange={(e) => set(e.target.value || null)}
+            onChange={(v) => set(v)}
             className="rounded-md border bg-background px-2 py-1 text-xs"
-          >
-            <option value="">No delegate</option>
-            {colleagues.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.full_name ?? "—"}
-                {c.department ? ` · ${c.department}` : ""}
-              </option>
-            ))}
-          </select>
+          />
         </div>
       )}
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}

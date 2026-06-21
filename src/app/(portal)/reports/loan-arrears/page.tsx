@@ -8,6 +8,7 @@ import {
   type LoanArrearsRow,
 } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
@@ -157,7 +158,7 @@ export default async function LoanArrearsReportPage({
               <th className="px-3 py-2 text-right font-medium">Savings</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={8} className="divide-y" label="Show more loans">
             {report.rows.map((r) => (
               <tr key={r.loan_id} className={cn(r.arrears > 0 && "bg-destructive/5")}>
                 <td className="px-3 py-1.5 font-medium">{r.borrower ?? "—"}</td>
@@ -179,7 +180,7 @@ export default async function LoanArrearsReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
     </div>

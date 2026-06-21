@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { PlaneTakeoff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import {
   AIRPORT_SERVICE_LABEL,
   AIRPORT_STATUS_LABEL,
@@ -30,6 +31,7 @@ function toLocalInput(iso: string | null) {
 
 export function AirportDesk({ trips }: { trips: Trip[] }) {
   const meetGreet = trips.filter((t) => t.assistance && t.assistance.status !== "closed");
+  const reveal = useProgressiveReveal(trips.length);
 
   return (
     <section className="space-y-3">
@@ -46,10 +48,17 @@ export function AirportDesk({ trips }: { trips: Trip[] }) {
       )}
 
       <div className="space-y-3">
-        {trips.map((t) => (
+        {trips.slice(0, reveal.count).map((t) => (
           <DeskCard key={t.id} trip={t} />
         ))}
       </div>
+      <ShowMore
+        ref={reveal.sentinelRef}
+        hasMore={reveal.hasMore}
+        remaining={reveal.remaining}
+        onClick={reveal.showMore}
+        label="Show more trips"
+      />
     </section>
   );
 }

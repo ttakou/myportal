@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
   AIRPORT_STATUS_LABEL,
@@ -85,6 +86,9 @@ export function TripsBoard({
   const [flightArrival, setFlightArrival] = useState("");
 
   const needsApproval = APPROVAL_TRAVEL_TYPES.includes(travelType);
+
+  const queueReveal = useProgressiveReveal(queue.length);
+  const mineReveal = useProgressiveReveal(mine.length);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -218,7 +222,7 @@ export function TripsBoard({
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Approvals</h2>
           <div className="space-y-2">
-            {queue.map((t) => (
+            {queue.slice(0, queueReveal.count).map((t) => (
               <div key={t.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
                 <div>
                   <p className="font-medium">
@@ -249,6 +253,13 @@ export function TripsBoard({
             ))}
             {queue.length === 0 && <p className="text-sm text-muted-foreground">Nothing awaiting your approval.</p>}
           </div>
+          <ShowMore
+            ref={queueReveal.sentinelRef}
+            hasMore={queueReveal.hasMore}
+            remaining={queueReveal.remaining}
+            onClick={queueReveal.showMore}
+            label="Show more approvals"
+          />
         </section>
       )}
 
@@ -256,11 +267,18 @@ export function TripsBoard({
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">My trips</h2>
         <div className="space-y-3">
-          {mine.map((t) => (
+          {mine.slice(0, mineReveal.count).map((t) => (
             <TripCard key={t.id} trip={t} pending={pending} run={run} />
           ))}
           {mine.length === 0 && <p className="text-sm text-muted-foreground">No trips declared yet.</p>}
         </div>
+        <ShowMore
+          ref={mineReveal.sentinelRef}
+          hasMore={mineReveal.hasMore}
+          remaining={mineReveal.remaining}
+          onClick={mineReveal.showMore}
+          label="Show more trips"
+        />
       </section>
     </div>
   );

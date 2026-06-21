@@ -5,6 +5,7 @@ import { useStatusTransition } from "@/components/activity";
 import { ClipboardList, TriangleAlert, Truck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
   PRIORITY_LABEL,
@@ -81,6 +82,8 @@ export function DispatchBoard({
     [drivers],
   );
 
+  const activeReveal = useProgressiveReveal(active.length);
+
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
@@ -116,7 +119,7 @@ export function DispatchBoard({
       )}
 
       <div className="space-y-3">
-        {active.map((r) => (
+        {active.slice(0, activeReveal.count).map((r) => (
           <TaskRow key={r.id} r={r} drivers={sortedDrivers} vehicles={vehicles} pending={pending} run={run} />
         ))}
         {active.length === 0 && (
@@ -125,6 +128,13 @@ export function DispatchBoard({
           </p>
         )}
       </div>
+      <ShowMore
+        ref={activeReveal.sentinelRef}
+        hasMore={activeReveal.hasMore}
+        remaining={activeReveal.remaining}
+        onClick={activeReveal.showMore}
+        label="Show more tasks"
+      />
 
       {closed.length > 0 && (
         <details className="rounded-lg border bg-card p-3">
@@ -383,22 +393,24 @@ function NewTaskForm({
         <input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Pickup" required className={field} />
         <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} placeholder="Drop-off" required className={field} />
         <input value={passengers} onChange={(e) => setPassengers(e.target.value)} type="number" min={1} placeholder="Passengers" className={field} />
-        <select value={driverId} onChange={(e) => setDriverId(e.target.value)} className={field}>
-          <option value="">Driver (assign later)</option>
-          {drivers.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.full_name}{d.on_duty ? "" : " (off duty)"}
-            </option>
-          ))}
-        </select>
-        <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} className={field}>
-          <option value="">Vehicle…</option>
-          {vehicles.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
+        <LazySelect
+          value={driverId || null}
+          options={drivers}
+          getOptionValue={(d) => d.id}
+          getOptionLabel={(d) => `${d.full_name}${d.on_duty ? "" : " (off duty)"}`}
+          placeholder="Driver (assign later)"
+          className={field}
+          onChange={(v) => setDriverId(v ?? "")}
+        />
+        <LazySelect
+          value={vehicleId || null}
+          options={vehicles}
+          getOptionValue={(v) => v.id}
+          getOptionLabel={(v) => v.name}
+          placeholder="Vehicle…"
+          className={field}
+          onChange={(v) => setVehicleId(v ?? "")}
+        />
         <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instructions for the driver" className={field} />
         <Button type="submit" disabled={pending}>
           Create task
@@ -470,14 +482,15 @@ function DriversPanel({
       >
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New driver name" required className={field} />
         <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" className={field} />
-        <select value={profileId} onChange={(e) => setProfileId(e.target.value)} className={field}>
-          <option value="">Portal account (optional)</option>
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.full_name}
-            </option>
-          ))}
-        </select>
+        <LazySelect
+          value={profileId || null}
+          options={profiles}
+          getOptionValue={(p) => p.id}
+          getOptionLabel={(p) => p.full_name}
+          placeholder="Portal account (optional)"
+          className={field}
+          onChange={(v) => setProfileId(v ?? "")}
+        />
         <Button type="submit" variant="outline" disabled={pending}>
           Add driver
         </Button>
