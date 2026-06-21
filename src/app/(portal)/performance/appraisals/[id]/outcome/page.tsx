@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileText } from "lucide-react";
 import { getAppraisal } from "@/lib/appraisals";
 import { getAccess } from "@/lib/auth";
 import { STATUS_LABEL } from "@/types/appraisal";
@@ -45,6 +45,12 @@ export default async function AppraisalOutcomePage({
         </Link>
         <div className="flex items-center gap-2">
           {canReopen && <ReopenControl id={id} />}
+          <a
+            href={`/performance/appraisals/${id}/outcome/docx`}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-accent"
+          >
+            <FileText className="h-4 w-4" /> Download Word
+          </a>
           <PrintButton />
         </div>
       </div>
