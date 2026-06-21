@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
 import {
@@ -87,15 +88,16 @@ function mapAppraisal(r: RawAppraisalRow): Appraisal {
   };
 }
 
-/** All competencies for the HR framework editor. */
-export async function getCompetencies(): Promise<AppraisalCompetency[]> {
+/** All competencies for the HR framework editor. Request-cached: the framework
+ *  is near-static and several panels read it within one render. */
+export const getCompetencies = cache(async (): Promise<AppraisalCompetency[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_competencies")
     .select("id, name, description, is_active, weight")
     .order("name");
   return (data ?? []) as AppraisalCompetency[];
-}
+});
 
 /** The tenant's active cycle (or the most recent one). */
 export async function getActiveCycle(): Promise<AppraisalCycle | null> {
@@ -113,8 +115,9 @@ export async function getActiveCycle(): Promise<AppraisalCycle | null> {
   return rows.find((c) => c.status === "active") ?? rows[0] ?? null;
 }
 
-/** All cycles for the HR console. */
-export async function getCycles(): Promise<AppraisalCycle[]> {
+/** All cycles for the HR console. Request-cached: the cycle list is near-static
+ *  and read by the year switcher, the page and several panels in one render. */
+export const getCycles = cache(async (): Promise<AppraisalCycle[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_cycles")
@@ -125,7 +128,7 @@ export async function getCycles(): Promise<AppraisalCycle[]> {
     .order("year", { ascending: false })
     .order("created_at", { ascending: false });
   return (data ?? []) as unknown as AppraisalCycle[];
-}
+});
 
 export interface AppraisalHistoryEntry {
   cycle_id: string;
@@ -223,8 +226,9 @@ export async function getMyRaterAssignments(): Promise<RaterAssignment[]> {
   return (data ?? []) as RaterAssignment[];
 }
 
-/** Active people in the tenant, for the stakeholder-reviewer picker. */
-export async function getTenantColleagues(): Promise<Colleague[]> {
+/** Active people in the tenant, for the stakeholder-reviewer picker.
+ *  Request-cached: shared by the manager and employee panels in one render. */
+export const getTenantColleagues = cache(async (): Promise<Colleague[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("profiles")
@@ -233,7 +237,7 @@ export async function getTenantColleagues(): Promise<Colleague[]> {
     .order("full_name")
     .limit(500);
   return (data ?? []) as Colleague[];
-}
+});
 
 /** Department objectives the signed-in employee can align goals to: their
  *  department (or company-wide), scoped to the cycle (or evergreen), active. */
@@ -271,8 +275,8 @@ export async function getDepartmentObjectivesForMe(
   }));
 }
 
-/** All department objectives for the HR management UI. */
-export async function getDepartmentObjectives(): Promise<DepartmentObjective[]> {
+/** All department objectives for the HR management UI. Request-cached. */
+export const getDepartmentObjectives = cache(async (): Promise<DepartmentObjective[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_department_objectives")
@@ -288,7 +292,7 @@ export async function getDepartmentObjectives(): Promise<DepartmentObjective[]> 
     cycle_id: r.cycle_id ?? null,
     cycle_name: one<{ name?: string }>(r.cycle)?.name ?? null,
   }));
-}
+});
 
 /**
  * The signed-in manager's direct line — their direct reports (from the
