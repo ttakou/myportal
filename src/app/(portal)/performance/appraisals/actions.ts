@@ -778,18 +778,26 @@ export async function submitManagerEvaluation(input: {
   const a = guard.a;
   const supabase = createClient();
 
-  const [{ data: goals }, { data: comps }, { data: cycle }] = await Promise.all([
-    supabase.from("appraisal_goals").select("kind, weight, manager_rating").eq("appraisal_id", a.id),
-    supabase
-      .from("appraisal_competency_ratings")
-      .select("manager_rating")
-      .eq("appraisal_id", a.id),
-    supabase
-      .from("appraisal_cycles")
-      .select("weight_okr, weight_competency, weight_development, require_second_level, rating_bands")
-      .eq("id", a.cycle_id)
-      .maybeSingle(),
-  ]);
+  const [{ data: goals }, { data: comps }, { data: compFramework }, { data: cycle }] =
+    await Promise.all([
+      supabase.from("appraisal_goals").select("kind, weight, manager_rating").eq("appraisal_id", a.id),
+      supabase
+        .from("appraisal_competency_ratings")
+        .select("manager_rating, competency_id")
+        .eq("appraisal_id", a.id),
+      supabase.from("appraisal_competencies").select("id, weight"),
+      supabase
+        .from("appraisal_cycles")
+        .select("weight_okr, weight_competency, weight_development, require_second_level, rating_bands")
+        .eq("id", a.cycle_id)
+        .maybeSingle(),
+    ]);
+  const compWeight = new Map(
+    ((compFramework ?? []) as { id: string; weight: number | null }[]).map((c) => [
+      c.id,
+      Math.max(1, c.weight ?? 1),
+    ]),
+  );
 
   // OKR component: weighted (by goal weight) average of objective ratings, 1–5.
   let okrW = 0;
@@ -816,15 +824,20 @@ export async function submitManagerEvaluation(input: {
   if (okrCount === 0) return { ok: false, error: "Rate at least one objective before submitting." };
   const okrAvg = okrW > 0 ? okrAcc / okrW : okrPlain / okrCount; // 1–5
 
-  // Competency component: simple average, 1–5.
+  // Competency component: weight-weighted average of the manager ratings, 1–5
+  // (each competency carries a relative weight; default 1 = equal weighting).
   let compAcc = 0;
+  let compW = 0;
   let compCount = 0;
   for (const c of comps ?? []) {
     const r = c.manager_rating as number | null;
     if (r == null) continue;
-    compAcc += r;
+    const w = compWeight.get(c.competency_id as string) ?? 1;
+    compAcc += w * r;
+    compW += w;
     compCount += 1;
   }
+  const compAvg = compW > 0 ? compAcc / compW : 0;
 
   // Component %s (rating/5 → %), then weight by the cycle's configured weights,
   // normalising over the components that actually have data.
@@ -835,7 +848,7 @@ export async function submitManagerEvaluation(input: {
   let num = pct(okrAvg) * wOkr;
   let den = wOkr;
   if (compCount > 0) {
-    num += pct(compAcc / compCount) * wComp;
+    num += pct(compAvg) * wComp;
     den += wComp;
   }
   if (devCount > 0) {
@@ -1140,6 +1153,7 @@ export async function resolveAppeal(input: {
 export async function addCompetency(input: {
   name: string;
   description?: string;
+  weight?: number;
 }): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;
@@ -1151,10 +1165,16 @@ export async function addCompetency(input: {
     tenant_id: tenant.id,
     name: input.name.trim(),
     description: input.description?.trim() || null,
+    weight: clampCompetencyWeight(input.weight),
   });
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
+}
+
+function clampCompetencyWeight(w: number | undefined): number {
+  if (w === undefined || !Number.isFinite(w)) return 1;
+  return Math.max(1, Math.min(100, Math.floor(w)));
 }
 
 export async function setCompetencyActive(id: string, isActive: boolean): Promise<ActionResult> {
@@ -1164,6 +1184,20 @@ export async function setCompetencyActive(id: string, isActive: boolean): Promis
   const { error } = await supabase
     .from("appraisal_competencies")
     .update({ is_active: isActive })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** HR sets a competency's relative weight in the score (1 = default). */
+export async function setCompetencyWeight(id: string, weight: number): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_competencies")
+    .update({ weight: clampCompetencyWeight(weight) })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
   rev();
