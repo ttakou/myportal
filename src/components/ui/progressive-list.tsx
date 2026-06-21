@@ -8,6 +8,12 @@ type RevealOptions = {
   initial?: number;
   /** Rows added per reveal (button click or scroll). */
   step?: number;
+  /**
+   * Lists no longer than this render in full — capping a handful of rows only
+   * costs a "Show more" click and a layout shift while saving no meaningful DOM.
+   * The progressive window only engages once a list is genuinely long.
+   */
+  threshold?: number;
   /** Change this (e.g. a search query) to collapse back to `initial`. */
   resetKey?: unknown;
 };
@@ -24,14 +30,18 @@ type RevealOptions = {
  */
 export function useProgressiveReveal(
   total: number,
-  { initial = 10, step = 10, resetKey }: RevealOptions = {},
+  { initial = 10, step = 10, threshold = 30, resetKey }: RevealOptions = {},
 ) {
-  const [count, setCount] = useState(initial);
+  // Below the threshold, show everything up front so small lists behave exactly
+  // as they did before (no "Show more", no scroll reveal, no pop-in).
+  const floor = total <= threshold ? total : initial;
+  const [count, setCount] = useState(floor);
 
-  // Collapse back to the first page whenever the filter changes.
+  // Collapse back to the first page when the filter changes — or when the list
+  // shrinks under the threshold and should render in full again.
   useEffect(() => {
-    setCount(initial);
-  }, [resetKey, initial]);
+    setCount(floor);
+  }, [resetKey, floor]);
 
   const effective = Math.min(count, total);
   const hasMore = effective < total;
@@ -88,6 +98,7 @@ export function ProgressiveTableBody({
   colSpan,
   initial = 10,
   step = 10,
+  threshold = 30,
   label = "Show more",
   className,
 }: {
@@ -95,6 +106,7 @@ export function ProgressiveTableBody({
   colSpan: number;
   initial?: number;
   step?: number;
+  threshold?: number;
   label?: string;
   className?: string;
 }) {
@@ -102,6 +114,7 @@ export function ProgressiveTableBody({
   const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(rows.length, {
     initial,
     step,
+    threshold,
   });
   return (
     <tbody className={className}>

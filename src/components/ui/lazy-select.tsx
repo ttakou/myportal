@@ -11,6 +11,10 @@ import { useState } from "react";
  * take minutes to open. Until the control is focused we render only the
  * currently-selected option, so the value still displays; the full list is
  * built on demand. Generic over the option type.
+ *
+ * Deferral only matters for genuinely large lists. A list no longer than
+ * `eagerThreshold` is rendered in full immediately, so small dropdowns open
+ * instantly with no first-focus build delay — exactly as a plain `<select>`.
  */
 export function LazySelect<T>({
   value,
@@ -20,6 +24,7 @@ export function LazySelect<T>({
   placeholder = "—",
   disabled,
   className,
+  eagerThreshold = 50,
   onChange,
 }: {
   value: string | null;
@@ -29,9 +34,12 @@ export function LazySelect<T>({
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  eagerThreshold?: number;
   onChange: (value: string | null) => void;
 }) {
-  const [ready, setReady] = useState(false);
+  // Short lists are cheap to render — populate them immediately so the first
+  // open is instant; only defer when the list is big enough to be worth it.
+  const [ready, setReady] = useState(options.length <= eagerThreshold);
   const selected = options.find((o) => getOptionValue(o) === value);
   return (
     <select
