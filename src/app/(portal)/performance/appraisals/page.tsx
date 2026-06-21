@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { getPips } from "@/lib/pip";
 import {
   getCalibration,
   getCalibrationAdjustments,
@@ -28,6 +29,7 @@ import { CycleSwitcher } from "./_components/cycle-switcher";
 import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
 import { AdminToggle } from "./_components/admin-toggle";
+import { PipPanel } from "./_components/pip-panel";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
 
@@ -83,11 +85,18 @@ export default async function AppraisalsPage({
   ]);
   const myHistory = await getMyAppraisalHistory();
   const isManagerView = team.length > 0;
-  const [colleagues, deptObjectives, myDelegate] = await Promise.all([
+  const [colleagues, deptObjectives, myDelegate, pip] = await Promise.all([
     myAppraisal || isManagerView ? getTenantColleagues() : Promise.resolve([]),
     myAppraisal ? getDepartmentObjectivesForMe(cycle?.id ?? null) : Promise.resolve([]),
     isManagerView ? getMyAppraisalDelegate() : Promise.resolve(null),
+    getPips(),
   ]);
+  // PIP employee picker: HR can pick anyone; a manager picks their reports.
+  const pipEmployees = (
+    isHr
+      ? colleagues.map((c) => ({ id: c.id, name: c.full_name ?? "—" }))
+      : team.map((a) => ({ id: a.employee_id, name: a.employee_name ?? "—" }))
+  ).filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
 
   const isManager = team.length > 0;
 
@@ -159,6 +168,9 @@ export default async function AppraisalsPage({
         <TeamReviewPanel appraisals={team} colleagues={colleagues} currentDelegate={myDelegate} />
       )}
       {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
+
+      <PipPanel data={pip} employees={pipEmployees} />
+
 
       {/* Employee view — your own appraisal for the selected year. */}
       {myAppraisal ? (
