@@ -1,9 +1,11 @@
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
 
-/** Distinct, non-empty departments in the tenant — for the report filter bar. */
-export async function getDepartments(): Promise<string[]> {
+/** Distinct, non-empty departments in the tenant — for the report filter bar.
+ *  Request-cached: read by the filter bar on every report page. */
+export const getDepartments = cache(async (): Promise<string[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("profiles")
@@ -15,15 +17,16 @@ export async function getDepartments(): Promise<string[]> {
     if (r.department) set.add(r.department);
   }
   return [...set];
-}
+});
 
 export interface ReportPerson {
   id: string;
   name: string;
 }
 
-/** Active people in the tenant — for the per-person report filter. */
-export async function getReportPeople(): Promise<ReportPerson[]> {
+/** Active people in the tenant — for the per-person report filter.
+ *  Request-cached: read by the filter bar on every report page. */
+export const getReportPeople = cache(async (): Promise<ReportPerson[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("profiles")
@@ -34,7 +37,7 @@ export async function getReportPeople(): Promise<ReportPerson[]> {
     id: p.id,
     name: p.full_name || "—",
   }));
-}
+});
 
 /** Access role (tenant_roles) names in the tenant — for the report filter bar. */
 export async function getAccessRoles(): Promise<string[]> {
