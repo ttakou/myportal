@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
-import { firstStageKey, type EmployeeContext } from "@/lib/workflow-engine";
+import { firstStageKey, skipAutoStages, type EmployeeContext } from "@/lib/workflow-engine";
 import type { StageRole, WorkflowStage } from "@/types/workflow";
 
 export interface AppraisalWorkflow {
@@ -63,7 +63,9 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
     isManagementGrade: isManager,
   };
 
-  const currentStageKey = (ap.current_stage_key as string | null) ?? firstStageKey(stages, ctx) ?? "";
+  const currentStageKey =
+    (ap.current_stage_key as string | null) ??
+    skipAutoStages(stages, ctx, firstStageKey(stages, ctx) ?? "");
 
   const {
     data: { user },

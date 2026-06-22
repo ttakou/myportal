@@ -10,6 +10,7 @@ import {
   nextStageKey,
   prevStageKey,
   progressPercent,
+  skipAutoStages,
   transition,
   type EmployeeContext,
 } from "@/lib/workflow-engine";
@@ -103,6 +104,23 @@ describe("transition", () => {
   it("rejects only when the stage permits it", () => {
     expect(transition(flow, mgr, "second", "reject")).toMatchObject({ nextKey: REJECTED, rejected: true });
     expect(transition(flow, ic, "review", "reject").nextKey).toBe("review"); // reject not allowed
+  });
+});
+
+describe("skipAutoStages", () => {
+  const auto: WorkflowStage[] = [
+    stage("a", "employee"),
+    stage("auto1", "hr", { autoProgress: true }),
+    stage("auto2", "hr", { autoProgress: true }),
+    stage("b", "line_manager"),
+  ];
+  it("skips consecutive auto-progress stages to the next human stage", () => {
+    expect(skipAutoStages(auto, ic, "auto1")).toBe("b");
+    expect(skipAutoStages(auto, ic, "a")).toBe("a"); // non-auto stays put
+  });
+  it("returns COMPLETED when auto stages run off the end", () => {
+    const trailing: WorkflowStage[] = [stage("x", "employee"), stage("y", "hr", { autoProgress: true })];
+    expect(skipAutoStages(trailing, ic, "y")).toBe(COMPLETED);
   });
 });
 

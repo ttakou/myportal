@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAppraisalWorkflow } from "@/lib/workflow-runtime";
-import { canAct, stageByKey, transition, type StageAction } from "@/lib/workflow-engine";
+import {
+  REJECTED,
+  canAct,
+  skipAutoStages,
+  stageByKey,
+  transition,
+  type StageAction,
+} from "@/lib/workflow-engine";
 import type { ActionResult } from "@/types/actions";
 
 const ACTIONS: StageAction[] = ["submit", "approve", "return", "reject"];
@@ -33,6 +40,11 @@ export async function advanceAppraisalStage(
   if (result.nextKey === wf.currentStageKey && action !== "submit" && action !== "approve") {
     return { ok: false, error: "That action isn't allowed at this stage." };
   }
+  // Forward moves skip any auto-progress stages so they don't stall the flow.
+  const nextKey =
+    result.nextKey === REJECTED
+      ? result.nextKey
+      : skipAutoStages(wf.stages, wf.ctx, result.nextKey);
 
   const supabase = createClient();
   const {
@@ -41,7 +53,7 @@ export async function advanceAppraisalStage(
 
   const { error } = await supabase
     .from("appraisals")
-    .update({ current_stage_key: result.nextKey, updated_at: new Date().toISOString() })
+    .update({ current_stage_key: nextKey, updated_at: new Date().toISOString() })
     .eq("id", appraisalId);
   if (error) return { ok: false, error: error.message };
 

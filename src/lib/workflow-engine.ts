@@ -161,6 +161,26 @@ export function transition(
   return { nextKey: next, done: next === COMPLETED, rejected: false };
 }
 
+/**
+ * Skip past any auto-progress stages starting at `key`, returning the first
+ * stage that requires a human (or COMPLETED/REJECTED). Guards against cycles.
+ */
+export function skipAutoStages(
+  stages: WorkflowStage[],
+  ctx: EmployeeContext,
+  key: string,
+): string {
+  let cur = key;
+  const seen = new Set<string>();
+  while (cur !== COMPLETED && cur !== REJECTED && !seen.has(cur)) {
+    seen.add(cur);
+    const s = stageByKey(stages, cur);
+    if (!s || !s.autoProgress) break;
+    cur = nextStageKey(stages, ctx, cur);
+  }
+  return cur;
+}
+
 /** Convenience: progress %, counting completed stages up to (not incl.) current. */
 export function progressPercent(
   stages: WorkflowStage[],
