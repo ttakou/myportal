@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { ArrowRight, ClipboardCheck, FileBarChart, Settings } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getActiveCycle, getMyAppraisal, getMyDirectLine } from "@/lib/appraisals";
 import { DirectLinePanel } from "./_components/direct-line-panel";
 import { MyPerformanceSummary } from "./_components/my-performance-summary";
+import { ReportWidgets } from "./_components/report-widgets";
 
 export default async function PerformancePage() {
   const access = await getAccess();
@@ -39,6 +41,12 @@ export default async function PerformancePage() {
           </div>
         )}
       </div>
+
+      {(access.isHr || access.isSystemAdmin || access.isAdmin) && (
+        <Suspense fallback={null}>
+          <ReportWidgets />
+        </Suspense>
+      )}
 
       <MyPerformanceSummary
         appraisal={myAppraisal}
