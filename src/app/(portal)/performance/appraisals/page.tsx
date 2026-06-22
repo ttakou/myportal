@@ -32,6 +32,7 @@ import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
 import { PipPanel } from "./_components/pip-panel";
 import { WorkflowSection } from "./_components/workflow-section";
+import { AppraisalFormOutline } from "./_components/appraisal-form-outline";
 import { HrWorkflowQueue } from "./_components/hr-workflow-queue";
 import { resolveAppraisalView } from "../_components/performance-views";
 
@@ -171,9 +172,12 @@ export default async function AppraisalsPage({
         <>
           {myAppraisal ? (
             <div className="space-y-3">
-              {/* Configured workflow (template-driven cycles only; else nothing). */}
+              {/* Configured workflow + form outline (template-driven cycles only). */}
               <Suspense fallback={null}>
                 <WorkflowSection appraisalId={myAppraisal.id} />
+              </Suspense>
+              <Suspense fallback={null}>
+                <AppraisalFormOutline appraisalId={myAppraisal.id} />
               </Suspense>
               <MyAppraisalPanel
                 appraisal={myAppraisal}
