@@ -26,6 +26,8 @@ export interface GoalTemplateInput {
   measurementType: MeasurementType;
   unit?: string | null;
   strategicObjective?: string | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
 }
 
 export async function saveGoalTemplate(input: GoalTemplateInput): Promise<ActionResult> {
@@ -46,6 +48,8 @@ export async function saveGoalTemplate(input: GoalTemplateInput): Promise<Action
     measurement_type: measurementType,
     unit: input.unit?.toString().trim() || null,
     strategic_objective: input.strategicObjective?.toString().trim() || null,
+    effective_from: input.effectiveFrom || null,
+    effective_to: input.effectiveTo || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -58,6 +62,46 @@ export async function saveGoalTemplate(input: GoalTemplateInput): Promise<Action
     const { error } = await supabase.from("goal_templates").insert({ ...fields, tenant_id: tenant.id });
     if (error) return { ok: false, error: error.message };
   }
+  revalidatePath("/performance/settings/goal-library");
+  return { ok: true };
+}
+
+export async function publishGoalTemplate(id: string): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can manage the goal library." };
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from("goal_templates")
+    .update({
+      status: "published",
+      published_at: new Date().toISOString(),
+      published_by: user?.id ?? null,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/performance/settings/goal-library");
+  return { ok: true };
+}
+
+export async function newGoalTemplateVersion(id: string): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can manage the goal library." };
+  const supabase = createClient();
+  const { data: src } = await supabase.from("goal_templates").select("*").eq("id", id).maybeSingle();
+  if (!src) return { ok: false, error: "Goal not found." };
+  const insert = { ...(src as Record<string, unknown>) };
+  delete insert.id;
+  delete insert.created_at;
+  delete insert.published_at;
+  delete insert.published_by;
+  insert.version = Number((src as Record<string, unknown>).version ?? 1) + 1;
+  insert.status = "draft";
+  insert.is_active = false;
+  const { error } = await supabase.from("goal_templates").insert(insert);
+  if (error) return { ok: false, error: error.message };
   revalidatePath("/performance/settings/goal-library");
   return { ok: true };
 }

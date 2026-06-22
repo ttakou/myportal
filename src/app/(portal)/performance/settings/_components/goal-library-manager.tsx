@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Upload, GitBranch } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,13 @@ import {
   type GoalTemplate,
   type MeasurementType,
 } from "@/types/goal-template";
-import { saveGoalTemplate, deleteGoalTemplate } from "../goal-template-actions";
+import { CONFIG_STATUS_LABEL } from "@/types/versioning";
+import {
+  saveGoalTemplate,
+  deleteGoalTemplate,
+  publishGoalTemplate,
+  newGoalTemplateVersion,
+} from "../goal-template-actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -28,6 +34,8 @@ type Draft = {
   measurementType: MeasurementType;
   unit: string;
   strategicObjective: string;
+  effectiveFrom: string;
+  effectiveTo: string;
 };
 
 const emptyDraft = (): Draft => ({
@@ -39,6 +47,8 @@ const emptyDraft = (): Draft => ({
   measurementType: "percentage",
   unit: "",
   strategicObjective: "",
+  effectiveFrom: "",
+  effectiveTo: "",
 });
 
 const toDraft = (t: GoalTemplate): Draft => ({
@@ -51,6 +61,8 @@ const toDraft = (t: GoalTemplate): Draft => ({
   measurementType: t.measurementType,
   unit: t.unit ?? "",
   strategicObjective: t.strategicObjective ?? "",
+  effectiveFrom: t.effectiveFrom ?? "",
+  effectiveTo: t.effectiveTo ?? "",
 });
 
 export function GoalLibraryManager({ templates }: { templates: GoalTemplate[] }) {
@@ -117,6 +129,16 @@ export function GoalLibraryManager({ templates }: { templates: GoalTemplate[] })
               <input value={draft.strategicObjective} onChange={(e) => set("strategicObjective", e.target.value)} className={cn(field, "mt-0.5 block w-full py-1.5")} />
             </label>
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-muted-foreground">
+              Effective from
+              <input type="date" value={draft.effectiveFrom} onChange={(e) => set("effectiveFrom", e.target.value)} className={cn(field, "mt-0.5 block w-full py-1.5")} />
+            </label>
+            <label className="text-xs text-muted-foreground">
+              Effective to
+              <input type="date" value={draft.effectiveTo} onChange={(e) => set("effectiveTo", e.target.value)} className={cn(field, "mt-0.5 block w-full py-1.5")} />
+            </label>
+          </div>
         </div>
 
         {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
@@ -154,15 +176,38 @@ export function GoalLibraryManager({ templates }: { templates: GoalTemplate[] })
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium">{t.title}</h3>
                   <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{GOAL_LEVEL_LABEL[t.level]}</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-xs font-medium",
+                      t.status === "published"
+                        ? "bg-green-100 text-green-700"
+                        : t.status === "draft"
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {CONFIG_STATUS_LABEL[t.status]} · v{t.version}
+                  </span>
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {MEASUREMENT_TYPE_LABEL[t.measurementType]}
                   {t.unit ? ` · ${t.unit}` : ""} · weight {t.defaultWeight}%
                   {t.category ? ` · ${t.category}` : ""}
                   {t.strategicObjective ? ` · ↳ ${t.strategicObjective}` : ""}
+                  {t.effectiveFrom || t.effectiveTo
+                    ? ` · effective ${t.effectiveFrom ?? "…"}–${t.effectiveTo ?? "…"}`
+                    : ""}
                 </p>
               </div>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
+                {t.status === "draft" && (
+                  <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => publishGoalTemplate(t.id))}>
+                    <Upload className="h-4 w-4" /> Publish
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" disabled={pending} title="Start a new draft version" onClick={() => run(() => newGoalTemplateVersion(t.id))}>
+                  <GitBranch className="h-4 w-4" /> New version
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => setDraft(toDraft(t))}>
                   <Pencil className="h-4 w-4" /> Edit
                 </Button>

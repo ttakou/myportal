@@ -1,9 +1,11 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { GoalLevel, GoalTemplate, MeasurementType } from "@/types/goal-template";
+import { versionedFromRow } from "@/types/versioning";
 
 function fromRow(r: Record<string, unknown>): GoalTemplate {
   return {
+    ...versionedFromRow(r),
     id: String(r.id),
     title: String(r.title ?? ""),
     description: (r.description as string | null) ?? null,

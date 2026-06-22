@@ -1,3 +1,5 @@
+import type { Versioned } from "./versioning";
+
 export type GoalLevel = "corporate" | "department" | "team" | "individual";
 
 export const GOAL_LEVELS: GoalLevel[] = ["corporate", "department", "team", "individual"];
@@ -42,7 +44,7 @@ export const MEASUREMENT_TYPE_LABEL: Record<MeasurementType, string> = {
 };
 
 /** A reusable goal in the library (corporate/department/team/individual). */
-export interface GoalTemplate {
+export interface GoalTemplate extends Versioned {
   id: string;
   title: string;
   description: string | null;
