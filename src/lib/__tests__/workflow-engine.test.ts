@@ -10,7 +10,10 @@ import {
   nextStageKey,
   prevStageKey,
   progressPercent,
+  responsibleUserId,
   skipAutoStages,
+  stageDueDate,
+  isStageOverdue,
   transition,
   type EmployeeContext,
 } from "@/lib/workflow-engine";
@@ -121,6 +124,25 @@ describe("skipAutoStages", () => {
   it("returns COMPLETED when auto stages run off the end", () => {
     const trailing: WorkflowStage[] = [stage("x", "employee"), stage("y", "hr", { autoProgress: true })];
     expect(skipAutoStages(trailing, ic, "y")).toBe(COMPLETED);
+  });
+});
+
+describe("due dates & escalation helpers", () => {
+  const s = stage("review", "line_manager", { dueOffsetDays: 14 });
+  it("computes a due date from cycle start + offset", () => {
+    expect(stageDueDate(s, "2026-01-01")).toBe("2026-01-15");
+  });
+  it("flags overdue only after the due date", () => {
+    expect(isStageOverdue(s, "2026-01-01", "2026-01-20")).toBe(true);
+    expect(isStageOverdue(s, "2026-01-01", "2026-01-10")).toBe(false);
+    expect(isStageOverdue(s, "2026-01-01", "2026-01-15")).toBe(false); // due today, not yet overdue
+  });
+  it("maps responsible role to the right user id", () => {
+    const a = { employee_id: "e", manager_id: "m", second_level_id: "s2" };
+    expect(responsibleUserId("employee", a)).toBe("e");
+    expect(responsibleUserId("line_manager", a)).toBe("m");
+    expect(responsibleUserId("second_level", a)).toBe("s2");
+    expect(responsibleUserId("hr", a)).toBeNull();
   });
 });
 

@@ -181,6 +181,35 @@ export function skipAutoStages(
   return cur;
 }
 
+/** A stage's due date (YYYY-MM-DD) = cycle start + dueOffsetDays. */
+export function stageDueDate(stage: WorkflowStage, cycleStartIso: string): string {
+  const d = new Date(`${cycleStartIso.slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + (stage.dueOffsetDays || 0));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whether a stage is past its due date relative to `todayIso` (YYYY-MM-DD). */
+export function isStageOverdue(stage: WorkflowStage, cycleStartIso: string, todayIso: string): boolean {
+  return stageDueDate(stage, cycleStartIso) < todayIso.slice(0, 10);
+}
+
+/** Map a stage's responsible role to the user id on an appraisal, if any. */
+export function responsibleUserId(
+  role: StageRole,
+  a: { employee_id?: string | null; manager_id?: string | null; second_level_id?: string | null },
+): string | null {
+  switch (role) {
+    case "employee":
+      return a.employee_id ?? null;
+    case "line_manager":
+      return a.manager_id ?? null;
+    case "second_level":
+      return a.second_level_id ?? null;
+    default:
+      return null; // hr / calibration are handled HR-side
+  }
+}
+
 /** Convenience: progress %, counting completed stages up to (not incl.) current. */
 export function progressPercent(
   stages: WorkflowStage[],
