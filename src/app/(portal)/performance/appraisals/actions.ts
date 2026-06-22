@@ -263,7 +263,7 @@ export async function applyCalibration(input: {
 
   const [{ data: ap }, { data: cyc }] = await Promise.all([
     supabase.from("appraisals").select("final_score, rating_label").eq("id", a.id).maybeSingle(),
-    supabase.from("appraisal_cycles").select("rating_bands").eq("id", a.cycle_id).maybeSingle(),
+    supabase.from("appraisal_cycles").select("rating_bands, name").eq("id", a.cycle_id).maybeSingle(),
   ]);
   if (ap?.final_score == null)
     return { ok: false, error: "This appraisal has no score to calibrate yet." };
@@ -300,19 +300,18 @@ export async function applyCalibration(input: {
       input.reason?.trim() ? ` — ${input.reason.trim()}` : ""
     }`,
   );
-  // Tell the evaluators (manager + second-level) the committee adjusted the
-  // score. The reason stays committee-confidential; this is just a heads-up.
-  const recipients = [a.manager_id, a.second_level_id].filter(Boolean) as string[];
-  if (recipients.length) {
-    await notifyUsers({
-      tenantId: a.tenant_id,
-      profileIds: recipients,
-      category: "approval",
-      title: "Appraisal score calibrated",
-      body: `The calibration committee set the final score to ${newScore}% (${newLabel}).`,
-      url: "/performance/appraisals",
-    });
-  }
+  // Tell the configured recipients the committee finished calibrating. The
+  // reason stays committee-confidential; this is just a heads-up.
+  await dispatchEvent("calibration_completed", {
+    tenantId: a.tenant_id,
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    secondLevelIds: a.second_level_id ? [a.second_level_id] : [],
+    placeholders: {
+      cycle: String((cyc as { name?: string } | null)?.name ?? "the cycle"),
+      rating: `${newScore}% (${newLabel})`,
+    },
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
@@ -1070,12 +1069,10 @@ export async function recordDiscussion(input: {
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "final_discussion" }, "discussion_recorded");
-  await notifyUsers({
+  await dispatchEvent("acknowledgement_required", {
     tenantId: a.tenant_id,
-    profileIds: [a.employee_id],
-    category: "approval",
-    title: "Appraisal ready to acknowledge",
-    body: "Your manager recorded the appraisal discussion — please review and acknowledge.",
+    employeeIds: [a.employee_id],
+    managerIds: a.manager_id ? [a.manager_id] : [],
     url: "/performance/appraisals",
   });
   rev();
@@ -1144,6 +1141,12 @@ export async function closeAppraisal(appraisalId: string): Promise<ActionResult>
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "acknowledgement" }, "appraisal_closed");
+  await dispatchEvent("review_completed", {
+    tenantId: a.tenant_id,
+    employeeIds: [a.employee_id],
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
