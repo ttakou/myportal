@@ -26,6 +26,7 @@ export function performanceSubmenu(opts: { isHr: boolean; isManager: boolean }):
   }
   if (opts.isHr) {
     items.push({ key: "hr", label: "HR console", icon: "LayoutGrid", href: "/performance/appraisals?view=hr" });
+    items.push({ key: "reports", label: "Reports", icon: "BarChart3", href: "/performance/reports" });
     items.push({ key: "settings", label: "Performance settings", icon: "Settings", href: "/performance/settings" });
   }
   return items;
