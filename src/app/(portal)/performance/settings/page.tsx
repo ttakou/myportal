@@ -73,6 +73,18 @@ export default async function PerformanceSettingsPage() {
           </span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
         </Link>
+        <Link
+          href="/performance/settings/continuous"
+          className="flex items-center justify-between rounded-lg border bg-card p-4 hover:bg-accent"
+        >
+          <span>
+            <span className="block font-medium">Continuous performance</span>
+            <span className="block text-sm text-muted-foreground">
+              Check-ins, feedback, recognition and notes.
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+        </Link>
       </div>
 
       <PerformanceSettingsForm config={config} />
