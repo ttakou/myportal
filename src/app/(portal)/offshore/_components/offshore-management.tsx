@@ -1,24 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { useStatusTransition } from "@/components/activity";
 import {
   AlertTriangle,
-  Anchor,
-  BedDouble,
-  CalendarClock,
-  CalendarRange,
-  ClipboardList,
   FileText,
   History,
   ChevronDown,
-  LayoutGrid,
-  Plane,
   Trash2,
-  Users,
-  UserCog,
-  UtensilsCrossed,
-  LifeBuoy,
   Siren,
   X,
 } from "lucide-react";
@@ -99,6 +89,7 @@ import { BulkRosterImport } from "./bulk-roster-import";
 import { CateringPanel } from "./catering-panel";
 import { HistoryPanel } from "./history-panel";
 import { CrewAssign } from "./crew-assign";
+import { resolveManagementView } from "./offshore-views";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
@@ -136,49 +127,14 @@ export function OffshoreManagement(props: {
   musterDrill: MusterDrill | null;
   musterDrillHistory: MusterDrillSummary[];
 }) {
-  const [tab, setTab] = useState<Tab>("dashboard");
-  const pendingVisits = props.visits.filter((v) => v.status === "requested").length;
-  const tabs: { key: Tab; label: string; icon: typeof Users; badge?: number }[] = [
-    { key: "dashboard", label: "POB & dashboards", icon: LayoutGrid },
-    { key: "installations", label: "Installations", icon: Anchor },
-    { key: "crews", label: "Crew change", icon: CalendarClock },
-    { key: "calendar", label: "Rotation calendar", icon: CalendarRange },
-    { key: "manifests", label: "Manifests", icon: ClipboardList },
-    { key: "rooms", label: "Accommodation", icon: BedDouble },
-    { key: "catering", label: "Catering", icon: UtensilsCrossed },
-    { key: "roster", label: "Offshore staff", icon: Users },
-    { key: "assign", label: "Assign crews", icon: UserCog },
-    { key: "visitors", label: "Visitors", icon: Plane, badge: pendingVisits },
-    { key: "emergency", label: "Muster roles", icon: LifeBuoy },
-    { key: "drill", label: "Muster drill", icon: Siren, badge: props.musterDrill ? 1 : undefined },
-    { key: "history", label: "History", icon: History },
-  ];
+  // The active view is driven by the sidebar submenu via the `?view=` query
+  // param, so only one panel renders at a time. Unknown/"mytrips" falls back to
+  // the dashboard (the page renders the self-service area for "mytrips").
+  const searchParams = useSearchParams();
+  const tab = resolveManagementView(searchParams.get("view")) as Tab;
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1 border-b">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium",
-              tab === t.key
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <t.icon className="h-4 w-4" />
-            {t.label}
-            {t.badge ? (
-              <span className="rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-destructive-foreground">
-                {t.badge}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </div>
-
       {tab === "dashboard" && (
         <Dashboard
           pob={props.pob}

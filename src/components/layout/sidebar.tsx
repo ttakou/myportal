@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { LayoutDashboard, FileBarChart } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
+import { getAccess } from "@/lib/auth";
+import { OFFSHORE_VIEWS } from "@/app/(portal)/offshore/_components/offshore-views";
 import { NavLinks, type NavLink } from "./nav-links";
 
 /**
@@ -18,13 +20,27 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const services = await getActiveServices();
+  const [services, access] = await Promise.all([getActiveServices(), getAccess()]);
+  const canManageOffshore = access.isAdmin || access.isCampboss || access.isOim;
 
-  const links: NavLink[] = services.map((s) => ({
-    name: s.name,
-    href: s.route_path,
-    icon: s.icon,
-  }));
+  const links: NavLink[] = services.map((s) => {
+    const base: NavLink = { name: s.name, href: s.route_path, icon: s.icon };
+    // Offshore: managers get an indented submenu so each view shows on its own.
+    // Everyone lands on "My trips" (the self-service view) by default.
+    if (s.route_path === "/offshore" && canManageOffshore) {
+      return {
+        ...base,
+        defaultSubKey: "mytrips",
+        subItems: OFFSHORE_VIEWS.map((v) => ({
+          key: v.key,
+          label: v.label,
+          icon: v.icon,
+          href: `/offshore?view=${v.key}`,
+        })),
+      };
+    }
+    return base;
+  });
 
   // Reports hub: every user has at least the personal "My meals" report.
   const canSeeReports = true;
