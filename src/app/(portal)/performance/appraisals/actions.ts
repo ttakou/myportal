@@ -504,15 +504,18 @@ export async function submitGoals(appraisalId: string): Promise<ActionResult> {
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent(a, "goals_submitted");
-  if (a.manager_id)
-    await notifyUsers({
-      tenantId: a.tenant_id,
-      profileIds: [a.manager_id],
-      category: "approval",
-      title: "Goals submitted for review",
-      body: "A team member submitted their performance goals for your review.",
-      url: "/performance/appraisals",
-    });
+  const { data: subEmp } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", a.employee_id)
+    .maybeSingle();
+  await dispatchEvent("goal_submission", {
+    tenantId: a.tenant_id,
+    employeeIds: [a.employee_id],
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    placeholders: { employee: (subEmp as { full_name?: string } | null)?.full_name ?? "A team member" },
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
@@ -586,12 +589,11 @@ export async function returnGoals(input: { appraisalId: string; comment: string 
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent(a, "goals_returned", input.comment);
-  await notifyUsers({
+  await dispatchEvent("goal_rejection", {
     tenantId: a.tenant_id,
-    profileIds: [a.employee_id],
-    category: "approval",
-    title: "Goals returned for correction",
-    body: input.comment?.trim() || "Your manager asked for changes to your goals.",
+    employeeIds: [a.employee_id],
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    placeholders: { reason: input.comment?.trim() || "your manager asked for changes" },
     url: "/performance/appraisals",
   });
   rev();
