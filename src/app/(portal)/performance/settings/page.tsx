@@ -85,6 +85,18 @@ export default async function PerformanceSettingsPage() {
           </span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
         </Link>
+        <Link
+          href="/performance/settings/notifications"
+          className="flex items-center justify-between rounded-lg border bg-card p-4 hover:bg-accent"
+        >
+          <span>
+            <span className="block font-medium">Notifications</span>
+            <span className="block text-sm text-muted-foreground">
+              Per-event recipients, channels, templates and escalation.
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+        </Link>
       </div>
 
       <PerformanceSettingsForm config={config} />
