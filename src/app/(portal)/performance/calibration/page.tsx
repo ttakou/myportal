@@ -5,6 +5,10 @@ import { getAccess } from "@/lib/auth";
 import { getCalibrationSession } from "@/lib/calibration-session";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { PotentialSelect } from "./_components/potential-select";
+
+const PERF_LABELS = ["Low perf.", "Med perf.", "High perf."];
+const POT_LABELS = ["High potential", "Med potential", "Low potential"];
 
 export default async function CalibrationSessionPage({
   searchParams,
@@ -110,6 +114,44 @@ export default async function CalibrationSessionPage({
           </section>
 
           <section className="rounded-lg border bg-card p-5">
+            <h2 className="mb-2 font-medium">Performance vs potential (9-box)</h2>
+            <div className="overflow-x-auto">
+              <table className="text-xs">
+                <tbody>
+                  {session.nineBox.map((row, ri) => (
+                    <tr key={ri}>
+                      <th className="whitespace-nowrap px-2 py-1 text-left font-medium text-muted-foreground">
+                        {POT_LABELS[ri]}
+                      </th>
+                      {row.map((cell, ci) => (
+                        <td
+                          key={ci}
+                          className={cn(
+                            "h-20 w-28 align-top border p-1.5",
+                            ri === 0 && ci === 2 ? "bg-green-50" : ri === 2 && ci === 0 ? "bg-red-50" : "bg-muted/20",
+                          )}
+                        >
+                          <div className="font-semibold">{cell.count}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {cell.names.slice(0, 3).join(", ")}
+                            {cell.names.length > 3 ? ` +${cell.names.length - 3}` : ""}
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  <tr>
+                    <th />
+                    {PERF_LABELS.map((l) => (
+                      <th key={l} className="px-2 py-1 text-center font-medium text-muted-foreground">{l}</th>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="rounded-lg border bg-card p-5">
             <h2 className="mb-2 font-medium">Ratings</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -120,6 +162,7 @@ export default async function CalibrationSessionPage({
                     <th className="py-2 pr-4 font-medium">Adjusted</th>
                     <th className="py-2 pr-4 font-medium">Δ</th>
                     <th className="py-2 pr-4 font-medium">Rating</th>
+                    <th className="py-2 pr-4 font-medium">Potential</th>
                     {session.confidentiality.showAdjustmentReasons && <th className="py-2 font-medium">Reason</th>}
                   </tr>
                 </thead>
@@ -133,6 +176,9 @@ export default async function CalibrationSessionPage({
                         {r.delta ? (r.delta > 0 ? `+${r.delta}` : r.delta) : "—"}
                       </td>
                       <td className="py-2 pr-4">{r.label ?? "—"}</td>
+                      <td className="py-2 pr-4">
+                        <PotentialSelect appraisalId={r.appraisalId} value={r.potential} />
+                      </td>
                       {session.confidentiality.showAdjustmentReasons && (
                         <td className="py-2 text-muted-foreground">{r.reason ?? "—"}</td>
                       )}

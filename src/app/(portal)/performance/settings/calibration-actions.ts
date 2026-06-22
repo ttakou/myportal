@@ -86,6 +86,23 @@ export async function setCalibrationGroupStatus(
   return { ok: true };
 }
 
+/** Set an appraisal's potential rating (1 low … 3 high) for the 9-box. */
+export async function setPotentialRating(
+  appraisalId: string,
+  value: number | null,
+): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can set potential." };
+  const v = value == null ? null : Math.max(1, Math.min(3, Math.round(value)));
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ potential_rating: v })
+    .eq("id", appraisalId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/performance/calibration");
+  return { ok: true };
+}
+
 export async function deleteCalibrationGroup(id: string): Promise<ActionResult> {
   if (!(await ensureHr())) return { ok: false, error: "Only HR can manage calibration groups." };
   const supabase = createClient();

@@ -11,6 +11,15 @@ export interface CalibrationRow {
   delta: number | null;
   label: string | null;
   reason: string | null;
+  potential: number | null;
+}
+
+/** Performance tier (1 low / 2 medium / 3 high) from a 0–100 score. */
+export function perfTier(score: number | null): number | null {
+  if (score == null) return null;
+  if (score >= 80) return 3;
+  if (score >= 60) return 2;
+  return 1;
 }
 
 export interface DistributionBucket {
@@ -20,12 +29,19 @@ export interface DistributionBucket {
   targetPercent: number | null;
 }
 
+export interface NineBoxCell {
+  count: number;
+  names: string[];
+}
+
 export interface CalibrationSession {
   rows: CalibrationRow[];
   distribution: DistributionBucket[];
   target: DistributionBand[];
   confidentiality: Confidentiality;
   stats: { total: number; adjusted: number; average: number | null; deviation: number | null };
+  /** 3×3: rows potential High→Low, cols performance Low→High. */
+  nineBox: NineBoxCell[][];
 }
 
 function nameFrom(embed: unknown): string {
@@ -42,7 +58,7 @@ export async function getCalibrationSession(cycleId: string): Promise<Calibratio
   const [{ data: aps }, { data: adjs }] = await Promise.all([
     supabase
       .from("appraisals")
-      .select("id, final_score, rating_label, employee:profiles!employee_id(full_name)")
+      .select("id, final_score, rating_label, potential_rating, employee:profiles!employee_id(full_name)")
       .eq("cycle_id", cycleId)
       .not("final_score", "is", null),
     supabase
@@ -76,8 +92,22 @@ export async function getCalibrationSession(cycleId: string): Promise<Calibratio
       delta: preliminary != null && adjusted != null ? Math.round((adjusted - preliminary) * 10) / 10 : null,
       label: (a.rating_label as string | null) ?? null,
       reason: settings.confidentiality.showAdjustmentReasons ? lastReason.get(id) ?? null : null,
+      potential: (a.potential_rating as number | null) ?? null,
     };
   });
+
+  // 9-box: rows = potential High(3)→Low(1), cols = performance Low(1)→High(3).
+  const nineBox: NineBoxCell[][] = Array.from({ length: 3 }, () =>
+    Array.from({ length: 3 }, () => ({ count: 0, names: [] as string[] })),
+  );
+  for (const r of rows) {
+    const p = r.potential;
+    const pf = perfTier(r.adjusted);
+    if (!p || !pf) continue;
+    const cell = nineBox[3 - p][pf - 1]; // potential 3→row0; perf 1→col0
+    cell.count += 1;
+    cell.names.push(r.name);
+  }
 
   // Actual distribution by rating label.
   const counts = new Map<string, number>();
@@ -112,5 +142,6 @@ export async function getCalibrationSession(cycleId: string): Promise<Calibratio
     target: settings.distribution,
     confidentiality: settings.confidentiality,
     stats: { total, adjusted: adjustedSet.size, average, deviation },
+    nineBox,
   };
 }
