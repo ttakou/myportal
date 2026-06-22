@@ -20,6 +20,7 @@ import {
   getTeamAppraisals,
   getTenantColleagues,
 } from "@/lib/appraisals";
+import { getGoalTemplates } from "@/lib/goal-templates";
 import type { AppraisalCycle } from "@/types/appraisal";
 import { MyAppraisalPanel } from "./_components/my-appraisal-panel";
 import { TeamReviewPanel } from "./_components/team-review-panel";
@@ -81,11 +82,22 @@ export default async function AppraisalsPage({
     getPips(),
   ]);
   const isManagerView = team.length > 0;
-  const [colleagues, deptObjectives, myDelegate] = await Promise.all([
+  const [colleagues, deptObjectives, myDelegate, goalLibrary] = await Promise.all([
     myAppraisal || isManagerView ? getTenantColleagues() : Promise.resolve([]),
     myAppraisal ? getDepartmentObjectivesForMe(cycle?.id ?? null) : Promise.resolve([]),
     isManagerView ? getMyAppraisalDelegate() : Promise.resolve(null),
+    myAppraisal ? getGoalTemplates() : Promise.resolve([]),
   ]);
+  // Published library goals employees can start from.
+  const goalTemplates = goalLibrary
+    .filter((t) => t.isActive && t.status === "published")
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      defaultWeight: t.defaultWeight,
+      level: t.level,
+    }));
   // PIP employee picker: HR can pick anyone; a manager picks their reports.
   const pipEmployees = (
     isHr
@@ -183,6 +195,7 @@ export default async function AppraisalsPage({
                 appraisal={myAppraisal}
                 colleagues={colleagues}
                 deptObjectives={deptObjectives}
+                goalTemplates={goalTemplates}
               />
               {COMPLETED_STATUSES.has(myAppraisal.status) && (
                 <Link

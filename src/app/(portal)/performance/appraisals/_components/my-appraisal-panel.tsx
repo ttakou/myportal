@@ -45,14 +45,24 @@ const EDITABLE = new Set([
   "pending_manager_review",
 ]);
 
+export type GoalLibraryItem = {
+  id: string;
+  title: string;
+  description: string | null;
+  defaultWeight: number;
+  level: string;
+};
+
 export function MyAppraisalPanel({
   appraisal,
   colleagues = [],
   deptObjectives = [],
+  goalTemplates = [],
 }: {
   appraisal: Appraisal;
   colleagues?: Colleague[];
   deptObjectives?: DepartmentObjective[];
+  goalTemplates?: GoalLibraryItem[];
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +107,7 @@ export function MyAppraisalPanel({
           run={run}
           colleagues={colleagues}
           deptObjectives={deptObjectives}
+          goalTemplates={goalTemplates}
         />
       )}
       {appraisal.stage === "goal_review" && (
@@ -136,6 +147,7 @@ function GoalSetting({
   run,
   colleagues,
   deptObjectives,
+  goalTemplates,
 }: {
   appraisal: Appraisal;
   editable: boolean;
@@ -143,6 +155,7 @@ function GoalSetting({
   run: RunFn;
   colleagues: Colleague[];
   deptObjectives: DepartmentObjective[];
+  goalTemplates: GoalLibraryItem[];
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -213,6 +226,32 @@ function GoalSetting({
             );
           }}
         >
+          {goalTemplates.length > 0 && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Start from the goal library (optional)
+              </label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const t = goalTemplates.find((x) => x.id === e.target.value);
+                  if (!t) return;
+                  setTitle(t.title);
+                  if (t.description) setDescription(t.description);
+                  if (t.defaultWeight) setWeight(String(t.defaultWeight));
+                  setKind("objective");
+                }}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Choose a library goal…</option>
+                {goalTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    [{t.level}] {t.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Title</label>
             <input
