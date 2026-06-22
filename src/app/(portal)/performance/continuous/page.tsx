@@ -17,6 +17,7 @@ import {
 import { ActivityPanel } from "../_components/activity-panel";
 import { CheckInPanel } from "../_components/check-in-panel";
 import { OneToOnePanel } from "../_components/one-to-one-panel";
+import { FeedbackPanel } from "../_components/feedback-panel";
 
 const BATCH: ActivityKind[] = [
   "recognition",
@@ -26,6 +27,8 @@ const BATCH: ActivityKind[] = [
   "coaching_note",
   "check_in",
   "one_to_one",
+  "feedback_request",
+  "feedback_response",
 ];
 
 export default async function ContinuousPage() {
@@ -71,6 +74,21 @@ export default async function ContinuousPage() {
       title: FEATURE_LABEL.one_to_one,
       desc: "Log one-to-one meetings with agenda and notes, shared with the other person.",
       panel: <OneToOnePanel items={byKind("one_to_one")} directory={directory} myId={myId} />,
+    },
+    {
+      show: on("feedback"),
+      title: FEATURE_LABEL.feedback,
+      desc: "Request feedback from colleagues and respond to requests.",
+      panel: (
+        <FeedbackPanel
+          requests={byKind("feedback_request")}
+          responses={byKind("feedback_response")}
+          directory={directory}
+          myId={myId}
+          allowAnonymous={config.feedbackAnonymous}
+          inAppraisal={config.feedbackInAppraisal}
+        />
+      ),
     },
     {
       show: on("recognition"),
