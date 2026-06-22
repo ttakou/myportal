@@ -32,6 +32,7 @@ import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
 import { PipPanel } from "./_components/pip-panel";
 import { WorkflowSection } from "./_components/workflow-section";
+import { HrWorkflowQueue } from "./_components/hr-workflow-queue";
 import { resolveAppraisalView } from "../_components/performance-views";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
@@ -213,9 +214,14 @@ export default async function AppraisalsPage({
 
       {/* HR console — org-wide dashboard + calibration for the selected year. */}
       {view === "hr" && isHr && (
-        <Suspense fallback={<SectionSkeleton />}>
-          <HrSection cycle={cycle} allCycles={allCycles} />
-        </Suspense>
+        <>
+          <Suspense fallback={null}>
+            <HrWorkflowQueue cycleId={cycle?.id ?? null} />
+          </Suspense>
+          <Suspense fallback={<SectionSkeleton />}>
+            <HrSection cycle={cycle} allCycles={allCycles} />
+          </Suspense>
+        </>
       )}
     </div>
   );
