@@ -109,6 +109,13 @@ export default async function AppraisalsPage({
       ]
     : [];
 
+  // Reports a manager (or second-level) may need to act on in the workflow.
+  const workflowReports = isManager
+    ? [...team, ...secondLevel]
+        .map((a) => ({ id: a.id, name: a.employee_name ?? undefined }))
+        .filter((a, i, arr) => arr.findIndex((x) => x.id === a.id) === i)
+    : [];
+
   return (
     <div className="space-y-8">
       <div>
@@ -140,6 +147,16 @@ export default async function AppraisalsPage({
             <TeamReviewPanel appraisals={team} colleagues={colleagues} currentDelegate={myDelegate} />
             {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
             <PipPanel data={pip} employees={pipEmployees} />
+            {workflowReports.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="text-lg font-semibold">Workflow actions</h2>
+                {workflowReports.map((a) => (
+                  <Suspense key={a.id} fallback={null}>
+                    <WorkflowSection appraisalId={a.id} heading={a.name} />
+                  </Suspense>
+                ))}
+              </section>
+            )}
           </>
         ) : (
           <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">

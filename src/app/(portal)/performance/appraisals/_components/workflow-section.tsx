@@ -15,7 +15,13 @@ import { WorkflowTimeline } from "./workflow-timeline";
  * the timeline. Renders nothing for appraisals without a configured workflow,
  * so legacy cycles are unaffected.
  */
-export async function WorkflowSection({ appraisalId }: { appraisalId: string }) {
+export async function WorkflowSection({
+  appraisalId,
+  heading,
+}: {
+  appraisalId: string;
+  heading?: string;
+}) {
   const wf = await getAppraisalWorkflow(appraisalId);
   if (!wf) return null;
 
@@ -26,6 +32,7 @@ export async function WorkflowSection({ appraisalId }: { appraisalId: string }) 
   return (
     <WorkflowTimeline
       appraisalId={wf.appraisalId}
+      heading={heading}
       steps={applicable.map((s) => ({
         key: s.key,
         label: s.label,

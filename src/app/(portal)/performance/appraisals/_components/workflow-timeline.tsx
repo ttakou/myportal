@@ -12,6 +12,7 @@ type Step = { key: string; label: string; responsible: string };
 
 export function WorkflowTimeline({
   appraisalId,
+  heading,
   steps,
   currentKey,
   progress,
@@ -25,6 +26,7 @@ export function WorkflowTimeline({
   currentResponsible,
 }: {
   appraisalId: string;
+  heading?: string;
   steps: Step[];
   currentKey: string;
   progress: number;
@@ -53,7 +55,7 @@ export function WorkflowTimeline({
   return (
     <section className="space-y-4 rounded-lg border bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-medium">Workflow</h2>
+        <h2 className="font-medium">{heading ?? "Workflow"}</h2>
         <span
           className={cn(
             "rounded-full px-2.5 py-0.5 text-xs font-medium",
