@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Star, X, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Star, X, Check, Upload, GitBranch } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,14 @@ import {
   type RatingScaleKind,
   type RatingScaleLevel,
 } from "@/types/rating-scale";
-import { deleteRatingScale, saveRatingScale, setDefaultScale } from "../scale-actions";
+import { CONFIG_STATUS_LABEL } from "@/types/versioning";
+import {
+  deleteRatingScale,
+  newScaleVersion,
+  publishRatingScale,
+  saveRatingScale,
+  setDefaultScale,
+} from "../scale-actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -27,6 +34,8 @@ type Draft = {
   commentRequired: boolean;
   evidenceRequired: boolean;
   showNumericToEmployee: boolean;
+  effectiveFrom: string;
+  effectiveTo: string;
 };
 
 const emptyDraft = (): Draft => ({
@@ -42,6 +51,8 @@ const emptyDraft = (): Draft => ({
   commentRequired: false,
   evidenceRequired: false,
   showNumericToEmployee: true,
+  effectiveFrom: "",
+  effectiveTo: "",
 });
 
 const toDraft = (s: RatingScale): Draft => ({
@@ -54,6 +65,8 @@ const toDraft = (s: RatingScale): Draft => ({
   commentRequired: s.commentRequired,
   evidenceRequired: s.evidenceRequired,
   showNumericToEmployee: s.showNumericToEmployee,
+  effectiveFrom: s.effectiveFrom ?? "",
+  effectiveTo: s.effectiveTo ?? "",
 });
 
 export function RatingScalesManager({ scales }: { scales: RatingScale[] }) {
@@ -122,6 +135,18 @@ export function RatingScalesManager({ scales }: { scales: RatingScale[] }) {
                       <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                         {RATING_SCALE_KIND_LABEL[s.kind]}
                       </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-xs font-medium",
+                          s.status === "published"
+                            ? "bg-green-100 text-green-700"
+                            : s.status === "draft"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {CONFIG_STATUS_LABEL[s.status]} · v{s.version}
+                      </span>
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {s.levels.length} levels · {b.min}–{b.max}
@@ -129,9 +154,20 @@ export function RatingScalesManager({ scales }: { scales: RatingScale[] }) {
                       {s.commentRequired ? " · comment required" : ""}
                       {s.evidenceRequired ? " · evidence required" : ""}
                       {s.showNumericToEmployee ? "" : " · numeric hidden from employee"}
+                      {s.effectiveFrom || s.effectiveTo
+                        ? ` · effective ${s.effectiveFrom ?? "…"}–${s.effectiveTo ?? "…"}`
+                        : ""}
                     </p>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
+                    {s.status === "draft" && (
+                      <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => publishRatingScale(s.id))}>
+                        <Upload className="h-4 w-4" /> Publish
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" disabled={pending} title="Start a new draft version" onClick={() => run(() => newScaleVersion(s.id))}>
+                      <GitBranch className="h-4 w-4" /> New version
+                    </Button>
                     {!s.isDefault && (
                       <Button
                         variant="outline"
@@ -245,6 +281,16 @@ function ScaleEditor({
             className={cn(field, "mt-0.5 block w-full py-1.5")}
           />
         </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-xs text-muted-foreground">
+            Effective from
+            <input type="date" value={draft.effectiveFrom} onChange={(e) => set("effectiveFrom", e.target.value)} className={cn(field, "mt-0.5 block w-full py-1.5")} />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Effective to
+            <input type="date" value={draft.effectiveTo} onChange={(e) => set("effectiveTo", e.target.value)} className={cn(field, "mt-0.5 block w-full py-1.5")} />
+          </label>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <Check2 label="Allow decimals" checked={draft.allowDecimals} onChange={(v) => set("allowDecimals", v)} />
           <Check2 label="Comment mandatory" checked={draft.commentRequired} onChange={(v) => set("commentRequired", v)} />

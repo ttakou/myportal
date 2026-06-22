@@ -1,3 +1,5 @@
+import type { Versioned } from "./versioning";
+
 export type RatingScaleKind = "performance" | "competency" | "generic";
 
 export const RATING_SCALE_KINDS: RatingScaleKind[] = ["performance", "competency", "generic"];
@@ -17,7 +19,7 @@ export interface RatingScaleLevel {
 }
 
 /** An HR-defined rating scale referenced by cycles and form sections. */
-export interface RatingScale {
+export interface RatingScale extends Versioned {
   id: string;
   name: string;
   description: string | null;

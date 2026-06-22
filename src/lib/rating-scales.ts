@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { RatingScale, RatingScaleKind, RatingScaleLevel } from "@/types/rating-scale";
+import { versionedFromRow } from "@/types/versioning";
 
 function scaleFromRow(r: Record<string, unknown>): RatingScale {
   return {
@@ -15,6 +16,7 @@ function scaleFromRow(r: Record<string, unknown>): RatingScale {
     showNumericToEmployee: r.show_numeric_to_employee !== false,
     isDefault: !!r.is_default,
     isActive: r.is_active !== false,
+    ...versionedFromRow(r),
   };
 }
 
