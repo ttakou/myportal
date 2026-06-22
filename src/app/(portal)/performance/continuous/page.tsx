@@ -18,6 +18,8 @@ import { ActivityPanel } from "../_components/activity-panel";
 import { CheckInPanel } from "../_components/check-in-panel";
 import { OneToOnePanel } from "../_components/one-to-one-panel";
 import { FeedbackPanel } from "../_components/feedback-panel";
+import { PulsePanel } from "../_components/pulse-panel";
+import { DevelopmentActionsPanel } from "../_components/development-actions-panel";
 
 const BATCH: ActivityKind[] = [
   "recognition",
@@ -29,6 +31,9 @@ const BATCH: ActivityKind[] = [
   "one_to_one",
   "feedback_request",
   "feedback_response",
+  "pulse_response",
+  "development_action",
+  "goal_update",
 ];
 
 export default async function ContinuousPage() {
@@ -89,6 +94,38 @@ export default async function ContinuousPage() {
           inAppraisal={config.feedbackInAppraisal}
         />
       ),
+    },
+    {
+      show: on("goal_update"),
+      title: FEATURE_LABEL.goal_update,
+      desc: "Post lightweight progress updates against your goals between reviews.",
+      panel: (
+        <ActivityPanel
+          kind="goal_update"
+          items={byKind("goal_update")}
+          directory={directory}
+          myId={myId}
+          subjectMode="self"
+          allowPrivate={false}
+          withBadge={false}
+          withTitle
+          composerCta="Post update"
+          placeholder="Which goal, and where does it stand?"
+          subjectLabel=""
+        />
+      ),
+    },
+    {
+      show: on("development_action"),
+      title: FEATURE_LABEL.development_action,
+      desc: "Track development actions with due dates and completion.",
+      panel: <DevelopmentActionsPanel items={byKind("development_action")} myId={myId} />,
+    },
+    {
+      show: on("pulse"),
+      title: FEATURE_LABEL.pulse,
+      desc: "A quick pulse against your team's questions.",
+      panel: <PulsePanel questions={config.pulseQuestions} items={byKind("pulse_response")} myId={myId} />,
     },
     {
       show: on("recognition"),

@@ -170,3 +170,15 @@ export async function deleteActivity(id: string): Promise<ActionResult> {
   revalidatePath("/performance/continuous");
   return { ok: true };
 }
+
+/** Update an activity's status (e.g. a development action open ↔ done). */
+export async function updateActivityStatus(id: string, status: string): Promise<ActionResult> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("continuous_activities")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/performance/continuous");
+  return { ok: true };
+}
