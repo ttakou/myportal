@@ -45,6 +45,12 @@ export default async function CalibrationSettingsPage() {
           Distribution rules, adjustment limits, approval authority and confidentiality — plus
           calibration groups per cycle.
         </p>
+        <Link
+          href="/performance/calibration"
+          className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+        >
+          Open calibration session →
+        </Link>
       </div>
 
       <CalibrationManager settings={settings} groups={groups} cycles={cycles} />
