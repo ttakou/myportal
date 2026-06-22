@@ -33,7 +33,7 @@ export default async function OffshoreCertReportPage({
   searchParams: Promise<{ from?: string; to?: string; department?: string }>;
 }) {
   const access = await getAccess();
-  if (!(access.isSystemAdmin || access.isAdmin || access.isSafetyAdmin || access.isOim)) {
+  if (!(access.isSystemAdmin || access.isAdmin || access.isCampboss || access.isOim)) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />

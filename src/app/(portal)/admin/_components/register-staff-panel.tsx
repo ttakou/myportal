@@ -19,6 +19,7 @@ const FUNCTIONAL: { role: FunctionalRole; label: string }[] = [
   { role: "hr_admin", label: "HR" },
   { role: "finance", label: "Finance" },
   { role: "safety_admin", label: "Safety" },
+  { role: "campboss", label: "Campboss" },
   { role: "oim", label: "OIM" },
   { role: "system_admin", label: "Sys admin" },
 ];

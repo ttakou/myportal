@@ -54,6 +54,7 @@ export default async function PortalLayout({
     isAdmin: access.isAdmin,
     isSystemAdmin: access.isSystemAdmin,
     isSafetyAdmin: access.isSafetyAdmin,
+    isCampboss: access.isCampboss,
     isOim: access.isOim,
     isCanteenStaff: access.isCanteenStaff,
     isCanteenManager: access.isCanteenManager,

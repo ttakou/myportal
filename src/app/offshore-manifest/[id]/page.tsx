@@ -12,7 +12,7 @@ export default async function ManifestReportPage({
 }) {
   const { id } = await params;
   const access = await getAccess();
-  if (!access.isAdmin && !access.isSafetyAdmin) {
+  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 

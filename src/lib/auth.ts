@@ -23,6 +23,7 @@ export type FunctionalRole =
   | "hr_admin"
   | "finance"
   | "safety_admin"
+  | "campboss"
   | "oim"
   | "system_admin";
 
@@ -59,6 +60,8 @@ export interface Access {
   isHr: boolean;
   isFinance: boolean;
   isSafetyAdmin: boolean;
+  /** Offshore Campboss — runs the offshore camp / trip functionality. */
+  isCampboss: boolean;
   /** Offshore Installation Manager — approves offshore visit requests. */
   isOim: boolean;
 }
@@ -89,6 +92,7 @@ export const getAccess = cache(async (): Promise<Access> => {
     isHr: isSystemAdmin || has("hr_admin"),
     isFinance: isSystemAdmin || has("finance"),
     isSafetyAdmin: isSystemAdmin || has("safety_admin"),
+    isCampboss: isSystemAdmin || has("campboss"),
     isOim: isSystemAdmin || has("oim"),
   };
 });

@@ -14,6 +14,7 @@ const FN_LABEL: Record<string, string> = {
   hr_admin: "HR",
   finance: "Finance",
   safety_admin: "Safety",
+  campboss: "Campboss",
   oim: "OIM",
   system_admin: "Sys admin",
 };

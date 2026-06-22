@@ -36,7 +36,7 @@ import { VisitorRequestForm } from "./_components/visitor-request-form";
 export default async function OffshorePage() {
   const access = await getAccess();
   const isAdmin = isAdminRole(await getCurrentRole());
-  const canManage = access.isAdmin || access.isSafetyAdmin || access.isOim;
+  const canManage = access.isAdmin || access.isCampboss || access.isOim;
 
   const [mine, all, installations, flights, pob, myVisits, suggestionLists, boardPeople, me] =
     await Promise.all([

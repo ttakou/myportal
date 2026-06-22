@@ -12,7 +12,7 @@ export default async function ReportsPage() {
       description:
         "Medical / BOSIET / HUET expiry status per person, with expired and upcoming certs flagged. Filter by period and department.",
       icon: ShieldCheck,
-      show: access.isSystemAdmin || access.isAdmin || access.isSafetyAdmin || access.isOim,
+      show: access.isSystemAdmin || access.isAdmin || access.isCampboss || access.isOim,
     },
     {
       href: "/reports/travel-expense",

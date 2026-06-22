@@ -3616,6 +3616,7 @@ export type Database = {
       is_canteen_staff: { Args: never; Returns: boolean }
       is_finance: { Args: never; Returns: boolean }
       is_hr: { Args: never; Returns: boolean }
+      is_offshore_manager: { Args: never; Returns: boolean }
       is_safety_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       is_system_admin: { Args: never; Returns: boolean }
@@ -3671,6 +3672,7 @@ export type Database = {
         | "finance"
         | "system_admin"
         | "safety_admin"
+        | "campboss"
         | "oim"
       loan_status: "active" | "closed"
       meal_period: "breakfast" | "lunch" | "dinner"
@@ -3905,6 +3907,7 @@ export const Constants = {
         "finance",
         "system_admin",
         "safety_admin",
+        "campboss",
         "oim",
       ],
       loan_status: ["active", "closed"],

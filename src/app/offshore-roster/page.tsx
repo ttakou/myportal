@@ -12,7 +12,7 @@ export default async function RosterReportPage({
 }) {
   const sp = await searchParams;
   const access = await getAccess();
-  if (!access.isAdmin && !access.isSafetyAdmin && !access.isOim) {
+  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 

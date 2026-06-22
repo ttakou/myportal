@@ -130,7 +130,7 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
 
   // --- Approvals awaiting me (role-gated; counts are RLS-scoped) -------------
   const approvals: DashboardCount[] = [];
-  if (access.isAdmin || access.isSafetyAdmin || access.isOim) {
+  if (access.isAdmin || access.isCampboss || access.isOim) {
     const visits = await countOf(() =>
       supabase
         .from("offshore_visit_requests")

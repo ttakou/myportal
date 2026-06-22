@@ -11,7 +11,7 @@ export default async function MusterReportPage({
 }) {
   const { id } = await params;
   const access = await getAccess();
-  if (!access.isAdmin && !access.isSafetyAdmin && !access.isOim) {
+  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
   const [drill, branding] = await Promise.all([getMusterDrill(id), getTenantBranding()]);

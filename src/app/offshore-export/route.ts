@@ -33,7 +33,7 @@ function csvResponse(filename: string, rows: (string | number | null | undefined
 /** CSV/Excel export for the offshore reports. */
 export async function GET(req: NextRequest) {
   const access = await getAccess();
-  if (!access.isAdmin && !access.isSafetyAdmin && !access.isOim) {
+  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
     return new NextResponse("Not authorized", { status: 403 });
   }
   const sp = req.nextUrl.searchParams;
