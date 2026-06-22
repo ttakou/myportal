@@ -98,13 +98,27 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     }
   }
 
+  const total = rows.length + (visitors?.length ?? 0);
+
+  // Per-installation POB comes from the offshore_pob view (onboard trips that
+  // have an installation_id) plus onboard visitors. Onboard people whose trip
+  // has no installation set are otherwise invisible here, which makes the bars
+  // under-count vs. the total — so surface them as an "Unassigned" bucket. This
+  // keeps the per-installation breakdown reconciled with Current POB.
+  const byInstallation = (pob ?? []).map((p) => ({
+    name: p.name as string,
+    pob: ((p.pob as number) ?? 0) + (byInstMap.get(p.name as string) ?? 0),
+    capacity: (p.pob_capacity as number) ?? 0,
+  }));
+  const assignedToInstallation = byInstallation.reduce((sum, i) => sum + i.pob, 0);
+  const unassignedPob = total - assignedToInstallation;
+  if (unassignedPob > 0) {
+    byInstallation.push({ name: "Unassigned (no installation)", pob: unassignedPob, capacity: 0 });
+  }
+
   return {
-    total: rows.length + (visitors?.length ?? 0),
-    byInstallation: (pob ?? []).map((p) => ({
-      name: p.name as string,
-      pob: ((p.pob as number) ?? 0) + (byInstMap.get(p.name as string) ?? 0),
-      capacity: (p.pob_capacity as number) ?? 0,
-    })),
+    total,
+    byInstallation,
     byCrew: [...byCrewMap.entries()].map(([name, n]) => ({ name, pob: n })),
     byLifeboat: [...byLifeboatMap.entries()]
       .map(([name, n]) => ({ name, pob: n }))

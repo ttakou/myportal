@@ -22,7 +22,6 @@ import {
   getManifests,
   getMyOffshoreTrips,
   getMyVisitRequests,
-  getPob,
   getPobBreakdown,
   getRooms,
   getRoster,
@@ -50,13 +49,12 @@ export default async function OffshorePage({
   const showManagement = canManage && activeView !== "mytrips";
   const showMyTrips = !showManagement;
 
-  const [mine, all, installations, flights, pob, myVisits, suggestionLists, boardPeople, me] =
+  const [mine, all, installations, flights, myVisits, suggestionLists, boardPeople, me] =
     await Promise.all([
       getMyOffshoreTrips(),
       isAdmin ? getAllOffshoreTrips() : Promise.resolve([]),
       getInstallations(),
       isAdmin ? getFlights() : Promise.resolve([]),
-      isAdmin ? getPob() : Promise.resolve([]),
       getMyVisitRequests(),
       getVisitorSuggestions(),
       getAssignableEmployees(),
@@ -161,7 +159,6 @@ export default async function OffshorePage({
             all={all}
             installations={installations}
             flights={flights}
-            pob={pob}
             isAdmin={isAdmin}
             people={people}
             meId={meId}
