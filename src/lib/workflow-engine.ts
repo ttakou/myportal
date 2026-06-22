@@ -111,6 +111,49 @@ export function prevStageKey(
   return i > 0 ? list[i - 1].key : null;
 }
 
+/**
+ * The stage keys currently actionable, honouring parallel groups: consecutive
+ * applicable stages sharing a `parallelGroup` run concurrently and must all
+ * complete before the flow moves past them; non-grouped stages are sequential.
+ * Returns [] when every applicable stage is complete.
+ */
+export function activeStageKeys(
+  stages: WorkflowStage[],
+  ctx: EmployeeContext,
+  completed: string[],
+): string[] {
+  const done = new Set(completed);
+  const list = applicableStages(stages, ctx);
+  let i = 0;
+  while (i < list.length) {
+    const s = list[i];
+    if (s.parallelGroup) {
+      const group: WorkflowStage[] = [];
+      let j = i;
+      while (j < list.length && list[j].parallelGroup === s.parallelGroup) {
+        group.push(list[j]);
+        j += 1;
+      }
+      const pending = group.filter((g) => !done.has(g.key));
+      if (pending.length) return pending.map((g) => g.key);
+      i = j;
+    } else {
+      if (!done.has(s.key)) return [s.key];
+      i += 1;
+    }
+  }
+  return [];
+}
+
+/** Whether all applicable stages are complete. */
+export function isFlowComplete(
+  stages: WorkflowStage[],
+  ctx: EmployeeContext,
+  completed: string[],
+): boolean {
+  return activeStageKeys(stages, ctx, completed).length === 0;
+}
+
 /** Whether `role` is the party responsible for acting on a stage. */
 export function canAct(stage: WorkflowStage | null, role: StageRole): boolean {
   return !!stage && stage.responsibleRole === role;

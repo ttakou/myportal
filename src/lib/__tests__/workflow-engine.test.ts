@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   COMPLETED,
   REJECTED,
+  activeStageKeys,
+  isFlowComplete,
   applicableStages,
   canAct,
   editableFields,
@@ -124,6 +126,27 @@ describe("skipAutoStages", () => {
   it("returns COMPLETED when auto stages run off the end", () => {
     const trailing: WorkflowStage[] = [stage("x", "employee"), stage("y", "hr", { autoProgress: true })];
     expect(skipAutoStages(trailing, ic, "y")).toBe(COMPLETED);
+  });
+});
+
+describe("activeStageKeys (parallel groups)", () => {
+  const flow2: WorkflowStage[] = [
+    stage("goals", "employee"),
+    stage("peer1", "second_level", { parallelGroup: "reviews" }),
+    stage("peer2", "hr", { parallelGroup: "reviews" }),
+    stage("final", "line_manager"),
+  ];
+  it("runs sequential stages one at a time", () => {
+    expect(activeStageKeys(flow2, ic, [])).toEqual(["goals"]);
+    expect(activeStageKeys(flow2, ic, ["goals", "peer1", "peer2"])).toEqual(["final"]);
+  });
+  it("activates all pending stages of a parallel group at once", () => {
+    expect(activeStageKeys(flow2, ic, ["goals"]).sort()).toEqual(["peer1", "peer2"]);
+    expect(activeStageKeys(flow2, ic, ["goals", "peer1"])).toEqual(["peer2"]);
+  });
+  it("reports completion when every applicable stage is done", () => {
+    expect(isFlowComplete(flow2, ic, ["goals", "peer1", "peer2", "final"])).toBe(true);
+    expect(isFlowComplete(flow2, ic, ["goals"])).toBe(false);
   });
 });
 

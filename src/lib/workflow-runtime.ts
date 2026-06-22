@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
-import { firstStageKey, skipAutoStages, type EmployeeContext } from "@/lib/workflow-engine";
+import { activeStageKeys, type EmployeeContext } from "@/lib/workflow-engine";
 import type { StageRole, WorkflowStage } from "@/types/workflow";
 
 export interface AppraisalWorkflow {
@@ -9,7 +9,12 @@ export interface AppraisalWorkflow {
   tenantId: string | null;
   stages: WorkflowStage[];
   ctx: EmployeeContext;
-  currentStageKey: string;
+  /** Stage keys already completed. */
+  completedStages: string[];
+  /** Stage keys actionable right now (>1 when a parallel group is in flight). */
+  activeKeys: string[];
+  /** Terminal flag: "completed" | "rejected" | null. */
+  terminal: "completed" | "rejected" | null;
   /** Roles the signed-in user holds for THIS appraisal. */
   userRoles: StageRole[];
 }
@@ -22,7 +27,7 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
   const supabase = createClient();
   const { data: a } = await supabase
     .from("appraisals")
-    .select("id, tenant_id, employee_id, manager_id, second_level_id, current_stage_key, cycle_id")
+    .select("id, tenant_id, employee_id, manager_id, second_level_id, current_stage_key, completed_stages, cycle_id")
     .eq("id", appraisalId)
     .maybeSingle();
   if (!a) return null;
@@ -63,9 +68,10 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
     isManagementGrade: isManager,
   };
 
-  const currentStageKey =
-    (ap.current_stage_key as string | null) ??
-    skipAutoStages(stages, ctx, firstStageKey(stages, ctx) ?? "");
+  const completedStages = Array.isArray(ap.completed_stages) ? (ap.completed_stages as string[]) : [];
+  const sentinel = ap.current_stage_key as string | null;
+  const terminal = sentinel === "__rejected__" ? "rejected" : null;
+  const activeKeys = terminal ? [] : activeStageKeys(stages, ctx, completedStages);
 
   const {
     data: { user },
@@ -86,7 +92,9 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
     tenantId: (ap.tenant_id as string | null) ?? null,
     stages,
     ctx,
-    currentStageKey,
+    completedStages,
+    activeKeys,
+    terminal: terminal ?? (activeKeys.length === 0 ? "completed" : null),
     userRoles,
   };
 }

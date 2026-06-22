@@ -8,46 +8,42 @@ import { cn } from "@/lib/utils";
 import type { StageAction } from "@/lib/workflow-engine";
 import { advanceAppraisalStage } from "../workflow-actions";
 
-type Step = { key: string; label: string; responsible: string };
+export type Step = { key: string; label: string; responsible: string; status: "done" | "active" | "upcoming" };
+export type Actionable = {
+  key: string;
+  label: string;
+  primaryAction: StageAction;
+  primaryLabel: string;
+  allowReturn: boolean;
+  allowReject: boolean;
+};
 
 export function WorkflowTimeline({
   appraisalId,
   heading,
   steps,
-  currentKey,
+  actionable,
+  waitingOn,
   progress,
   completed,
   rejected,
-  canActNow,
-  primaryAction,
-  primaryLabel,
-  allowReturn,
-  allowReject,
-  currentResponsible,
 }: {
   appraisalId: string;
   heading?: string;
   steps: Step[];
-  currentKey: string;
+  actionable: Actionable[];
+  waitingOn: string[];
   progress: number;
   completed: boolean;
   rejected: boolean;
-  canActNow: boolean;
-  primaryAction: StageAction;
-  primaryLabel: string;
-  allowReturn: boolean;
-  allowReject: boolean;
-  currentResponsible: string | null;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
-  const currentIndex = steps.findIndex((s) => s.key === currentKey);
-
-  function act(action: StageAction) {
+  function act(stageKey: string, action: StageAction) {
     setError(null);
     startTransition(async () => {
-      const res = await advanceAppraisalStage(appraisalId, action);
+      const res = await advanceAppraisalStage(appraisalId, stageKey, action);
       if (!res.ok) setError(res.error ?? "Couldn't update the stage.");
     });
   }
@@ -59,11 +55,7 @@ export function WorkflowTimeline({
         <span
           className={cn(
             "rounded-full px-2.5 py-0.5 text-xs font-medium",
-            rejected
-              ? "bg-destructive/10 text-destructive"
-              : completed
-                ? "bg-green-100 text-green-700"
-                : "bg-primary/10 text-primary",
+            rejected ? "bg-destructive/10 text-destructive" : completed ? "bg-green-100 text-green-700" : "bg-primary/10 text-primary",
           )}
         >
           {rejected ? "Rejected" : completed ? "Completed" : `${progress}% complete`}
@@ -71,55 +63,51 @@ export function WorkflowTimeline({
       </div>
 
       <ol className="space-y-2">
-        {steps.map((s, i) => {
-          const done = completed || (currentIndex >= 0 && i < currentIndex);
-          const isCurrent = !completed && !rejected && i === currentIndex;
-          return (
-            <li key={s.key} className="flex items-start gap-3">
-              <span className="mt-0.5">
-                {done ? (
-                  <Check className="h-4 w-4 text-green-600" />
-                ) : isCurrent ? (
-                  <CircleDot className="h-4 w-4 text-primary" />
-                ) : (
-                  <Circle className="h-4 w-4 text-muted-foreground" />
-                )}
-              </span>
-              <div>
-                <p className={cn("text-sm", isCurrent ? "font-medium" : done ? "text-muted-foreground" : "")}>
-                  {s.label}
-                </p>
-                <p className="text-xs text-muted-foreground">{s.responsible}</p>
-              </div>
-            </li>
-          );
-        })}
+        {steps.map((s) => (
+          <li key={s.key} className="flex items-start gap-3">
+            <span className="mt-0.5">
+              {s.status === "done" ? (
+                <Check className="h-4 w-4 text-green-600" />
+              ) : s.status === "active" ? (
+                <CircleDot className="h-4 w-4 text-primary" />
+              ) : (
+                <Circle className="h-4 w-4 text-muted-foreground" />
+              )}
+            </span>
+            <div>
+              <p className={cn("text-sm", s.status === "active" ? "font-medium" : s.status === "done" ? "text-muted-foreground" : "")}>
+                {s.label}
+              </p>
+              <p className="text-xs text-muted-foreground">{s.responsible}</p>
+            </div>
+          </li>
+        ))}
       </ol>
 
       {!completed && !rejected && (
-        <div className="border-t pt-3">
-          {canActNow ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button disabled={pending} onClick={() => act(primaryAction)}>
-                <ArrowRight className="h-4 w-4" /> {primaryLabel}
+        <div className="space-y-2 border-t pt-3">
+          {actionable.map((a) => (
+            <div key={a.key} className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">{a.label}:</span>
+              <Button size="sm" disabled={pending} onClick={() => act(a.key, a.primaryAction)}>
+                <ArrowRight className="h-4 w-4" /> {a.primaryLabel}
               </Button>
-              {allowReturn && (
-                <Button variant="outline" disabled={pending} onClick={() => act("return")}>
-                  <CornerUpLeft className="h-4 w-4" /> Return for correction
+              {a.allowReturn && (
+                <Button variant="outline" size="sm" disabled={pending} onClick={() => act(a.key, "return")}>
+                  <CornerUpLeft className="h-4 w-4" /> Return
                 </Button>
               )}
-              {allowReject && (
-                <Button variant="outline" disabled={pending} onClick={() => act("reject")}>
+              {a.allowReject && (
+                <Button variant="outline" size="sm" disabled={pending} onClick={() => act(a.key, "reject")}>
                   <X className="h-4 w-4" /> Reject
                 </Button>
               )}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Waiting on {currentResponsible ?? "the next reviewer"}.
-            </p>
+          ))}
+          {actionable.length === 0 && waitingOn.length > 0 && (
+            <p className="text-sm text-muted-foreground">Waiting on {waitingOn.join(", ")}.</p>
           )}
-          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
       )}
     </section>
