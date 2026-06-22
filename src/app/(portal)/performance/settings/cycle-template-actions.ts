@@ -31,6 +31,8 @@ export interface CycleTemplateInput {
   reminderDaysBefore: number;
   population: CyclePopulation;
   visibility: CycleVisibility;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
 }
 
 /** Create or update a cycle template (HR / admin only). */
@@ -52,6 +54,8 @@ export async function saveCycleTemplate(input: CycleTemplateInput): Promise<Acti
     reminder_days_before: Math.max(0, Math.min(90, Math.round(input.reminderDaysBefore || 0))),
     population: input.population ?? { type: "all" },
     visibility: input.visibility,
+    effective_from: input.effectiveFrom || null,
+    effective_to: input.effectiveTo || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -66,6 +70,49 @@ export async function saveCycleTemplate(input: CycleTemplateInput): Promise<Acti
       .insert({ ...fields, tenant_id: tenant.id });
     if (error) return { ok: false, error: error.message };
   }
+  revalidatePath("/performance/settings/cycle-templates");
+  return { ok: true };
+}
+
+/** Publish a draft cycle template — stamp who/when and mark it live. */
+export async function publishCycleTemplate(id: string): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can manage cycle templates." };
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from("cycle_templates")
+    .update({
+      status: "published",
+      published_at: new Date().toISOString(),
+      published_by: user?.id ?? null,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/performance/settings/cycle-templates");
+  return { ok: true };
+}
+
+/** Start a new draft version of a template, copying it (version+1). */
+export async function newCycleTemplateVersion(id: string): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can manage cycle templates." };
+  const supabase = createClient();
+  const { data: src } = await supabase.from("cycle_templates").select("*").eq("id", id).maybeSingle();
+  if (!src) return { ok: false, error: "Template not found." };
+  const s = src as Record<string, unknown>;
+  const insert = { ...s };
+  delete insert.id;
+  delete insert.created_at;
+  delete insert.published_at;
+  delete insert.published_by;
+  insert.version = Number(s.version ?? 1) + 1;
+  insert.status = "draft";
+  insert.is_active = false;
+  const { error } = await supabase.from("cycle_templates").insert(insert);
+  if (error) return { ok: false, error: error.message };
   revalidatePath("/performance/settings/cycle-templates");
   return { ok: true };
 }

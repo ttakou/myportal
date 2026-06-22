@@ -1,3 +1,5 @@
+import type { Versioned } from "./versioning";
+
 export type CycleType =
   | "annual"
   | "probation"
@@ -39,7 +41,7 @@ export interface CycleVisibility {
   managerSeesSelfBeforeRating: boolean;
 }
 
-export interface CycleTemplate {
+export interface CycleTemplate extends Versioned {
   id: string;
   name: string;
   description: string | null;

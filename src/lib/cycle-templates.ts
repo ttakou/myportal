@@ -7,11 +7,13 @@ import {
   type CycleType,
   type CycleVisibility,
 } from "@/types/cycle-template";
+import { versionedFromRow } from "@/types/versioning";
 
 function templateFromRow(r: Record<string, unknown>): CycleTemplate {
   const pop = (r.population as CyclePopulation) ?? { type: "all" };
   const vis = (r.visibility as CycleVisibility) ?? DEFAULT_VISIBILITY;
   return {
+    ...versionedFromRow(r),
     id: String(r.id),
     name: String(r.name ?? ""),
     description: (r.description as string | null) ?? null,

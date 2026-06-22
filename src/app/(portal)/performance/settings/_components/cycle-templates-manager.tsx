@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Pencil, Trash2, Rocket, Check, X, GitBranch, LayoutList } from "lucide-react";
+import { Plus, Pencil, Trash2, Rocket, Check, X, GitBranch, LayoutList, Upload } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,10 +15,13 @@ import {
   type CycleType,
   type CycleVisibility,
 } from "@/types/cycle-template";
+import { CONFIG_STATUS_LABEL } from "@/types/versioning";
 import {
   saveCycleTemplate,
   deleteCycleTemplate,
   createCycleFromTemplate,
+  publishCycleTemplate,
+  newCycleTemplateVersion,
 } from "../cycle-template-actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
@@ -37,6 +40,8 @@ type Draft = {
   reminderDaysBefore: number;
   population: CyclePopulation;
   visibility: CycleVisibility;
+  effectiveFrom: string;
+  effectiveTo: string;
 };
 
 const emptyDraft = (): Draft => ({
@@ -51,6 +56,8 @@ const emptyDraft = (): Draft => ({
   reminderDaysBefore: 7,
   population: { type: "all" },
   visibility: { ...DEFAULT_VISIBILITY },
+  effectiveFrom: "",
+  effectiveTo: "",
 });
 
 const toDraft = (t: CycleTemplate): Draft => ({
@@ -66,6 +73,8 @@ const toDraft = (t: CycleTemplate): Draft => ({
   reminderDaysBefore: t.reminderDaysBefore,
   population: t.population,
   visibility: t.visibility,
+  effectiveFrom: t.effectiveFrom ?? "",
+  effectiveTo: t.effectiveTo ?? "",
 });
 
 export function CycleTemplatesManager({
@@ -134,6 +143,18 @@ export function CycleTemplatesManager({
                       <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                         {CYCLE_TYPE_LABEL[t.cycleType]}
                       </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-xs font-medium",
+                          t.status === "published"
+                            ? "bg-green-100 text-green-700"
+                            : t.status === "draft"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {CONFIG_STATUS_LABEL[t.status]} · v{t.version}
+                      </span>
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       Weights {t.weightOkr}/{t.weightCompetency}/{t.weightDevelopment} ·{" "}
@@ -141,6 +162,9 @@ export function CycleTemplatesManager({
                       {t.requireSecondLevel ? "2nd-level approval" : "single approval"} · reminds{" "}
                       {t.reminderDaysBefore}d before ·{" "}
                       {t.population.type === "all" ? "all staff" : t.population.type}
+                      {t.effectiveFrom || t.effectiveTo
+                        ? ` · effective ${t.effectiveFrom ?? "…"}–${t.effectiveTo ?? "…"}`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -156,6 +180,14 @@ export function CycleTemplatesManager({
                     >
                       <LayoutList className="h-4 w-4" /> Form
                     </Link>
+                    {t.status === "draft" && (
+                      <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => publishCycleTemplate(t.id))}>
+                        <Upload className="h-4 w-4" /> Publish
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" disabled={pending} title="Start a new draft version" onClick={() => run(() => newCycleTemplateVersion(t.id))}>
+                      <GitBranch className="h-4 w-4" /> New version
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => setLaunching(t)}>
                       <Rocket className="h-4 w-4" /> Launch
                     </Button>
@@ -295,6 +327,16 @@ function TemplateEditor({
           Description
           <input value={draft.description} onChange={(e) => set("description", e.target.value)} className={cn(field, "mt-0.5 block w-full py-1.5")} />
         </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-xs text-muted-foreground">
+            Effective from
+            <input type="date" value={draft.effectiveFrom} onChange={(e) => set("effectiveFrom", e.target.value)} className={cn(field, "mt-0.5 block w-full py-1.5")} />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Effective to
+            <input type="date" value={draft.effectiveTo} onChange={(e) => set("effectiveTo", e.target.value)} className={cn(field, "mt-0.5 block w-full py-1.5")} />
+          </label>
+        </div>
         <label className="block text-xs text-muted-foreground sm:w-1/2">
           Rating scale
           <select
