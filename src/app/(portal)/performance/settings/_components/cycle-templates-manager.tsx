@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Rocket, Check, X } from "lucide-react";
+import Link from "next/link";
+import { Plus, Pencil, Trash2, Rocket, Check, X, GitBranch, LayoutList } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   CYCLE_TYPES,
@@ -142,7 +143,19 @@ export function CycleTemplatesManager({
                       {t.population.type === "all" ? "all staff" : t.population.type}
                     </p>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
+                    <Link
+                      href={`/performance/settings/cycle-templates/${t.id}/workflow`}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                    >
+                      <GitBranch className="h-4 w-4" /> Workflow
+                    </Link>
+                    <Link
+                      href={`/performance/settings/cycle-templates/${t.id}/form`}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                    >
+                      <LayoutList className="h-4 w-4" /> Form
+                    </Link>
                     <Button variant="outline" size="sm" onClick={() => setLaunching(t)}>
                       <Rocket className="h-4 w-4" /> Launch
                     </Button>

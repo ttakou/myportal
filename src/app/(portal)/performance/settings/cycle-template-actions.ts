@@ -79,6 +79,45 @@ export async function deleteCycleTemplate(id: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/** Merge a patch into a template's config jsonb (preserves other keys). */
+async function patchTemplateConfig(
+  templateId: string,
+  patch: Record<string, unknown>,
+): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can edit templates." };
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("cycle_templates")
+    .select("config")
+    .eq("id", templateId)
+    .maybeSingle();
+  const current = ((data as Record<string, unknown> | null)?.config as Record<string, unknown>) ?? {};
+  const { error } = await supabase
+    .from("cycle_templates")
+    .update({ config: { ...current, ...patch }, updated_at: new Date().toISOString() })
+    .eq("id", templateId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/performance/settings/cycle-templates/${templateId}/workflow`);
+  revalidatePath(`/performance/settings/cycle-templates/${templateId}/form`);
+  return { ok: true };
+}
+
+/** Save a template's workflow stages (spec §2). */
+export async function updateTemplateWorkflow(
+  templateId: string,
+  stages: unknown[],
+): Promise<ActionResult> {
+  return patchTemplateConfig(templateId, { stages });
+}
+
+/** Save a template's form sections (spec §3). */
+export async function updateTemplateForm(
+  templateId: string,
+  sections: unknown[],
+): Promise<ActionResult> {
+  return patchTemplateConfig(templateId, { sections });
+}
+
 /** Launch a draft cycle from a template, copying its defaults. */
 export async function createCycleFromTemplate(input: {
   templateId: string;

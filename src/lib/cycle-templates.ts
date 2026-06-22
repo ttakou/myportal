@@ -28,6 +28,24 @@ function templateFromRow(r: Record<string, unknown>): CycleTemplate {
   };
 }
 
+/** A template's name + raw config jsonb (workflow stages, form sections). */
+export async function getTemplateConfig(
+  id: string,
+): Promise<{ name: string; config: Record<string, unknown> } | null> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("cycle_templates")
+    .select("name, config")
+    .eq("id", id)
+    .maybeSingle();
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    name: String(row.name ?? ""),
+    config: (row.config as Record<string, unknown>) ?? {},
+  };
+}
+
 /** The tenant's cycle templates (active first, then by name). */
 export async function getCycleTemplates(): Promise<CycleTemplate[]> {
   const supabase = createClient();
