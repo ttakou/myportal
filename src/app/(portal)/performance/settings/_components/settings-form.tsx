@@ -100,6 +100,28 @@ export function PerformanceSettingsForm({ config }: { config: PerformanceConfig 
               className={cn(field, "mt-0.5 block w-24 py-1")}
             />
           </label>
+          <label className="text-xs text-muted-foreground">
+            Min goal weight %
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={c.minGoalWeight}
+              onChange={(e) => set("minGoalWeight", Number(e.target.value))}
+              className={cn(field, "mt-0.5 block w-24 py-1")}
+            />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Max goal weight %
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={c.maxGoalWeight}
+              onChange={(e) => set("maxGoalWeight", Number(e.target.value))}
+              className={cn(field, "mt-0.5 block w-24 py-1")}
+            />
+          </label>
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
           <Toggle
@@ -116,6 +138,26 @@ export function PerformanceSettingsForm({ config }: { config: PerformanceConfig 
             label="Require alignment to an objective"
             checked={c.requireAlignment}
             onChange={(v) => set("requireAlignment", v)}
+          />
+          <Toggle
+            label="Employees can modify approved goals"
+            checked={c.allowModifyApproved}
+            onChange={(v) => set("allowModifyApproved", v)}
+          />
+          <Toggle
+            label="Goal changes require manager approval"
+            checked={c.changesRequireApproval}
+            onChange={(v) => set("changesRequireApproval", v)}
+          />
+          <Toggle
+            label="Allow carry-forward across cycles"
+            checked={c.allowCarryForward}
+            onChange={(v) => set("allowCarryForward", v)}
+          />
+          <Toggle
+            label="Allow cascading goals"
+            checked={c.allowCascade}
+            onChange={(v) => set("allowCascade", v)}
           />
         </div>
       </Section>

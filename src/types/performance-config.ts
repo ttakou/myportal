@@ -8,9 +8,15 @@ export interface PerformanceConfig {
   // Goal rules
   minGoals: number;
   maxGoals: number;
+  minGoalWeight: number;
+  maxGoalWeight: number;
   goalWeightsTotal100: boolean;
   requireSuccessIndicator: boolean;
   requireAlignment: boolean;
+  allowModifyApproved: boolean;
+  changesRequireApproval: boolean;
+  allowCarryForward: boolean;
+  allowCascade: boolean;
 
   // Who may comment (per role)
   allowEmployeeComments: boolean;
@@ -33,9 +39,15 @@ export interface PerformanceConfig {
 export const DEFAULT_PERFORMANCE_CONFIG: PerformanceConfig = {
   minGoals: 1,
   maxGoals: 8,
+  minGoalWeight: 0,
+  maxGoalWeight: 100,
   goalWeightsTotal100: true,
   requireSuccessIndicator: false,
   requireAlignment: false,
+  allowModifyApproved: false,
+  changesRequireApproval: true,
+  allowCarryForward: true,
+  allowCascade: true,
   allowEmployeeComments: true,
   allowLineManagerComments: true,
   allowSecondManagerComments: false,

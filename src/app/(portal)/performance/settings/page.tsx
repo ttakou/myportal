@@ -61,6 +61,18 @@ export default async function PerformanceSettingsPage() {
           </span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
         </Link>
+        <Link
+          href="/performance/settings/goal-library"
+          className="flex items-center justify-between rounded-lg border bg-card p-4 hover:bg-accent"
+        >
+          <span>
+            <span className="block font-medium">Goal library</span>
+            <span className="block text-sm text-muted-foreground">
+              Reusable corporate / department / team goals.
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+        </Link>
       </div>
 
       <PerformanceSettingsForm config={config} />
