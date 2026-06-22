@@ -34,21 +34,30 @@ function embedField(embed: unknown, key: string): string | null {
 }
 
 /** Execute a saved report definition against the data (HR-scoped via RLS). */
-export async function runReport(def: ReportDefinition): Promise<ReportResult> {
-  const supabase = createClient();
+export type ReportClient = ReturnType<typeof createClient>;
+
+export async function runReport(
+  def: ReportDefinition,
+  opts: { client?: ReportClient; tenantId?: string } = {},
+): Promise<ReportResult> {
+  const supabase = opts.client ?? createClient();
+  const tenantId = opts.tenantId;
   const dim = def.dimensions[0] ?? null; // single-dimension grouping for now
   const unsupportedDimension = dim && !SUPPORTED_DIMENSIONS.includes(dim) ? dim : null;
   const measures = def.measures.filter((m) => SUPPORTED_MEASURES.includes(m));
   const unsupportedMeasures = def.measures.filter((m) => !SUPPORTED_MEASURES.includes(m));
 
-  const [{ data: cyclesRes }, { data: aps }] = await Promise.all([
-    supabase.from("appraisal_cycles").select("id, name"),
-    supabase
-      .from("appraisals")
-      .select(
-        "id, cycle_id, manager_id, status, overall_rating, final_score, employee:profiles!employee_id(department, job_title)",
-      ),
-  ]);
+  // When run with an admin client (cron), scope explicitly by tenant since RLS
+  // is bypassed.
+  let cyclesQ = supabase.from("appraisal_cycles").select("id, name");
+  if (tenantId) cyclesQ = cyclesQ.eq("tenant_id", tenantId);
+  let apsQ = supabase
+    .from("appraisals")
+    .select(
+      "id, cycle_id, manager_id, status, overall_rating, final_score, employee:profiles!employee_id(department, job_title)",
+    );
+  if (tenantId) apsQ = apsQ.eq("tenant_id", tenantId);
+  const [{ data: cyclesRes }, { data: aps }] = await Promise.all([cyclesQ, apsQ]);
 
   const cycleName = new Map(((cyclesRes ?? []) as Record<string, unknown>[]).map((c) => [String(c.id), String(c.name ?? "")]));
 
