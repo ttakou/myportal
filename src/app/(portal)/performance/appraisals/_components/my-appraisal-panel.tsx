@@ -21,6 +21,7 @@ import {
   deleteDevelopmentItem,
   deleteGoal,
   deleteKeyResult,
+  carryForwardGoals,
   rateCompetencySelf,
   removeGoalRater,
   setDevelopmentStatus,
@@ -196,6 +197,18 @@ function GoalSetting({
             />
           ))}
         </ul>
+      )}
+      {editable && appraisal.goals.filter((g) => g.kind === "objective").length === 0 && (
+        <div className="mt-3 border-t pt-3">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => run(() => carryForwardGoals(appraisal.id))}
+            className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+          >
+            ↻ Carry forward last appraisal&apos;s objectives
+          </button>
+        </div>
       )}
       {editable && (
         <form

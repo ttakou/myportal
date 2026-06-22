@@ -507,6 +507,59 @@ export async function deleteGoal(input: { goalId: string; appraisalId: string })
 }
 
 /** Employee submits their goal plan for the line manager to review. */
+/** Copy the employee's objectives from their most recent prior appraisal. */
+export async function carryForwardGoals(appraisalId: string): Promise<ActionResult> {
+  const guard = await requireEmployeeEditable(appraisalId);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const config = await getPerformanceConfig();
+  if (!config.allowCarryForward)
+    return { ok: false, error: "Carry-forward is turned off for your organisation." };
+  const supabase = createClient();
+
+  const { data: prior } = await supabase
+    .from("appraisals")
+    .select("id")
+    .eq("employee_id", a.employee_id)
+    .neq("id", a.id)
+    .neq("cycle_id", a.cycle_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!prior) return { ok: false, error: "No previous appraisal to carry goals from." };
+
+  const { data: priorGoals } = await supabase
+    .from("appraisal_goals")
+    .select("title, description, weight, success_indicator, alignment")
+    .eq("appraisal_id", (prior as { id: string }).id)
+    .eq("kind", "objective");
+  if (!priorGoals?.length) return { ok: false, error: "Your previous appraisal had no objectives." };
+
+  const { data: existing } = await supabase
+    .from("appraisal_goals")
+    .select("title")
+    .eq("appraisal_id", a.id);
+  const have = new Set(((existing ?? []) as { title: string }[]).map((g) => g.title.toLowerCase()));
+  const rows = (priorGoals as Record<string, unknown>[])
+    .filter((g) => !have.has(String(g.title).toLowerCase()))
+    .map((g) => ({
+      tenant_id: a.tenant_id,
+      appraisal_id: a.id,
+      title: g.title,
+      description: g.description,
+      weight: g.weight,
+      success_indicator: g.success_indicator,
+      alignment: g.alignment,
+      kind: "objective",
+    }));
+  if (rows.length === 0) return { ok: false, error: "Those objectives are already on this appraisal." };
+
+  const { error } = await supabase.from("appraisal_goals").insert(rows);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 export async function submitGoals(appraisalId: string): Promise<ActionResult> {
   const guard = await requireEmployeeEditable(appraisalId);
   if ("ok" in guard) return guard;
