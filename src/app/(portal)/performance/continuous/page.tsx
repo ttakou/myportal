@@ -8,10 +8,25 @@ import {
   getDirectory,
   getMyProfileId,
 } from "@/lib/continuous";
-import { FEATURE_LABEL, type ActivityKind, type ContinuousActivity } from "@/types/continuous";
+import {
+  CHECK_IN_FREQUENCY_LABEL,
+  FEATURE_LABEL,
+  type ActivityKind,
+  type ContinuousActivity,
+} from "@/types/continuous";
 import { ActivityPanel } from "../_components/activity-panel";
+import { CheckInPanel } from "../_components/check-in-panel";
+import { OneToOnePanel } from "../_components/one-to-one-panel";
 
-const BATCH: ActivityKind[] = ["recognition", "achievement", "journal", "manager_note", "coaching_note"];
+const BATCH: ActivityKind[] = [
+  "recognition",
+  "achievement",
+  "journal",
+  "manager_note",
+  "coaching_note",
+  "check_in",
+  "one_to_one",
+];
 
 export default async function ContinuousPage() {
   const myId = await getMyProfileId();
@@ -38,6 +53,25 @@ export default async function ContinuousPage() {
   const on = (k: keyof typeof config.enabledFeatures) => config.enabledFeatures[k];
 
   const sections: { show: boolean; title: string; desc: string; panel: React.ReactNode }[] = [
+    {
+      show: on("check_in"),
+      title: FEATURE_LABEL.check_in,
+      desc: "A regular self check-in against your team's questions.",
+      panel: (
+        <CheckInPanel
+          questions={config.checkInTemplate}
+          frequencyLabel={CHECK_IN_FREQUENCY_LABEL[config.checkInFrequency]}
+          items={byKind("check_in").filter((a) => a.subjectId === myId)}
+          myId={myId}
+        />
+      ),
+    },
+    {
+      show: on("one_to_one"),
+      title: FEATURE_LABEL.one_to_one,
+      desc: "Log one-to-one meetings with agenda and notes, shared with the other person.",
+      panel: <OneToOnePanel items={byKind("one_to_one")} directory={directory} myId={myId} />,
+    },
     {
       show: on("recognition"),
       title: FEATURE_LABEL.recognition,
