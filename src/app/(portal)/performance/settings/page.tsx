@@ -36,18 +36,32 @@ export default async function PerformanceSettingsPage() {
         </p>
       </div>
 
-      <Link
-        href="/performance/settings/scales"
-        className="flex items-center justify-between rounded-lg border bg-card p-4 hover:bg-accent"
-      >
-        <span>
-          <span className="block font-medium">Rating scales</span>
-          <span className="block text-sm text-muted-foreground">
-            Define the scales used to rate goals and competencies.
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link
+          href="/performance/settings/scales"
+          className="flex items-center justify-between rounded-lg border bg-card p-4 hover:bg-accent"
+        >
+          <span>
+            <span className="block font-medium">Rating scales</span>
+            <span className="block text-sm text-muted-foreground">
+              Scales used to rate goals and competencies.
+            </span>
           </span>
-        </span>
-        <ChevronRight className="h-5 w-5 text-muted-foreground" />
-      </Link>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+        </Link>
+        <Link
+          href="/performance/settings/cycle-templates"
+          className="flex items-center justify-between rounded-lg border bg-card p-4 hover:bg-accent"
+        >
+          <span>
+            <span className="block font-medium">Cycle templates</span>
+            <span className="block text-sm text-muted-foreground">
+              Reusable recipes for each kind of review.
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+        </Link>
+      </div>
 
       <PerformanceSettingsForm config={config} />
     </div>
