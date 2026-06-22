@@ -30,8 +30,8 @@ import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
 import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
-import { AdminToggle } from "./_components/admin-toggle";
 import { PipPanel } from "./_components/pip-panel";
+import { resolveAppraisalView } from "../_components/performance-views";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
 
@@ -49,7 +49,7 @@ function SectionSkeleton() {
 export default async function AppraisalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cycle?: string }>;
+  searchParams: Promise<{ cycle?: string; view?: string }>;
 }) {
   const access = await getAccess();
   const isHr = access.isHr || access.isAdmin || access.isSystemAdmin;
@@ -62,7 +62,9 @@ export default async function AppraisalsPage({
     visibleCycles.find((c) => c.status === "active") ?? visibleCycles[0] ?? null;
 
   // Default to the current cycle; `?cycle=` lets the user jump to a past year.
-  const { cycle: requestedId } = await searchParams;
+  // `?view=` selects which single view renders (driven by the sidebar submenu).
+  const { cycle: requestedId, view: rawView } = await searchParams;
+  const view = resolveAppraisalView(rawView);
   const cycle =
     (requestedId ? visibleCycles.find((c) => c.id === requestedId) : null) ?? activeCycle;
   const isCurrent = !!cycle && cycle.status === "active";
@@ -129,67 +131,69 @@ export default async function AppraisalsPage({
         </p>
       )}
 
-      {/* Line-manager view — your team's appraisals first (a manager's main task). */}
-      {isManager && (
-        <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
-      )}
-      {isManager && (
-        <TeamReviewPanel appraisals={team} colleagues={colleagues} currentDelegate={myDelegate} />
-      )}
-      {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
-
-      <PipPanel data={pip} employees={pipEmployees} />
-
-      {/* Employee view — your own appraisal for the selected year. */}
-      {myAppraisal ? (
-        <div className="space-y-3">
-          <MyAppraisalPanel
-            appraisal={myAppraisal}
-            colleagues={colleagues}
-            deptObjectives={deptObjectives}
-          />
-          {COMPLETED_STATUSES.has(myAppraisal.status) && (
-            <Link
-              href={`/performance/appraisals/${myAppraisal.id}/outcome`}
-              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
-            >
-              View / print outcome
-            </Link>
-          )}
-        </div>
-      ) : (
-        cycle &&
-        !isHr && (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No appraisal recorded for you in {cycle.year}.
+      {/* Team review — a line manager's main task. */}
+      {view === "team" && (
+        isManager ? (
+          <>
+            <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
+            <TeamReviewPanel appraisals={team} colleagues={colleagues} currentDelegate={myDelegate} />
+            {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
+            <PipPanel data={pip} employees={pipEmployees} />
+          </>
+        ) : (
+          <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            You have no direct reports to review in this cycle.
           </p>
         )
       )}
 
-      {/* Secondary — streamed so they never block the primary view above. */}
-      <Suspense fallback={<SectionSkeleton />}>
-        <HistorySection />
-      </Suspense>
+      {/* My appraisal — the employee's own evaluation for the selected year. */}
+      {view === "mine" && (
+        <>
+          {myAppraisal ? (
+            <div className="space-y-3">
+              <MyAppraisalPanel
+                appraisal={myAppraisal}
+                colleagues={colleagues}
+                deptObjectives={deptObjectives}
+              />
+              {COMPLETED_STATUSES.has(myAppraisal.status) && (
+                <Link
+                  href={`/performance/appraisals/${myAppraisal.id}/outcome`}
+                  className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+                >
+                  View / print outcome
+                </Link>
+              )}
+            </div>
+          ) : cycle ? (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No appraisal recorded for you in {cycle.year}.
+            </p>
+          ) : (
+            <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              No active appraisal cycle. You&apos;ll see your goals here once HR launches one.
+            </p>
+          )}
 
-      <Suspense fallback={null}>
-        <RaterSection />
-      </Suspense>
+          {/* The viewer's own improvement plan, if any (self-hides otherwise). */}
+          <PipPanel data={pip} employees={pipEmployees} />
 
-      {/* HR-Admin dashboard — org-wide console + calibration for the selected year.
-          Tucked behind a button so HR admins who are also managers see their team
-          view first, and streamed so its heavy queries never block the page. */}
-      {isHr && (
-        <AdminToggle>
+          {/* Streamed so they never block the primary view above. */}
           <Suspense fallback={<SectionSkeleton />}>
-            <HrSection cycle={cycle} allCycles={allCycles} />
+            <HistorySection />
           </Suspense>
-        </AdminToggle>
+          <Suspense fallback={null}>
+            <RaterSection />
+          </Suspense>
+        </>
       )}
 
-      {!cycle && !isHr && (
-        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No active appraisal cycle. You&apos;ll see your goals here once HR launches one.
-        </p>
+      {/* HR console — org-wide dashboard + calibration for the selected year. */}
+      {view === "hr" && isHr && (
+        <Suspense fallback={<SectionSkeleton />}>
+          <HrSection cycle={cycle} allCycles={allCycles} />
+        </Suspense>
       )}
     </div>
   );

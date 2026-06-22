@@ -73,16 +73,30 @@ export function NavLinks({ links }: { links: NavLink[] }) {
   );
 }
 
-/** Indented submenu; the active item is derived from the `?view=` query param. */
+/**
+ * Indented submenu. Items may be plain routes (e.g. /performance/settings) or
+ * `?view=`-driven views on a shared route (e.g. /offshore?view=manifests). The
+ * active item is matched by pathname + view, falling back to `defaultKey` for
+ * the view that's shown when a shared route is opened without a `?view=`.
+ */
 function SubMenu({ items, defaultKey }: { items: NavSubItem[]; defaultKey?: string }) {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const current = searchParams.get("view") ?? defaultKey ?? items[0]?.key;
+  const currentView = searchParams.get("view");
+
+  const isActive = (href: string) => {
+    const [path, qs] = href.split("?");
+    const itemView = qs ? new URLSearchParams(qs).get("view") : null;
+    if (pathname !== path) return false;
+    if (!itemView) return true;
+    return (currentView ?? defaultKey) === itemView;
+  };
 
   return (
     <div className="mb-1 ml-5 mt-0.5 flex flex-col gap-0.5 border-l pl-2">
       {items.map((si) => {
         const SubIcon = resolveIcon(si.icon);
-        const isCurrent = current === si.key;
+        const isCurrent = isActive(si.href);
         return (
           <Link
             key={si.key}

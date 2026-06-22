@@ -2,7 +2,9 @@ import Link from "next/link";
 import { LayoutDashboard, FileBarChart } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
 import { getAccess } from "@/lib/auth";
+import { hasDirectReports } from "@/lib/appraisals";
 import { offshoreSubmenu } from "@/app/(portal)/offshore/_components/offshore-views";
+import { performanceSubmenu } from "@/app/(portal)/performance/_components/performance-views";
 import { NavLinks, type NavLink } from "./nav-links";
 
 /**
@@ -20,11 +22,25 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const [services, access] = await Promise.all([getActiveServices(), getAccess()]);
+  const [services, access, isManager] = await Promise.all([
+    getActiveServices(),
+    getAccess(),
+    hasDirectReports(),
+  ]);
   const canManageOffshore = access.isAdmin || access.isCampboss || access.isOim;
+  const isHr = access.isHr || access.isSystemAdmin || access.isAdmin;
 
   const links: NavLink[] = services.map((s) => {
     const base: NavLink = { name: s.name, href: s.route_path, icon: s.icon };
+    // Performance: indented submenu (home / my appraisal / team / HR / settings),
+    // role-aware. Appraisal views default to "My appraisal".
+    if (s.route_path === "/performance") {
+      return {
+        ...base,
+        defaultSubKey: "mine",
+        subItems: performanceSubmenu({ isHr, isManager }),
+      };
+    }
     // Offshore: everyone with the module gets an indented submenu (each view on
     // its own); managers additionally get the management views. Everyone lands
     // on "My trips" (the self-service view) by default.

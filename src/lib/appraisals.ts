@@ -302,6 +302,22 @@ export const getDepartmentObjectives = cache(async (): Promise<DepartmentObjecti
  * the performance dashboard at a glance; the manager acts on the full record
  * over on the appraisals page.
  */
+/** True when the signed-in user is a line manager (has at least one direct
+ *  report via profiles.manager_id). Cached per request — cheap, indexed count. */
+export const hasDirectReports = cache(async (): Promise<boolean> => {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { count } = await supabase
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("manager_id", user.id)
+    .eq("is_active", true);
+  return (count ?? 0) > 0;
+});
+
 export async function getMyDirectLine(cycleId: string | null): Promise<DirectReport[]> {
   const supabase = createClient();
   const {
