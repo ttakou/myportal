@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { notifyUsers } from "@/lib/notify";
 import { runAppraisalReminders } from "@/lib/appraisal-reminders";
+import { dispatchEvent } from "@/lib/notify-dispatch";
 import { getPerformanceConfig } from "@/lib/performance-config";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
@@ -151,7 +152,7 @@ export async function launchCycle(cycleId: string): Promise<ActionResult> {
   const supabase = createClient();
   const { data: cycle } = await supabase
     .from("appraisal_cycles")
-    .select("id, tenant_id")
+    .select("id, tenant_id, name")
     .eq("id", cycleId)
     .maybeSingle();
   if (!cycle) return { ok: false, error: "Cycle not found." };
@@ -184,6 +185,16 @@ export async function launchCycle(cycleId: string): Promise<ActionResult> {
     .update({ status: "active" })
     .eq("id", cycleId);
   if (cErr) return { ok: false, error: cErr.message };
+
+  // Configurable notifications: announce the launch per the tenant's rules.
+  await dispatchEvent("cycle_launch", {
+    tenantId: cycle.tenant_id as string,
+    employeeIds: roster.map((p) => p.id),
+    managerIds: roster.map((p) => p.manager_id).filter((x): x is string => Boolean(x)),
+    placeholders: { cycle: String(cycle.name ?? "appraisal cycle") },
+    url: "/performance/appraisals",
+  });
+
   rev();
   return { ok: true };
 }
