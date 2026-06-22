@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Check, X, LayoutDashboard, CalendarClock } from "lucide-react";
+import Link from "next/link";
+import { Plus, Pencil, Trash2, Check, X, LayoutDashboard, CalendarClock, Play } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   ACCESS_ROLES,
@@ -99,6 +100,9 @@ export function ReportBuilder({ reports }: { reports: ReportDefinition[] }) {
                 </p>
               </div>
               <div className="flex gap-1">
+                <Link href={`/performance/reports/${r.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  <Play className="h-4 w-4" /> Run
+                </Link>
                 <Button variant="outline" size="sm" onClick={() => setDraft(r)}>
                   <Pencil className="h-4 w-4" /> Edit
                 </Button>
