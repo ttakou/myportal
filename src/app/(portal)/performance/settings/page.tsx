@@ -97,6 +97,18 @@ export default async function PerformanceSettingsPage() {
           </span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
         </Link>
+        <Link
+          href="/performance/settings/calibration"
+          className="flex items-center justify-between rounded-lg border bg-card p-4 hover:bg-accent"
+        >
+          <span>
+            <span className="block font-medium">Calibration</span>
+            <span className="block text-sm text-muted-foreground">
+              Distribution rules, adjustments, approval and groups.
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+        </Link>
       </div>
 
       <PerformanceSettingsForm config={config} />

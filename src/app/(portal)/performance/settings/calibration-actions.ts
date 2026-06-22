@@ -1,0 +1,96 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { getAccess } from "@/lib/auth";
+import type { ActionResult } from "@/types/actions";
+import {
+  GROUP_BYS,
+  type CalibrationSettings,
+  type GroupBy,
+  type GroupStatus,
+} from "@/types/calibration";
+
+async function ensureHr() {
+  const access = await getAccess();
+  return access.isHr || access.isSystemAdmin || access.isAdmin;
+}
+
+const clampPct = (v: number) => Math.max(0, Math.min(100, Math.round(Number.isFinite(v) ? v : 0)));
+
+export async function saveCalibrationSettings(input: CalibrationSettings): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can change calibration settings." };
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const fields = {
+    mode: input.mode === "forced" ? "forced" : "guidance",
+    distribution: (input.distribution ?? [])
+      .filter((b) => b.label?.trim())
+      .map((b) => ({ label: b.label.trim(), percent: clampPct(b.percent) })),
+    adjustment_limit: Math.max(0, Math.min(5, Math.round(input.adjustmentLimit || 0))),
+    require_justification: !!input.requireJustification,
+    approval_role: input.approvalRole || "hr",
+    default_group_by: GROUP_BYS.includes(input.defaultGroupBy) ? input.defaultGroupBy : "department",
+    confidentiality: input.confidentiality,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("calibration_settings")
+    .upsert({ tenant_id: tenant.id, ...fields }, { onConflict: "tenant_id" });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/performance/settings/calibration");
+  return { ok: true };
+}
+
+export async function createCalibrationGroup(input: {
+  cycleId: string | null;
+  name: string;
+  groupBy: GroupBy;
+  groupValue?: string | null;
+}): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can manage calibration groups." };
+  if (!input.name?.trim()) return { ok: false, error: "Give the group a name." };
+  const groupBy: GroupBy = GROUP_BYS.includes(input.groupBy) ? input.groupBy : "department";
+
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const { error } = await supabase.from("calibration_groups").insert({
+    tenant_id: tenant.id,
+    cycle_id: input.cycleId || null,
+    name: input.name.trim(),
+    group_by: groupBy,
+    group_value: input.groupValue?.trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/performance/settings/calibration");
+  return { ok: true };
+}
+
+export async function setCalibrationGroupStatus(
+  id: string,
+  status: GroupStatus,
+): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can manage calibration groups." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("calibration_groups")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/performance/settings/calibration");
+  return { ok: true };
+}
+
+export async function deleteCalibrationGroup(id: string): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can manage calibration groups." };
+  const supabase = createClient();
+  const { error } = await supabase.from("calibration_groups").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/performance/settings/calibration");
+  return { ok: true };
+}
