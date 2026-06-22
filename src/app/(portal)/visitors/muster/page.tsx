@@ -1,15 +1,27 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import { getOnSite } from "@/lib/visitors";
+import { getStaffOnSite } from "@/lib/staff-attendance";
+import { today } from "@/lib/canteen";
 import { MusterList } from "./muster-list";
 
 export default async function MusterPage() {
-  if (!isAdminRole(await getCurrentRole())) {
+  // The muster is for whoever runs an evacuation: admins, security/reception and
+  // emergency responders (e.g. the ERTL access role) — i.e. visitors:operate.
+  const [access, perms] = await Promise.all([getAccess(), getMyPermissions()]);
+  const canView =
+    access.isAdmin || access.isSystemAdmin || hasPermission(perms, "visitors", "operate");
+  if (!canView) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
-        <h1 className="text-xl font-semibold">Administrators only</h1>
+        <h1 className="text-xl font-semibold">Not available</h1>
+        <p className="text-muted-foreground">
+          The muster list is available to administrators, security and emergency responders.
+        </p>
         <Link href="/visitors" className="text-sm font-medium text-primary hover:underline">
           ← Back to visitors
         </Link>
@@ -17,7 +29,8 @@ export default async function MusterPage() {
     );
   }
 
-  const onSite = await getOnSite();
+  const date = today();
+  const [onSite, staffOnSite] = await Promise.all([getOnSite(date), getStaffOnSite(date)]);
 
   return (
     <div className="space-y-6">
@@ -30,11 +43,12 @@ export default async function MusterPage() {
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Emergency muster list</h1>
         <p className="text-muted-foreground">
-          Everyone currently checked in on site — updates live.
+          Everyone on site today ({date}) — staff and visitors, updates live. Earlier
+          days are available in the visitor records.
         </p>
       </div>
 
-      <MusterList initial={onSite} />
+      <MusterList initial={onSite} staff={staffOnSite} date={date} />
     </div>
   );
 }

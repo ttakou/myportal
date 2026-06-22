@@ -13,7 +13,9 @@ import {
 } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
 import { getMyDashboard } from "@/lib/dashboard";
+import { getMyAttendance } from "@/lib/staff-attendance";
 import { getMenu, today } from "@/lib/canteen";
+import { SelfCheckIn } from "./_components/self-check-in";
 import { MEAL_PERIODS, MEAL_PERIOD_LABEL } from "@/types/canteen";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +60,11 @@ function focusIcon(slug: string) {
 }
 
 export default async function DashboardPage() {
-  const [services, me] = await Promise.all([getActiveServices(), getMyDashboard()]);
+  const [services, me, myAttendance] = await Promise.all([
+    getActiveServices(),
+    getMyDashboard(),
+    getMyAttendance(),
+  ]);
 
   const firstName = me?.name?.split(/\s+/)[0] ?? "";
   const offshore = me?.offshore ?? null;
@@ -92,6 +98,17 @@ export default async function DashboardPage() {
     month: "long",
   });
 
+  // The user's canteen entitlement for the period, shown on the menu card so they
+  // know they're entitled (and for how long).
+  const ent = me?.canteenEntitlement ?? null;
+  const fmtDay = (d: string) =>
+    new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const entitlementLabel = ent
+    ? ent.source === "grant"
+      ? `Entitled · ${ent.dailyMeals} meal${ent.dailyMeals === 1 ? "" : "s"}/working day${ent.endsOn ? ` · until ${fmtDay(ent.endsOn)}` : ""}`
+      : "Entitled to the daily meal"
+    : null;
+
   return (
     <div className="space-y-8">
       <div>
@@ -100,6 +117,9 @@ export default async function DashboardPage() {
         </h1>
         <p className="text-muted-foreground">Your day at a glance.</p>
       </div>
+
+      {/* Self check-in — geofenced to the base ("I'm in") */}
+      <SelfCheckIn initial={myAttendance} />
 
       {/* Offshore personalization */}
       {offshore && (
@@ -175,6 +195,11 @@ export default async function DashboardPage() {
                 <div>
                   <h2 className="text-lg font-semibold leading-tight">Today&apos;s canteen menu</h2>
                   <p className="text-sm text-white/85">{menuDateLabel}</p>
+                  {entitlementLabel && (
+                    <span className="mt-1 inline-flex items-center rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium text-white ring-1 ring-white/25">
+                      {entitlementLabel}
+                    </span>
+                  )}
                 </div>
               </div>
               <Link

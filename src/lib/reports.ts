@@ -1,9 +1,11 @@
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
 
-/** Distinct, non-empty departments in the tenant — for the report filter bar. */
-export async function getDepartments(): Promise<string[]> {
+/** Distinct, non-empty departments in the tenant — for the report filter bar.
+ *  Request-cached: read by the filter bar on every report page. */
+export const getDepartments = cache(async (): Promise<string[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("profiles")
@@ -15,15 +17,16 @@ export async function getDepartments(): Promise<string[]> {
     if (r.department) set.add(r.department);
   }
   return [...set];
-}
+});
 
 export interface ReportPerson {
   id: string;
   name: string;
 }
 
-/** Active people in the tenant — for the per-person report filter. */
-export async function getReportPeople(): Promise<ReportPerson[]> {
+/** Active people in the tenant — for the per-person report filter.
+ *  Request-cached: read by the filter bar on every report page. */
+export const getReportPeople = cache(async (): Promise<ReportPerson[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("profiles")
@@ -34,6 +37,15 @@ export async function getReportPeople(): Promise<ReportPerson[]> {
     id: p.id,
     name: p.full_name || "—",
   }));
+});
+
+/** Access role (tenant_roles) names in the tenant — for the report filter bar. */
+export async function getAccessRoles(): Promise<string[]> {
+  const supabase = createClient();
+  const { data } = await supabase.from("tenant_roles").select("name").order("name");
+  return ((data ?? []) as { name: string | null }[])
+    .map((r) => r.name)
+    .filter((n): n is string => !!n);
 }
 
 // --- Out-of-town travel & expense -----------------------------------------
@@ -518,6 +530,88 @@ export async function getPerformanceCompletionReport(
   };
 }
 
+// --- Performance insights (manager effectiveness, competency gaps, appeals) --
+
+export interface ManagerEffectivenessRow {
+  manager: string;
+  rated: number;
+  avgScore: number | null;
+}
+export interface CompetencyGapRow {
+  competency: string;
+  rated: number;
+  avgRating: number | null;
+}
+export interface PerformanceInsights {
+  byManager: ManagerEffectivenessRow[];
+  competencyGaps: CompetencyGapRow[];
+  appeals: { open: number; resolved: number; total: number };
+  scored: number;
+}
+
+/**
+ * Governance analytics for one cycle (HR/admin): rating consistency by manager,
+ * competency strengths/gaps (weakest first), and the appeal count. RLS scopes
+ * everything to the tenant; HR/admin see all appraisals in the cycle.
+ */
+export async function getPerformanceInsights(cycleId: string): Promise<PerformanceInsights> {
+  const supabase = createClient();
+  const { data: aps } = await supabase
+    .from("appraisals")
+    .select("id, final_score, manager:profiles!manager_id(full_name)")
+    .eq("cycle_id", cycleId);
+  const appraisals = (aps ?? []) as Record<string, any>[];
+  const ids = appraisals.map((a) => a.id as string);
+
+  // Manager effectiveness: average final score of each manager's scored reports.
+  const mgr = new Map<string, { sum: number; n: number }>();
+  for (const a of appraisals) {
+    if (a.final_score == null) continue;
+    const name = one<{ full_name?: string }>(a.manager)?.full_name ?? "—";
+    const cur = mgr.get(name) ?? { sum: 0, n: 0 };
+    cur.sum += a.final_score as number;
+    cur.n += 1;
+    mgr.set(name, cur);
+  }
+  const byManager: ManagerEffectivenessRow[] = [...mgr.entries()]
+    .map(([manager, v]) => ({ manager, rated: v.n, avgScore: Math.round(v.sum / v.n) }))
+    .sort((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
+
+  let competencyGaps: CompetencyGapRow[] = [];
+  const appeals = { open: 0, resolved: 0, total: 0 };
+  if (ids.length) {
+    const [{ data: crs }, { data: apl }] = await Promise.all([
+      supabase
+        .from("appraisal_competency_ratings")
+        .select("manager_rating, competency:appraisal_competencies(name)")
+        .in("appraisal_id", ids),
+      supabase.from("appraisal_appeals").select("status").in("appraisal_id", ids),
+    ]);
+    const comp = new Map<string, { sum: number; n: number }>();
+    for (const c of (crs ?? []) as Record<string, any>[]) {
+      if (c.manager_rating == null) continue;
+      const name = one<{ name?: string }>(c.competency)?.name ?? "—";
+      const cur = comp.get(name) ?? { sum: 0, n: 0 };
+      cur.sum += c.manager_rating as number;
+      cur.n += 1;
+      comp.set(name, cur);
+    }
+    competencyGaps = [...comp.entries()]
+      .map(([competency, v]) => ({
+        competency,
+        rated: v.n,
+        avgRating: Math.round((v.sum / v.n) * 10) / 10,
+      }))
+      .sort((a, b) => (a.avgRating ?? 99) - (b.avgRating ?? 99)); // weakest first
+    for (const ap of (apl ?? []) as { status: string }[]) {
+      appeals.total += 1;
+      if (ap.status === "resolved") appeals.resolved += 1;
+      else appeals.open += 1;
+    }
+  }
+  return { byManager, competencyGaps, appeals, scored: byManager.reduce((s, m) => s + m.rated, 0) };
+}
+
 // --- Visitors throughput --------------------------------------------------
 
 export interface VisitorRow {
@@ -528,6 +622,10 @@ export interface VisitorRow {
   department: string | null;
   purpose: string | null;
   status: string;
+  vehicle_type: string | null;
+  vehicle_plate: string | null;
+  check_in_at: string | null;
+  check_out_at: string | null;
   dwellMins: number | null;
 }
 
@@ -546,7 +644,7 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
   const { data } = await supabase
     .from("visitors")
     .select(
-      "full_name, company, purpose, visit_date, status, check_in_at, check_out_at," +
+      "full_name, company, purpose, visit_date, status, vehicle_type, vehicle_plate, check_in_at, check_out_at," +
         " host:profiles!visitors_host_id_fkey(full_name, department)",
     )
     .gte("visit_date", f.from)
@@ -589,6 +687,10 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
       department,
       purpose: v.purpose ?? null,
       status: v.status,
+      vehicle_type: v.vehicle_type ?? null,
+      vehicle_plate: v.vehicle_plate ?? null,
+      check_in_at: v.check_in_at ?? null,
+      check_out_at: v.check_out_at ?? null,
       dwellMins,
     });
   }
@@ -610,6 +712,8 @@ export interface EmergencyIncidentRow {
   severity: string;
   status: string;
   sos: boolean;
+  reporter: string | null;
+  department: string | null;
   location: string | null;
   ackMins: number | null;
   resolveMins: number | null;
@@ -639,7 +743,10 @@ export async function getEmergencyReport(f: { from: string; to: string }): Promi
   const [{ data: incData }, { count: broadcasts }] = await Promise.all([
     supabase
       .from("eess_incidents")
-      .select("created_at, incident_type, severity, status, is_sos, location_text, acknowledged_at, resolved_at")
+      .select(
+        "created_at, incident_type, severity, status, is_sos, location_text, acknowledged_at, resolved_at," +
+          " reporter:profiles!eess_incidents_reporter_id_fkey(full_name, department)",
+      )
       .gte("created_at", `${f.from}T00:00:00`)
       .lte("created_at", `${f.to}T23:59:59`)
       .order("created_at", { ascending: false }),
@@ -671,12 +778,15 @@ export async function getEmergencyReport(f: { from: string; to: string }): Promi
     typeMap.set(r.incident_type, (typeMap.get(r.incident_type) ?? 0) + 1);
     sevMap.set(r.severity, (sevMap.get(r.severity) ?? 0) + 1);
     statusMap.set(r.status, (statusMap.get(r.status) ?? 0) + 1);
+    const reporter = one<{ full_name?: string; department?: string }>(r.reporter);
     return {
       created_at: r.created_at,
       type: r.incident_type,
       severity: r.severity,
       status: r.status,
       sos: !!r.is_sos,
+      reporter: reporter?.full_name ?? null,
+      department: reporter?.department ?? null,
       location: r.location_text ?? null,
       ackMins,
       resolveMins,
@@ -721,6 +831,7 @@ export interface AccessReviewReport {
 export interface AccessReviewFilters {
   department: string | null;
   userId: string | null;
+  accessRole: string | null;
 }
 
 const PRIVILEGED_FUNCTIONAL_REVIEW = new Set(["system_admin", "hr_admin"]);
@@ -750,6 +861,7 @@ export async function getAccessReview(f: AccessReviewFilters): Promise<AccessRev
     const access = ((p.profile_access_roles ?? []) as Record<string, any>[])
       .map((r) => one<{ name?: string }>(r.tenant_roles)?.name)
       .filter((n): n is string => !!n);
+    if (f.accessRole && !access.includes(f.accessRole)) continue;
     const privileged =
       PRIVILEGED_ACCOUNT_REVIEW.has(p.role) ||
       functional.some((r) => PRIVILEGED_FUNCTIONAL_REVIEW.has(r));

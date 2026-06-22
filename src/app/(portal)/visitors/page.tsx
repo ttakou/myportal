@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { FileBarChart, Siren } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import { getVisitors } from "@/lib/visitors";
+import { getStaffRoster } from "@/lib/staff-attendance";
 import { today } from "@/lib/canteen";
 import { VisitorsBoard } from "./_components/visitors-board";
+import { StaffBoard } from "./_components/staff-board";
 
 export default async function VisitorsPage(
   props: {
@@ -16,13 +20,20 @@ export default async function VisitorsPage(
       ? searchParams.date
       : today();
 
-  const [visitors, role, access] = await Promise.all([
+  const [visitors, role, access, perms] = await Promise.all([
     getVisitors(visitDate),
     getCurrentRole(),
     getAccess(),
+    getMyPermissions(),
   ]);
   const isAdmin = isAdminRole(role);
-  const canSeeReport = access.isSystemAdmin || access.isAdmin || access.isOim;
+  // Security / reception / emergency responders (e.g. ERTL) plus admins get the
+  // staff check-in roster, the muster list and the throughput report — the same
+  // audience that can operate visitor check-in/out.
+  const canOperate =
+    access.isAdmin || access.isSystemAdmin || hasPermission(perms, "visitors", "operate");
+  const canSeeReport = canOperate || access.isOim;
+  const staffRoster = canOperate ? await getStaffRoster(visitDate) : [];
 
   return (
     <div className="space-y-6">
@@ -41,7 +52,7 @@ export default async function VisitorsPage(
               Throughput report
             </Link>
           )}
-          {isAdmin && (
+          {canOperate && (
             <Link
               href="/visitors/muster"
               className="inline-flex items-center gap-2 rounded-md border border-destructive/40 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
@@ -54,6 +65,8 @@ export default async function VisitorsPage(
       </div>
 
       <VisitorsBoard visitDate={visitDate} visitors={visitors} isAdmin={isAdmin} />
+
+      {canOperate && <StaffBoard rows={staffRoster} />}
     </div>
   );
 }

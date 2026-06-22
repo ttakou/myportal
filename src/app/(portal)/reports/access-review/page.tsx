@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
-import { getAccessReview, getDepartments, getReportPeople, type AccessReviewRow } from "@/lib/reports";
+import {
+  getAccessReview,
+  getAccessRoles,
+  getDepartments,
+  getReportPeople,
+  type AccessReviewRow,
+} from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
@@ -25,7 +32,7 @@ const accountLabel = (r: string) => r.replace(/_/g, " ");
 export default async function AccessReviewReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ department?: string; user?: string }>;
+  searchParams: Promise<{ department?: string; user?: string; accessRole?: string }>;
 }) {
   const access = await getAccess();
   if (!(access.isSystemAdmin || access.isAdmin)) {
@@ -44,11 +51,13 @@ export default async function AccessReviewReportPage({
   const sp = await searchParams;
   const department = sp.department || null;
   const userId = sp.user || null;
+  const accessRole = sp.accessRole || null;
 
-  const [departments, people, report] = await Promise.all([
+  const [departments, people, accessRoles, report] = await Promise.all([
     getDepartments(),
     getReportPeople(),
-    getAccessReview({ department, userId }),
+    getAccessRoles(),
+    getAccessReview({ department, userId, accessRole }),
   ]);
 
   const fmtRow = (r: AccessReviewRow) => [
@@ -67,6 +76,7 @@ export default async function AccessReviewReportPage({
 
   const meta = [
     department ? `Department: ${department}` : "All departments",
+    accessRole ? `Access role: ${accessRole}` : "All access roles",
     userId ? `Person: ${people.find((p) => p.id === userId)?.name ?? "—"}` : "All users",
   ];
 
@@ -93,9 +103,10 @@ export default async function AccessReviewReportPage({
 
       <div className="print:hidden">
         <ReportFilters
-          show={{ department: true, user: true }}
+          show={{ department: true, accessRole: true, user: true }}
           departments={departments}
           users={people}
+          accessRoles={accessRoles}
         />
       </div>
 
@@ -118,7 +129,7 @@ export default async function AccessReviewReportPage({
               <th className="px-3 py-2 font-medium">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={6} className="divide-y" label="Show more users">
             {report.rows.map((r) => (
               <tr key={r.id} className={cn(r.privileged && "bg-amber-50")}>
                 <td className="px-3 py-1.5 font-medium">
@@ -165,7 +176,7 @@ export default async function AccessReviewReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
     </div>

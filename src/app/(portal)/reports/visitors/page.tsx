@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import { getDepartments, getVisitorReport, type VisitorRow } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
@@ -24,19 +27,37 @@ function dur(mins: number | null): string {
   const m = mins % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
 }
+/** HH:MM (UTC) for an ISO timestamp, or "—". */
+function clock(ts: string | null): string {
+  return ts ? new Date(ts).toISOString().slice(11, 16) : "—";
+}
+function vehicle(r: { vehicle_type: string | null; vehicle_plate: string | null }): string {
+  return [r.vehicle_type, r.vehicle_plate].filter(Boolean).join(" · ") || "—";
+}
 
 export default async function VisitorReportPage({
   searchParams,
 }: {
   searchParams: Promise<{ from?: string; to?: string; department?: string }>;
 }) {
-  const access = await getAccess();
-  if (!(access.isSystemAdmin || access.isAdmin || access.isOim)) {
+  // Available to admins, OIM, and visitor operators / emergency responders
+  // (security, reception, the ERTL access role) — i.e. visitors:operate.
+  const [access, perms] = await Promise.all([getAccess(), getMyPermissions()]);
+  if (
+    !(
+      access.isSystemAdmin ||
+      access.isAdmin ||
+      access.isOim ||
+      hasPermission(perms, "visitors", "operate")
+    )
+  ) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
         <h1 className="text-xl font-semibold">Not available</h1>
-        <p className="text-muted-foreground">This report is available to reception and administrators.</p>
+        <p className="text-muted-foreground">
+          This report is available to reception, security, emergency responders and administrators.
+        </p>
         <Link href="/reports" className="text-sm font-medium text-primary hover:underline">
           ← Back to reports
         </Link>
@@ -55,7 +76,7 @@ export default async function VisitorReportPage({
   ]);
 
   const csv: string[][] = [
-    ["Date", "Visitor", "Company", "Host", "Department", "Purpose", "Status", "Dwell"],
+    ["Date", "Visitor", "Company", "Host", "Department", "Purpose", "Vehicle type", "Plate", "Status", "Arrival (UTC)", "Checkout (UTC)", "Dwell"],
     ...report.rows.map((r) => [
       r.visit_date,
       r.name,
@@ -63,7 +84,11 @@ export default async function VisitorReportPage({
       r.host ?? "",
       r.department ?? "",
       r.purpose ?? "",
+      r.vehicle_type ?? "",
+      r.vehicle_plate ?? "",
       STATUS_LABEL[r.status] ?? r.status,
+      clock(r.check_in_at),
+      clock(r.check_out_at),
       dur(r.dwellMins),
     ]),
   ];
@@ -75,6 +100,8 @@ export default async function VisitorReportPage({
 
   return (
     <div className="space-y-5">
+      {/* Print on A3 — the visitor table is wide (vehicle + arrival/checkout). */}
+      <style>{"@media print { @page { size: A3; margin: 12mm; } }"}</style>
       <div className="flex items-center justify-between gap-3 print:hidden">
         <Link
           href="/reports"
@@ -120,29 +147,35 @@ export default async function VisitorReportPage({
               <th className="px-3 py-2 font-medium">Visitor</th>
               <th className="px-3 py-2 font-medium">Company</th>
               <th className="px-3 py-2 font-medium">Host</th>
+              <th className="px-3 py-2 font-medium">Vehicle</th>
               <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 text-right font-medium">Arrival</th>
+              <th className="px-3 py-2 text-right font-medium">Checkout</th>
               <th className="px-3 py-2 text-right font-medium">Dwell</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={9} className="divide-y" label="Show more visitors">
             {report.rows.map((r: VisitorRow, i) => (
               <tr key={`${r.visit_date}-${i}`}>
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{r.visit_date}</td>
                 <td className="px-3 py-1.5 font-medium">{r.name}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{r.company ?? "—"}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{r.host ?? "—"}</td>
+                <td className="px-3 py-1.5 text-muted-foreground">{vehicle(r)}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{STATUS_LABEL[r.status] ?? r.status}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{clock(r.check_in_at)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{clock(r.check_out_at)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{dur(r.dwellMins)}</td>
               </tr>
             ))}
             {report.rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                   No visits in this period.
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
     </div>

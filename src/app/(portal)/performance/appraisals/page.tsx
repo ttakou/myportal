@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { getPips } from "@/lib/pip";
 import {
   getCalibration,
   getCalibrationAdjustments,
@@ -14,9 +16,11 @@ import {
   getMyAppraisalHistory,
   getMyRaterAssignments,
   getSecondLevelQueue,
+  getMyAppraisalDelegate,
   getTeamAppraisals,
   getTenantColleagues,
 } from "@/lib/appraisals";
+import type { AppraisalCycle } from "@/types/appraisal";
 import { MyAppraisalPanel } from "./_components/my-appraisal-panel";
 import { TeamReviewPanel } from "./_components/team-review-panel";
 import { HrConsole } from "./_components/hr-console";
@@ -26,6 +30,8 @@ import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
 import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
+import { AdminToggle } from "./_components/admin-toggle";
+import { PipPanel } from "./_components/pip-panel";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
 
@@ -33,6 +39,11 @@ function avgRating(ratings: (number | null)[]): string {
   const xs = ratings.filter((n): n is number => n != null);
   if (xs.length === 0) return "—";
   return (xs.reduce((s, n) => s + n, 0) / xs.length).toFixed(1);
+}
+
+/** Lightweight placeholder while a streamed section loads. */
+function SectionSkeleton() {
+  return <div className="h-24 animate-pulse rounded-lg border bg-muted/30" />;
 }
 
 export default async function AppraisalsPage({
@@ -56,34 +67,26 @@ export default async function AppraisalsPage({
     (requestedId ? visibleCycles.find((c) => c.id === requestedId) : null) ?? activeCycle;
   const isCurrent = !!cycle && cycle.status === "active";
 
-  const [
-    myAppraisal,
-    team,
-    cycleAppraisals,
-    competencies,
-    calibration,
-    secondLevel,
-    raterAssignments,
-    calibrationRoster,
-    calibrationAdjustments,
-    departmentObjectives,
-  ] = await Promise.all([
+  // Critical path — the primary content the user came for (own + team appraisals).
+  // Secondary sections (history, rater inbox, HR console) stream in via Suspense.
+  const [myAppraisal, team, secondLevel, pip] = await Promise.all([
     cycle ? getMyAppraisal(cycle.id) : Promise.resolve(null),
     cycle ? getTeamAppraisals(cycle.id) : Promise.resolve([]),
-    isHr && cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
-    isHr ? getCompetencies() : Promise.resolve([]),
-    isHr && cycle ? getCalibration(cycle.id) : Promise.resolve(null),
     cycle ? getSecondLevelQueue(cycle.id) : Promise.resolve([]),
-    getMyRaterAssignments(),
-    isHr && cycle ? getCalibrationRoster(cycle.id) : Promise.resolve([]),
-    isHr && cycle ? getCalibrationAdjustments(cycle.id) : Promise.resolve([]),
-    isHr ? getDepartmentObjectives() : Promise.resolve([]),
+    getPips(),
   ]);
-  const myHistory = await getMyAppraisalHistory();
-  const [colleagues, deptObjectives] = await Promise.all([
-    myAppraisal ? getTenantColleagues() : Promise.resolve([]),
+  const isManagerView = team.length > 0;
+  const [colleagues, deptObjectives, myDelegate] = await Promise.all([
+    myAppraisal || isManagerView ? getTenantColleagues() : Promise.resolve([]),
     myAppraisal ? getDepartmentObjectivesForMe(cycle?.id ?? null) : Promise.resolve([]),
+    isManagerView ? getMyAppraisalDelegate() : Promise.resolve(null),
   ]);
+  // PIP employee picker: HR can pick anyone; a manager picks their reports.
+  const pipEmployees = (
+    isHr
+      ? colleagues.map((c) => ({ id: c.id, name: c.full_name ?? "—" }))
+      : team.map((a) => ({ id: a.employee_id, name: a.employee_name ?? "—" }))
+  ).filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
 
   const isManager = team.length > 0;
 
@@ -102,27 +105,6 @@ export default async function AppraisalsPage({
         { label: "Avg rating", value: avgRating(team.map((a) => a.overall_rating)), hint: "out of 5" },
       ]
     : [];
-
-  // HR-Admin dashboard metrics for the selected year.
-  const hrCompleted = cycleAppraisals.filter((a) => COMPLETED_STATUSES.has(a.status)).length;
-  const hrCards =
-    isHr && cycle
-      ? [
-          { label: "Employees", value: String(cycleAppraisals.length) },
-          { label: "Completed", value: String(hrCompleted) },
-          {
-            label: "Completion",
-            value: cycleAppraisals.length
-              ? `${Math.round((hrCompleted / cycleAppraisals.length) * 100)}%`
-              : "—",
-          },
-          {
-            label: "Avg rating",
-            value: calibration?.averageOverall != null ? calibration.averageOverall.toFixed(1) : "—",
-            hint: "out of 5",
-          },
-        ]
-      : [];
 
   return (
     <div className="space-y-8">
@@ -146,6 +128,17 @@ export default async function AppraisalsPage({
           You&apos;re viewing the {cycle.year} appraisal cycle ({cycle.status}). Historical cycles are read-only.
         </p>
       )}
+
+      {/* Line-manager view — your team's appraisals first (a manager's main task). */}
+      {isManager && (
+        <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
+      )}
+      {isManager && (
+        <TeamReviewPanel appraisals={team} colleagues={colleagues} currentDelegate={myDelegate} />
+      )}
+      {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
+
+      <PipPanel data={pip} employees={pipEmployees} />
 
       {/* Employee view — your own appraisal for the selected year. */}
       {myAppraisal ? (
@@ -173,37 +166,24 @@ export default async function AppraisalsPage({
         )
       )}
 
-      <AppraisalHistory history={myHistory} />
+      {/* Secondary — streamed so they never block the primary view above. */}
+      <Suspense fallback={<SectionSkeleton />}>
+        <HistorySection />
+      </Suspense>
 
-      {raterAssignments.length > 0 && <RaterInbox assignments={raterAssignments} />}
+      <Suspense fallback={null}>
+        <RaterSection />
+      </Suspense>
 
-      {/* Line-manager dashboard — direct reports for the selected year. */}
-      {isManager && (
-        <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
-      )}
-      {isManager && <TeamReviewPanel appraisals={team} />}
-      {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
-
-      {/* HR-Admin dashboard — org-wide console + calibration for the selected year. */}
-      {isHr && cycle && cycleAppraisals.length > 0 && (
-        <SummaryCards title={`HR dashboard — ${cycle.year}`} cards={hrCards} />
-      )}
+      {/* HR-Admin dashboard — org-wide console + calibration for the selected year.
+          Tucked behind a button so HR admins who are also managers see their team
+          view first, and streamed so its heavy queries never block the page. */}
       {isHr && (
-        <HrConsole
-          cycles={allCycles}
-          appraisals={cycleAppraisals}
-          activeCycleId={cycle?.id ?? null}
-          cycleName={cycle?.name ?? null}
-          competencies={competencies}
-          departmentObjectives={departmentObjectives}
-        />
-      )}
-      {isHr && calibration && (
-        <CalibrationPanel
-          data={calibration}
-          roster={calibrationRoster}
-          adjustments={calibrationAdjustments}
-        />
+        <AdminToggle>
+          <Suspense fallback={<SectionSkeleton />}>
+            <HrSection cycle={cycle} allCycles={allCycles} />
+          </Suspense>
+        </AdminToggle>
       )}
 
       {!cycle && !isHr && (
@@ -212,5 +192,86 @@ export default async function AppraisalsPage({
         </p>
       )}
     </div>
+  );
+}
+
+/** Streamed: the viewer's past appraisals across cycles. */
+async function HistorySection() {
+  const myHistory = await getMyAppraisalHistory();
+  return <AppraisalHistory history={myHistory} />;
+}
+
+/** Streamed: confidential witness/rater assignments awaiting the viewer. */
+async function RaterSection() {
+  const raterAssignments = await getMyRaterAssignments();
+  if (raterAssignments.length === 0) return null;
+  return <RaterInbox assignments={raterAssignments} />;
+}
+
+/** Streamed: org-wide HR console + calibration for the selected cycle. */
+async function HrSection({
+  cycle,
+  allCycles,
+}: {
+  cycle: AppraisalCycle | null;
+  allCycles: AppraisalCycle[];
+}) {
+  const [
+    cycleAppraisals,
+    competencies,
+    calibration,
+    calibrationRoster,
+    calibrationAdjustments,
+    departmentObjectives,
+  ] = await Promise.all([
+    cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
+    getCompetencies(),
+    cycle ? getCalibration(cycle.id) : Promise.resolve(null),
+    cycle ? getCalibrationRoster(cycle.id) : Promise.resolve([]),
+    cycle ? getCalibrationAdjustments(cycle.id) : Promise.resolve([]),
+    getDepartmentObjectives(),
+  ]);
+
+  const hrCompleted = cycleAppraisals.filter((a) => COMPLETED_STATUSES.has(a.status)).length;
+  const hrCards =
+    cycle
+      ? [
+          { label: "Employees", value: String(cycleAppraisals.length) },
+          { label: "Completed", value: String(hrCompleted) },
+          {
+            label: "Completion",
+            value: cycleAppraisals.length
+              ? `${Math.round((hrCompleted / cycleAppraisals.length) * 100)}%`
+              : "—",
+          },
+          {
+            label: "Avg rating",
+            value: calibration?.averageOverall != null ? calibration.averageOverall.toFixed(1) : "—",
+            hint: "out of 5",
+          },
+        ]
+      : [];
+
+  return (
+    <>
+      {cycle && cycleAppraisals.length > 0 && (
+        <SummaryCards title={`HR dashboard — ${cycle.year}`} cards={hrCards} />
+      )}
+      <HrConsole
+        cycles={allCycles}
+        appraisals={cycleAppraisals}
+        activeCycleId={cycle?.id ?? null}
+        cycleName={cycle?.name ?? null}
+        competencies={competencies}
+        departmentObjectives={departmentObjectives}
+      />
+      {calibration && (
+        <CalibrationPanel
+          data={calibration}
+          roster={calibrationRoster}
+          adjustments={calibrationAdjustments}
+        />
+      )}
+    </>
   );
 }

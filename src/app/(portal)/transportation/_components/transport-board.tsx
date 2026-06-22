@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Car } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import type { TransportRequest } from "@/types/transport";
 import { cancelTransportRequest, createTransportRequest } from "../actions";
@@ -20,6 +21,8 @@ export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
   const [departAt, setDepartAt] = useState("");
   const [passengers, setPassengers] = useState("1");
   const [purpose, setPurpose] = useState("");
+
+  const mineReveal = useProgressiveReveal(mine.length);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -74,7 +77,7 @@ export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">My requests</h2>
         <div className="space-y-3">
-          {mine.map((r) => (
+          {mine.slice(0, mineReveal.count).map((r) => (
             <div key={r.id} className="rounded-lg border bg-card p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={r.status} />
@@ -115,6 +118,13 @@ export function TransportBoard({ mine }: { mine: TransportRequest[] }) {
             </p>
           )}
         </div>
+        <ShowMore
+          ref={mineReveal.sentinelRef}
+          hasMore={mineReveal.hasMore}
+          remaining={mineReveal.remaining}
+          onClick={mineReveal.showMore}
+          label="Show more requests"
+        />
       </section>
     </div>
   );

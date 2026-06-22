@@ -156,17 +156,21 @@ export async function launchCycle(cycleId: string): Promise<ActionResult> {
   if (!cycle) return { ok: false, error: "Cycle not found." };
 
   const [{ data: profiles }, { data: existing }] = await Promise.all([
-    supabase.from("profiles").select("id, manager_id").eq("is_active", true),
+    // Appraise only staff who can access the Performance module — employees/
+    // expats with a performance-view access role (or unrestricted). Contractors,
+    // guests and anyone restricted away from Performance are excluded.
+    supabase.rpc("appraisable_profiles"),
     supabase.from("appraisals").select("employee_id").eq("cycle_id", cycleId),
   ]);
   const have = new Set((existing ?? []).map((e) => e.employee_id as string));
-  const rows = (profiles ?? [])
-    .filter((p) => !have.has(p.id as string))
+  const roster = (profiles ?? []) as { id: string; manager_id: string | null }[];
+  const rows = roster
+    .filter((p) => !have.has(p.id))
     .map((p) => ({
       tenant_id: cycle.tenant_id as string,
       cycle_id: cycleId,
-      employee_id: p.id as string,
-      manager_id: (p.manager_id as string | null) ?? null,
+      employee_id: p.id,
+      manager_id: p.manager_id ?? null,
       stage: "goal_setting",
       status: "not_started",
     }));
@@ -191,6 +195,40 @@ export async function closeCycle(cycleId: string): Promise<ActionResult> {
     .from("appraisal_cycles")
     .update({ status: "closed" })
     .eq("id", cycleId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Delete a stray cycle. Guarded so only an un-launched **draft** cycle with **no
+ * appraisals** can be removed — launched/closed cycles (which carry employee
+ * records) must be closed, never deleted.
+ */
+export async function deleteCycle(cycleId: string): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+
+  const { data: cycle } = await supabase
+    .from("appraisal_cycles")
+    .select("id, status")
+    .eq("id", cycleId)
+    .maybeSingle();
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+  if (cycle.status !== "draft") {
+    return { ok: false, error: "Only draft cycles can be deleted — close active cycles instead." };
+  }
+
+  const { count } = await supabase
+    .from("appraisals")
+    .select("id", { count: "exact", head: true })
+    .eq("cycle_id", cycleId);
+  if ((count ?? 0) > 0) {
+    return { ok: false, error: "This cycle already has appraisals and can't be deleted." };
+  }
+
+  const { error } = await supabase.from("appraisal_cycles").delete().eq("id", cycleId);
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
@@ -331,6 +369,21 @@ async function requireEmployeeEditable(id: string): Promise<{ a: AppraisalRow } 
   return { a };
 }
 
+/**
+ * Objective (OKR) weights must total exactly 100% so the weighted score reflects
+ * the full allocation. Development goals are weighted separately by the cycle, so
+ * they're excluded here. Returns an error message, or null when valid.
+ */
+function objectiveWeightError(goals: { weight: number | null; kind: string }[]): string | null {
+  const objectives = goals.filter((g) => g.kind === "objective");
+  if (objectives.length === 0) return "Add at least one objective (KPI/OKR) before submitting.";
+  const sum = objectives.reduce((s, g) => s + (g.weight ?? 0), 0);
+  if (sum !== 100) {
+    return `Objective weights must total 100% — they currently total ${sum}%.`;
+  }
+  return null;
+}
+
 export async function addGoal(input: {
   appraisalId: string;
   title: string;
@@ -407,11 +460,14 @@ export async function submitGoals(appraisalId: string): Promise<ActionResult> {
   if ("ok" in guard) return guard;
   const a = guard.a;
   const supabase = createClient();
-  const { count } = await supabase
+  const { data: goalRows } = await supabase
     .from("appraisal_goals")
-    .select("id", { count: "exact", head: true })
+    .select("weight, kind")
     .eq("appraisal_id", a.id);
-  if (!count) return { ok: false, error: "Add at least one goal before submitting." };
+  const goals = (goalRows ?? []) as { weight: number | null; kind: string }[];
+  if (goals.length === 0) return { ok: false, error: "Add at least one goal before submitting." };
+  const weightError = objectiveWeightError(goals);
+  if (weightError) return { ok: false, error: weightError };
   const { error } = await supabase
     .from("appraisals")
     .update({ status: "pending_manager_review" })
@@ -433,14 +489,58 @@ export async function submitGoals(appraisalId: string): Promise<ActionResult> {
 
 // --- Manager: goal review ---------------------------------------------------
 
+/** Whether `me` is the appraisal delegate the given manager has nominated. */
+async function isDelegateOf(managerId: string | null, me: string | null): Promise<boolean> {
+  if (!managerId || !me || managerId === me) return false;
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("appraisal_delegate_id")
+    .eq("id", managerId)
+    .maybeSingle();
+  return (data?.appraisal_delegate_id ?? null) === me;
+}
+
 async function requireManager(id: string): Promise<{ a: AppraisalRow } | ActionResult> {
   const a = await loadAppraisal(id);
   if (!a) return { ok: false, error: "Appraisal not found." };
   const me = await uid();
   const access = await getAccess();
-  const isReviewer = a.manager_id === me || access.isHr || access.isAdmin || access.isSystemAdmin;
-  if (!isReviewer) return { ok: false, error: "Only the line manager can review this." };
+  const isReviewer =
+    a.manager_id === me ||
+    access.isHr ||
+    access.isAdmin ||
+    access.isSystemAdmin ||
+    (await isDelegateOf(a.manager_id, me));
+  if (!isReviewer) return { ok: false, error: "Only the line manager (or their delegate) can review this." };
   return { a };
+}
+
+/**
+ * A manager nominates (or clears) an appraisal delegate — a colleague who may act
+ * on their team's appraisals while they're unavailable. Pass null to clear.
+ */
+export async function setAppraisalDelegate(delegateId: string | null): Promise<ActionResult> {
+  const me = await uid();
+  if (!me) return { ok: false, error: "You're not signed in." };
+  const supabase = createClient();
+  if (delegateId) {
+    if (delegateId === me) return { ok: false, error: "You can't delegate to yourself." };
+    const { data: d } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", delegateId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!d) return { ok: false, error: "Choose an active colleague to delegate to." };
+  }
+  const { error } = await supabase
+    .from("profiles")
+    .update({ appraisal_delegate_id: delegateId })
+    .eq("id", me);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
 }
 
 export async function returnGoals(input: { appraisalId: string; comment: string }): Promise<ActionResult> {
@@ -479,8 +579,15 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
 
   const { data: goals } = await supabase
     .from("appraisal_goals")
-    .select("id, title, weight, deadline, success_indicator, description")
+    .select("id, title, weight, deadline, success_indicator, description, kind")
     .eq("appraisal_id", a.id);
+
+  const weightError = objectiveWeightError(
+    (goals ?? []) as { weight: number | null; kind: string }[],
+  );
+  if (weightError) {
+    return { ok: false, error: `Can't approve — ${weightError[0].toLowerCase()}${weightError.slice(1)}` };
+  }
 
   await supabase.from("appraisal_goals").update({ status: "approved" }).eq("appraisal_id", a.id);
   // Snapshot the approved plan into history (originals are retained).
@@ -671,18 +778,26 @@ export async function submitManagerEvaluation(input: {
   const a = guard.a;
   const supabase = createClient();
 
-  const [{ data: goals }, { data: comps }, { data: cycle }] = await Promise.all([
-    supabase.from("appraisal_goals").select("kind, weight, manager_rating").eq("appraisal_id", a.id),
-    supabase
-      .from("appraisal_competency_ratings")
-      .select("manager_rating")
-      .eq("appraisal_id", a.id),
-    supabase
-      .from("appraisal_cycles")
-      .select("weight_okr, weight_competency, weight_development, require_second_level, rating_bands")
-      .eq("id", a.cycle_id)
-      .maybeSingle(),
-  ]);
+  const [{ data: goals }, { data: comps }, { data: compFramework }, { data: cycle }] =
+    await Promise.all([
+      supabase.from("appraisal_goals").select("kind, weight, manager_rating").eq("appraisal_id", a.id),
+      supabase
+        .from("appraisal_competency_ratings")
+        .select("manager_rating, competency_id")
+        .eq("appraisal_id", a.id),
+      supabase.from("appraisal_competencies").select("id, weight"),
+      supabase
+        .from("appraisal_cycles")
+        .select("weight_okr, weight_competency, weight_development, require_second_level, rating_bands")
+        .eq("id", a.cycle_id)
+        .maybeSingle(),
+    ]);
+  const compWeight = new Map(
+    ((compFramework ?? []) as { id: string; weight: number | null }[]).map((c) => [
+      c.id,
+      Math.max(1, c.weight ?? 1),
+    ]),
+  );
 
   // OKR component: weighted (by goal weight) average of objective ratings, 1–5.
   let okrW = 0;
@@ -709,15 +824,20 @@ export async function submitManagerEvaluation(input: {
   if (okrCount === 0) return { ok: false, error: "Rate at least one objective before submitting." };
   const okrAvg = okrW > 0 ? okrAcc / okrW : okrPlain / okrCount; // 1–5
 
-  // Competency component: simple average, 1–5.
+  // Competency component: weight-weighted average of the manager ratings, 1–5
+  // (each competency carries a relative weight; default 1 = equal weighting).
   let compAcc = 0;
+  let compW = 0;
   let compCount = 0;
   for (const c of comps ?? []) {
     const r = c.manager_rating as number | null;
     if (r == null) continue;
-    compAcc += r;
+    const w = compWeight.get(c.competency_id as string) ?? 1;
+    compAcc += w * r;
+    compW += w;
     compCount += 1;
   }
+  const compAvg = compW > 0 ? compAcc / compW : 0;
 
   // Component %s (rating/5 → %), then weight by the cycle's configured weights,
   // normalising over the components that actually have data.
@@ -728,7 +848,7 @@ export async function submitManagerEvaluation(input: {
   let num = pct(okrAvg) * wOkr;
   let den = wOkr;
   if (compCount > 0) {
-    num += pct(compAcc / compCount) * wComp;
+    num += pct(compAvg) * wComp;
     den += wComp;
   }
   if (devCount > 0) {
@@ -960,6 +1080,32 @@ export async function closeAppraisal(appraisalId: string): Promise<ActionResult>
   return { ok: true };
 }
 
+/**
+ * HR re-opens a closed appraisal to amend it (fix a score/typo, re-calibrate).
+ * It returns to the acknowledged `completed` state so HR can adjust the outcome
+ * and close it again; the reason is logged for audit.
+ */
+export async function reopenAppraisal(input: {
+  appraisalId: string;
+  reason: string;
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  if (!input.reason?.trim()) return { ok: false, error: "Give a reason for re-opening." };
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (a.status !== "closed") return { ok: false, error: "Only a closed appraisal can be re-opened." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ stage: "acknowledgement", status: "completed" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "closed" }, "appraisal_reopened", input.reason.trim());
+  rev();
+  return { ok: true };
+}
+
 /** HR resolves an open appeal on a disputed appraisal. */
 export async function resolveAppeal(input: {
   appraisalId: string;
@@ -1007,6 +1153,7 @@ export async function resolveAppeal(input: {
 export async function addCompetency(input: {
   name: string;
   description?: string;
+  weight?: number;
 }): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;
@@ -1018,10 +1165,16 @@ export async function addCompetency(input: {
     tenant_id: tenant.id,
     name: input.name.trim(),
     description: input.description?.trim() || null,
+    weight: clampCompetencyWeight(input.weight),
   });
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
+}
+
+function clampCompetencyWeight(w: number | undefined): number {
+  if (w === undefined || !Number.isFinite(w)) return 1;
+  return Math.max(1, Math.min(100, Math.floor(w)));
 }
 
 export async function setCompetencyActive(id: string, isActive: boolean): Promise<ActionResult> {
@@ -1031,6 +1184,20 @@ export async function setCompetencyActive(id: string, isActive: boolean): Promis
   const { error } = await supabase
     .from("appraisal_competencies")
     .update({ is_active: isActive })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** HR sets a competency's relative weight in the score (1 = default). */
+export async function setCompetencyWeight(id: string, weight: number): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_competencies")
+    .update({ weight: clampCompetencyWeight(weight) })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
   rev();

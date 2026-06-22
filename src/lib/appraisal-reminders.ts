@@ -11,7 +11,16 @@ type Row = {
   manager_id: string | null;
   stage: string;
   status: string;
+  updated_at: string | null;
 };
+
+/** A pending step idle this many days is escalated to the owner's line manager. */
+const ESCALATE_AFTER_DAYS = 7;
+
+function daysSince(iso: string | null): number {
+  if (!iso) return 0;
+  return (Date.now() - new Date(iso).getTime()) / 86_400_000;
+}
 
 /** Whose action a given appraisal is currently waiting on (or null = HR/none). */
 function currentOwner(a: Row): string | null {
@@ -31,9 +40,16 @@ function currentOwner(a: Row): string | null {
  */
 export async function runAppraisalReminders(
   tenantId?: string,
-): Promise<{ ok: boolean; overdue: number; reminded: number; error?: string }> {
+): Promise<{
+  ok: boolean;
+  overdue: number;
+  reminded: number;
+  escalated: number;
+  error?: string;
+}> {
   const admin = createAdminClient();
-  if (!admin) return { ok: false, overdue: 0, reminded: 0, error: "Service-role key missing." };
+  if (!admin)
+    return { ok: false, overdue: 0, reminded: 0, escalated: 0, error: "Service-role key missing." };
   const today = todayIso();
 
   let cyclesQ = admin
@@ -45,11 +61,14 @@ export async function runAppraisalReminders(
 
   let overdue = 0;
   let reminded = 0;
+  let escalated = 0;
+  // Cache owner → line-manager lookups so we hit `profiles` once per owner.
+  const managerOf = new Map<string, string | null>();
 
   for (const c of cycles ?? []) {
     const { data: appraisals } = await admin
       .from("appraisals")
-      .select("id, tenant_id, employee_id, manager_id, stage, status")
+      .select("id, tenant_id, employee_id, manager_id, stage, status, updated_at")
       .eq("cycle_id", c.id);
 
     for (const a of (appraisals ?? []) as Row[]) {
@@ -94,9 +113,33 @@ export async function runAppraisalReminders(
           url: "/performance/appraisals",
         });
         reminded += 1;
+
+        // If the owner has sat on this step too long, loop in their line manager.
+        if (daysSince(a.updated_at) >= ESCALATE_AFTER_DAYS) {
+          if (!managerOf.has(owner)) {
+            const { data: prof } = await admin
+              .from("profiles")
+              .select("manager_id")
+              .eq("id", owner)
+              .maybeSingle();
+            managerOf.set(owner, (prof?.manager_id as string | null) ?? null);
+          }
+          const escalateTo = managerOf.get(owner) ?? null;
+          if (escalateTo && escalateTo !== owner) {
+            await notifyUsers({
+              tenantId: a.tenant_id,
+              profileIds: [escalateTo],
+              category: "approval",
+              title: "Appraisal step overdue in your team",
+              body: "A pending appraisal step has been waiting over a week — please follow up.",
+              url: "/performance/appraisals",
+            });
+            escalated += 1;
+          }
+        }
       }
     }
   }
 
-  return { ok: true, overdue, reminded };
+  return { ok: true, overdue, reminded, escalated };
 }

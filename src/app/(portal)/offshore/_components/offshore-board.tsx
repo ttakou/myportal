@@ -5,6 +5,7 @@ import { useStatusTransition } from "@/components/activity";
 import { Ship, ShieldCheck, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
   OFFSHORE_STATUS_LABEL,
@@ -81,6 +82,9 @@ export function OffshoreBoard({
   const [fRoute, setFRoute] = useState("");
   const [fSeats, setFSeats] = useState("12");
 
+  const mineReveal = useProgressiveReveal(mine.length);
+  const allReveal = useProgressiveReveal(all.length);
+
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
@@ -103,7 +107,7 @@ export function OffshoreBoard({
               <tr><th className="px-4 py-3 font-medium">Installation</th><th className="px-4 py-3 font-medium">Dates</th><th className="px-4 py-3 font-medium">Flight / Bed</th><th className="px-4 py-3 font-medium">Status</th></tr>
             </thead>
             <tbody className="divide-y">
-              {mine.map((t) => (
+              {mine.slice(0, mineReveal.count).map((t) => (
                 <tr key={t.id}>
                   <td className="px-4 py-3 font-medium">{t.installation_name ?? "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{t.mobilize_date}{t.demob_date ? ` → ${t.demob_date}` : ""}</td>
@@ -115,6 +119,13 @@ export function OffshoreBoard({
             </tbody>
           </table>
         </div>
+        <ShowMore
+          ref={mineReveal.sentinelRef}
+          hasMore={mineReveal.hasMore}
+          remaining={mineReveal.remaining}
+          onClick={mineReveal.showMore}
+          label="Show more trips"
+        />
       </section>
 
       {can("offshore", "create") && (
@@ -224,7 +235,7 @@ export function OffshoreBoard({
                   <tr><th className="px-4 py-3 font-medium">Person / Installation</th><th className="px-4 py-3 font-medium">HSE</th><th className="px-4 py-3 font-medium">Manifest</th><th className="px-4 py-3 font-medium">Status</th></tr>
                 </thead>
                 <tbody className="divide-y">
-                  {all.map((t) => (
+                  {all.slice(0, allReveal.count).map((t) => (
                     <tr key={t.id}>
                       <td className="px-4 py-3">
                         <div className="font-medium">{t.person_name ?? "—"}</div>
@@ -270,6 +281,13 @@ export function OffshoreBoard({
                 </tbody>
               </table>
             </div>
+            <ShowMore
+              ref={allReveal.sentinelRef}
+              hasMore={allReveal.hasMore}
+              remaining={allReveal.remaining}
+              onClick={allReveal.showMore}
+              label="Show more trips"
+            />
           </section>
 
           <form

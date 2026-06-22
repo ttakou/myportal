@@ -56,7 +56,9 @@ export function MyAppraisalPanel({
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
-  const editable = EDITABLE.has(appraisal.status);
+  // In a gate cycle the year's goals are shown read-only — they're set/edited in
+  // the Annual cycle — so never offer goal editing here.
+  const editable = !appraisal.goalsReadOnly && EDITABLE.has(appraisal.status);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -68,7 +70,7 @@ export function MyAppraisalPanel({
   }
 
   return (
-    <section className="space-y-3">
+    <section id="my-appraisal" className="scroll-mt-24 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">My appraisal</h2>
         <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
@@ -79,6 +81,13 @@ export function MyAppraisalPanel({
         </span>
       </div>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+
+      {appraisal.goalsReadOnly && (
+        <p className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+          Showing your goals and development plan for the year{appraisal.goalsSourceName ? ` — set in ${appraisal.goalsSourceName}` : ""}.
+          Edit them in that cycle; here they&apos;re read-only.
+        </p>
+      )}
 
       {appraisal.stage === "goal_setting" && (
         <GoalSetting
@@ -142,14 +151,20 @@ function GoalSetting({
   const [indicator, setIndicator] = useState("");
   const [alignment, setAlignment] = useState("");
   const [kind, setKind] = useState<"objective" | "development">("objective");
-  const totalWeight = appraisal.goals.reduce((s, g) => s + (g.weight ?? 0), 0);
+  // Objective (OKR) weights must total 100% — development goals are weighted
+  // separately by the cycle, so they're excluded from this total.
+  const objectiveWeight = appraisal.goals
+    .filter((g) => g.kind === "objective")
+    .reduce((s, g) => s + (g.weight ?? 0), 0);
 
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Objectives</h3>
-        <span className={`text-xs ${totalWeight === 100 ? "text-green-600" : "text-muted-foreground"}`}>
-          Total weight: {totalWeight}%
+        <span
+          className={`text-xs font-medium ${objectiveWeight === 100 ? "text-green-600" : "text-amber-600"}`}
+        >
+          Objective weight: {objectiveWeight}%{objectiveWeight === 100 ? "" : " — must total 100%"}
         </span>
       </div>
       {appraisal.goals.length === 0 ? (
@@ -590,13 +605,14 @@ function DevelopmentPlan({
   const [area, setArea] = useState("");
   const [action, setAction] = useState("");
   const [targetDate, setTargetDate] = useState("");
-  const editable = appraisal.status !== "closed";
+  // In a gate cycle the IDP (like goals) belongs to the Annual cycle — read-only.
+  const editable = !appraisal.goalsReadOnly && appraisal.status !== "closed";
   const items = appraisal.development_plan;
 
   if (!editable && items.length === 0) return null;
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div id="development-plan" className="scroll-mt-24 rounded-lg border bg-card p-4">
       <h3 className="mb-3 text-sm font-semibold">Development plan</h3>
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">No development actions yet.</p>

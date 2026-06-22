@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Play, Lock, Plus, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import {
   RATING_BANDS,
   STATUS_LABEL,
@@ -21,12 +22,14 @@ import {
   closeAppraisal,
   closeCycle,
   createCycle,
+  deleteCycle,
   hrReturnToManager,
   hrValidate,
   launchCycle,
   resolveAppeal,
   sendAppraisalReminders,
   setCompetencyActive,
+  setCompetencyWeight,
   setDepartmentObjectiveActive,
   updateCycleBands,
 } from "../actions";
@@ -156,9 +159,22 @@ export function HrConsole({
                 <td className="px-4 py-2 capitalize">{c.status}</td>
                 <td className="px-4 py-2 text-right">
                   {c.status === "draft" && (
-                    <Button size="sm" disabled={pending} onClick={() => run(() => launchCycle(c.id))}>
-                      <Play className="h-4 w-4" /> Launch
-                    </Button>
+                    <span className="inline-flex gap-2">
+                      <Button size="sm" disabled={pending} onClick={() => run(() => launchCycle(c.id))}>
+                        <Play className="h-4 w-4" /> Launch
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => {
+                          if (confirm(`Delete the draft cycle "${c.name}"? This can't be undone.`))
+                            run(() => deleteCycle(c.id));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" /> Delete
+                      </Button>
+                    </span>
                   )}
                   {c.status === "active" && (
                     <Button
@@ -436,6 +452,7 @@ function CompetencyEditor({ competencies }: { competencies: AppraisalCompetency[
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [weight, setWeight] = useState("1");
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -448,32 +465,55 @@ function CompetencyEditor({ competencies }: { competencies: AppraisalCompetency[
 
   return (
     <div className="rounded-lg border bg-card p-4">
-      <h3 className="mb-2 text-sm font-semibold">Competency framework</h3>
+      <h3 className="mb-1 text-sm font-semibold">Competency framework</h3>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Weight sets how much each competency counts in the score (relative; 1 = equal).
+      </p>
       {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
-      <div className="mb-2 flex flex-wrap gap-2">
+      <ul className="mb-3 divide-y">
         {competencies.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            disabled={pending}
-            onClick={() => run(() => setCompetencyActive(c.id, !c.is_active))}
-            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-              c.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground line-through"
-            }`}
-            title={c.is_active ? "Active — click to retire" : "Retired — click to reactivate"}
-          >
-            {c.name}
-          </button>
+          <li key={c.id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => run(() => setCompetencyActive(c.id, !c.is_active))}
+              className={`text-left ${c.is_active ? "" : "text-muted-foreground line-through"}`}
+              title={c.is_active ? "Active — click to retire" : "Retired — click to reactivate"}
+            >
+              {c.name}
+            </button>
+            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+              weight
+              <input
+                type="number"
+                min={1}
+                max={100}
+                defaultValue={c.weight}
+                disabled={pending}
+                onBlur={(e) => {
+                  const v = Number(e.target.value);
+                  if (Number.isFinite(v) && v !== c.weight) run(() => setCompetencyWeight(c.id, v));
+                }}
+                className="w-16 rounded-md border bg-background px-2 py-1 text-xs"
+              />
+            </label>
+          </li>
         ))}
         {competencies.length === 0 && (
-          <span className="text-xs text-muted-foreground">No competencies defined yet.</span>
+          <li className="py-1.5 text-xs text-muted-foreground">No competencies defined yet.</li>
         )}
-      </div>
+      </ul>
       <form
         className="flex flex-wrap gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          run(() => addCompetency({ name }), () => setName(""));
+          run(
+            () => addCompetency({ name, weight: Number(weight) || 1 }),
+            () => {
+              setName("");
+              setWeight("1");
+            },
+          );
         }}
       >
         <input
@@ -481,6 +521,15 @@ function CompetencyEditor({ competencies }: { competencies: AppraisalCompetency[
           onChange={(e) => setName(e.target.value)}
           placeholder="New competency (e.g. Teamwork)"
           className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+        />
+        <input
+          type="number"
+          min={1}
+          max={100}
+          value={weight}
+          onChange={(e) => setWeight(e.target.value)}
+          title="Weight"
+          className="w-20 rounded-md border bg-background px-3 py-2 text-sm"
         />
         <Button type="submit" size="sm" disabled={pending || !name.trim()}>
           <Plus className="h-4 w-4" /> Add
@@ -510,9 +559,10 @@ function HrAppraisalList({
   appraisals: Appraisal[];
   cycleName: string | null;
 }) {
-  if (appraisals.length === 0) return null;
   // Highest final score first; unscored staff fall to the bottom.
   const rows = [...appraisals].sort((a, b) => (b.final_score ?? -1) - (a.final_score ?? -1));
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(rows.length);
+  if (appraisals.length === 0) return null;
 
   const exportCsv = () => {
     const header = ["Employee", "Status", "Manager rating", "Final score", "Rating"];
@@ -550,7 +600,7 @@ function HrAppraisalList({
             </tr>
           </thead>
           <tbody className="divide-y">
-            {rows.map((a) => {
+            {rows.slice(0, count).map((a) => {
               const hasOutcome =
                 a.final_score != null || a.status === "completed" || a.status === "closed";
               return (
@@ -578,6 +628,13 @@ function HrAppraisalList({
           </tbody>
         </table>
       </div>
+      <ShowMore
+        ref={sentinelRef}
+        hasMore={hasMore}
+        remaining={remaining}
+        onClick={showMore}
+        label="Show more employees"
+      />
     </div>
   );
 }

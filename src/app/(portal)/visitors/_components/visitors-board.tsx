@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { UserPlus } from "lucide-react";
+import { Car, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
+  VEHICLE_TYPES,
   VISITOR_STATUS_LABEL,
   type Visitor,
   type VisitorStatus,
@@ -25,6 +27,10 @@ const STATUS_STYLE: Record<VisitorStatus, string> = {
   cancelled: "bg-destructive/10 text-destructive line-through",
 };
 
+function vehicleLabel(v: Visitor): string | null {
+  return [v.vehicle_type, v.vehicle_plate].filter(Boolean).join(" · ") || null;
+}
+
 export function VisitorsBoard({
   visitDate,
   visitors,
@@ -35,12 +41,23 @@ export function VisitorsBoard({
   isAdmin: boolean;
 }) {
   const { can } = usePermissions();
+  // Front-line reception/security: may check visitors in and out.
+  const canOperate = isAdmin || can("visitors", "operate");
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
 
   const [fullName, setFullName] = useState("");
   const [company, setCompany] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [vehicleType, setVehicleType] = useState("");
+  const [vehiclePlate, setVehiclePlate] = useState("");
+
+  // Reception check-in dialog (captures badge + vehicle type/plate on arrival).
+  const [checkIn, setCheckIn] = useState<Visitor | null>(null);
+
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
+    visitors.length,
+  );
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -54,11 +71,13 @@ export function VisitorsBoard({
   function register(e: React.FormEvent) {
     e.preventDefault();
     run(
-      () => preRegisterVisitor({ fullName, company, purpose, visitDate }),
+      () => preRegisterVisitor({ fullName, company, purpose, visitDate, vehicleType, vehiclePlate }),
       () => {
         setFullName("");
         setCompany("");
         setPurpose("");
+        setVehicleType("");
+        setVehiclePlate("");
       },
     );
   }
@@ -74,7 +93,7 @@ export function VisitorsBoard({
       {can("visitors", "create") && (
       <form
         onSubmit={register}
-        className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3"
       >
         <input
           value={fullName}
@@ -95,6 +114,24 @@ export function VisitorsBoard({
           placeholder="Purpose of visit"
           className="rounded-md border bg-background px-3 py-2 text-sm"
         />
+        <select
+          value={vehicleType}
+          onChange={(e) => setVehicleType(e.target.value)}
+          className="rounded-md border bg-background px-3 py-2 text-sm"
+        >
+          <option value="">Vehicle type (optional)</option>
+          {VEHICLE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <input
+          value={vehiclePlate}
+          onChange={(e) => setVehiclePlate(e.target.value)}
+          placeholder="Vehicle plate (optional)"
+          className="rounded-md border bg-background px-3 py-2 text-sm"
+        />
         <Button type="submit" disabled={pending}>
           <UserPlus className="h-4 w-4" /> Pre-register
         </Button>
@@ -107,12 +144,17 @@ export function VisitorsBoard({
             <tr>
               <th className="px-4 py-3 font-medium">Visitor</th>
               <th className="px-4 py-3 font-medium">Host</th>
+              <th className="px-4 py-3 font-medium">Vehicle</th>
+              <th className="px-4 py-3 font-medium">Arrival</th>
+              <th className="px-4 py-3 font-medium">Checkout</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y">
-            {visitors.map((v) => (
+            {visitors.slice(0, count).map((v) => {
+              const vehicle = vehicleLabel(v);
+              return (
               <tr key={v.id}>
                 <td className="px-4 py-3">
                   <div className="font-medium">{v.full_name}</div>
@@ -122,6 +164,22 @@ export function VisitorsBoard({
                   </div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{v.host_name ?? "—"}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {vehicle ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Car className="h-3.5 w-3.5 shrink-0" />
+                      {vehicle}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                  {v.check_in_at ? new Date(v.check_in_at).toLocaleTimeString() : "—"}
+                </td>
+                <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                  {v.check_out_at ? new Date(v.check_out_at).toLocaleTimeString() : "—"}
+                </td>
                 <td className="px-4 py-3">
                   <span
                     className={cn(
@@ -136,15 +194,11 @@ export function VisitorsBoard({
                   <div className="flex justify-end gap-2">
                     {v.status === "pre_registered" && (
                       <>
-                        {isAdmin && (
+                        {canOperate && (
                           <Button
                             size="sm"
                             disabled={pending}
-                            onClick={() => {
-                              const badge =
-                                window.prompt("Badge number (optional)") ?? undefined;
-                              run(() => checkInVisitor(v.id, badge));
-                            }}
+                            onClick={() => setCheckIn(v)}
                           >
                             Check in
                           </Button>
@@ -172,16 +226,109 @@ export function VisitorsBoard({
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {visitors.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                   No visitors for this date yet.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+      <ShowMore
+        ref={sentinelRef}
+        hasMore={hasMore}
+        remaining={remaining}
+        onClick={showMore}
+        label="Show more visitors"
+      />
+
+      {checkIn && (
+        <CheckInDialog
+          visitor={checkIn}
+          pending={pending}
+          onCancel={() => setCheckIn(null)}
+          onSubmit={(opts) =>
+            run(() => checkInVisitor(checkIn.id, opts), () => setCheckIn(null))
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function CheckInDialog({
+  visitor,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  visitor: Visitor;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (opts: { badgeNo?: string; vehicleType?: string; vehiclePlate?: string }) => void;
+}) {
+  const [badgeNo, setBadgeNo] = useState(visitor.badge_no ?? "");
+  const [vehicleType, setVehicleType] = useState(visitor.vehicle_type ?? "");
+  const [vehiclePlate, setVehiclePlate] = useState(visitor.vehicle_plate ?? "");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
+        <h3 className="text-lg font-semibold">Check in {visitor.full_name}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          The arrival time is recorded automatically. Capture the badge and any vehicle details.
+        </p>
+        <div className="mt-4 space-y-3">
+          <label className="block text-sm">
+            <span className="text-muted-foreground">Badge number</span>
+            <input
+              value={badgeNo}
+              onChange={(e) => setBadgeNo(e.target.value)}
+              placeholder="Optional"
+              className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-muted-foreground">Vehicle type</span>
+            <select
+              value={vehicleType}
+              onChange={(e) => setVehicleType(e.target.value)}
+              className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="">None / on foot</option>
+              {VEHICLE_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="text-muted-foreground">Vehicle plate</span>
+            <input
+              value={vehiclePlate}
+              onChange={(e) => setVehiclePlate(e.target.value)}
+              placeholder="Optional"
+              className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            className="flex-1"
+            disabled={pending}
+            onClick={() => onSubmit({ badgeNo, vehicleType, vehiclePlate })}
+          >
+            {pending ? "Checking in…" : "Check in"}
+          </Button>
+        </div>
       </div>
     </div>
   );

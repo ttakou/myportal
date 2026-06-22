@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileText } from "lucide-react";
 import { getAppraisal } from "@/lib/appraisals";
+import { getAccess } from "@/lib/auth";
 import { STATUS_LABEL } from "@/types/appraisal";
 import { PrintButton } from "./print-button";
+import { ReopenControl } from "./reopen-control";
 
 function fmtDate(value: string | null): string {
   if (!value) return "—";
@@ -25,11 +27,15 @@ export default async function AppraisalOutcomePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const appraisal = await getAppraisal(id);
+  const [appraisal, access] = await Promise.all([getAppraisal(id), getAccess()]);
   if (!appraisal) notFound();
+  const canReopen =
+    appraisal.status === "closed" && (access.isHr || access.isSystemAdmin || access.isAdmin);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      {/* A4 with sensible margins when saved as PDF / printed. */}
+      <style>{"@media print { @page { size: A4; margin: 16mm; } body { -webkit-print-color-adjust: exact; } }"}</style>
       <div className="flex items-center justify-between gap-3 print:hidden">
         <Link
           href="/performance/appraisals"
@@ -37,7 +43,16 @@ export default async function AppraisalOutcomePage({
         >
           <ArrowLeft className="h-4 w-4" /> Appraisals
         </Link>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          {canReopen && <ReopenControl id={id} />}
+          <a
+            href={`/performance/appraisals/${id}/outcome/docx`}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-accent"
+          >
+            <FileText className="h-4 w-4" /> Download Word
+          </a>
+          <PrintButton />
+        </div>
       </div>
 
       <header className="space-y-1 border-b pb-4">
@@ -143,6 +158,27 @@ export default async function AppraisalOutcomePage({
           </div>
         )}
       </section>
+
+      {/* Signature block for the signed copy. */}
+      <section className="grid grid-cols-2 gap-8 pt-8">
+        <Signature role="Employee" name={appraisal.employee_name} />
+        <Signature role="Manager" name={appraisal.manager_name} />
+      </section>
+      <p className="text-right text-[11px] text-muted-foreground">
+        Generated {new Date().toLocaleString("en-GB", { timeZone: "UTC" })} UTC
+      </p>
+    </div>
+  );
+}
+
+function Signature({ role, name }: { role: string; name: string | null }) {
+  return (
+    <div className="space-y-6">
+      <div className="border-b border-foreground/40" />
+      <div className="text-xs text-muted-foreground">
+        {role}
+        {name ? ` — ${name}` : ""} · Signature &amp; date
+      </div>
     </div>
   );
 }

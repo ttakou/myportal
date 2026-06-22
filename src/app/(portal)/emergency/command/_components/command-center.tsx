@@ -64,6 +64,12 @@ const STATUS_BADGE: Record<IncidentStatus, string> = {
   resolved: "bg-green-100 text-green-700",
 };
 
+const AUDIENCE_LABEL: Record<string, string> = {
+  all: "All employees",
+  responders: "Response team",
+  reporter: "Reporter",
+};
+
 const CHANNELS = [
   { id: "push", label: "Push" },
   { id: "sms", label: "SMS" },
@@ -144,9 +150,20 @@ function DeliveryAudit({ deliveries }: { deliveries: DeliveryLog[] }) {
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
                 {d.source_type === "incident" ? "SOS / incident" : "Broadcast"}
               </span>
-              <span className="text-muted-foreground">
-                {d.audience === "all" ? "All employees" : "Response team"} ·{" "}
-                {new Date(d.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              <span className="flex flex-col leading-tight">
+                <span className="font-medium">
+                  {d.subject ?? (d.source_type === "incident" ? "Unknown reporter" : "Untitled alert")}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {[d.detail, `${AUDIENCE_LABEL[d.audience] ?? "Response team"}`]
+                    .filter(Boolean)
+                    .join(" · ")}{" "}
+                  ·{" "}
+                  {new Date(d.created_at).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
               </span>
             </span>
             <span className="flex items-center gap-3 text-xs">

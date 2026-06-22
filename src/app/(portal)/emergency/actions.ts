@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
-import { notify } from "@/lib/eess-notify";
+import { notify, notifyProfiles } from "@/lib/eess-notify";
 import { getModuleSettings } from "@/lib/module-settings";
 import {
   INCIDENT_LABEL,
@@ -153,7 +153,7 @@ export async function addIncidentUpdate(input: {
   // Defence-in-depth: RLS also enforces ownership + the open-status guard.
   const { data: incident } = await supabase
     .from("eess_incidents")
-    .select("reporter_id, status")
+    .select("reporter_id, tenant_id, incident_type, status")
     .eq("id", input.incidentId)
     .maybeSingle();
   if (!incident) return { ok: false, error: "Incident not found." };
@@ -182,6 +182,28 @@ export async function addIncidentUpdate(input: {
       p_lng: input.lng ?? null,
       p_text: locText,
     });
+  }
+
+  // Page the response team with the reporter's new information so a live SOS is
+  // never updated in silence. Best-effort; never blocks the update.
+  if (incident.tenant_id) {
+    const eessCfg = await getModuleSettings("emergency");
+    if (eessCfg.push_incident_alerts !== false) {
+      const label = INCIDENT_LABEL[incident.incident_type as IncidentType];
+      await notify({
+        tenantId: incident.tenant_id,
+        audience: "responders",
+        sourceType: "incident",
+        sourceId: input.incidentId,
+        payload: {
+          title: `Update on ${label} alert`,
+          body: body || (hasCoords ? "Reporter shared a refreshed location." : "Location updated."),
+          url: "/emergency/command",
+          tag: `incident-${input.incidentId}`,
+          severity: "warning",
+        },
+      });
+    }
   }
 
   revalidatePath("/emergency");
@@ -340,6 +362,14 @@ export async function setIncidentStatus(
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Read the incident first: we need who reported it (to notify) and its current
+  // status (to skip the notification on a no-op re-set of the same status).
+  const { data: before } = await supabase
+    .from("eess_incidents")
+    .select("reporter_id, tenant_id, incident_type, status")
+    .eq("id", id)
+    .maybeSingle();
+
   const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
   if (status === "acknowledged" || status === "responding") {
     patch.acknowledged_by = user?.id ?? null;
@@ -352,7 +382,58 @@ export async function setIncidentStatus(
 
   const { error } = await supabase.from("eess_incidents").update(patch).eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  // Close the loop: let the reporter know a responder has acted on their alert.
+  // Best-effort and never the actor themselves (status changes are made by
+  // responders). Skipped when nothing actually changed or push is disabled.
+  if (
+    before?.reporter_id &&
+    before.tenant_id &&
+    before.status !== status &&
+    before.reporter_id !== user?.id
+  ) {
+    const eessCfg = await getModuleSettings("emergency");
+    if (eessCfg.push_incident_alerts !== false) {
+      const label = INCIDENT_LABEL[before.incident_type as IncidentType];
+      const msg = STATUS_NOTIFY[status];
+      if (msg) {
+        await notifyProfiles({
+          tenantId: before.tenant_id,
+          profileIds: [before.reporter_id],
+          audience: "reporter",
+          sourceType: "incident",
+          sourceId: id,
+          payload: {
+            title: msg.title(label),
+            body: msg.body,
+            url: "/emergency",
+            tag: `incident-${id}`,
+            severity: status === "resolved" ? "info" : "warning",
+          },
+        });
+      }
+    }
+  }
+
   revalidatePath("/emergency");
   revalidatePath("/emergency/command");
   return { ok: true };
 }
+
+/** Reporter-facing copy for each status a responder can move an incident to. */
+const STATUS_NOTIFY: Partial<
+  Record<IncidentStatus, { title: (label: string) => string; body: string }>
+> = {
+  acknowledged: {
+    title: (label) => `Your ${label} alert was acknowledged`,
+    body: "The safety team has seen your report and is assessing it.",
+  },
+  responding: {
+    title: (label) => `Help is on the way for your ${label} alert`,
+    body: "A responder is now actively responding.",
+  },
+  resolved: {
+    title: (label) => `Your ${label} alert was resolved`,
+    body: "The safety team has marked your report as resolved.",
+  },
+};
