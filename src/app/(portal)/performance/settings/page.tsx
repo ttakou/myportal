@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ShieldX } from "lucide-react";
+import { ArrowLeft, ChevronRight, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getPerformanceConfig } from "@/lib/performance-config";
 import { PerformanceSettingsForm } from "./_components/settings-form";
@@ -35,6 +35,19 @@ export default async function PerformanceSettingsPage() {
           The tenant&apos;s house standard for appraisals. New cycles inherit these defaults.
         </p>
       </div>
+
+      <Link
+        href="/performance/settings/scales"
+        className="flex items-center justify-between rounded-lg border bg-card p-4 hover:bg-accent"
+      >
+        <span>
+          <span className="block font-medium">Rating scales</span>
+          <span className="block text-sm text-muted-foreground">
+            Define the scales used to rate goals and competencies.
+          </span>
+        </span>
+        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+      </Link>
 
       <PerformanceSettingsForm config={config} />
     </div>
