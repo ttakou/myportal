@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, ClipboardCheck, FileBarChart } from "lucide-react";
+import { ArrowRight, ClipboardCheck, FileBarChart, Settings } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getActiveCycle, getMyAppraisal, getMyDirectLine } from "@/lib/appraisals";
 import { DirectLinePanel } from "./_components/direct-line-panel";
@@ -23,12 +23,20 @@ export default async function PerformancePage() {
         <h1 className="text-2xl font-semibold tracking-tight">Performance Management</h1>
         <p className="text-muted-foreground">Annual performance appraisals.</p>
         {(access.isHr || access.isSystemAdmin || access.isAdmin) && (
-          <Link
-            href="/reports/performance-appraisals"
-            className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
-          >
-            <FileBarChart className="h-4 w-4" /> Completion &amp; SLA report
-          </Link>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Link
+              href="/reports/performance-appraisals"
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              <FileBarChart className="h-4 w-4" /> Completion &amp; SLA report
+            </Link>
+            <Link
+              href="/performance/settings"
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              <Settings className="h-4 w-4" /> Performance settings
+            </Link>
+          </div>
         )}
       </div>
 

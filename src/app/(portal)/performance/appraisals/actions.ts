@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { notifyUsers } from "@/lib/notify";
 import { runAppraisalReminders } from "@/lib/appraisal-reminders";
+import { getPerformanceConfig } from "@/lib/performance-config";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -400,6 +401,24 @@ export async function addGoal(input: {
   const a = guard.a;
   if (!input.title.trim()) return { ok: false, error: "Goal title is required." };
   const supabase = createClient();
+  const kind = input.kind === "development" ? "development" : "objective";
+
+  // Enforce the tenant's configured cap on the number of objectives.
+  if (kind === "objective") {
+    const config = await getPerformanceConfig();
+    const { count } = await supabase
+      .from("appraisal_goals")
+      .select("id", { count: "exact", head: true })
+      .eq("appraisal_id", a.id)
+      .eq("kind", "objective");
+    if ((count ?? 0) >= config.maxGoals) {
+      return {
+        ok: false,
+        error: `You can set at most ${config.maxGoals} objective${config.maxGoals === 1 ? "" : "s"}.`,
+      };
+    }
+  }
+
   const { error } = await supabase.from("appraisal_goals").insert({
     tenant_id: a.tenant_id,
     appraisal_id: a.id,
@@ -410,7 +429,7 @@ export async function addGoal(input: {
     success_indicator: input.successIndicator?.trim() || null,
     alignment: input.alignment?.trim() || null,
     evidence_required: input.evidenceRequired?.trim() || null,
-    kind: input.kind === "development" ? "development" : "objective",
+    kind,
   });
   if (error) return { ok: false, error: error.message };
   if (a.status === "not_started")
