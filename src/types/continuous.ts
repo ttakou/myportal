@@ -119,6 +119,19 @@ export type ActivityKind =
   | "manager_note"
   | "pulse_response";
 
+/** Which on/off feature an activity kind belongs to. */
+export function featureForKind(kind: ActivityKind): FeatureKey {
+  switch (kind) {
+    case "feedback_request":
+    case "feedback_response":
+      return "feedback";
+    case "pulse_response":
+      return "pulse";
+    default:
+      return kind as FeatureKey;
+  }
+}
+
 export interface ContinuousActivity {
   id: string;
   kind: ActivityKind;

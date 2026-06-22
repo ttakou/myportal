@@ -19,6 +19,7 @@ export function performanceSubmenu(opts: { isHr: boolean; isManager: boolean }):
   const items: PerfNavItem[] = [
     { key: "home", label: "My performance", icon: "Gauge", href: "/performance" },
     { key: "mine", label: "My appraisal", icon: "ClipboardCheck", href: "/performance/appraisals?view=mine" },
+    { key: "continuous", label: "Continuous", icon: "Sparkles", href: "/performance/continuous" },
   ];
   if (opts.isManager || opts.isHr) {
     items.push({ key: "team", label: "Team review", icon: "Users", href: "/performance/appraisals?view=team" });
