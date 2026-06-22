@@ -386,12 +386,35 @@ async function requireEmployeeEditable(id: string): Promise<{ a: AppraisalRow } 
  * the full allocation. Development goals are weighted separately by the cycle, so
  * they're excluded here. Returns an error message, or null when valid.
  */
-function objectiveWeightError(goals: { weight: number | null; kind: string }[]): string | null {
+type GoalRuleConfig = {
+  minGoals: number;
+  maxGoals: number;
+  minGoalWeight: number;
+  maxGoalWeight: number;
+  goalWeightsTotal100: boolean;
+};
+
+/** Validate objectives against the tenant's configured goal rules. */
+function objectiveWeightError(
+  goals: { weight: number | null; kind: string }[],
+  config?: GoalRuleConfig,
+): string | null {
   const objectives = goals.filter((g) => g.kind === "objective");
-  if (objectives.length === 0) return "Add at least one objective (KPI/OKR) before submitting.";
-  const sum = objectives.reduce((s, g) => s + (g.weight ?? 0), 0);
-  if (sum !== 100) {
-    return `Objective weights must total 100% — they currently total ${sum}%.`;
+  const min = config?.minGoals ?? 1;
+  if (objectives.length < Math.max(1, min))
+    return `Add at least ${Math.max(1, min)} objective${min === 1 ? "" : "s"} (KPI/OKR) before submitting.`;
+  if (config && objectives.length > config.maxGoals)
+    return `You can set at most ${config.maxGoals} objective${config.maxGoals === 1 ? "" : "s"}.`;
+  if (config) {
+    for (const g of objectives) {
+      const w = g.weight ?? 0;
+      if (w < config.minGoalWeight || w > config.maxGoalWeight)
+        return `Each objective's weight must be between ${config.minGoalWeight}% and ${config.maxGoalWeight}%.`;
+    }
+  }
+  if (!config || config.goalWeightsTotal100) {
+    const sum = objectives.reduce((s, g) => s + (g.weight ?? 0), 0);
+    if (sum !== 100) return `Objective weights must total 100% — they currently total ${sum}%.`;
   }
   return null;
 }
@@ -490,14 +513,25 @@ export async function submitGoals(appraisalId: string): Promise<ActionResult> {
   if ("ok" in guard) return guard;
   const a = guard.a;
   const supabase = createClient();
+  const config = await getPerformanceConfig();
   const { data: goalRows } = await supabase
     .from("appraisal_goals")
-    .select("weight, kind")
+    .select("weight, kind, success_indicator, alignment")
     .eq("appraisal_id", a.id);
-  const goals = (goalRows ?? []) as { weight: number | null; kind: string }[];
+  const goals = (goalRows ?? []) as {
+    weight: number | null;
+    kind: string;
+    success_indicator: string | null;
+    alignment: string | null;
+  }[];
   if (goals.length === 0) return { ok: false, error: "Add at least one goal before submitting." };
-  const weightError = objectiveWeightError(goals);
+  const weightError = objectiveWeightError(goals, config);
   if (weightError) return { ok: false, error: weightError };
+  const objectives = goals.filter((g) => g.kind === "objective");
+  if (config.requireSuccessIndicator && objectives.some((g) => !g.success_indicator?.trim()))
+    return { ok: false, error: "Every objective needs a success indicator." };
+  if (config.requireAlignment && objectives.some((g) => !g.alignment?.trim()))
+    return { ok: false, error: "Every objective must be aligned to a higher-level objective." };
   const { error } = await supabase
     .from("appraisals")
     .update({ status: "pending_manager_review" })
@@ -614,8 +648,10 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
     .select("id, title, weight, deadline, success_indicator, description, kind")
     .eq("appraisal_id", a.id);
 
+  const apprConfig = await getPerformanceConfig();
   const weightError = objectiveWeightError(
     (goals ?? []) as { weight: number | null; kind: string }[],
+    apprConfig,
   );
   if (weightError) {
     return { ok: false, error: `Can't approve — ${weightError[0].toLowerCase()}${weightError.slice(1)}` };
