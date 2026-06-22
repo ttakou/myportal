@@ -746,15 +746,14 @@ export async function submitMidYear(appraisalId: string): Promise<ActionResult> 
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent(a, "midyear_submitted");
-  if (a.manager_id)
-    await notifyUsers({
-      tenantId: a.tenant_id,
-      profileIds: [a.manager_id],
-      category: "approval",
-      title: "Mid-year progress submitted",
-      body: "A team member submitted mid-year progress for review.",
-      url: "/performance/appraisals",
-    });
+  const { data: myEmp } = await supabase.from("profiles").select("full_name").eq("id", a.employee_id).maybeSingle();
+  await dispatchEvent("approval_request", {
+    tenantId: a.tenant_id,
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    secondLevelIds: a.second_level_id ? [a.second_level_id] : [],
+    placeholders: { employee: (myEmp as { full_name?: string } | null)?.full_name ?? "A team member" },
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
@@ -803,15 +802,14 @@ export async function submitSelfAssessment(input: {
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "self_assessment" }, "self_assessment_submitted");
-  if (a.manager_id)
-    await notifyUsers({
-      tenantId: a.tenant_id,
-      profileIds: [a.manager_id],
-      category: "approval",
-      title: "Self-assessment submitted",
-      body: "A team member submitted their year-end self-assessment for evaluation.",
-      url: "/performance/appraisals",
-    });
+  const { data: saEmp } = await supabase.from("profiles").select("full_name").eq("id", a.employee_id).maybeSingle();
+  await dispatchEvent("approval_request", {
+    tenantId: a.tenant_id,
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    secondLevelIds: a.second_level_id ? [a.second_level_id] : [],
+    placeholders: { employee: (saEmp as { full_name?: string } | null)?.full_name ?? "A team member" },
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
