@@ -133,7 +133,7 @@ export function FeedbackPanel({
       {/* Requests I've sent */}
       {sent.length > 0 && (
         <div>
-          <h3 className="mb-2 text-sm font-medium">Requests you've sent</h3>
+          <h3 className="mb-2 text-sm font-medium">Requests you&apos;ve sent</h3>
           <ul className="space-y-1.5">
             {sent.map((r) => (
               <li key={r.id} className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm">
