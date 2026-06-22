@@ -26,8 +26,12 @@ export interface OffshoreView {
   icon: string;
 }
 
-/** Ordered submenu. "mytrips" is the self-service area; the rest are management. */
+/**
+ * Ordered submenu. "mytrips" is the self-service area (shown to everyone with
+ * the module); the rest are management views (admin / Campboss / OIM only).
+ */
 export const OFFSHORE_VIEWS: OffshoreView[] = [
+  { key: "mytrips", label: "My trips & requests", icon: "Ship" },
   { key: "dashboard", label: "POB & dashboards", icon: "LayoutGrid" },
   { key: "crews", label: "Crew change", icon: "CalendarClock" },
   { key: "calendar", label: "Rotation calendar", icon: "CalendarRange" },
@@ -41,10 +45,17 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "drill", label: "Muster drill", icon: "Siren" },
   { key: "installations", label: "Installations", icon: "Anchor" },
   { key: "history", label: "History", icon: "History" },
-  { key: "mytrips", label: "My trips & requests", icon: "Ship" },
 ];
 
 export const OFFSHORE_VIEW_KEYS = OFFSHORE_VIEWS.map((v) => v.key);
+
+/**
+ * Submenu shown in the sidebar. Everyone with the module sees "My trips";
+ * only managers (admin / Campboss / OIM) additionally see the management views.
+ */
+export function offshoreSubmenu(canManage: boolean): OffshoreView[] {
+  return canManage ? OFFSHORE_VIEWS : OFFSHORE_VIEWS.filter((v) => v.key === "mytrips");
+}
 
 /** Landing view for managers (the self-service "mytrips" is the default otherwise). */
 export const DEFAULT_OFFSHORE_VIEW: OffshoreViewKey = "dashboard";

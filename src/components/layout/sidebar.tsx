@@ -2,7 +2,7 @@ import Link from "next/link";
 import { LayoutDashboard, FileBarChart } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
 import { getAccess } from "@/lib/auth";
-import { OFFSHORE_VIEWS } from "@/app/(portal)/offshore/_components/offshore-views";
+import { offshoreSubmenu } from "@/app/(portal)/offshore/_components/offshore-views";
 import { NavLinks, type NavLink } from "./nav-links";
 
 /**
@@ -25,13 +25,14 @@ export async function Sidebar({
 
   const links: NavLink[] = services.map((s) => {
     const base: NavLink = { name: s.name, href: s.route_path, icon: s.icon };
-    // Offshore: managers get an indented submenu so each view shows on its own.
-    // Everyone lands on "My trips" (the self-service view) by default.
-    if (s.route_path === "/offshore" && canManageOffshore) {
+    // Offshore: everyone with the module gets an indented submenu (each view on
+    // its own); managers additionally get the management views. Everyone lands
+    // on "My trips" (the self-service view) by default.
+    if (s.route_path === "/offshore") {
       return {
         ...base,
         defaultSubKey: "mytrips",
-        subItems: OFFSHORE_VIEWS.map((v) => ({
+        subItems: offshoreSubmenu(canManageOffshore).map((v) => ({
           key: v.key,
           label: v.label,
           icon: v.icon,
