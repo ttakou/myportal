@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { EmergencyRole, MusterDrill } from "@/types/offshore";
+import type { EmergencyRole, EmergencyTeamKind, EmergencyTeamMember, MusterDrill } from "@/types/offshore";
 import { one } from "./_shared";
 
 /** Distinct muster / lifeboat groups configured on rooms (e.g. LB-1, LB-2). */
@@ -130,6 +130,30 @@ export async function getEmergencyRoles(): Promise<EmergencyRole[]> {
     lifeboat: r.lifeboat,
     role: r.role,
     profile_id: r.profile_id ?? null,
+    person_name: one<{ full_name?: string }>(r.person)?.full_name ?? null,
+  }));
+}
+
+/** Members of the emergency response teams (HLO, fire team) per rotation window. */
+export async function getEmergencyTeams(): Promise<EmergencyTeamMember[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("offshore_emergency_teams")
+    .select(
+      "id, from_date, to_date, team, profile_id," +
+        " person:profiles!offshore_emergency_teams_profile_id_fkey(full_name)",
+    )
+    .order("from_date", { ascending: false });
+  if (error) {
+    console.error("getEmergencyTeams:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r: Record<string, any>) => ({
+    id: r.id,
+    from_date: r.from_date,
+    to_date: r.to_date,
+    team: r.team as EmergencyTeamKind,
+    profile_id: r.profile_id,
     person_name: one<{ full_name?: string }>(r.person)?.full_name ?? null,
   }));
 }

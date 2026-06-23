@@ -271,6 +271,24 @@ export interface EmergencyRole {
   person_name: string | null;
 }
 
+/** Emergency response teams with unlimited membership (vs the single-holder roles above). */
+export type EmergencyTeamKind = "hlo" | "fire_team";
+
+export const EMERGENCY_TEAM_LABEL: Record<EmergencyTeamKind, string> = {
+  hlo: "HLO team",
+  fire_team: "Fire team",
+};
+
+/** One member of an emergency team for a rotation window. */
+export interface EmergencyTeamMember {
+  id: string;
+  from_date: string;
+  to_date: string;
+  team: EmergencyTeamKind;
+  profile_id: string;
+  person_name: string | null;
+}
+
 /** A live emergency muster roll-call. */
 export interface MusterDrill {
   id: string;

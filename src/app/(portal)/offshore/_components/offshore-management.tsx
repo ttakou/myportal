@@ -25,8 +25,11 @@ import {
   VISIT_STATUS_LABEL,
   VISITOR_TYPE_LABEL,
   EMERGENCY_ROLE_LABEL,
+  EMERGENCY_TEAM_LABEL,
   type EmergencyRole,
   type EmergencyRoleKind,
+  type EmergencyTeamKind,
+  type EmergencyTeamMember,
   type MusterDrill,
   type AccommodationSummary,
   type AssignableEmployee,
@@ -62,6 +65,8 @@ import {
   startMusterDrill,
   setMusterCheckin,
   endMusterDrill,
+  addEmergencyTeamMember,
+  removeEmergencyTeamMember,
   offboardTrip,
   reassignTripRoom,
   setBackToBack,
@@ -129,6 +134,7 @@ export function OffshoreManagement(props: {
   employees: AssignableEmployee[];
   suggestions: CrewChangeSuggestion[];
   emergencyRoles: EmergencyRole[];
+  emergencyTeams: EmergencyTeamMember[];
   musterGroups: string[];
   musterDrill: MusterDrill | null;
   musterDrillHistory: MusterDrillSummary[];
@@ -152,7 +158,11 @@ export function OffshoreManagement(props: {
         />
       )}
       {tab === "board" && (
-        <LiveBoardPanel people={props.pob.people} emergencyRoles={props.emergencyRoles} />
+        <LiveBoardPanel
+          people={props.pob.people}
+          emergencyRoles={props.emergencyRoles}
+          emergencyTeams={props.emergencyTeams}
+        />
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
       {tab === "crews" && (
@@ -186,6 +196,7 @@ export function OffshoreManagement(props: {
       {tab === "emergency" && (
         <EmergencyRolesPanel
           roles={props.emergencyRoles}
+          teams={props.emergencyTeams}
           musterGroups={props.musterGroups}
           roster={props.roster}
         />
@@ -202,6 +213,9 @@ const EMERGENCY_ORDER: EmergencyRoleKind[] = [
   "headcount_principal",
   "headcount_assistant",
 ];
+
+/** Unlimited-membership emergency teams, in display order. */
+const EMERGENCY_TEAMS: EmergencyTeamKind[] = ["hlo", "fire_team"];
 
 /** Compact leader labels for the live board chips. */
 const LEADER_SHORT: Record<EmergencyRoleKind, string> = {
@@ -220,9 +234,11 @@ const LEADER_SHORT: Record<EmergencyRoleKind, string> = {
 function LiveBoardPanel({
   people,
   emergencyRoles,
+  emergencyTeams,
 }: {
   people: PobOnboard[];
   emergencyRoles: EmergencyRole[];
+  emergencyTeams: EmergencyTeamMember[];
 }) {
   const router = useRouter();
   const [auto, setAuto] = useState(true);
@@ -236,15 +252,15 @@ function LiveBoardPanel({
   const today = new Date().toISOString().slice(0, 10);
 
   // Active rotation window for the emergency org: the one covering today, else
-  // the most recent on record.
+  // the most recent on record (drawn from both leader roles and team rows).
   const windows = useMemo(() => {
     const seen = new Map<string, { from: string; to: string }>();
-    for (const r of emergencyRoles) {
+    for (const r of [...emergencyRoles, ...emergencyTeams]) {
       const k = `${r.from_date}|${r.to_date}`;
       if (!seen.has(k)) seen.set(k, { from: r.from_date, to: r.to_date });
     }
     return [...seen.values()].sort((a, b) => b.from.localeCompare(a.from));
-  }, [emergencyRoles]);
+  }, [emergencyRoles, emergencyTeams]);
   const active = useMemo(
     () => windows.find((w) => w.from <= today && w.to >= today) ?? windows[0] ?? null,
     [windows, today],
@@ -261,6 +277,25 @@ function LiveBoardPanel({
     () => new Set(people.map((p) => p.profile_id).filter(Boolean) as string[]),
     [people],
   );
+
+  // Response teams (HLO, fire) for the active window, split into who is actually
+  // on board now vs assigned-but-ashore — the board only lists on-board personnel.
+  const teamBuckets = useMemo(() => {
+    const map = new Map<EmergencyTeamKind, { onboard: string[]; ashore: number }>();
+    for (const team of EMERGENCY_TEAMS) map.set(team, { onboard: [], ashore: 0 });
+    if (active) {
+      for (const m of emergencyTeams) {
+        if (m.from_date !== active.from || m.to_date !== active.to) continue;
+        const bucket = map.get(m.team);
+        if (!bucket) continue;
+        if (onboardIds.has(m.profile_id)) bucket.onboard.push(m.person_name ?? "—");
+        else bucket.ashore++;
+      }
+    }
+    for (const b of map.values()) b.onboard.sort((a, c) => a.localeCompare(c));
+    return map;
+  }, [emergencyTeams, active, onboardIds]);
+  const hasTeams = [...teamBuckets.values()].some((b) => b.onboard.length || b.ashore);
 
   // Group on-board people by muster station (lifeboat); the "—" bucket collects
   // anyone without one — a safety gap worth surfacing prominently.
@@ -303,6 +338,40 @@ function LiveBoardPanel({
           Refresh
         </Button>
       </div>
+
+      {hasTeams && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {EMERGENCY_TEAMS.map((team) => {
+            const b = teamBuckets.get(team)!;
+            return (
+              <div key={team} className="rounded-lg border bg-card p-3">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">
+                    {EMERGENCY_TEAM_LABEL[team]}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {b.onboard.length} on board{b.ashore ? ` · ${b.ashore} ashore` : ""}
+                  </span>
+                </div>
+                {b.onboard.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {b.onboard.map((n, i) => (
+                      <span
+                        key={`${n}-${i}`}
+                        className="rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-[11px] text-green-700"
+                      >
+                        {n}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs italic text-muted-foreground">None on board.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {people.length === 0 && (
         <p className="rounded-md border border-dashed bg-muted/30 px-3 py-6 text-center text-sm text-muted-foreground">
@@ -397,10 +466,12 @@ function LiveBoardPanel({
 /** Per rotation window + muster group: evacuation & head-count role holders. */
 function EmergencyRolesPanel({
   roles,
+  teams,
   musterGroups,
   roster,
 }: {
   roles: EmergencyRole[];
+  teams: EmergencyTeamMember[];
   musterGroups: string[];
   roster: RosterEntry[];
 }) {
@@ -409,12 +480,12 @@ function EmergencyRolesPanel({
 
   const windows = useMemo(() => {
     const seen = new Map<string, { from: string; to: string }>();
-    for (const r of roles) {
+    for (const r of [...roles, ...teams]) {
       const k = r.from_date + "|" + r.to_date;
       if (!seen.has(k)) seen.set(k, { from: r.from_date, to: r.to_date });
     }
     return [...seen.values()].sort((a, b) => b.from.localeCompare(a.from));
-  }, [roles]);
+  }, [roles, teams]);
 
   const [from, setFrom] = useState(windows[0]?.from ?? today);
   const [to, setTo] = useState(windows[0]?.to ?? today);
@@ -502,6 +573,65 @@ function EmergencyRolesPanel({
           ))}
         </div>
       )}
+
+      <div className="space-y-2">
+        <p className="text-sm font-semibold">Response teams</p>
+        <p className="text-xs text-muted-foreground">
+          HLO and fire teams for this window — installation-wide, with no member limit.
+        </p>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {EMERGENCY_TEAMS.map((team) => {
+            const members = teams.filter(
+              (t) => t.from_date === from && t.to_date === to && t.team === team,
+            );
+            const memberIds = new Set(members.map((m) => m.profile_id));
+            return (
+              <div key={team} className="rounded-lg border bg-card p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">
+                    {EMERGENCY_TEAM_LABEL[team]}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{members.length} member(s)</span>
+                </div>
+                {members.length > 0 ? (
+                  <ul className="mb-2 flex flex-wrap gap-1">
+                    {members.map((m) => (
+                      <li
+                        key={m.id}
+                        className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs"
+                      >
+                        <span>{m.person_name ?? "—"}</span>
+                        <button
+                          disabled={pending}
+                          title={`Remove ${m.person_name ?? "member"}`}
+                          onClick={() => run(() => removeEmergencyTeamMember(m.id))}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mb-2 text-xs italic text-muted-foreground">No members yet.</p>
+                )}
+                <LazySelect
+                  value={null}
+                  options={people.filter((p) => !memberIds.has(p.id))}
+                  getOptionValue={(p) => p.id}
+                  getOptionLabel={(p) => p.name}
+                  placeholder="— add person —"
+                  disabled={pending || !from || !to}
+                  className={cn(field, "w-full py-1")}
+                  onChange={(v) =>
+                    v && run(() => addEmergencyTeamMember({ fromDate: from, toDate: to, team, profileId: v }))
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {windows.some((w) => w.from === from && w.to === to) && (
         <Button
