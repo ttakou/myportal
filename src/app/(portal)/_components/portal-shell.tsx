@@ -21,10 +21,14 @@ const BOTTOM_TABS = [
 export function PortalShell({
   sidebar,
   header,
+  brandName,
+  logoUrl,
   children,
 }: {
   sidebar: React.ReactNode;
   header: React.ReactNode;
+  brandName?: string;
+  logoUrl?: string | null;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -61,15 +65,26 @@ export function PortalShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center gap-3 border-b bg-card px-4 print:hidden sm:px-6">
-          <button
-            type="button"
-            aria-label="Open menu"
-            onClick={() => setOpen(true)}
-            className="grid h-9 w-9 place-items-center rounded-md border md:hidden"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
+        {/* Top navbar. Sticky so it stays put in the standalone PWA, with
+            safe-area padding so it clears the status bar / notch. The brand
+            shows on mobile only (the desktop sidebar already carries it). */}
+        <header
+          className="flex items-center gap-3 border-b bg-card px-4 print:hidden sm:px-6"
+          style={{
+            height: "calc(4rem + env(safe-area-inset-top))",
+            paddingTop: "env(safe-area-inset-top)",
+          }}
+        >
+          <Link href="/dashboard" className="flex items-center gap-2 md:hidden">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt={brandName ?? "Home"} className="h-8 w-auto max-w-[150px] object-contain" />
+            ) : (
+              <span className="truncate text-base font-semibold tracking-tight text-brand">
+                {brandName ?? "Portal"}
+              </span>
+            )}
+          </Link>
           <div className="ml-auto">{header}</div>
         </header>
         <main className="flex-1 overflow-y-auto bg-background">

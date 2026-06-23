@@ -67,6 +67,8 @@ export default async function PortalLayout({
       <PermissionsProvider perms={perms} access={permAccess}>
       <PortalShell
         sidebar={<Sidebar brandName={branding.name} logoUrl={branding.logoUrl} />}
+        brandName={branding.name}
+        logoUrl={branding.logoUrl}
         header={
           <div className="flex items-center gap-1">
             <NotificationBell initial={notifications} />
