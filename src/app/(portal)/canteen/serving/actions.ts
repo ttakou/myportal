@@ -136,6 +136,25 @@ export async function serveWalkin(
   if (!emp.is_active || !emp.lunch_eligible)
     return { ok: false, error: `${name} is not entitled to lunch.` };
 
+  // Plates (the person + visitors) may not exceed the person's meal allowance.
+  // Mirror public.canteen_daily_allowance (sum of grants covering the date, else
+  // 1 for an active lunch-eligible person, verified above). Reject over-serves
+  // here too, so a stale client can't push visitor plates past the entitlement.
+  const { data: grants } = await supabase
+    .from("canteen_meal_entitlements")
+    .select("daily_meals")
+    .eq("profile_id", profileId)
+    .lte("starts_on", date)
+    .gte("ends_on", date);
+  const granted = (grants ?? []).reduce((s, g) => s + (g.daily_meals as number), 0);
+  const allowance = granted > 0 ? granted : 1;
+  if (1 + guests > allowance) {
+    return {
+      ok: false,
+      error: `${name} is entitled to ${allowance} meal${allowance === 1 ? "" : "s"}/day — ${guests} visitor${guests === 1 ? "" : "s"} would exceed it. Reduce visitors to ${Math.max(0, allowance - 1)} or fewer.`,
+    };
+  }
+
   // The dish must be on today's active menu (RLS scopes this to the tenant).
   const { data: dish } = await supabase
     .from("canteen_dishes")

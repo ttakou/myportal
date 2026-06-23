@@ -221,8 +221,13 @@ export function ServingScreen({
     });
   }
 
+  // Plates (the person + visitors) may not exceed the person's meal entitlement.
+  // When they do, serving is rejected until the visitor count is corrected.
+  const walkinPlates = 1 + walkinGuests;
+  const walkinOverEntitled = !!walkin && walkinPlates > walkin.allowance;
+
   function serve(dish: CanteenDish) {
-    if (!walkin) return;
+    if (!walkin || walkinOverEntitled) return;
     const person = walkin;
     setFlash(null);
     const guests = walkinGuests;
@@ -352,21 +357,20 @@ export function ServingScreen({
                 className="w-20 rounded-md border bg-background px-2 py-1 text-sm"
               />
               <span className="text-xs text-muted-foreground">
-                {1 + walkinGuests} plate{walkinGuests === 0 ? "" : "s"}
+                {walkinPlates} plate{walkinGuests === 0 ? "" : "s"}
                 {" · entitled to "}
                 {walkin.allowance} meal{walkin.allowance === 1 ? "" : "s"}/day
               </span>
             </label>
-            {1 + walkinGuests > walkin.allowance && (
-              <p className="flex items-start gap-1.5 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+            {walkinOverEntitled && (
+              <p className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
-                  {1 + walkinGuests - walkin.allowance} plate
-                  {1 + walkinGuests - walkin.allowance === 1 ? "" : "s"} beyond{" "}
-                  {walkin.name}&apos;s entitlement ({walkin.allowance} meal
-                  {walkin.allowance === 1 ? "" : "s"}/day). Serving {1 + walkinGuests} in
-                  total — the extra cover{1 + walkinGuests - walkin.allowance === 1 ? " is a" : "s are"}{" "}
-                  visitor plate{1 + walkinGuests - walkin.allowance === 1 ? "" : "s"}.
+                  Can&apos;t serve {walkinPlates} plates — {walkin.name} is entitled to{" "}
+                  {walkin.allowance} meal{walkin.allowance === 1 ? "" : "s"}/day.{" "}
+                  {walkin.allowance <= 1
+                    ? "Remove all visitors to serve."
+                    : `Reduce visitors to ${walkin.allowance - 1} or fewer to serve.`}
                 </span>
               </p>
             )}
@@ -378,7 +382,7 @@ export function ServingScreen({
                   <button
                     key={d.id}
                     type="button"
-                    disabled={pending}
+                    disabled={pending || walkinOverEntitled}
                     onClick={() => serve(d)}
                     className="rounded-md border bg-background px-3 py-2 text-left text-sm hover:border-primary hover:bg-accent disabled:opacity-50"
                   >
