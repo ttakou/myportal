@@ -13,6 +13,8 @@ export const SUPPORTED_MEASURES: Measure[] = [
   "completion_rate",
   "average_rating",
   "overdue_assessments",
+  "rating_distribution",
+  "rating_changes_after_calibration",
 ];
 /** Dimensions backed by real columns today. */
 export const SUPPORTED_DIMENSIONS: Dimension[] = ["cycle", "department", "position", "manager"];
@@ -54,10 +56,23 @@ export async function runReport(
   let apsQ = supabase
     .from("appraisals")
     .select(
-      "id, cycle_id, manager_id, status, overall_rating, final_score, employee:profiles!employee_id(department, job_title)",
+      "id, cycle_id, manager_id, status, overall_rating, final_score, rating_label, employee:profiles!employee_id(department, job_title)",
     );
   if (tenantId) apsQ = apsQ.eq("tenant_id", tenantId);
-  const [{ data: cyclesRes }, { data: aps }] = await Promise.all([cyclesQ, apsQ]);
+
+  // Appraisals adjusted during calibration (for the rating-changes measure).
+  let adjQ = supabase.from("appraisal_calibration_adjustments").select("appraisal_id");
+  if (tenantId) adjQ = adjQ.eq("tenant_id", tenantId);
+  const needChanges = measures.includes("rating_changes_after_calibration");
+
+  const [{ data: cyclesRes }, { data: aps }, adjRes] = await Promise.all([
+    cyclesQ,
+    apsQ,
+    needChanges ? adjQ : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+  ]);
+  const changedSet = new Set(
+    ((adjRes.data ?? []) as Record<string, unknown>[]).map((r) => String(r.appraisal_id)),
+  );
 
   const cycleName = new Map(((cyclesRes ?? []) as Record<string, unknown>[]).map((c) => [String(c.id), String(c.name ?? "")]));
 
@@ -107,15 +122,26 @@ export async function runReport(
   );
 
   // Aggregate per group.
-  const groups = new Map<string, { total: number; completed: number; overdue: number; ratings: number[] }>();
+  type Acc = {
+    total: number;
+    completed: number;
+    overdue: number;
+    ratings: number[];
+    bands: Record<string, number>;
+    changed: number;
+  };
+  const groups = new Map<string, Acc>();
   for (const a of rowsData) {
     const g = groupValue(a);
-    const acc = groups.get(g) ?? { total: 0, completed: 0, overdue: 0, ratings: [] };
+    const acc = groups.get(g) ?? { total: 0, completed: 0, overdue: 0, ratings: [], bands: {}, changed: 0 };
     acc.total += 1;
     if (COMPLETED.has(String(a.status))) acc.completed += 1;
     if (a.status === "overdue") acc.overdue += 1;
     const r = (a.overall_rating ?? a.final_score) as number | null;
     if (r != null) acc.ratings.push(Number(r));
+    const lbl = a.rating_label as string | null;
+    if (lbl) acc.bands[lbl] = (acc.bands[lbl] ?? 0) + 1;
+    if (changedSet.has(String(a.id))) acc.changed += 1;
     groups.set(g, acc);
   }
 
@@ -131,6 +157,13 @@ export async function runReport(
             ? String(Math.round((acc.ratings.reduce((x, y) => x + y, 0) / acc.ratings.length) * 10) / 10)
             : "—";
         else if (m === "overdue_assessments") values[m] = String(acc.overdue);
+        else if (m === "rating_distribution") {
+          const parts = Object.entries(acc.bands)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([label, n]) => `${label}: ${n}`);
+          values[m] = parts.length ? parts.join(" · ") : "—";
+        } else if (m === "rating_changes_after_calibration")
+          values[m] = acc.total ? `${acc.changed} (${Math.round((acc.changed / acc.total) * 100)}%)` : "—";
       }
       return { group, headcount: acc.total, values };
     });

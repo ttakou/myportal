@@ -15,6 +15,10 @@ export interface PanelStaff {
   gate: CalibrationGate;
   /** Panel-agreed band (mode of member ratings, else provisional). */
   panelBand: string | null;
+  /** A panellist rated them in a higher band than the agreed one. */
+  upgradeCandidate: boolean;
+  /** Member ratings recorded so far (for completion). */
+  ratedBy: number;
 }
 
 export interface MemberRatingView {
@@ -24,6 +28,15 @@ export interface MemberRatingView {
   comment: string | null;
 }
 
+/** One recorded calibration adjustment for a staff member (PGM audit trail). */
+export interface AdjustmentView {
+  previousLabel: string | null;
+  newLabel: string | null;
+  reason: string | null;
+  byName: string | null;
+  at: string;
+}
+
 export interface PanelData {
   group: { id: string; name: string; status: string; groupBy: GroupBy; groupValue: string | null };
   target: DistributionBand[];
@@ -31,9 +44,16 @@ export interface PanelData {
   staff: PanelStaff[];
   /** All members' ratings per appraisal (for the discussion view). */
   ratingsByStaff: Record<string, MemberRatingView[]>;
+  /** Calibration adjustment trail per appraisal (newest first) — PGM audit. */
+  adjustmentsByStaff: Record<string, AdjustmentView[]>;
   /** The signed-in user's own rating per appraisal. */
   myRatings: Record<string, { bandLabel: string; comment: string | null }>;
   balance: BalanceResult;
+  /** Target band labels, top contributor → lowest. */
+  bandOrder: string[];
+  /** Panel finished when every staff member is rated by every panellist. */
+  panelComplete: boolean;
+  panelProgress: { rated: number; expected: number };
   isMember: boolean;
   isHr: boolean;
 }
@@ -136,10 +156,17 @@ export async function getPanelData(groupId: string): Promise<PanelData | null> {
     }
   }
 
+  const bandOrder = target.map((t) => t.label);
+  const rank = new Map(bandOrder.map((label, i) => [label, i]));
+  const rankOf = (label: string | null) => (label != null && rank.has(label) ? rank.get(label)! : 99);
+
   const staff: PanelStaff[] = staffRows.map((a) => {
     const id = String(a.id);
     const provisionalLabel = (a.rating_label as string | null) ?? null;
-    const panelBand = mode(bandsByStaff.get(id) ?? []) ?? provisionalLabel;
+    const memberBands = bandsByStaff.get(id) ?? [];
+    const panelBand = mode(memberBands) ?? provisionalLabel;
+    // A higher band has a lower rank index, so a panellist "upgrades" them.
+    const upgradeCandidate = memberBands.some((b) => rankOf(b) < rankOf(panelBand));
     return {
       appraisalId: id,
       employeeId: String(a.employee_id),
@@ -148,8 +175,33 @@ export async function getPanelData(groupId: string): Promise<PanelData | null> {
       provisionalScore: (a.final_score as number | null) ?? null,
       gate: (a.calibration_gate as CalibrationGate) ?? "provisional",
       panelBand,
+      upgradeCandidate,
+      ratedBy: memberBands.length,
     };
   });
+
+  const ratedFully = staff.filter((s) => members.length > 0 && s.ratedBy >= members.length).length;
+  const panelComplete = members.length > 0 && ratedFully === staff.length && staff.length > 0;
+
+  // Calibration adjustment trail per staff member (PGM audit), newest first.
+  const adjustmentsByStaff: Record<string, AdjustmentView[]> = {};
+  const staffIds = staff.map((s) => s.appraisalId);
+  if (staffIds.length) {
+    const { data: adjRows } = await supabase
+      .from("appraisal_calibration_adjustments")
+      .select("appraisal_id, previous_label, new_label, reason, created_at, adjuster:profiles!adjusted_by(full_name)")
+      .in("appraisal_id", staffIds)
+      .order("created_at", { ascending: false });
+    for (const r of (adjRows ?? []) as Record<string, unknown>[]) {
+      (adjustmentsByStaff[String(r.appraisal_id)] ??= []).push({
+        previousLabel: (r.previous_label as string | null) ?? null,
+        newLabel: (r.new_label as string | null) ?? null,
+        reason: (r.reason as string | null) ?? null,
+        byName: nameOf(r.adjuster),
+        at: String(r.created_at),
+      });
+    }
+  }
 
   // Balance the panel-agreed bands against the target.
   const counts: Record<string, number> = {};
@@ -168,8 +220,12 @@ export async function getPanelData(groupId: string): Promise<PanelData | null> {
     members,
     staff,
     ratingsByStaff,
+    adjustmentsByStaff,
     myRatings,
     balance,
+    bandOrder,
+    panelComplete,
+    panelProgress: { rated: ratedFully, expected: staff.length },
     isMember,
     isHr,
   };
