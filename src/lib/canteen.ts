@@ -5,6 +5,7 @@ import {
   type CanteenBooking,
   type DishDemand,
   type DishOptionGroup,
+  type EntitledPerson,
   type MealPeriod,
   type OptionDemand,
   type Reservation,
@@ -191,6 +192,42 @@ export async function getOptionDemand(serviceDate: string): Promise<OptionDemand
     return [];
   }
   return (data ?? []) as OptionDemand[];
+}
+
+/**
+ * Everyone entitled to eat on a service date (active + lunch_eligible), with
+ * their plate count (themselves + any booked visitors) and booking status —
+ * powers the serving-point entitled roster / walk-in activation.
+ */
+export async function getEntitledToday(serviceDate: string): Promise<EntitledPerson[]> {
+  const supabase = createClient();
+  const [{ data: profiles }, reservations] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .eq("is_active", true)
+      .eq("lunch_eligible", true)
+      .order("full_name", { ascending: true }),
+    getReservations(serviceDate),
+  ]);
+
+  const byEmail = new Map(reservations.map((r) => [r.person_email.toLowerCase(), r]));
+  return (profiles ?? []).map((p) => {
+    const email = (p.email as string | null) ?? null;
+    const r = email ? byEmail.get(email.toLowerCase()) : undefined;
+    const guestCount = r?.guest_count ?? 0;
+    return {
+      profileId: p.id as string,
+      name: (p.full_name as string | null) ?? email ?? "(no name)",
+      email,
+      guestCount,
+      plates: 1 + guestCount,
+      hasBooking: !!r,
+      bookingId: r?.booking_id ?? null,
+      collected: !!r?.collected_at,
+      dishLabel: r ? `${r.kitchen_name} · ${r.dish_name}` : null,
+    };
+  });
 }
 
 /** Per-person reservations for the campboss pack list (admin-scoped via RLS). */

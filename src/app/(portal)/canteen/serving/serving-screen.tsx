@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ScanLine, Search, UserPlus, X } from "lucide-react";
+import { CheckCircle2, ScanLine, Search, UserPlus, Utensils, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import type { CanteenDish, Reservation } from "@/types/canteen";
+import type { CanteenDish, EntitledPerson, Reservation } from "@/types/canteen";
 import { setReservationCollected } from "../campboss/actions";
 import {
   lookupWalkin,
@@ -20,9 +20,11 @@ type WalkinPerson = { id: string; name: string; email: string };
 export function ServingScreen({
   reservations,
   dishes,
+  entitled,
 }: {
   reservations: Reservation[];
   dishes: CanteenDish[];
+  entitled: EntitledPerson[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -52,6 +54,18 @@ export function ServingScreen({
       (a, b) => Number(!!a.collected_at) - Number(!!b.collected_at),
     );
   }, [reservations, query]);
+
+  const filteredEntitled = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = q
+      ? entitled.filter(
+          (p) => p.name.toLowerCase().includes(q) || (p.email ?? "").toLowerCase().includes(q),
+        )
+      : entitled;
+    return [...rows].sort((a, b) => Number(a.collected) - Number(b.collected));
+  }, [entitled, query]);
+  const totalPlates = entitled.reduce((s, p) => s + p.plates, 0);
+  const visitorPlates = entitled.reduce((s, p) => s + p.guestCount, 0);
 
   // Debounced directory search as the staff type a name into the validate box.
   useEffect(() => {
@@ -92,6 +106,34 @@ export function ServingScreen({
       } else {
         setFlash({ ok: false, msg: res.error ?? "Failed." });
       }
+    });
+  }
+
+  function collectById(bookingId: string, label: string) {
+    setFlash(null);
+    startTransition(async () => {
+      const res = await setReservationCollected(bookingId, true);
+      if (res.ok) {
+        setFlash({ ok: true, msg: `Collected: ${label}` });
+        router.refresh();
+      } else {
+        setFlash({ ok: false, msg: res.error ?? "Failed." });
+      }
+    });
+  }
+
+  /** Activate an entitled person: collect their booking, or open the walk-in picker. */
+  function activateEntitled(p: EntitledPerson) {
+    if (p.collected) return;
+    setFlash(null);
+    if (p.hasBooking && p.bookingId) {
+      collectById(p.bookingId, p.name);
+      return;
+    }
+    startTransition(async () => {
+      const res = await lookupWalkin(p.profileId);
+      if (res.ok && res.person) setWalkin(res.person);
+      else setFlash({ ok: false, msg: res.error ?? "Not entitled." });
     });
   }
 
@@ -337,6 +379,71 @@ export function ServingScreen({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Entitled roster: everyone allowed to eat today + their plate count, with
+          one-tap walk-in activation for the campboss. */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+            <Utensils className="h-4 w-4" /> Entitled to eat today
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {entitled.length} entitled · <span className="font-medium text-foreground">{totalPlates}</span> plates
+            {visitorPlates > 0 ? ` (incl. ${visitorPlates} visitor${visitorPlates === 1 ? "" : "s"})` : ""}
+          </p>
+        </div>
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 font-medium">Employee</th>
+                <th className="px-4 py-3 font-medium">Plates</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 text-right font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {filteredEntitled.map((p) => (
+                <tr key={p.profileId} className={cn(p.collected && "bg-green-50")}>
+                  <td className="px-4 py-3">
+                    <span className="block font-medium">{p.name}</span>
+                    {p.dishLabel && <span className="block text-xs text-muted-foreground">{p.dishLabel}</span>}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">
+                    {p.plates}
+                    {p.guestCount > 0 && (
+                      <span className="ml-1 text-xs text-muted-foreground">(+{p.guestCount} visitor{p.guestCount === 1 ? "" : "s"})</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {p.collected ? (
+                      <span className="text-xs font-medium text-green-700">Served</span>
+                    ) : p.hasBooking ? (
+                      <span className="text-xs text-muted-foreground">Booked</span>
+                    ) : (
+                      <span className="text-xs text-primary">No booking</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {p.collected ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
+                        <CheckCircle2 className="h-4 w-4" /> Done
+                      </span>
+                    ) : (
+                      <Button size="sm" variant={p.hasBooking ? "default" : "outline"} disabled={pending} onClick={() => activateEntitled(p)}>
+                        {p.hasBooking ? "Mark collected" : "Activate walk-in"}
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {filteredEntitled.length === 0 && (
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">No entitled employees.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

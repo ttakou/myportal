@@ -93,6 +93,21 @@ export interface Reservation {
   options: string;
 }
 
+/** An employee entitled to eat on a service date, with their plate count. */
+export interface EntitledPerson {
+  profileId: string;
+  name: string;
+  email: string | null;
+  /** Visitors/guests recorded on their booking. */
+  guestCount: number;
+  /** Total plates = themselves + guests. */
+  plates: number;
+  hasBooking: boolean;
+  bookingId: string | null;
+  collected: boolean;
+  dishLabel: string | null;
+}
+
 /** A row of the canteen_dish_demand view — powers the campboss dashboard. */
 export interface DishDemand {
   dish_id: string;
