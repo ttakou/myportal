@@ -5,6 +5,7 @@ import { getAccess } from "@/lib/auth";
 import { hasDirectReports } from "@/lib/appraisals";
 import { offshoreSubmenu } from "@/app/(portal)/offshore/_components/offshore-views";
 import { performanceSubmenu } from "@/app/(portal)/performance/_components/performance-views";
+import { canteenSubmenu } from "@/app/(portal)/canteen/_components/canteen-views";
 import { NavLinks, type NavLink } from "./nav-links";
 
 /**
@@ -39,6 +40,20 @@ export async function Sidebar({
         ...base,
         defaultSubKey: "mine",
         subItems: performanceSubmenu({ isHr, isManager }),
+      };
+    }
+    // Canteen: indented submenu of the module's real routes (menu / history /
+    // feedback for everyone, plus serving, management, entitlements and reports
+    // per role) — mirrors the gating on each canteen page.
+    if (s.route_path === "/canteen") {
+      return {
+        ...base,
+        subItems: canteenSubmenu({
+          canServe: access.isCanteenStaff,
+          canManage: access.isCanteenManager,
+          canEntitle: access.isHr,
+          canReport: access.isFinance || access.isCanteenManager,
+        }),
       };
     }
     // Offshore: everyone with the module gets an indented submenu (each view on
