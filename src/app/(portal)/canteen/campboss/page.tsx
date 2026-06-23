@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ShieldX } from "lucide-react";
+import { ArrowLeft, ShieldX, TrendingUp } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import {
   getDishDemand,
@@ -52,8 +52,18 @@ export default async function CampbossPage(
         >
           <ArrowLeft className="h-4 w-4" /> Canteen
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Campboss dashboard</h1>
-        <p className="text-muted-foreground">Live meal demand · {prettyDate}</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Campboss dashboard</h1>
+            <p className="text-muted-foreground">Live meal demand · {prettyDate}</p>
+          </div>
+          <Link
+            href="/canteen/forecast"
+            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+          >
+            <TrendingUp className="h-4 w-4" /> Plate forecast
+          </Link>
+        </div>
       </div>
 
       <RealtimeDashboard

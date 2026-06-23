@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, History, LayoutDashboard, MessageSquare, ScanLine, Settings, UtensilsCrossed, Users } from "lucide-react";
+import { BarChart3, History, LayoutDashboard, MessageSquare, ScanLine, Settings, TrendingUp, UtensilsCrossed, Users } from "lucide-react";
 import { getCanteenCutoff, getMenu, getMyBookings, getServedMealPeriods, resolveServiceDate, today } from "@/lib/canteen";
 import { getAccess } from "@/lib/auth";
 import { MenuBoard } from "./_components/menu-board";
@@ -94,6 +94,13 @@ export default async function CanteenPage(
               >
                 <LayoutDashboard className="h-4 w-4" />
                 Campboss dashboard
+              </Link>
+              <Link
+                href="/canteen/forecast"
+                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Forecast
               </Link>
             </>
           )}
