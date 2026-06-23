@@ -81,6 +81,8 @@ export interface Reservation {
   service_date: string;
   meal_period: MealPeriod;
   guest_count: number;
+  /** Visitor plates handed over so far (0..guest_count). */
+  collected_guest_count: number;
   prepared_at: string | null;
   finalized_at: string | null;
   collected_at: string | null;
@@ -100,10 +102,13 @@ export interface EntitledPerson {
   email: string | null;
   /** Visitors/guests recorded on their booking. */
   guestCount: number;
+  /** Visitor plates already handed over (0..guestCount). */
+  guestsCollected: number;
   /** Total plates = themselves + guests. */
   plates: number;
   hasBooking: boolean;
   bookingId: string | null;
+  /** The host's own plate has been collected. */
   collected: boolean;
   dishLabel: string | null;
 }

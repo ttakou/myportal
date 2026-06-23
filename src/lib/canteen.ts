@@ -324,6 +324,7 @@ export async function getEntitledToday(serviceDate: string): Promise<EntitledPer
       name: (p.full_name as string | null) ?? email ?? "(no name)",
       email,
       guestCount,
+      guestsCollected: r?.collected_guest_count ?? 0,
       plates: 1 + guestCount,
       hasBooking: !!r,
       bookingId: r?.booking_id ?? null,

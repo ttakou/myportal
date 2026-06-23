@@ -182,7 +182,10 @@ export async function serveWalkin(
         status: "served",
         collected_at: now,
         prepared_at: now,
-        ...(guests > 0 ? { guest_count: guests } : {}),
+        // Visitors present at a walk-in serve are handed their plate now, so
+        // record them as collected too. Guests who come later are checked off
+        // separately via setGuestCollected.
+        ...(guests > 0 ? { guest_count: guests, collected_guest_count: guests } : {}),
       })
       .eq("id", existing.id);
     if (error) return { ok: false, error: error.message };
@@ -195,6 +198,7 @@ export async function serveWalkin(
       service_date: dish.service_date,
       meal_period: dish.meal_period,
       guest_count: guests,
+      collected_guest_count: guests,
       status: "served",
       prepared_at: now,
       collected_at: now,

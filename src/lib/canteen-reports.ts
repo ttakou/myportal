@@ -44,43 +44,58 @@ export async function getReportData(): Promise<ReportData> {
   const costPerMeal = Number(settings.cost_per_meal ?? 6);
   const subsidyPerMeal = Number(settings.subsidy_per_meal ?? 4);
 
-  // Lunch history for the period (admin sees all tenant rows via RLS).
+  // Lunch history for the period (admin sees all tenant rows via RLS). Counts
+  // are in *covers* (plates), not bookings: a booking serves the host plus
+  // however many visitor plates were actually collected, so a host + 2 guests
+  // is 3 served covers. booked uses the declared guest_count (covers committed);
+  // collected uses collected_guest_count (covers actually handed over); a missed
+  // booking forfeits its whole declared cover.
   const { data: hist } = await supabase
     .from("canteen_lunch_history")
-    .select("outcome, service_date")
+    .select("outcome, guest_count, collected_guest_count")
     .gte("service_date", start);
-  const rows = hist ?? [];
+  const rows = (hist ?? []) as {
+    outcome: string;
+    guest_count: number | null;
+    collected_guest_count: number | null;
+  }[];
 
   let booked = 0, collected = 0, missed = 0, cancelled = 0, servedToday = 0;
-  for (const r of rows as { outcome: string; service_date: string }[]) {
+  for (const r of rows) {
+    const declared = 1 + (r.guest_count ?? 0);
+    const served = 1 + (r.collected_guest_count ?? 0);
     if (r.outcome === "cancelled") cancelled++;
-    else booked++;
-    if (r.outcome === "collected") collected++;
-    if (r.outcome === "missed") missed++;
+    else booked += declared;
+    if (r.outcome === "collected") collected += served;
+    if (r.outcome === "missed") missed += declared;
   }
-  // served today
-  const { count: todayCount } = await supabase
+  // served today (host plate + visitor plates collected today)
+  const { data: todayRows } = await supabase
     .from("canteen_bookings")
-    .select("id", { count: "exact", head: true })
+    .select("collected_guest_count")
     .eq("service_date", today)
     .not("collected_at", "is", null);
-  servedToday = todayCount ?? 0;
+  servedToday = (todayRows ?? []).reduce(
+    (s, r) => s + 1 + ((r.collected_guest_count as number | null) ?? 0),
+    0,
+  );
 
-  const prepared = collected + missed; // committed past meals
+  const prepared = collected + missed; // committed past covers
   const noShowRate = prepared > 0 ? Math.round((missed / prepared) * 100) : 0;
   const wasteRate = noShowRate; // uncollected prepared share (same basis here)
 
-  // Department consumption (collected this period)
+  // Department consumption (covers collected this period)
   const { data: deptRows } = await supabase
     .from("canteen_bookings")
-    .select("department:profiles!canteen_bookings_profile_id_fkey(department)")
+    .select("collected_guest_count, department:profiles!canteen_bookings_profile_id_fkey(department)")
     .gte("service_date", start)
     .not("collected_at", "is", null);
   const deptMap = new Map<string, number>();
   for (const row of (deptRows ?? []) as Record<string, any>[]) {
     const dep = Array.isArray(row.department) ? row.department[0] : row.department;
     const name = dep?.department || "Unassigned";
-    deptMap.set(name, (deptMap.get(name) ?? 0) + 1);
+    const covers = 1 + (Number(row.collected_guest_count) || 0);
+    deptMap.set(name, (deptMap.get(name) ?? 0) + covers);
   }
   const byDept = [...deptMap.entries()]
     .map(([department, c]) => ({ department, collected: c }))

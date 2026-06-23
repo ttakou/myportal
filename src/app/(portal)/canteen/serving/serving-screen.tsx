@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ScanLine, Search, UserPlus, Utensils, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Minus, Plus, ScanLine, Search, UserPlus, Utensils, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { CanteenDish, EntitledPerson, Reservation } from "@/types/canteen";
-import { setReservationCollected } from "../campboss/actions";
+import { setGuestCollected, setReservationCollected } from "../campboss/actions";
 import {
   lookupWalkin,
   searchEmployees,
@@ -73,18 +73,23 @@ export function ServingScreen({
     );
   }, [reservations, query]);
 
-  // Roster shows only those still to be served.
+  // Plates still to hand over for a person: their own (if not collected) plus
+  // any visitor plates not yet checked off. Fully served when this hits zero.
+  const outstanding = (p: EntitledPerson) =>
+    (p.collected ? 0 : 1) + (p.guestCount - p.guestsCollected);
+
+  // Roster shows only those still to be served (host and/or any visitor).
   const filteredEntitled = useMemo(() => {
     const q = query.trim().toLowerCase();
     return entitled.filter(
       (p) =>
-        !p.collected &&
+        outstanding(p) > 0 &&
         (!q || p.name.toLowerCase().includes(q) || (p.email ?? "").toLowerCase().includes(q)),
     );
   }, [entitled, query]);
-  const remaining = entitled.filter((p) => !p.collected);
-  const remainingPlates = remaining.reduce((s, p) => s + p.plates, 0);
-  const remainingVisitors = remaining.reduce((s, p) => s + p.guestCount, 0);
+  const remaining = entitled.filter((p) => outstanding(p) > 0);
+  const remainingPlates = remaining.reduce((s, p) => s + outstanding(p), 0);
+  const remainingVisitors = remaining.reduce((s, p) => s + (p.guestCount - p.guestsCollected), 0);
   const servedEntitled = entitled.length - remaining.length;
 
   // Debounced directory search as the staff type a name into the validate box.
@@ -135,6 +140,28 @@ export function ServingScreen({
       const res = await setReservationCollected(bookingId, true);
       if (res.ok) {
         setFlash({ ok: true, msg: `Collected: ${label}` });
+        router.refresh();
+      } else {
+        setFlash({ ok: false, msg: res.error ?? "Failed." });
+      }
+    });
+  }
+
+  /** Check one of a person's visitor plates off (or undo it) as they arrive. */
+  function serveVisitor(p: EntitledPerson, delta: 1 | -1) {
+    if (!p.bookingId) return;
+    setFlash(null);
+    startTransition(async () => {
+      const res = await setGuestCollected(p.bookingId!, delta);
+      if (res.ok) {
+        const n = p.guestsCollected + delta;
+        setFlash({
+          ok: true,
+          msg:
+            delta > 0
+              ? `Visitor served for ${p.name} (${n}/${p.guestCount})`
+              : `Visitor undone for ${p.name} (${n}/${p.guestCount})`,
+        });
         router.refresh();
       } else {
         setFlash({ ok: false, msg: res.error ?? "Failed." });
@@ -480,7 +507,14 @@ export function ServingScreen({
                   <td className="px-4 py-3 tabular-nums">
                     {p.plates}
                     {p.guestCount > 0 && (
-                      <span className="ml-1 text-xs text-muted-foreground">(+{p.guestCount} visitor{p.guestCount === 1 ? "" : "s"})</span>
+                      <span
+                        className={cn(
+                          "ml-1 text-xs",
+                          p.guestsCollected >= p.guestCount ? "text-green-700" : "text-muted-foreground",
+                        )}
+                      >
+                        ({p.guestsCollected}/{p.guestCount} visitor{p.guestCount === 1 ? "" : "s"} served)
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -492,16 +526,43 @@ export function ServingScreen({
                       <span className="text-xs text-primary">No booking</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    {p.collected ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
-                        <CheckCircle2 className="h-4 w-4" /> Done
-                      </span>
-                    ) : (
-                      <Button size="sm" variant={p.hasBooking ? "default" : "outline"} disabled={pending} onClick={() => activateEntitled(p)}>
-                        {p.hasBooking ? "Mark collected" : "Activate walk-in"}
-                      </Button>
-                    )}
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {p.guestCount > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-md border px-1">
+                          <button
+                            type="button"
+                            aria-label="Undo a visitor plate"
+                            disabled={pending || p.guestsCollected <= 0}
+                            onClick={() => serveVisitor(p, -1)}
+                            className="rounded p-1 hover:bg-accent disabled:opacity-40"
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <span className="min-w-[2.5rem] text-center text-xs tabular-nums">
+                            {p.guestsCollected}/{p.guestCount}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="Serve a visitor plate"
+                            disabled={pending || p.guestsCollected >= p.guestCount}
+                            onClick={() => serveVisitor(p, 1)}
+                            className="rounded p-1 hover:bg-accent disabled:opacity-40"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      )}
+                      {p.collected ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
+                          <CheckCircle2 className="h-4 w-4" /> Done
+                        </span>
+                      ) : (
+                        <Button size="sm" variant={p.hasBooking ? "default" : "outline"} disabled={pending} onClick={() => activateEntitled(p)}>
+                          {p.hasBooking ? "Mark collected" : "Activate walk-in"}
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

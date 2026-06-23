@@ -191,6 +191,7 @@ export type Database = {
       canteen_bookings: {
         Row: {
           collected_at: string | null
+          collected_guest_count: number
           created_at: string
           dish_id: string
           finalized_at: string | null
@@ -208,6 +209,7 @@ export type Database = {
         }
         Insert: {
           collected_at?: string | null
+          collected_guest_count?: number
           created_at?: string
           dish_id: string
           finalized_at?: string | null
@@ -225,6 +227,7 @@ export type Database = {
         }
         Update: {
           collected_at?: string | null
+          collected_guest_count?: number
           created_at?: string
           dish_id?: string
           finalized_at?: string | null
@@ -3424,6 +3427,7 @@ export type Database = {
         Row: {
           booking_id: string | null
           collected_at: string | null
+          collected_guest_count: number | null
           dish_name: string | null
           finalized_at: string | null
           guest_count: number | null
@@ -3480,6 +3484,7 @@ export type Database = {
         Row: {
           booking_id: string | null
           collected_at: string | null
+          collected_guest_count: number | null
           created_at: string | null
           dish_name: string | null
           finalized_at: string | null
