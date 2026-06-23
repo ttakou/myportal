@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useStatusTransition } from "@/components/activity";
 import {
   AlertTriangle,
@@ -98,6 +98,7 @@ import { resolveManagementView } from "./offshore-views";
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
   | "dashboard"
+  | "board"
   | "installations"
   | "crews"
   | "calendar"
@@ -150,6 +151,9 @@ export function OffshoreManagement(props: {
           roster={props.roster}
         />
       )}
+      {tab === "board" && (
+        <LiveBoardPanel people={props.pob.people} emergencyRoles={props.emergencyRoles} />
+      )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
       {tab === "crews" && (
         <CrewsPanel crews={props.crews} installations={props.installations} suggestions={props.suggestions} />
@@ -198,6 +202,197 @@ const EMERGENCY_ORDER: EmergencyRoleKind[] = [
   "headcount_principal",
   "headcount_assistant",
 ];
+
+/** Compact leader labels for the live board chips. */
+const LEADER_SHORT: Record<EmergencyRoleKind, string> = {
+  evac_leader: "Evac lead",
+  evac_assistant: "Evac asst",
+  headcount_principal: "HC lead",
+  headcount_assistant: "HC asst",
+};
+
+/**
+ * Live offshore board — who is on board right now, grouped by muster station
+ * (lifeboat), each with its assigned room/bed, plus the evacuation & head-count
+ * leaders for the current rotation window (flagged by whether the leader is
+ * actually on board). Auto-refreshes so it can run on a control-room screen.
+ */
+function LiveBoardPanel({
+  people,
+  emergencyRoles,
+}: {
+  people: PobOnboard[];
+  emergencyRoles: EmergencyRole[];
+}) {
+  const router = useRouter();
+  const [auto, setAuto] = useState(true);
+
+  useEffect(() => {
+    if (!auto) return;
+    const t = setInterval(() => router.refresh(), 30000);
+    return () => clearInterval(t);
+  }, [auto, router]);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Active rotation window for the emergency org: the one covering today, else
+  // the most recent on record.
+  const windows = useMemo(() => {
+    const seen = new Map<string, { from: string; to: string }>();
+    for (const r of emergencyRoles) {
+      const k = `${r.from_date}|${r.to_date}`;
+      if (!seen.has(k)) seen.set(k, { from: r.from_date, to: r.to_date });
+    }
+    return [...seen.values()].sort((a, b) => b.from.localeCompare(a.from));
+  }, [emergencyRoles]);
+  const active = useMemo(
+    () => windows.find((w) => w.from <= today && w.to >= today) ?? windows[0] ?? null,
+    [windows, today],
+  );
+  const roles = useMemo(
+    () =>
+      active
+        ? emergencyRoles.filter((r) => r.from_date === active.from && r.to_date === active.to)
+        : [],
+    [active, emergencyRoles],
+  );
+
+  const onboardIds = useMemo(
+    () => new Set(people.map((p) => p.profile_id).filter(Boolean) as string[]),
+    [people],
+  );
+
+  // Group on-board people by muster station (lifeboat); the "—" bucket collects
+  // anyone without one — a safety gap worth surfacing prominently.
+  const groups = useMemo(() => {
+    const m = new Map<string, PobOnboard[]>();
+    for (const p of people) {
+      const lb = p.lifeboat || "—";
+      const list = m.get(lb) ?? [];
+      list.push(p);
+      m.set(lb, list);
+    }
+    return [...m.entries()]
+      .sort(([a], [b]) => (a === "—" ? 1 : b === "—" ? -1 : a.localeCompare(b)))
+      .map(([lb, list]) => ({
+        lb,
+        people: list.sort((x, y) => x.name.localeCompare(y.name)),
+        roles: roles.filter((r) => r.lifeboat === lb),
+      }));
+  }, [people, roles]);
+
+  const visitorCount = people.filter((p) => p.category === "visitor").length;
+  const noBed = people.filter((p) => !p.room_id).length;
+  const stationCount = groups.filter((g) => g.lb !== "—").length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-card px-3 py-2 text-sm">
+        <span className="text-base font-semibold">{people.length} on board</span>
+        <span className="text-muted-foreground">· {stationCount} muster station(s)</span>
+        {visitorCount > 0 && <span className="text-muted-foreground">· {visitorCount} visitor(s)</span>}
+        {noBed > 0 && <span className="font-medium text-destructive">· {noBed} without a bed</span>}
+        {active && (
+          <span className="text-xs text-muted-foreground">Emergency org: {active.from} → {active.to}</span>
+        )}
+        <label className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+          Auto-refresh (30s)
+        </label>
+        <Button size="sm" variant="outline" onClick={() => router.refresh()}>
+          Refresh
+        </Button>
+      </div>
+
+      {people.length === 0 && (
+        <p className="rounded-md border border-dashed bg-muted/30 px-3 py-6 text-center text-sm text-muted-foreground">
+          Nobody is currently on board.
+        </p>
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {groups.map((g) => (
+          <div key={g.lb} className="rounded-lg border bg-card">
+            <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+              <span className={cn("font-semibold", g.lb === "—" && "text-destructive")}>
+                {g.lb === "—" ? "No muster station" : `Muster ${g.lb}`}
+              </span>
+              <span className="text-xs font-medium text-muted-foreground">{g.people.length} on board</span>
+            </div>
+
+            {/* Evacuation & head-count leaders for this station (current window). */}
+            {g.lb !== "—" && (
+              <div className="flex flex-wrap gap-1.5 border-b bg-muted/30 px-3 py-2">
+                {EMERGENCY_ORDER.map((kind) => {
+                  const holder = g.roles.find((r) => r.role === kind);
+                  const filled = Boolean(holder?.person_name);
+                  const onBoard = holder?.profile_id ? onboardIds.has(holder.profile_id) : false;
+                  return (
+                    <span
+                      key={kind}
+                      title={EMERGENCY_ROLE_LABEL[kind] + (filled && !onBoard ? " — not on board" : "")}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
+                        !filled && "border-dashed text-muted-foreground",
+                        filled && !onBoard && "border-amber-300 bg-amber-50 text-amber-700",
+                        onBoard && "border-green-300 bg-green-50 text-green-700",
+                      )}
+                    >
+                      <span className="font-semibold">{LEADER_SHORT[kind]}</span>
+                      <span>{holder?.person_name ?? "—"}</span>
+                      {filled && (
+                        <span
+                          className={cn(
+                            "ml-0.5 h-1.5 w-1.5 rounded-full",
+                            onBoard ? "bg-green-500" : "bg-amber-400",
+                          )}
+                        />
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            <ul className="divide-y">
+              {g.people.map((p) => {
+                const room = p.room_label
+                  ? p.bed_no
+                    ? `${p.room_label} · ${p.bed_no}`
+                    : p.room_label
+                  : null;
+                const leads = g.roles.filter((r) => r.profile_id && r.profile_id === p.profile_id);
+                return (
+                  <li key={p.trip_id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                    <span className="truncate font-medium">{p.name}</span>
+                    {p.category === "visitor" && (
+                      <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                        visitor
+                      </span>
+                    )}
+                    {leads.map((r) => (
+                      <span
+                        key={r.id}
+                        title={EMERGENCY_ROLE_LABEL[r.role]}
+                        className="shrink-0 rounded bg-green-100 px-1 py-0.5 text-[10px] font-semibold text-green-700"
+                      >
+                        {LEADER_SHORT[r.role]}
+                      </span>
+                    ))}
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">{p.crew_name ?? ""}</span>
+                    <span className={cn("shrink-0 text-xs", room ? "text-foreground" : "text-destructive")}>
+                      {room ?? "no bed"}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** Per rotation window + muster group: evacuation & head-count role holders. */
 function EmergencyRolesPanel({

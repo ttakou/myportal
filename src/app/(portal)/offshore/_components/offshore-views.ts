@@ -5,6 +5,7 @@
 
 export type OffshoreViewKey =
   | "dashboard"
+  | "board"
   | "crews"
   | "calendar"
   | "manifests"
@@ -34,6 +35,7 @@ export interface OffshoreView {
 export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "mytrips", label: "My trips & requests", icon: "Ship" },
   { key: "dashboard", label: "POB & dashboards", icon: "LayoutGrid" },
+  { key: "board", label: "Live board", icon: "Radio" },
   { key: "crews", label: "Crew change", icon: "CalendarClock" },
   { key: "calendar", label: "Rotation calendar", icon: "CalendarRange" },
   { key: "manifests", label: "Manifests", icon: "ClipboardList" },
