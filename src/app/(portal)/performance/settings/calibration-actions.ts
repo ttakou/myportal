@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
+import { dispatchEvent } from "@/lib/notify-dispatch";
 import type { ActionResult } from "@/types/actions";
 import {
   GROUP_BYS,
@@ -101,6 +102,45 @@ export async function setPotentialRating(
   if (error) return { ok: false, error: error.message };
   revalidatePath("/performance/calibration");
   return { ok: true };
+}
+
+/**
+ * Release ratings: from the admin centre, the PGM/HR triggers the finalised
+ * ratings for a cycle to be sent to each employee and their line manager. Fires
+ * the configurable `rating_changed` notification per finalised appraisal (those
+ * with a final score and label), so delivery follows the tenant's rules.
+ */
+export async function sendRatingsToStaff(
+  cycleId: string,
+): Promise<ActionResult & { sent?: number }> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR/PGM can release ratings." };
+  if (!cycleId) return { ok: false, error: "Pick a cycle." };
+
+  const supabase = createClient();
+  const { data: aps, error } = await supabase
+    .from("appraisals")
+    .select("id, tenant_id, employee_id, manager_id, final_score, rating_label")
+    .eq("cycle_id", cycleId)
+    .not("final_score", "is", null)
+    .not("rating_label", "is", null);
+  if (error) return { ok: false, error: error.message };
+
+  const rows = (aps ?? []) as Record<string, unknown>[];
+  if (rows.length === 0) return { ok: false, error: "No finalised ratings to send for this cycle." };
+
+  let sent = 0;
+  for (const a of rows) {
+    await dispatchEvent("rating_changed", {
+      tenantId: String(a.tenant_id),
+      employeeIds: a.employee_id ? [String(a.employee_id)] : [],
+      managerIds: a.manager_id ? [String(a.manager_id)] : [],
+      placeholders: { rating: `${a.final_score ?? "—"}% (${a.rating_label ?? "—"})` },
+      url: "/performance/appraisals",
+    });
+    sent += 1;
+  }
+  revalidatePath("/performance/settings/calibration");
+  return { ok: true, sent };
 }
 
 export async function deleteCalibrationGroup(id: string): Promise<ActionResult> {

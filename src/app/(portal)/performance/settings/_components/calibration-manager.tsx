@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, Check, Lock, LockOpen, BadgeCheck, Users } from "lucide-react";
+import { Plus, Trash2, Check, Lock, LockOpen, BadgeCheck, Users, Send } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,7 @@ import {
   createCalibrationGroup,
   deleteCalibrationGroup,
   setCalibrationGroupStatus,
+  sendRatingsToStaff,
 } from "../calibration-actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
@@ -43,7 +44,53 @@ export function CalibrationManager({
     <div className="space-y-6">
       <SettingsForm settings={settings} />
       <GroupsManager groups={groups} cycles={cycles} />
+      <ReleaseRatings cycles={cycles} />
     </div>
+  );
+}
+
+function ReleaseRatings({ cycles }: { cycles: CycleOpt[] }) {
+  const [cycleId, setCycleId] = useState(cycles[0]?.id ?? "");
+  const [pending, startTransition] = useStatusTransition("Sending…");
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  function send() {
+    setError(null);
+    setResult(null);
+    startTransition(async () => {
+      const res = await sendRatingsToStaff(cycleId);
+      if (!res.ok) setError(res.error ?? "Couldn't send ratings.");
+      else setResult(`Sent ${res.sent ?? 0} rating${res.sent === 1 ? "" : "s"} to staff and their line managers.`);
+    });
+  }
+
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-5">
+      <div>
+        <h2 className="font-medium">Release ratings</h2>
+        <p className="text-sm text-muted-foreground">
+          Notify every employee and their line manager of their finalised rating for a cycle.
+          Delivery follows the tenant&apos;s notification rules.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-muted-foreground">
+          Cycle
+          <select value={cycleId} onChange={(e) => setCycleId(e.target.value)} className={cn(field, "mt-0.5 block py-1.5")}>
+            <option value="">Select a cycle…</option>
+            {cycles.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </label>
+        <Button size="sm" disabled={pending || !cycleId} onClick={send}>
+          <Send className="h-4 w-4" /> Send ratings
+        </Button>
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {result && !pending && <p className="text-sm text-green-700">{result}</p>}
+    </section>
   );
 }
 
