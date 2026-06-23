@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Car, UserPlus } from "lucide-react";
+import { Car, UserCheck, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
+  accompanyingSummary,
+  accompanyingTotal,
   VEHICLE_TYPES,
   VISITOR_STATUS_LABEL,
   type Visitor,
@@ -18,6 +20,8 @@ import {
   checkInVisitor,
   checkOutVisitor,
   preRegisterVisitor,
+  searchHosts,
+  type HostOption,
 } from "../actions";
 
 const STATUS_STYLE: Record<VisitorStatus, string> = {
@@ -31,14 +35,43 @@ function vehicleLabel(v: Visitor): string | null {
   return [v.vehicle_type, v.vehicle_plate].filter(Boolean).join(" · ") || null;
 }
 
+/** A small labelled 0–50 counter for an accompanying-minor age band. */
+function MinorCount({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+      {label}
+      <input
+        type="number"
+        min={0}
+        max={50}
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="0"
+        className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
+      />
+    </label>
+  );
+}
+
 export function VisitorsBoard({
   visitDate,
   visitors,
   isAdmin,
+  departments,
 }: {
   visitDate: string;
   visitors: Visitor[];
   isAdmin: boolean;
+  departments: string[];
 }) {
   const { can } = usePermissions();
   // Front-line reception/security: may check visitors in and out.
@@ -51,6 +84,53 @@ export function VisitorsBoard({
   const [purpose, setPurpose] = useState("");
   const [vehicleType, setVehicleType] = useState("");
   const [vehiclePlate, setVehiclePlate] = useState("");
+  // Accompanying minors, by age band — captured for security/muster headcount.
+  const [infants, setInfants] = useState("");
+  const [children, setChildren] = useState("");
+  const [adolescents, setAdolescents] = useState("");
+  // Assign the visit to an individual host and/or a department/service.
+  const [service, setService] = useState("");
+  const [hostId, setHostId] = useState<string | null>(null);
+  const [hostQuery, setHostQuery] = useState("");
+  const [hostOptions, setHostOptions] = useState<HostOption[]>([]);
+  const [showHosts, setShowHosts] = useState(false);
+
+  // Debounced host directory search as the user types a name.
+  useEffect(() => {
+    if (hostId) return; // a host is already chosen
+    const q = hostQuery.trim();
+    if (q.length < 2) {
+      setHostOptions([]);
+      return;
+    }
+    let active = true;
+    const t = setTimeout(async () => {
+      const res = await searchHosts(q);
+      if (active) {
+        setHostOptions(res);
+        setShowHosts(true);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [hostQuery, hostId]);
+
+  function resetForm() {
+    setFullName("");
+    setCompany("");
+    setPurpose("");
+    setVehicleType("");
+    setVehiclePlate("");
+    setInfants("");
+    setChildren("");
+    setAdolescents("");
+    setService("");
+    setHostId(null);
+    setHostQuery("");
+    setHostOptions([]);
+  }
 
   // Reception check-in dialog (captures badge + vehicle type/plate on arrival).
   const [checkIn, setCheckIn] = useState<Visitor | null>(null);
@@ -68,18 +148,30 @@ export function VisitorsBoard({
     });
   }
 
+  function submit(checkInNow: boolean) {
+    run(
+      () =>
+        preRegisterVisitor({
+          fullName,
+          company,
+          purpose,
+          visitDate,
+          vehicleType,
+          vehiclePlate,
+          infants: Number(infants) || 0,
+          children: Number(children) || 0,
+          adolescents: Number(adolescents) || 0,
+          hostId,
+          service,
+          checkInNow,
+        }),
+      resetForm,
+    );
+  }
+
   function register(e: React.FormEvent) {
     e.preventDefault();
-    run(
-      () => preRegisterVisitor({ fullName, company, purpose, visitDate, vehicleType, vehiclePlate }),
-      () => {
-        setFullName("");
-        setCompany("");
-        setPurpose("");
-        setVehicleType("");
-        setVehiclePlate("");
-      },
-    );
+    submit(false);
   }
 
   return (
@@ -132,9 +224,98 @@ export function VisitorsBoard({
           placeholder="Vehicle plate (optional)"
           className="rounded-md border bg-background px-3 py-2 text-sm"
         />
-        <Button type="submit" disabled={pending}>
-          <UserPlus className="h-4 w-4" /> Pre-register
-        </Button>
+        {/* Assign to an individual host (employee directory typeahead). */}
+        <div className="relative">
+          {hostId ? (
+            <div className="flex items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 truncate">
+                <UserCheck className="h-4 w-4 shrink-0 text-primary" />
+                <span className="truncate">{hostQuery || "Host"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setHostId(null);
+                  setHostQuery("");
+                }}
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label="Clear host"
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <input
+              value={hostQuery}
+              onChange={(e) => setHostQuery(e.target.value)}
+              onFocus={() => hostOptions.length > 0 && setShowHosts(true)}
+              onBlur={() => setTimeout(() => setShowHosts(false), 150)}
+              placeholder="Assign to host (optional)"
+              autoComplete="off"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          )}
+          {showHosts && !hostId && hostOptions.length > 0 && (
+            <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
+              {hostOptions.map((h) => (
+                <li key={h.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setHostId(h.id);
+                      setHostQuery(h.name);
+                      setShowHosts(false);
+                    }}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-accent"
+                  >
+                    <span className="truncate font-medium">{h.name}</span>
+                    {h.department && (
+                      <span className="shrink-0 text-xs text-muted-foreground">{h.department}</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {/* Assign to a department / service. */}
+        <select
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+          className="rounded-md border bg-background px-3 py-2 text-sm"
+        >
+          <option value="">Assign to service (optional)</option>
+          {departments.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        <fieldset className="grid grid-cols-3 gap-2 sm:col-span-2 lg:col-span-3">
+          <legend className="mb-1 text-xs font-medium text-muted-foreground">
+            Accompanying minors (optional)
+          </legend>
+          <MinorCount label="Infants" value={infants} onChange={setInfants} />
+          <MinorCount label="Children" value={children} onChange={setChildren} />
+          <MinorCount label="Adolescents" value={adolescents} onChange={setAdolescents} />
+        </fieldset>
+        <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-3">
+          <Button type="submit" disabled={pending}>
+            <UserPlus className="h-4 w-4" /> Pre-register
+          </Button>
+          {canOperate && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => submit(true)}
+              title="Register a walk-in who is already here, and check them in now"
+            >
+              <UserCheck className="h-4 w-4" /> Register &amp; check in
+            </Button>
+          )}
+        </div>
       </form>
       )}
 
@@ -162,8 +343,17 @@ export function VisitorsBoard({
                     {[v.company, v.purpose].filter(Boolean).join(" · ") || "—"}
                     {v.badge_no && ` · Badge ${v.badge_no}`}
                   </div>
+                  {accompanyingTotal(v) > 0 && (
+                    <div className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                      <Users className="h-3 w-3" /> +{accompanyingTotal(v)} minor
+                      {accompanyingTotal(v) === 1 ? "" : "s"} ({accompanyingSummary(v)})
+                    </div>
+                  )}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{v.host_name ?? "—"}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  <span className="block">{v.host_name ?? "—"}</span>
+                  {v.service && <span className="block text-xs">{v.service}</span>}
+                </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {vehicle ? (
                     <span className="inline-flex items-center gap-1.5">

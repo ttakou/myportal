@@ -12,6 +12,31 @@ function revalidate() {
   revalidatePath("/visitors/muster");
 }
 
+export type HostOption = { id: string; name: string; department: string | null };
+
+/** Typeahead for assigning a visit to an individual host (employee directory). */
+export async function searchHosts(query: string): Promise<HostOption[]> {
+  const gate = await requireModule("visitors", "create");
+  if (gate) return [];
+  const q = query.trim().replace(/[%_,()]/g, " ").trim();
+  if (q.length < 2) return [];
+  const supabase = createClient();
+  const like = `%${q}%`;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, department")
+    .eq("is_active", true)
+    .ilike("full_name", like)
+    .order("full_name")
+    .limit(8);
+  if (error) return [];
+  return (data ?? []).map((p) => ({
+    id: p.id as string,
+    name: (p.full_name as string | null) ?? "(no name)",
+    department: (p.department as string | null) ?? null,
+  }));
+}
+
 export async function preRegisterVisitor(input: {
   fullName: string;
   company?: string;
@@ -19,13 +44,25 @@ export async function preRegisterVisitor(input: {
   visitDate: string;
   vehicleType?: string;
   vehiclePlate?: string;
+  infants?: number;
+  children?: number;
+  adolescents?: number;
+  /** Assign the visit to an individual host (employee id). */
+  hostId?: string | null;
+  /** Assign the visit to a department / service. */
+  service?: string | null;
+  /** Walk-in: create the visitor already checked in (on site). */
+  checkInNow?: boolean;
 }): Promise<ActionResult> {
-  const gate = await requireModule("visitors", "create");
+  // A walk-in check-in needs reception/operate rights; a plain pre-registration
+  // only needs create.
+  const gate = await requireModule("visitors", input.checkInNow ? "operate" : "create");
   if (gate) return gate;
   if (!input.fullName.trim()) return { ok: false, error: "Visitor name is required." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.visitDate)) {
     return { ok: false, error: "Invalid visit date." };
   }
+  const minors = (n: number | undefined) => Math.max(0, Math.min(50, Math.round(Number(n) || 0)));
   const supabase = createClient();
   const { data: tenant } = await supabase
     .from("tenants")
@@ -34,7 +71,7 @@ export async function preRegisterVisitor(input: {
     .maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
 
-  const { error } = await supabase.from("visitors").insert({
+  const row: Record<string, unknown> = {
     tenant_id: tenant.id,
     full_name: input.fullName.trim(),
     company: input.company?.trim() || null,
@@ -42,7 +79,21 @@ export async function preRegisterVisitor(input: {
     visit_date: input.visitDate,
     vehicle_type: input.vehicleType?.trim() || null,
     vehicle_plate: input.vehiclePlate?.trim() || null,
-  });
+    service: input.service?.trim() || null,
+    accompanying_infants: minors(input.infants),
+    accompanying_children: minors(input.children),
+    accompanying_adolescents: minors(input.adolescents),
+  };
+  // Assign to an individual host when picked (else the column default / RLS
+  // sets the registering user). RLS still applies: a non-admin may only host
+  // their own visitors.
+  if (input.hostId) row.host_id = input.hostId;
+  // Walk-in: create already on site.
+  if (input.checkInNow) {
+    row.status = "checked_in";
+    row.check_in_at = new Date().toISOString();
+  }
+  const { error } = await supabase.from("visitors").insert(row);
   if (error) return { ok: false, error: error.message };
   revalidate();
   return { ok: true };

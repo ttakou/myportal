@@ -4,11 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Printer, Radio, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { Visitor } from "@/types/visitors";
+import { accompanyingSummary, accompanyingTotal, type Visitor } from "@/types/visitors";
 import type { StaffOnSite } from "@/types/staff-attendance";
 
 const VISITOR_SELECT =
-  "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)";
+  "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, accompanying_infants, accompanying_children, accompanying_adolescents, host:profiles!visitors_host_id_fkey(full_name)";
 const STAFF_SELECT =
   "profile_id, check_in_at, profiles!staff_attendance_profile_id_fkey(full_name, department, job_title)";
 
@@ -100,7 +100,9 @@ export function MusterList({
     };
   }, [refetchVisitors, refetchStaff]);
 
-  const total = staff.length + onSite.length;
+  // Accompanying minors are physically on site too — count them in the muster.
+  const minors = onSite.reduce((s, v) => s + accompanyingTotal(v), 0);
+  const total = staff.length + onSite.length + minors;
 
   return (
     <div className="space-y-4">
@@ -112,6 +114,7 @@ export function MusterList({
             <p className="text-3xl font-semibold tabular-nums">{total}</p>
             <p className="text-xs text-muted-foreground">
               {staff.length} staff · {onSite.length} visitor{onSite.length === 1 ? "" : "s"}
+              {minors > 0 ? ` · ${minors} accompanying minor${minors === 1 ? "" : "s"}` : ""}
             </p>
           </div>
         </div>
@@ -148,7 +151,8 @@ export function MusterList({
               <tr>
                 <th className="px-4 py-3 font-medium">Visitor</th>
                 <th className="px-4 py-3 font-medium">Company</th>
-                <th className="px-4 py-3 font-medium">Host</th>
+                <th className="px-4 py-3 font-medium">Host / service</th>
+                <th className="px-4 py-3 font-medium">With</th>
                 <th className="px-4 py-3 font-medium">Badge</th>
                 <th className="px-4 py-3 font-medium">Vehicle</th>
                 <th className="px-4 py-3 font-medium">Checked in</th>
@@ -159,7 +163,19 @@ export function MusterList({
                 <tr key={v.id}>
                   <td className="px-4 py-3 font-medium">{v.full_name}</td>
                   <td className="px-4 py-3 text-muted-foreground">{v.company ?? "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{v.host_name ?? "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {v.host_name ?? "—"}
+                    {v.service && <span className="block text-xs">{v.service}</span>}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {accompanyingTotal(v) > 0 ? (
+                      <span className="font-medium text-amber-700" title={accompanyingSummary(v)}>
+                        +{accompanyingTotal(v)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-3 tabular-nums">{v.badge_no ?? "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {[v.vehicle_type, v.vehicle_plate].filter(Boolean).join(" · ") || "—"}
@@ -169,7 +185,7 @@ export function MusterList({
               ))}
               {onSite.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                     No visitors currently on site.
                   </td>
                 </tr>
