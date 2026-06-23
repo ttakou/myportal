@@ -24,7 +24,13 @@ export default async function CalibrationSettingsPage() {
   const [settings, groups, cyclesRes] = await Promise.all([
     getCalibrationSettings(),
     getCalibrationGroups(),
-    supabase.from("appraisal_cycles").select("id, name, year").order("year", { ascending: false }),
+    // Calibration runs only after a cycle is closed for the year, so only
+    // closed cycles can be calibrated.
+    supabase
+      .from("appraisal_cycles")
+      .select("id, name, year")
+      .eq("status", "closed")
+      .order("year", { ascending: false }),
   ]);
   const cycles = ((cyclesRes.data ?? []) as Record<string, unknown>[]).map((c) => ({
     id: String(c.id),

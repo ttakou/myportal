@@ -31,6 +31,9 @@ export default async function AppraisalOutcomePage({
   if (!appraisal) notFound();
   const canReopen =
     appraisal.status === "closed" && (access.isHr || access.isSystemAdmin || access.isAdmin);
+  // A rating is only final once the calibration panel + PGM have signed off.
+  // Until then the figures shown are the line manager's provisional scores.
+  const ratingFinal = appraisal.calibration_gate === "final";
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -60,13 +63,22 @@ export default async function AppraisalOutcomePage({
         <p className="text-muted-foreground">
           {appraisal.cycle_name ?? "Appraisal"} · {STATUS_LABEL[appraisal.status]}
         </p>
+        {!ratingFinal && (
+          <p className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 print:bg-transparent print:px-0">
+            Preliminary — pending calibration &amp; PGM sign-off
+          </p>
+        )}
       </header>
 
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Field label="Employee">{appraisal.employee_name ?? "—"}</Field>
         <Field label="Manager">{appraisal.manager_name ?? "—"}</Field>
-        <Field label="Final score">{appraisal.final_score ?? "—"}</Field>
-        <Field label="Rating">{appraisal.rating_label ?? "—"}</Field>
+        <Field label={ratingFinal ? "Final score" : "Preliminary score"}>
+          {appraisal.final_score ?? "—"}
+        </Field>
+        <Field label={ratingFinal ? "Rating" : "Preliminary rating"}>
+          {appraisal.rating_label ?? "—"}
+        </Field>
       </section>
 
       {(appraisal.manager_summary || appraisal.employee_summary) && (

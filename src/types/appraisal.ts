@@ -276,6 +276,9 @@ export interface Appraisal {
   overall_rating: number | null;
   final_score: number | null;
   rating_label: string | null;
+  /** Calibration progress: 'provisional' (line-manager score) … 'final' (PGM
+   *  signed off). A rating is only truly final once this reaches 'final'. */
+  calibration_gate: "provisional" | "panel" | "pgm" | "final";
   employee_summary: string | null;
   manager_summary: string | null;
   discussion_date: string | null;

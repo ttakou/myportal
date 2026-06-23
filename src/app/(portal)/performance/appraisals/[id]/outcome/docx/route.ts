@@ -110,6 +110,8 @@ function signatureBlock(employee: string, manager: string): Table {
 }
 
 function buildDocument(a: Appraisal): Document {
+  // Scores are only final once the PGM has signed off in calibration.
+  const ratingFinal = a.calibration_gate === "final";
   const children: (Paragraph | Table)[] = [
     new Paragraph({
       heading: HeadingLevel.TITLE,
@@ -129,8 +131,8 @@ function buildDocument(a: Appraisal): Document {
     fieldGrid([
       ["Employee", a.employee_name ?? "—"],
       ["Manager", a.manager_name ?? "—"],
-      ["Final score", a.final_score != null ? String(a.final_score) : "—"],
-      ["Rating", a.rating_label ?? "—"],
+      [ratingFinal ? "Final score" : "Preliminary score", a.final_score != null ? String(a.final_score) : "—"],
+      [ratingFinal ? "Rating" : "Preliminary rating", a.rating_label ?? "—"],
     ]),
   ];
 
