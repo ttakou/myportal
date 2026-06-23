@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileText } from "lucide-react";
 import { getAppraisal } from "@/lib/appraisals";
-import { getAccess } from "@/lib/auth";
+import { getCachedUser } from "@/lib/auth";
+import { getAppraisalCapabilities } from "@/lib/perf-permissions";
 import { STATUS_LABEL } from "@/types/appraisal";
 import { PrintButton } from "./print-button";
 import { ReopenControl } from "./reopen-control";
@@ -27,16 +28,26 @@ export default async function AppraisalOutcomePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [appraisal, access] = await Promise.all([getAppraisal(id), getAccess()]);
+  const [appraisal, user] = await Promise.all([getAppraisal(id), getCachedUser()]);
   if (!appraisal) notFound();
-  const isPrivileged = access.isHr || access.isSystemAdmin || access.isAdmin;
-  const canReopen = appraisal.status === "closed" && isPrivileged;
+
+  // Effective capabilities come from the configurable permission matrix, given
+  // how this viewer relates to the appraisal.
+  const isSelf = !!user && user.id === appraisal.employee_id;
+  const { can } = await getAppraisalCapabilities({
+    isSelf,
+    isDirectManager: !!user && user.id === appraisal.manager_id,
+    isSecondLevel: !!user && user.id === appraisal.second_level_id,
+  });
+
+  const canReopen = appraisal.status === "closed" && can("reopen");
+  const canExport = can("reports_export") || isSelf;
   // A rating is only final once the calibration panel + PGM have signed off.
   // Until then the figures shown are the line manager's provisional scores.
   const ratingFinal = appraisal.calibration_gate === "final";
-  // Staff (anyone who isn't HR/admin running the process) only see a score once
-  // HR has released the final rating; before that, comments/remarks only.
-  const showScore = isPrivileged || appraisal.rating_released_at != null;
+  // A score shows to roles entitled to view scores; everyone else (e.g. the
+  // employee) only once HR has released the final rating.
+  const showScore = can("scores_view") || appraisal.rating_released_at != null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -51,12 +62,14 @@ export default async function AppraisalOutcomePage({
         </Link>
         <div className="flex items-center gap-2">
           {canReopen && <ReopenControl id={id} />}
-          <a
-            href={`/performance/appraisals/${id}/outcome/docx`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-accent"
-          >
-            <FileText className="h-4 w-4" /> Download Word
-          </a>
+          {canExport && (
+            <a
+              href={`/performance/appraisals/${id}/outcome/docx`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-accent"
+            >
+              <FileText className="h-4 w-4" /> Download Word
+            </a>
+          )}
           <PrintButton />
         </div>
       </div>
@@ -96,7 +109,7 @@ export default async function AppraisalOutcomePage({
         )}
       </section>
 
-      {(appraisal.manager_summary || appraisal.employee_summary) && (
+      {can("comments_view") && (appraisal.manager_summary || appraisal.employee_summary) && (
         <section className="space-y-3">
           {appraisal.manager_summary && (
             <Field label="Manager summary">

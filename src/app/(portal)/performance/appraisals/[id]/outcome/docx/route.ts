@@ -12,7 +12,8 @@ import {
   WidthType,
 } from "docx";
 import { getAppraisal } from "@/lib/appraisals";
-import { getAccess } from "@/lib/auth";
+import { getCachedUser } from "@/lib/auth";
+import { getAppraisalCapabilities } from "@/lib/perf-permissions";
 import { STATUS_LABEL } from "@/types/appraisal";
 import type { Appraisal } from "@/types/appraisal";
 
@@ -271,14 +272,24 @@ function buildDocument(a: Appraisal, showScore: boolean): Document {
  *  gates access — an out-of-scope id resolves to null → 404. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [appraisal, access] = await Promise.all([getAppraisal(id), getAccess()]);
+  const [appraisal, user] = await Promise.all([getAppraisal(id), getCachedUser()]);
   if (!appraisal) {
     return new Response("Not found", { status: 404 });
   }
 
-  // Staff only get a score in the export once HR has released the final rating.
-  const isPrivileged = access.isHr || access.isSystemAdmin || access.isAdmin;
-  const showScore = isPrivileged || appraisal.rating_released_at != null;
+  const isSelf = !!user && user.id === appraisal.employee_id;
+  const { can } = await getAppraisalCapabilities({
+    isSelf,
+    isDirectManager: !!user && user.id === appraisal.manager_id,
+    isSecondLevel: !!user && user.id === appraisal.second_level_id,
+  });
+  // Exporting is a permissioned capability; the subject may always export their
+  // own outcome.
+  if (!can("reports_export") && !isSelf) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  // Score shows to score-viewers, else only once HR has released the rating.
+  const showScore = can("scores_view") || appraisal.rating_released_at != null;
   const buffer = await Packer.toBuffer(buildDocument(appraisal, showScore));
   const filename = safeName(
     `appraisal-${appraisal.employee_name ?? "outcome"}-${appraisal.cycle_name ?? ""}`,
