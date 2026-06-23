@@ -108,6 +108,44 @@ export interface EntitledPerson {
   dishLabel: string | null;
 }
 
+/** Expected covers for one kitchen on a forecast day. */
+export interface ForecastKitchen {
+  kitchenId: string;
+  kitchenName: string;
+  kitchenKind: KitchenKind;
+  /** Booked people (excludes visitors). */
+  headcount: number;
+  /** Visitors booked alongside staff. */
+  guests: number;
+  /** Total plates = headcount + guests. */
+  plates: number;
+}
+
+/** One day of the forward plate forecast. */
+export interface ForecastDay {
+  date: string;
+  isToday: boolean;
+  plates: number;
+  byKitchen: ForecastKitchen[];
+}
+
+/** Trailing no-show stats for one kitchen. */
+export interface NoShowStat {
+  kitchenName: string;
+  collected: number;
+  missed: number;
+  /** missed / (collected + missed), 0–100. */
+  rate: number;
+}
+
+/** Forward plate forecast + trailing no-show tracking for the campboss. */
+export interface CanteenForecast {
+  days: ForecastDay[];
+  noShows: NoShowStat[];
+  /** Trailing window (days) the no-show stats cover. */
+  noShowWindowDays: number;
+}
+
 /** A row of the canteen_dish_demand view — powers the campboss dashboard. */
 export interface DishDemand {
   dish_id: string;
