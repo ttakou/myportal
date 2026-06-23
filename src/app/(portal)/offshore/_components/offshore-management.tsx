@@ -2470,11 +2470,24 @@ const ROTATION_CELL: Record<RotationDay, string> = {
   change_in: "bg-green-500",
 };
 
+/** Crew-name text colour by today's rotation status (mirrors ROTATION_CELL). */
+const ROTATION_TEXT: Record<RotationDay, string> = {
+  offshore: "text-primary",
+  onshore: "text-blue-600",
+  change_out: "text-amber-600",
+  change_in: "text-green-600",
+};
+
 function RotationCalendarPanel({ calendar, crews }: { calendar: RotationCalendar; crews: Crew[] }) {
   const fmt = (d: string) =>
     new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { day: "2-digit", month: "short" });
   const [repFrom, setRepFrom] = useState(() => new Date().toISOString().slice(0, 10));
   const [repWeeks, setRepWeeks] = useState(8);
+  // Find today's column so each crew name can be coloured by where the crew is
+  // right now (offshore vs onshore); fall back to the first plotted day.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIdx = calendar.days.indexOf(todayIso);
+  const statusCol = todayIdx >= 0 ? todayIdx : 0;
   // Label every 7th day to keep the header readable.
   return (
     <div className="space-y-3">
@@ -2522,10 +2535,17 @@ function RotationCalendarPanel({ calendar, crews }: { calendar: RotationCalendar
             </tr>
           </thead>
           <tbody>
-            {calendar.crews.map((c) => (
+            {calendar.crews.map((c) => {
+              const todayStatus = c.statuses[statusCol] ?? null;
+              return (
               <tr key={c.id} className="border-t">
                 <td className="sticky left-0 z-10 bg-card px-2 py-1 align-top">
-                  <div className="font-medium">{c.name}</div>
+                  <div
+                    className={cn("font-medium", todayStatus ? ROTATION_TEXT[todayStatus] : "")}
+                    title={todayStatus ? `Currently ${todayStatus.replace("_", " ")}` : "No rotation plotted"}
+                  >
+                    {c.name}
+                  </div>
                   <div className="text-[10px] text-muted-foreground">
                     {c.offshore_days}/{c.onshore_days} · {c.member_count}
                   </div>
@@ -2539,13 +2559,15 @@ function RotationCalendarPanel({ calendar, crews }: { calendar: RotationCalendar
                   </td>
                 ))}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
       <p className="text-xs text-muted-foreground">
         Bands are derived from each crew&apos;s rotation pattern and cycle start date. Set a cycle
-        start on the Crew change tab to plot a crew.
+        start on the Crew change tab to plot a crew. Each crew name is tinted by where the crew is
+        today (offshore / onshore / crew change).
       </p>
 
       <CrewBackToBackList calendar={calendar} crews={crews} />
