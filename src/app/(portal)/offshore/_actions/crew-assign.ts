@@ -130,6 +130,48 @@ export async function setRoomDefaultOwners(roomId: string): Promise<ActionResult
   return { ok: true };
 }
 
+/**
+ * Directly set (or clear) one roster member's default/fixed room — independent
+ * of whether they're currently on board. Picking a person as a room's default
+ * owner, moving them to another room, or clearing it all flow through here.
+ * Passing roomId = null clears their fixed room (and bed).
+ */
+export async function setStaffFixedRoom(
+  profileId: string,
+  roomId: string | null,
+  bedNo?: string | null,
+): Promise<ActionResult> {
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
+  if (!profileId) return { ok: false, error: "No person selected." };
+  const supabase = createClient();
+  const patch: Record<string, unknown> = { fixed_room_id: roomId || null };
+  // Clearing the room clears the bed too; otherwise only touch the bed when given.
+  if (!roomId) patch.fixed_bed = null;
+  else if (bedNo !== undefined) patch.fixed_bed = bedNo?.trim() || null;
+  const { error } = await supabase
+    .from("offshore_staff")
+    .update(patch)
+    .eq("profile_id", profileId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Clear every default owner of a room (unset their fixed room and bed). */
+export async function clearRoomDefaultOwners(roomId: string): Promise<ActionResult> {
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("offshore_staff")
+    .update({ fixed_room_id: null, fixed_bed: null })
+    .eq("fixed_room_id", roomId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 /** Set every room's default owners from the current allocation in one pass. */
 export async function setAllRoomDefaults(): Promise<ActionResult> {
   const gate = await requireOffshore("manage");

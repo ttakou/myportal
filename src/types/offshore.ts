@@ -163,7 +163,7 @@ export interface Room {
   lifeboat: string | null;
   fixed_assigned: number;
   /** Default owners — rotators whose fixed room is this room (+ their back-to-back). */
-  owners: { name: string; bed: string | null; back_to_back: string | null }[];
+  owners: { profile_id: string; name: string; bed: string | null; back_to_back: string | null }[];
   /** People currently on board in this room (live). */
   occupied: number;
   occupants: {

@@ -66,6 +66,8 @@ import {
   setBackToBack,
   setRoomDefaultOwners,
   setAllRoomDefaults,
+  setStaffFixedRoom,
+  clearRoomDefaultOwners,
   setTripCategory,
   findAvailableBeds,
   createManifest,
@@ -2401,29 +2403,65 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
                   <div className="mt-1.5 border-t pt-1 text-[11px] text-muted-foreground">
                     <div className="flex items-center justify-between gap-1">
                       <span className="font-medium">Default owner(s)</span>
-                      {r.occupied > 0 && (
-                        <button
-                          disabled={pending}
-                          title="Set the current occupants (and their back-to-backs) as this room's fixed owners"
-                          onClick={() => run(() => setRoomDefaultOwners(r.id))}
-                          className="rounded border px-1.5 py-0.5 hover:bg-accent"
-                        >
-                          Set from current
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {r.occupied > 0 && (
+                          <button
+                            disabled={pending}
+                            title="Set the current occupants (and their back-to-backs) as this room's fixed owners"
+                            onClick={() => run(() => setRoomDefaultOwners(r.id))}
+                            className="rounded border px-1.5 py-0.5 hover:bg-accent"
+                          >
+                            Set from current
+                          </button>
+                        )}
+                        {r.owners.length > 0 && (
+                          <button
+                            disabled={pending}
+                            title="Clear all default owners of this room"
+                            onClick={() => run(() => clearRoomDefaultOwners(r.id))}
+                            className="rounded border px-1.5 py-0.5 hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {r.owners.length > 0 ? (
                       <ul className="mt-0.5 space-y-0.5">
-                        {r.owners.map((o, i) => (
-                          <li key={i}>
-                            <span className="font-mono">{o.bed || "•"}</span> {o.name}
+                        {r.owners.map((o) => (
+                          <li key={o.profile_id} className="flex items-center gap-1">
+                            <span className="font-mono">{o.bed || "•"}</span>
+                            <span>{o.name}</span>
                             {o.back_to_back ? <span className="text-muted-foreground/70"> ⇄ {o.back_to_back}</span> : ""}
+                            <button
+                              disabled={pending}
+                              title={`Remove ${o.name} as a default owner`}
+                              onClick={() => run(() => setStaffFixedRoom(o.profile_id, null))}
+                              className="ml-auto rounded p-0.5 hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
                           </li>
                         ))}
                       </ul>
                     ) : (
                       <p className="mt-0.5 italic">none set</p>
                     )}
+                    {/* Assign any roster member as a default owner — no need for them
+                        to be on board first. */}
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="shrink-0">Add owner:</span>
+                      <LazySelect
+                        value={null}
+                        options={mates.filter((m) => !r.owners.some((o) => o.profile_id === m.id))}
+                        getOptionValue={(m) => m.id}
+                        getOptionLabel={(m) => m.name}
+                        placeholder="— pick a person —"
+                        disabled={pending}
+                        className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
+                        onChange={(v) => v && run(() => setStaffFixedRoom(v, r.id))}
+                      />
+                    </div>
                   </div>
                 </div>
               );
