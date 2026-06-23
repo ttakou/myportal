@@ -34,11 +34,18 @@ export function ServingScreen({
   // When a scan/selection finds no booking but an entitled employee, we prompt
   // the staff to pick a dish and serve them as a walk-in.
   const [walkin, setWalkin] = useState<WalkinPerson | null>(null);
+  // Visitors the campboss adds when activating a walk-in.
+  const [walkinGuests, setWalkinGuests] = useState(0);
   // Typeahead suggestions for the validate box (search the employee directory).
   const [options, setOptions] = useState<EmployeeOption[]>([]);
   const [showOptions, setShowOptions] = useState(false);
 
   const served = reservations.filter((r) => r.collected_at).length;
+
+  // Reset the visitor count whenever the walk-in target changes.
+  useEffect(() => {
+    setWalkinGuests(0);
+  }, [walkin]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -55,17 +62,19 @@ export function ServingScreen({
     );
   }, [reservations, query]);
 
+  // Roster shows only those still to be served.
   const filteredEntitled = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const rows = q
-      ? entitled.filter(
-          (p) => p.name.toLowerCase().includes(q) || (p.email ?? "").toLowerCase().includes(q),
-        )
-      : entitled;
-    return [...rows].sort((a, b) => Number(a.collected) - Number(b.collected));
+    return entitled.filter(
+      (p) =>
+        !p.collected &&
+        (!q || p.name.toLowerCase().includes(q) || (p.email ?? "").toLowerCase().includes(q)),
+    );
   }, [entitled, query]);
-  const totalPlates = entitled.reduce((s, p) => s + p.plates, 0);
-  const visitorPlates = entitled.reduce((s, p) => s + p.guestCount, 0);
+  const remaining = entitled.filter((p) => !p.collected);
+  const remainingPlates = remaining.reduce((s, p) => s + p.plates, 0);
+  const remainingVisitors = remaining.reduce((s, p) => s + p.guestCount, 0);
+  const servedEntitled = entitled.length - remaining.length;
 
   // Debounced directory search as the staff type a name into the validate box.
   useEffect(() => {
@@ -205,13 +214,14 @@ export function ServingScreen({
     if (!walkin) return;
     const person = walkin;
     setFlash(null);
+    const guests = walkinGuests;
     startTransition(async () => {
-      const res = await serveWalkin(person.id, dish.id);
+      const res = await serveWalkin(person.id, dish.id, guests);
       if (res.ok) {
         setWalkin(null);
         setFlash({
           ok: true,
-          msg: `Served (walk-in): ${res.served?.name ?? person.name} — ${res.served?.dish ?? dish.name}`,
+          msg: `Served (walk-in): ${res.served?.name ?? person.name} — ${res.served?.dish ?? dish.name}${guests > 0 ? ` (+${guests} visitor${guests === 1 ? "" : "s"})` : ""}`,
         });
         router.refresh();
       } else {
@@ -309,6 +319,20 @@ export function ServingScreen({
               <X className="h-4 w-4" />
             </button>
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Visitors</span>
+            <input
+              type="number"
+              min={0}
+              max={20}
+              value={walkinGuests}
+              onChange={(e) => setWalkinGuests(Math.max(0, Math.min(20, Number(e.target.value) || 0)))}
+              className="w-20 rounded-md border bg-background px-2 py-1 text-sm"
+            />
+            <span className="text-xs text-muted-foreground">
+              {1 + walkinGuests} plate{walkinGuests === 0 ? "" : "s"}
+            </span>
+          </label>
           {dishes.length === 0 ? (
             <p className="text-sm text-muted-foreground">No meals on today&apos;s menu to serve.</p>
           ) : (
@@ -389,8 +413,9 @@ export function ServingScreen({
             <Utensils className="h-4 w-4" /> Entitled to eat today
           </h2>
           <p className="text-sm text-muted-foreground">
-            {entitled.length} entitled · <span className="font-medium text-foreground">{totalPlates}</span> plates
-            {visitorPlates > 0 ? ` (incl. ${visitorPlates} visitor${visitorPlates === 1 ? "" : "s"})` : ""}
+            {remaining.length} to serve · <span className="font-medium text-foreground">{remainingPlates}</span> plates
+            {remainingVisitors > 0 ? ` (incl. ${remainingVisitors} visitor${remainingVisitors === 1 ? "" : "s"})` : ""}
+            {servedEntitled > 0 ? ` · ${servedEntitled} served` : ""}
           </p>
         </div>
         <div className="overflow-x-auto rounded-lg border">
@@ -439,7 +464,9 @@ export function ServingScreen({
                 </tr>
               ))}
               {filteredEntitled.length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">No entitled employees.</td></tr>
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                  {entitled.length > 0 ? "Everyone entitled has been served." : "No entitled employees."}
+                </td></tr>
               )}
             </tbody>
           </table>

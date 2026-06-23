@@ -102,12 +102,14 @@ export interface ServeResult {
 export async function serveWalkin(
   profileId: string,
   dishId: string,
+  guestCount = 0,
 ): Promise<ServeResult> {
   if (!(await getAccess()).isCanteenStaff) return { ok: false, error: "Not authorized." };
 
   const supabase = createClient();
   const date = today();
   const now = new Date().toISOString();
+  const guests = Math.max(0, Math.min(20, Math.round(guestCount)));
 
   // Re-check entitlement server-side (defence in depth — never trust the client).
   const { data: emp } = await supabase
@@ -143,7 +145,12 @@ export async function serveWalkin(
     if (existing.collected_at) return { ok: false, error: `${name} already collected.` };
     const { error } = await supabase
       .from("canteen_bookings")
-      .update({ status: "served", collected_at: now, prepared_at: now })
+      .update({
+        status: "served",
+        collected_at: now,
+        prepared_at: now,
+        ...(guests > 0 ? { guest_count: guests } : {}),
+      })
       .eq("id", existing.id);
     if (error) return { ok: false, error: error.message };
   } else {
@@ -154,6 +161,7 @@ export async function serveWalkin(
       kitchen_id: dish.kitchen_id,
       service_date: dish.service_date,
       meal_period: dish.meal_period,
+      guest_count: guests,
       status: "served",
       prepared_at: now,
       collected_at: now,
