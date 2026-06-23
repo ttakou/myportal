@@ -7,6 +7,7 @@ import { notifyUsers } from "@/lib/notify";
 import { runAppraisalReminders } from "@/lib/appraisal-reminders";
 import { dispatchEvent } from "@/lib/notify-dispatch";
 import { getPerformanceConfig } from "@/lib/performance-config";
+import { getAppraisalCapabilities } from "@/lib/perf-permissions";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -763,6 +764,25 @@ async function requireManagerAt(
   return guard;
 }
 
+/**
+ * Gate rating writes on the configurable permission matrix (`ratings_edit`).
+ * The actor has already passed the relationship guard; this lets HR turn off a
+ * role's ability to modify ratings. A manager's delegate acts as the manager.
+ */
+async function requireRatingsEdit(a: AppraisalRow): Promise<ActionResult | null> {
+  const me = await uid();
+  const actsAsManager = a.manager_id === me || (await isDelegateOf(a.manager_id, me));
+  const { can } = await getAppraisalCapabilities({
+    isSelf: a.employee_id === me,
+    isDirectManager: actsAsManager,
+    isSecondLevel: a.second_level_id === me,
+  });
+  if (!can("ratings_edit")) {
+    return { ok: false, error: "Your role isn't permitted to modify ratings." };
+  }
+  return null;
+}
+
 /** Employee records progress (mid-year) or self-rating (final) on a goal. */
 export async function updateGoalProgress(input: {
   appraisalId: string;
@@ -876,6 +896,8 @@ export async function setManagerRating(input: {
 }): Promise<ActionResult> {
   const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
   if ("ok" in guard) return guard;
+  const denied = await requireRatingsEdit(guard.a);
+  if (denied) return denied;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.rating !== undefined) patch.manager_rating = Math.max(0, Math.min(5, input.rating));
@@ -894,6 +916,8 @@ export async function submitManagerEvaluation(input: {
   const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
   if ("ok" in guard) return guard;
   const a = guard.a;
+  const denied = await requireRatingsEdit(a);
+  if (denied) return denied;
   const supabase = createClient();
 
   const [{ data: goals }, { data: comps }, { data: compFramework }, { data: cycle }] =
@@ -1359,6 +1383,8 @@ export async function rateCompetencyManager(input: {
   const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
   if ("ok" in guard) return guard;
   const a = guard.a;
+  const denied = await requireRatingsEdit(a);
+  if (denied) return denied;
   const supabase = createClient();
   const row: Record<string, unknown> = {
     tenant_id: a.tenant_id,

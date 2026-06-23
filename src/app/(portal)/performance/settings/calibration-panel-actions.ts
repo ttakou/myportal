@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { getCalibrationSettings } from "@/lib/calibration";
 import { getPanelData } from "@/lib/calibration-panel";
+import { getAppraisalCapabilities } from "@/lib/perf-permissions";
 import { dispatchEvent } from "@/lib/notify-dispatch";
 import type { ActionResult } from "@/types/actions";
 import { CALIBRATION_GATES, type CalibrationGate } from "@/types/calibration-panel";
@@ -66,6 +67,18 @@ export async function submitPanelRating(input: {
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
   if (!input.bandLabel?.trim()) return { ok: false, error: "Pick a rating band." };
+
+  // Participation is gated by the matrix `calibration` capability: a panel
+  // member of this group (or a role granted calibration, e.g. HR) may rate.
+  const { count } = await supabase
+    .from("calibration_panel_members")
+    .select("id", { count: "exact", head: true })
+    .eq("group_id", input.groupId)
+    .eq("member_id", user.id);
+  const { can } = await getAppraisalCapabilities({ isCalibrationPanel: (count ?? 0) > 0 });
+  if (!can("calibration")) {
+    return { ok: false, error: "Your role isn't permitted to take part in calibration." };
+  }
 
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
