@@ -15,10 +15,25 @@ export interface PanelStaff {
   gate: CalibrationGate;
   /** Panel-agreed band (mode of member ratings, else provisional). */
   panelBand: string | null;
+  /** The line manager's original rating, before any calibration adjustment. */
+  preliminaryLabel: string | null;
+  preliminaryScore: number | null;
+  /** The current rating after calibration adjustment, or null if untouched. */
+  adjustedLabel: string | null;
+  adjustedScore: number | null;
+  /** This person's ratings in prior cycles, oldest → newest. */
+  history: HistoryRating[];
   /** A panellist rated them in a higher band than the agreed one. */
   upgradeCandidate: boolean;
   /** Member ratings recorded so far (for completion). */
   ratedBy: number;
+}
+
+/** One prior-cycle rating, for the trend shown beside a staff member. */
+export interface HistoryRating {
+  cycle: string;
+  label: string | null;
+  score: number | null;
 }
 
 export interface MemberRatingView {
@@ -31,7 +46,9 @@ export interface MemberRatingView {
 /** One recorded calibration adjustment for a staff member (PGM audit trail). */
 export interface AdjustmentView {
   previousLabel: string | null;
+  previousScore: number | null;
   newLabel: string | null;
+  newScore: number | null;
   reason: string | null;
   byName: string | null;
   at: string;
@@ -65,6 +82,11 @@ function nameOf(embed: unknown): string {
 function deptOf(embed: unknown): string | null {
   const o = Array.isArray(embed) ? embed[0] : embed;
   return (o as { department?: string } | null)?.department ?? null;
+}
+function cycleLabelOf(embed: unknown): { label: string; year: number } {
+  const o = (Array.isArray(embed) ? embed[0] : embed) as { name?: string; year?: number } | null;
+  const year = Number(o?.year ?? 0);
+  return { label: String(o?.name ?? o?.year ?? "—"), year };
 }
 
 function mode(values: string[]): string | null {
@@ -175,6 +197,11 @@ export async function getPanelData(groupId: string): Promise<PanelData | null> {
       provisionalScore: (a.final_score as number | null) ?? null,
       gate: (a.calibration_gate as CalibrationGate) ?? "provisional",
       panelBand,
+      preliminaryLabel: provisionalLabel,
+      preliminaryScore: (a.final_score as number | null) ?? null,
+      adjustedLabel: null,
+      adjustedScore: null,
+      history: [] as HistoryRating[],
       upgradeCandidate,
       ratedBy: memberBands.length,
     };
@@ -189,19 +216,69 @@ export async function getPanelData(groupId: string): Promise<PanelData | null> {
   if (staffIds.length) {
     const { data: adjRows } = await supabase
       .from("appraisal_calibration_adjustments")
-      .select("appraisal_id, previous_label, new_label, reason, created_at, adjuster:profiles!adjusted_by(full_name)")
+      .select(
+        "appraisal_id, previous_label, previous_score, new_label, new_score, reason, created_at, adjuster:profiles!adjusted_by(full_name)",
+      )
       .in("appraisal_id", staffIds)
       .order("created_at", { ascending: false });
     for (const r of (adjRows ?? []) as Record<string, unknown>[]) {
       (adjustmentsByStaff[String(r.appraisal_id)] ??= []).push({
         previousLabel: (r.previous_label as string | null) ?? null,
+        previousScore: (r.previous_score as number | null) ?? null,
         newLabel: (r.new_label as string | null) ?? null,
+        newScore: (r.new_score as number | null) ?? null,
         reason: (r.reason as string | null) ?? null,
         byName: nameOf(r.adjuster),
         at: String(r.created_at),
       });
     }
   }
+
+  // Preliminary vs adjusted: when there are adjustments, the oldest one's
+  // "previous" is the true preliminary (line manager) rating and the newest
+  // one's "new" is the current adjusted rating. Otherwise the score is still
+  // the manager's preliminary and nothing has been adjusted.
+  for (const s of staff) {
+    const adj = adjustmentsByStaff[s.appraisalId];
+    if (adj && adj.length) {
+      const oldest = adj[adj.length - 1];
+      const newest = adj[0];
+      s.preliminaryLabel = oldest.previousLabel ?? s.preliminaryLabel;
+      s.preliminaryScore = oldest.previousScore ?? s.preliminaryScore;
+      s.adjustedLabel = newest.newLabel;
+      s.adjustedScore = newest.newScore;
+    }
+  }
+
+  // Prior-cycle ratings for these people — a trend for the panel to weigh.
+  const historyByEmployee: Record<string, HistoryRating[]> = {};
+  const employeeIds = [...new Set(staff.map((s) => s.employeeId))];
+  if (employeeIds.length) {
+    const { data: histRows } = await supabase
+      .from("appraisals")
+      .select("employee_id, final_score, rating_label, cycle:appraisal_cycles(name, year)")
+      .in("employee_id", employeeIds)
+      .neq("cycle_id", group.cycle_id as string)
+      .not("final_score", "is", null);
+    const tmp: Record<string, (HistoryRating & { year: number })[]> = {};
+    for (const r of (histRows ?? []) as Record<string, unknown>[]) {
+      const eid = String(r.employee_id);
+      const c = cycleLabelOf(r.cycle);
+      (tmp[eid] ??= []).push({
+        cycle: c.label,
+        year: c.year,
+        label: (r.rating_label as string | null) ?? null,
+        score: (r.final_score as number | null) ?? null,
+      });
+    }
+    for (const [eid, rows] of Object.entries(tmp)) {
+      historyByEmployee[eid] = rows
+        .sort((a, b) => a.year - b.year)
+        .slice(-3)
+        .map(({ cycle, label, score }) => ({ cycle, label, score }));
+    }
+  }
+  for (const s of staff) s.history = historyByEmployee[s.employeeId] ?? [];
 
   // Balance the panel-agreed bands against the target.
   const counts: Record<string, number> = {};
