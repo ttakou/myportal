@@ -1,8 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { FileBarChart, LayoutDashboard, Menu, UserCog, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+/** Primary destinations for the mobile bottom tab bar. The "Menu" tab opens the
+ *  full sidebar drawer, since modules are dynamic and too many for fixed tabs. */
+const BOTTOM_TABS = [
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
+  { href: "/reports", label: "Reports", icon: FileBarChart },
+  { href: "/account", label: "Account", icon: UserCog },
+] as const;
 
 /**
  * Responsive app shell. On desktop the sidebar is static; on mobile it becomes
@@ -63,11 +73,51 @@ export function PortalShell({
           <div className="ml-auto">{header}</div>
         </header>
         <main className="flex-1 overflow-y-auto bg-background">
-          <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+          {/* Extra bottom padding on mobile so the fixed tab bar never covers content. */}
+          <div className="mx-auto w-full max-w-7xl px-4 py-6 pb-24 sm:px-6 sm:py-8 md:pb-8">
             {children}
           </div>
         </main>
       </div>
+
+      {/* Mobile bottom tab bar (PWA primary nav). Hidden on desktop where the
+          static sidebar is always visible. Honours the home-indicator safe area. */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t bg-card md:hidden print:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        aria-label="Primary"
+      >
+        <div className="mx-auto grid max-w-md grid-cols-4">
+          {BOTTOM_TABS.map((t) => {
+            const active = pathname === t.href || pathname.startsWith(t.href + "/");
+            const Icon = t.icon;
+            return (
+              <Link
+                key={t.href}
+                href={t.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors",
+                  active ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                <span>{t.label}</span>
+              </Link>
+            );
+          })}
+          <button
+            type="button"
+            aria-label="Open menu"
+            aria-expanded={open}
+            onClick={() => setOpen(true)}
+            className="flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Menu className="h-5 w-5" />
+            <span>Menu</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }
