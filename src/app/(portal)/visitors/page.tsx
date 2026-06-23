@@ -3,7 +3,7 @@ import { FileBarChart, Siren } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
-import { getVisitors } from "@/lib/visitors";
+import { getVisitors, getDepartments } from "@/lib/visitors";
 import { getStaffRoster } from "@/lib/staff-attendance";
 import { today } from "@/lib/canteen";
 import { VisitorsBoard } from "./_components/visitors-board";
@@ -20,11 +20,12 @@ export default async function VisitorsPage(
       ? searchParams.date
       : today();
 
-  const [visitors, role, access, perms] = await Promise.all([
+  const [visitors, role, access, perms, departments] = await Promise.all([
     getVisitors(visitDate),
     getCurrentRole(),
     getAccess(),
     getMyPermissions(),
+    getDepartments(),
   ]);
   const isAdmin = isAdminRole(role);
   // Security / reception / emergency responders (e.g. ERTL) plus admins get the
@@ -64,7 +65,12 @@ export default async function VisitorsPage(
         </div>
       </div>
 
-      <VisitorsBoard visitDate={visitDate} visitors={visitors} isAdmin={isAdmin} />
+      <VisitorsBoard
+        visitDate={visitDate}
+        visitors={visitors}
+        isAdmin={isAdmin}
+        departments={departments}
+      />
 
       {canOperate && <StaffBoard rows={staffRoster} />}
     </div>

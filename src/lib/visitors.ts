@@ -3,7 +3,7 @@ import { today } from "@/lib/canteen";
 import type { Visitor } from "@/types/visitors";
 
 const SELECT =
-  "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)";
+  "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, accompanying_infants, accompanying_children, accompanying_adolescents, host:profiles!visitors_host_id_fkey(full_name)";
 
 function mapRow(row: Record<string, unknown>): Visitor {
   const host = Array.isArray(row.host) ? row.host[0] : row.host;
@@ -18,9 +18,30 @@ function mapRow(row: Record<string, unknown>): Visitor {
     vehicle_type: (row.vehicle_type as string) ?? null,
     vehicle_plate: (row.vehicle_plate as string) ?? null,
     host_name: (host as { full_name?: string })?.full_name ?? null,
+    service: (row.service as string) ?? null,
     check_in_at: (row.check_in_at as string) ?? null,
     check_out_at: (row.check_out_at as string) ?? null,
+    accompanying_infants: Number(row.accompanying_infants ?? 0),
+    accompanying_children: Number(row.accompanying_children ?? 0),
+    accompanying_adolescents: Number(row.accompanying_adolescents ?? 0),
   };
+}
+
+/** Distinct, non-empty departments in use — for the "assign to a service" picker. */
+export async function getDepartments(): Promise<string[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("department")
+    .not("department", "is", null)
+    .order("department", { ascending: true });
+  if (error) return [];
+  const seen = new Set<string>();
+  for (const r of (data ?? []) as { department?: string | null }[]) {
+    const d = (r.department ?? "").trim();
+    if (d) seen.add(d);
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b));
 }
 
 /** Visitors for a given visit date (RLS-scoped). */
