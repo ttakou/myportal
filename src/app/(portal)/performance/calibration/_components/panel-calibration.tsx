@@ -15,6 +15,7 @@ import {
   setCalibrationGate,
   setGroupDistribution,
   finalisePanelRating,
+  confirmAllPanelBands,
 } from "../../settings/calibration-panel-actions";
 
 const field = "rounded-md border bg-background px-2 py-1 text-sm";
@@ -24,6 +25,8 @@ export function PanelCalibration({ data, directory }: { data: PanelData; directo
   const [error, setError] = useState<string | null>(null);
   const bands = data.target.map((t) => t.label);
   const canRate = data.isMember || data.isHr;
+  // Staff awaiting a PGM decision (eligible for one-tap bulk confirm).
+  const pgmPending = data.staff.filter((s) => s.gate === "pgm" && s.panelBand).length;
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -124,7 +127,7 @@ export function PanelCalibration({ data, directory }: { data: PanelData; directo
       {data.isHr && (
         <div
           className={cn(
-            "flex items-center gap-2 rounded-md px-4 py-2 text-sm",
+            "flex flex-wrap items-center gap-2 rounded-md px-4 py-2 text-sm",
             data.panelComplete ? "bg-green-100 text-green-800" : "bg-amber-50 text-amber-800",
           )}
         >
@@ -136,6 +139,17 @@ export function PanelCalibration({ data, directory }: { data: PanelData; directo
               PGM finalisation unlocks once the panel rates everyone ({data.panelProgress.rated}/
               {data.panelProgress.expected} done).
             </span>
+          )}
+          {data.panelComplete && pgmPending > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              disabled={pending}
+              onClick={() => run(() => confirmAllPanelBands(data.group.id))}
+            >
+              <Check className="h-4 w-4" /> Confirm all panel bands ({pgmPending})
+            </Button>
           )}
         </div>
       )}
@@ -165,6 +179,7 @@ export function PanelCalibration({ data, directory }: { data: PanelData; directo
                   isHr={data.isHr}
                   mine={data.myRatings[s.appraisalId]}
                   others={data.ratingsByStaff[s.appraisalId] ?? []}
+                  adjustments={data.adjustmentsByStaff[s.appraisalId] ?? []}
                   pending={pending}
                   run={run}
                 />
@@ -246,6 +261,7 @@ function StaffRow({
   isHr,
   mine,
   others,
+  adjustments,
   pending,
   run,
 }: {
@@ -258,6 +274,7 @@ function StaffRow({
   isHr: boolean;
   mine?: { bandLabel: string; comment: string | null };
   others: { memberName: string; bandLabel: string; comment: string | null }[];
+  adjustments: PanelData["adjustmentsByStaff"][string];
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>) => void;
 }) {
@@ -373,6 +390,25 @@ function StaffRow({
             </li>
           ))}
         </ul>
+      )}
+
+      {isHr && adjustments.length > 0 && (
+        <details className="mt-1.5 pl-1 text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none">
+            Adjustment history ({adjustments.length})
+          </summary>
+          <ul className="mt-1 space-y-0.5">
+            {adjustments.map((adj, i) => (
+              <li key={i}>
+                {new Date(adj.at).toLocaleDateString()} ·{" "}
+                <span className="font-medium">{adj.previousLabel ?? "—"}</span> →{" "}
+                <span className="font-medium">{adj.newLabel ?? "—"}</span>
+                {adj.byName ? ` · ${adj.byName}` : ""}
+                {adj.reason ? ` — ${adj.reason}` : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </li>
   );

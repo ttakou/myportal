@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { getCalibrationSettings } from "@/lib/calibration";
+import { getPanelData } from "@/lib/calibration-panel";
+import { dispatchEvent } from "@/lib/notify-dispatch";
 import type { ActionResult } from "@/types/actions";
 import { CALIBRATION_GATES, type CalibrationGate } from "@/types/calibration-panel";
 import type { DistributionBand } from "@/types/calibration";
@@ -104,6 +106,77 @@ export async function setGroupDistribution(
   return { ok: true };
 }
 
+type DbClient = ReturnType<typeof createClient>;
+
+interface ApRow {
+  id: string;
+  tenant_id: string;
+  cycle_id: string;
+  final_score: number | null;
+  rating_label: string | null;
+  employee_id: string | null;
+  manager_id: string | null;
+}
+
+const AP_COLS = "id, tenant_id, cycle_id, final_score, rating_label, employee_id, manager_id";
+
+/**
+ * Write the final PGM rating for one appraisal: record a calibration adjustment,
+ * set the score/label, move the gate to "final", and notify the employee and
+ * line manager. Shared by single-finalise and bulk-confirm.
+ */
+async function applyFinalRating(
+  supabase: DbClient,
+  ap: ApRow,
+  band: string,
+  bands: RatingBand[],
+  note: string | null,
+  userId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const score = representativeScore(bands, band) ?? ap.final_score ?? null;
+
+  await supabase.from("appraisal_calibration_adjustments").insert({
+    tenant_id: ap.tenant_id,
+    appraisal_id: ap.id,
+    cycle_id: ap.cycle_id,
+    previous_score: ap.final_score ?? null,
+    previous_label: ap.rating_label ?? null,
+    new_score: score,
+    new_label: band,
+    reason: `PGM final rating (${band})${note ? ` — ${note}` : ""}`,
+    adjusted_by: userId,
+  });
+
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ final_score: score, rating_label: band, calibration_gate: "final" })
+    .eq("id", ap.id);
+  if (error) return { ok: false, error: error.message };
+
+  // Tell the employee and their line manager the rating is final.
+  await dispatchEvent("rating_changed", {
+    tenantId: ap.tenant_id,
+    employeeIds: ap.employee_id ? [ap.employee_id] : [],
+    managerIds: ap.manager_id ? [ap.manager_id] : [],
+    placeholders: { rating: `${score ?? "—"}% (${band})` },
+    url: "/performance/appraisals",
+  });
+  return { ok: true };
+}
+
+/** Band labels, top contributor → lowest, for a group (group override else default). */
+async function bandOrderFor(supabase: DbClient, groupId: string): Promise<string[]> {
+  const { data: grp } = await supabase
+    .from("calibration_groups")
+    .select("distribution")
+    .eq("id", groupId)
+    .maybeSingle();
+  const grpDist = (grp as { distribution?: { label: string }[] } | null)?.distribution;
+  const order = Array.isArray(grpDist) ? grpDist.map((d) => d.label) : [];
+  if (order.length) return order;
+  return (await getCalibrationSettings()).distribution.map((d) => d.label);
+}
+
 /**
  * PGM gate: finalise an appraisal. The PGM sees the panel rating and either
  * confirms it or supplies their own band (`pgmBand`) — the PGM's choice is the
@@ -125,11 +198,11 @@ export async function finalisePanelRating(
 
   const { data: ap } = await supabase
     .from("appraisals")
-    .select("id, tenant_id, cycle_id, final_score, rating_label")
+    .select(AP_COLS)
     .eq("id", appraisalId)
     .maybeSingle();
   if (!ap) return { ok: false, error: "Appraisal not found." };
-  const a = ap as Record<string, unknown>;
+  const a = ap as unknown as ApRow;
 
   // Panel ratings for this person + the panel size — the PGM rating is only
   // available once the panel has finished this person.
@@ -153,7 +226,7 @@ export async function finalisePanelRating(
   // Panel-agreed band = mode of member ratings, else the provisional label.
   const tally = new Map<string, number>();
   for (const r of ratings) tally.set(r.band_label, (tally.get(r.band_label) ?? 0) + 1);
-  let panelBand: string | null = (a.rating_label as string | null) ?? null;
+  let panelBand: string | null = a.rating_label;
   let best = 0;
   for (const [b, n] of tally) if (n > best) { best = n; panelBand = b; }
 
@@ -162,14 +235,7 @@ export async function finalisePanelRating(
   if (!band) return { ok: false, error: "No rating to finalise." };
 
   // Band order (top → bottom) — a downgrade below the panel band needs a comment.
-  const { data: grp } = await supabase
-    .from("calibration_groups")
-    .select("distribution")
-    .eq("id", groupId)
-    .maybeSingle();
-  const grpDist = (grp as { distribution?: { label: string }[] } | null)?.distribution;
-  let order: string[] = Array.isArray(grpDist) ? grpDist.map((d) => d.label) : [];
-  if (order.length === 0) order = (await getCalibrationSettings()).distribution.map((d) => d.label);
+  const order = await bandOrderFor(supabase, groupId);
   const rankOf = (l: string | null) => {
     const i = l ? order.indexOf(l) : -1;
     return i === -1 ? 99 : i;
@@ -182,30 +248,61 @@ export async function finalisePanelRating(
   const { data: cyc } = await supabase
     .from("appraisal_cycles")
     .select("rating_bands")
-    .eq("id", a.cycle_id as string)
+    .eq("id", a.cycle_id)
     .maybeSingle();
   const bands = ((cyc as { rating_bands?: RatingBand[] } | null)?.rating_bands ?? []) as RatingBand[];
-  const score = representativeScore(bands, band) ?? (a.final_score as number | null) ?? null;
 
-  await supabase.from("appraisal_calibration_adjustments").insert({
-    tenant_id: a.tenant_id,
-    appraisal_id: appraisalId,
-    cycle_id: a.cycle_id,
-    previous_score: a.final_score ?? null,
-    previous_label: a.rating_label ?? null,
-    new_score: score,
-    new_label: band,
-    reason: `PGM final rating (${band})${note ? ` — ${note}` : ""}`,
-    adjusted_by: user?.id ?? null,
-  });
-
-  const { error } = await supabase
-    .from("appraisals")
-    .update({ final_score: score, rating_label: band, calibration_gate: "final" })
-    .eq("id", appraisalId);
-  if (error) return { ok: false, error: error.message };
+  const res = await applyFinalRating(supabase, a, band, bands, note, user?.id ?? null);
+  if (!res.ok) return res;
   rev(groupId);
   return { ok: true };
+}
+
+/**
+ * Bulk confirm: finalise every staff member still at the PGM gate at their
+ * panel-agreed band (no override, no downgrade). Only available once the panel
+ * has rated everyone — a one-tap way to accept the panel's outcome wholesale.
+ */
+export async function confirmAllPanelBands(groupId: string): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR/PGM can finalise." };
+  const data = await getPanelData(groupId);
+  if (!data) return { ok: false, error: "Group not found." };
+  if (!data.panelComplete) {
+    return { ok: false, error: "The panel hasn't finished rating everyone yet." };
+  }
+  const pending = data.staff.filter((s) => s.gate === "pgm" && s.panelBand);
+  if (pending.length === 0) return { ok: false, error: "Nothing left to confirm." };
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const ids = pending.map((s) => s.appraisalId);
+  const { data: apsRaw } = await supabase.from("appraisals").select(AP_COLS).in("id", ids);
+  const aps = new Map(((apsRaw ?? []) as unknown as ApRow[]).map((a) => [a.id, a]));
+
+  // All staff share the cycle; read its rating bands once.
+  const cycleId = (apsRaw ?? [])[0] ? (apsRaw as unknown as ApRow[])[0].cycle_id : null;
+  let bands: RatingBand[] = [];
+  if (cycleId) {
+    const { data: cyc } = await supabase
+      .from("appraisal_cycles")
+      .select("rating_bands")
+      .eq("id", cycleId)
+      .maybeSingle();
+    bands = ((cyc as { rating_bands?: RatingBand[] } | null)?.rating_bands ?? []) as RatingBand[];
+  }
+
+  let confirmed = 0;
+  for (const s of pending) {
+    const a = aps.get(s.appraisalId);
+    if (!a || !s.panelBand) continue;
+    const res = await applyFinalRating(supabase, a, s.panelBand, bands, null, user?.id ?? null);
+    if (res.ok) confirmed += 1;
+  }
+  rev(groupId);
+  return confirmed > 0 ? { ok: true } : { ok: false, error: "Nothing was confirmed." };
 }
 
 /** Move an appraisal between calibration gates (HR). */
