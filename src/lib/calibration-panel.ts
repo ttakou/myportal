@@ -15,6 +15,10 @@ export interface PanelStaff {
   gate: CalibrationGate;
   /** Panel-agreed band (mode of member ratings, else provisional). */
   panelBand: string | null;
+  /** A panellist rated them in a higher band than the agreed one. */
+  upgradeCandidate: boolean;
+  /** Member ratings recorded so far (for completion). */
+  ratedBy: number;
 }
 
 export interface MemberRatingView {
@@ -34,6 +38,11 @@ export interface PanelData {
   /** The signed-in user's own rating per appraisal. */
   myRatings: Record<string, { bandLabel: string; comment: string | null }>;
   balance: BalanceResult;
+  /** Target band labels, top contributor → lowest. */
+  bandOrder: string[];
+  /** Panel finished when every staff member is rated by every panellist. */
+  panelComplete: boolean;
+  panelProgress: { rated: number; expected: number };
   isMember: boolean;
   isHr: boolean;
 }
@@ -136,10 +145,17 @@ export async function getPanelData(groupId: string): Promise<PanelData | null> {
     }
   }
 
+  const bandOrder = target.map((t) => t.label);
+  const rank = new Map(bandOrder.map((label, i) => [label, i]));
+  const rankOf = (label: string | null) => (label != null && rank.has(label) ? rank.get(label)! : 99);
+
   const staff: PanelStaff[] = staffRows.map((a) => {
     const id = String(a.id);
     const provisionalLabel = (a.rating_label as string | null) ?? null;
-    const panelBand = mode(bandsByStaff.get(id) ?? []) ?? provisionalLabel;
+    const memberBands = bandsByStaff.get(id) ?? [];
+    const panelBand = mode(memberBands) ?? provisionalLabel;
+    // A higher band has a lower rank index, so a panellist "upgrades" them.
+    const upgradeCandidate = memberBands.some((b) => rankOf(b) < rankOf(panelBand));
     return {
       appraisalId: id,
       employeeId: String(a.employee_id),
@@ -148,8 +164,13 @@ export async function getPanelData(groupId: string): Promise<PanelData | null> {
       provisionalScore: (a.final_score as number | null) ?? null,
       gate: (a.calibration_gate as CalibrationGate) ?? "provisional",
       panelBand,
+      upgradeCandidate,
+      ratedBy: memberBands.length,
     };
   });
+
+  const ratedFully = staff.filter((s) => members.length > 0 && s.ratedBy >= members.length).length;
+  const panelComplete = members.length > 0 && ratedFully === staff.length && staff.length > 0;
 
   // Balance the panel-agreed bands against the target.
   const counts: Record<string, number> = {};
@@ -170,6 +191,9 @@ export async function getPanelData(groupId: string): Promise<PanelData | null> {
     ratingsByStaff,
     myRatings,
     balance,
+    bandOrder,
+    panelComplete,
+    panelProgress: { rated: ratedFully, expected: staff.length },
     isMember,
     isHr,
   };

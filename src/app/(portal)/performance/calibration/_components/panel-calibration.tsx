@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, AlertTriangle, Users, ArrowRight } from "lucide-react";
+import { Check, AlertTriangle, Users, ArrowRight, ArrowUp } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -120,29 +120,79 @@ export function PanelCalibration({ data, directory }: { data: PanelData; directo
         </section>
       )}
 
-      {/* Staff ratings */}
-      <section className="space-y-2 rounded-lg border bg-card p-5">
+      {/* PGM finalisation gate banner */}
+      {data.isHr && (
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-md px-4 py-2 text-sm",
+            data.panelComplete ? "bg-green-100 text-green-800" : "bg-amber-50 text-amber-800",
+          )}
+        >
+          {data.panelComplete ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+          {data.panelComplete ? (
+            <span>The panel has finished — you can now finalise PGM ratings.</span>
+          ) : (
+            <span>
+              PGM finalisation unlocks once the panel rates everyone ({data.panelProgress.rated}/
+              {data.panelProgress.expected} done).
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Staff ratings, grouped by rating band (top contributors → lowest) */}
+      <section className="space-y-4 rounded-lg border bg-card p-5">
         <h2 className="font-medium">Staff ({data.staff.length})</h2>
-        <ul className="divide-y">
-          {data.staff.map((s) => (
-            <StaffRow
-              key={s.appraisalId}
-              groupId={data.group.id}
-              staff={s}
-              bands={bands}
-              canRate={canRate}
-              isHr={data.isHr}
-              mine={data.myRatings[s.appraisalId]}
-              others={data.ratingsByStaff[s.appraisalId] ?? []}
-              pending={pending}
-              run={run}
-            />
-          ))}
-          {data.staff.length === 0 && <li className="py-3 text-sm text-muted-foreground">No scored staff in this group yet.</li>}
-        </ul>
+        {data.staff.length === 0 && <p className="text-sm text-muted-foreground">No scored staff in this group yet.</p>}
+        {groupByBand(data).map(({ label, people }) => (
+          <div key={label ?? "__unrated"} className="space-y-1">
+            <h3 className="flex items-center gap-2 text-sm font-semibold">
+              <span>{label ?? "Not yet rated"}</span>
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                {people.length}
+              </span>
+            </h3>
+            <ul className="divide-y">
+              {people.map((s) => (
+                <StaffRow
+                  key={s.appraisalId}
+                  groupId={data.group.id}
+                  staff={s}
+                  bands={bands}
+                  bandOrder={data.bandOrder}
+                  panelComplete={data.panelComplete}
+                  canRate={canRate}
+                  isHr={data.isHr}
+                  mine={data.myRatings[s.appraisalId]}
+                  others={data.ratingsByStaff[s.appraisalId] ?? []}
+                  pending={pending}
+                  run={run}
+                />
+              ))}
+            </ul>
+          </div>
+        ))}
       </section>
     </div>
   );
+}
+
+/** Group staff by their panel-agreed band, ordered top contributors → lowest,
+ *  with any not-yet-rated staff last. */
+function groupByBand(data: PanelData): { label: string | null; people: PanelData["staff"] }[] {
+  const buckets = new Map<string | null, PanelData["staff"]>();
+  for (const s of data.staff) {
+    const key = s.panelBand ?? null;
+    (buckets.get(key) ?? buckets.set(key, []).get(key)!).push(s);
+  }
+  const out: { label: string | null; people: PanelData["staff"] }[] = [];
+  for (const label of data.bandOrder) {
+    const people = buckets.get(label);
+    if (people && people.length) out.push({ label, people });
+  }
+  const unrated = buckets.get(null);
+  if (unrated && unrated.length) out.push({ label: null, people: unrated });
+  return out;
 }
 
 function PercentEditor({
@@ -190,6 +240,8 @@ function StaffRow({
   groupId,
   staff,
   bands,
+  bandOrder,
+  panelComplete,
   canRate,
   isHr,
   mine,
@@ -200,6 +252,8 @@ function StaffRow({
   groupId: string;
   staff: PanelData["staff"][number];
   bands: string[];
+  bandOrder: string[];
+  panelComplete: boolean;
   canRate: boolean;
   isHr: boolean;
   mine?: { bandLabel: string; comment: string | null };
@@ -210,14 +264,32 @@ function StaffRow({
   const [band, setBand] = useState(mine?.bandLabel ?? "");
   const [comment, setComment] = useState(mine?.comment ?? "");
   const [pgmBand, setPgmBand] = useState(staff.panelBand ?? "");
+  const [pgmComment, setPgmComment] = useState("");
   const gateIdx = CALIBRATION_GATES.indexOf(staff.gate);
   const nextGate = CALIBRATION_GATES[gateIdx + 1] as CalibrationGate | undefined;
+
+  // A lower rank index = higher band; rank beyond the list sits last.
+  const rankOf = (label: string) => {
+    const i = bandOrder.indexOf(label);
+    return i === -1 ? 99 : i;
+  };
+  // Rating below the panel-agreed band is a downgrade → PGM comment required.
+  const isDowngrade =
+    !!pgmBand && staff.panelBand != null && rankOf(pgmBand) > rankOf(staff.panelBand);
+  const finaliseBlocked = !panelComplete || !pgmBand || (isDowngrade && !pgmComment.trim());
 
   return (
     <li className="py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-sm font-medium">{staff.name}</p>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            {staff.name}
+            {staff.upgradeCandidate && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                <ArrowUp className="h-3 w-3" /> May upgrade
+              </span>
+            )}
+          </p>
           <p className="text-xs text-muted-foreground">
             Provisional: {staff.provisionalLabel ?? "—"}
             {staff.provisionalScore != null ? ` (${staff.provisionalScore}%)` : ""} · Panel:{" "}
@@ -226,15 +298,36 @@ function StaffRow({
           </p>
         </div>
         {isHr && staff.gate === "pgm" ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Panel: {staff.panelBand ?? "—"}</span>
-            <select value={pgmBand} onChange={(e) => setPgmBand(e.target.value)} className={field} aria-label="PGM final rating">
+            <select
+              value={pgmBand}
+              onChange={(e) => setPgmBand(e.target.value)}
+              className={field}
+              aria-label="PGM final rating"
+              disabled={!panelComplete}
+            >
               <option value="">Final rating…</option>
               {bands.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
             </select>
-            <Button variant="outline" size="sm" disabled={pending || !pgmBand} onClick={() => run(() => finalisePanelRating(groupId, staff.appraisalId, pgmBand))}>
+            {isDowngrade && (
+              <input
+                value={pgmComment}
+                onChange={(e) => setPgmComment(e.target.value)}
+                placeholder="Reason for downgrade (required)"
+                className={cn(field, "min-w-[12rem]")}
+                aria-label="PGM downgrade comment"
+              />
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending || finaliseBlocked}
+              title={!panelComplete ? "The panel must finish rating everyone first." : undefined}
+              onClick={() => run(() => finalisePanelRating(groupId, staff.appraisalId, pgmBand, pgmComment))}
+            >
               <Check className="h-4 w-4" /> {pgmBand === staff.panelBand ? "Confirm" : "Finalise"}
             </Button>
           </div>

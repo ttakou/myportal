@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
+import { getCalibrationSettings } from "@/lib/calibration";
 import type { ActionResult } from "@/types/actions";
 import { CALIBRATION_GATES, type CalibrationGate } from "@/types/calibration-panel";
 import type { DistributionBand } from "@/types/calibration";
@@ -114,6 +115,7 @@ export async function finalisePanelRating(
   groupId: string,
   appraisalId: string,
   pgmBand?: string | null,
+  comment?: string | null,
 ): Promise<ActionResult> {
   if (!(await ensureHr())) return { ok: false, error: "Only HR/PGM can finalise." };
   const supabase = createClient();
@@ -129,24 +131,53 @@ export async function finalisePanelRating(
   if (!ap) return { ok: false, error: "Appraisal not found." };
   const a = ap as Record<string, unknown>;
 
-  // The PGM's rating is final; default to the panel-agreed band (mode of member
-  // ratings, else the provisional label) when the PGM confirms without changing.
-  let band: string | null = pgmBand?.trim() || null;
-  if (!band) {
-    const { data: prs } = await supabase
+  // Panel ratings for this person + the panel size — the PGM rating is only
+  // available once the panel has finished this person.
+  const [{ data: prs }, { count: memberCount }] = await Promise.all([
+    supabase
       .from("calibration_panel_ratings")
       .select("band_label")
       .eq("group_id", groupId)
-      .eq("appraisal_id", appraisalId);
-    const tally = new Map<string, number>();
-    for (const r of (prs ?? []) as { band_label: string }[]) {
-      tally.set(r.band_label, (tally.get(r.band_label) ?? 0) + 1);
-    }
-    band = (a.rating_label as string | null) ?? null;
-    let best = 0;
-    for (const [b, n] of tally) if (n > best) { best = n; band = b; }
+      .eq("appraisal_id", appraisalId),
+    supabase
+      .from("calibration_panel_members")
+      .select("id", { count: "exact", head: true })
+      .eq("group_id", groupId),
+  ]);
+  const ratings = (prs ?? []) as { band_label: string }[];
+  const members = memberCount ?? 0;
+  if (members > 0 && ratings.length < members) {
+    return { ok: false, error: "The panel hasn't finished rating this person yet." };
   }
-  if (!band) return { ok: false, error: "No panel rating to finalise." };
+
+  // Panel-agreed band = mode of member ratings, else the provisional label.
+  const tally = new Map<string, number>();
+  for (const r of ratings) tally.set(r.band_label, (tally.get(r.band_label) ?? 0) + 1);
+  let panelBand: string | null = (a.rating_label as string | null) ?? null;
+  let best = 0;
+  for (const [b, n] of tally) if (n > best) { best = n; panelBand = b; }
+
+  // The PGM's choice is final (no distribution cap); defaults to the panel band.
+  const band = pgmBand?.trim() || panelBand;
+  if (!band) return { ok: false, error: "No rating to finalise." };
+
+  // Band order (top → bottom) — a downgrade below the panel band needs a comment.
+  const { data: grp } = await supabase
+    .from("calibration_groups")
+    .select("distribution")
+    .eq("id", groupId)
+    .maybeSingle();
+  const grpDist = (grp as { distribution?: { label: string }[] } | null)?.distribution;
+  let order: string[] = Array.isArray(grpDist) ? grpDist.map((d) => d.label) : [];
+  if (order.length === 0) order = (await getCalibrationSettings()).distribution.map((d) => d.label);
+  const rankOf = (l: string | null) => {
+    const i = l ? order.indexOf(l) : -1;
+    return i === -1 ? 99 : i;
+  };
+  const note = comment?.toString().trim() || null;
+  if (panelBand != null && rankOf(band) > rankOf(panelBand) && !note) {
+    return { ok: false, error: "A comment is required to rate below the panel's band." };
+  }
 
   const { data: cyc } = await supabase
     .from("appraisal_cycles")
@@ -164,7 +195,7 @@ export async function finalisePanelRating(
     previous_label: a.rating_label ?? null,
     new_score: score,
     new_label: band,
-    reason: `PGM final rating (${band})`,
+    reason: `PGM final rating (${band})${note ? ` — ${note}` : ""}`,
     adjusted_by: user?.id ?? null,
   });
 
