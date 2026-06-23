@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Check, Lock, LockOpen, BadgeCheck } from "lucide-react";
+import Link from "next/link";
+import { Plus, Trash2, Check, Lock, LockOpen, BadgeCheck, Users } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   APPROVAL_ROLES,
@@ -233,6 +234,9 @@ function GroupsManager({ groups, cycles }: { groups: CalibrationGroup[]; cycles:
                 </p>
               </div>
               <div className="flex gap-1">
+                <Link href={`/performance/calibration/${g.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  <Users className="h-4 w-4" /> Panel
+                </Link>
                 <StatusButton status={g.status} pending={pending} onSet={(st) => run(() => setCalibrationGroupStatus(g.id, st))} />
                 <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => deleteCalibrationGroup(g.id))} aria-label="Delete group">
                   <Trash2 className="h-4 w-4" />
