@@ -20,6 +20,14 @@ import {
 
 const field = "rounded-md border bg-background px-2 py-1 text-sm";
 
+/** "Meets (72%)" / "Meets" / "72%" / "—" from a label + score. */
+function ratingText(label: string | null, score: number | null): string {
+  if (label && score != null) return `${label} (${score}%)`;
+  if (label) return label;
+  if (score != null) return `${score}%`;
+  return "—";
+}
+
 export function PanelCalibration({ data, directory }: { data: PanelData; directory: DirectoryEntry[] }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -307,12 +315,35 @@ function StaffRow({
               </span>
             )}
           </p>
-          <p className="text-xs text-muted-foreground">
-            Provisional: {staff.provisionalLabel ?? "—"}
-            {staff.provisionalScore != null ? ` (${staff.provisionalScore}%)` : ""} · Panel:{" "}
-            <span className="font-medium">{staff.panelBand ?? "—"}</span> ·{" "}
+          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+            <span>
+              Preliminary:{" "}
+              <span className="font-medium">{ratingText(staff.preliminaryLabel, staff.preliminaryScore)}</span>
+            </span>
+            {staff.adjustedLabel != null && (
+              <span className="inline-flex items-center gap-1">
+                <ArrowRight className="h-3 w-3" /> Adjusted:{" "}
+                <span className="font-medium text-foreground">
+                  {ratingText(staff.adjustedLabel, staff.adjustedScore)}
+                </span>
+              </span>
+            )}
+            <span>
+              · Panel: <span className="font-medium">{staff.panelBand ?? "—"}</span>
+            </span>
             <span className="rounded-full bg-muted px-1.5 py-0.5">{GATE_LABEL[staff.gate]}</span>
           </p>
+          {staff.history.length > 0 && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              History:{" "}
+              {staff.history.map((h, i) => (
+                <span key={i}>
+                  {i > 0 && " · "}
+                  <span className="text-foreground/70">{h.cycle}</span> {ratingText(h.label, h.score)}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         {isHr && staff.gate === "pgm" ? (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -401,8 +432,8 @@ function StaffRow({
             {adjustments.map((adj, i) => (
               <li key={i}>
                 {new Date(adj.at).toLocaleDateString()} ·{" "}
-                <span className="font-medium">{adj.previousLabel ?? "—"}</span> →{" "}
-                <span className="font-medium">{adj.newLabel ?? "—"}</span>
+                <span className="font-medium">{ratingText(adj.previousLabel, adj.previousScore)}</span> →{" "}
+                <span className="font-medium">{ratingText(adj.newLabel, adj.newScore)}</span>
                 {adj.byName ? ` · ${adj.byName}` : ""}
                 {adj.reason ? ` — ${adj.reason}` : ""}
               </li>
