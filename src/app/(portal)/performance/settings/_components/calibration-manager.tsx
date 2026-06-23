@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, Check, Lock, LockOpen, BadgeCheck, Users, Send } from "lucide-react";
+import { Plus, Trash2, Check, Lock, LockOpen, BadgeCheck, Users, Send, FileText } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -283,6 +283,9 @@ function GroupsManager({ groups, cycles }: { groups: CalibrationGroup[]; cycles:
               <div className="flex gap-1">
                 <Link href={`/performance/calibration/${g.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   <Users className="h-4 w-4" /> Panel
+                </Link>
+                <Link href={`/performance/calibration/${g.id}/signoff`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  <FileText className="h-4 w-4" /> Sign-off
                 </Link>
                 <StatusButton status={g.status} pending={pending} onSet={(st) => run(() => setCalibrationGroupStatus(g.id, st))} />
                 <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => deleteCalibrationGroup(g.id))} aria-label="Delete group">

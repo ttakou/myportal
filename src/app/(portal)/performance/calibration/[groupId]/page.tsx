@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ShieldX } from "lucide-react";
+import { ArrowLeft, ShieldX, FileText } from "lucide-react";
 import { getPanelData } from "@/lib/calibration-panel";
 import { getDirectory } from "@/lib/continuous";
 import { GATE_LABEL } from "@/types/calibration-panel";
@@ -39,7 +39,17 @@ export default async function PanelCalibrationPage({
         >
           <ArrowLeft className="h-4 w-4" /> Calibration
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Panel calibration — {data.group.name}</h1>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Panel calibration — {data.group.name}</h1>
+          {data.isHr && (
+            <Link
+              href={`/performance/calibration/${groupId}/signoff`}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              <FileText className="h-4 w-4" /> Sign-off pack
+            </Link>
+          )}
+        </div>
         <p className="text-muted-foreground">
           Gates: {Object.values(GATE_LABEL).join(" → ")}. The panel rates each staff member; the
           system holds each band to its configured percentage.
