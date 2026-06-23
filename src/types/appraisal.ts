@@ -279,6 +279,9 @@ export interface Appraisal {
   /** Calibration progress: 'provisional' (line-manager score) … 'final' (PGM
    *  signed off). A rating is only truly final once this reaches 'final'. */
   calibration_gate: "provisional" | "panel" | "pgm" | "final";
+  /** When HR released the final rating to the employee. Null = the employee
+   *  must not be shown any score yet (only comments/remarks). */
+  rating_released_at: string | null;
   employee_summary: string | null;
   manager_summary: string | null;
   discussion_date: string | null;

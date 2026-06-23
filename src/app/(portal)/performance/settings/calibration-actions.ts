@@ -156,6 +156,15 @@ export async function sendRatingsToStaff(
     };
   }
 
+  // Mark these ratings as released — this is what unlocks the score for the
+  // employee's own view. Until now they saw comments/remarks only.
+  const releasedAt = new Date().toISOString();
+  const { error: relErr } = await supabase
+    .from("appraisals")
+    .update({ rating_released_at: releasedAt })
+    .in("id", rows.map((r) => String(r.id)));
+  if (relErr) return { ok: false, error: relErr.message };
+
   let sent = 0;
   for (const a of rows) {
     await dispatchEvent("rating_changed", {

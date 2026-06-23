@@ -12,6 +12,7 @@ import {
   WidthType,
 } from "docx";
 import { getAppraisal } from "@/lib/appraisals";
+import { getAccess } from "@/lib/auth";
 import { STATUS_LABEL } from "@/types/appraisal";
 import type { Appraisal } from "@/types/appraisal";
 
@@ -109,7 +110,7 @@ function signatureBlock(employee: string, manager: string): Table {
   });
 }
 
-function buildDocument(a: Appraisal): Document {
+function buildDocument(a: Appraisal, showScore: boolean): Document {
   // Scores are only final once the PGM has signed off in calibration.
   const ratingFinal = a.calibration_gate === "final";
   const children: (Paragraph | Table)[] = [
@@ -128,12 +129,20 @@ function buildDocument(a: Appraisal): Document {
         }),
       ],
     }),
-    fieldGrid([
-      ["Employee", a.employee_name ?? "—"],
-      ["Manager", a.manager_name ?? "—"],
-      [ratingFinal ? "Final score" : "Preliminary score", a.final_score != null ? String(a.final_score) : "—"],
-      [ratingFinal ? "Rating" : "Preliminary rating", a.rating_label ?? "—"],
-    ]),
+    fieldGrid(
+      showScore
+        ? [
+            ["Employee", a.employee_name ?? "—"],
+            ["Manager", a.manager_name ?? "—"],
+            [ratingFinal ? "Final score" : "Preliminary score", a.final_score != null ? String(a.final_score) : "—"],
+            [ratingFinal ? "Rating" : "Preliminary rating", a.rating_label ?? "—"],
+          ]
+        : [
+            ["Employee", a.employee_name ?? "—"],
+            ["Manager", a.manager_name ?? "—"],
+            ["Rating", "Pending release by HR"],
+          ],
+    ),
   ];
 
   if (a.manager_summary) {
@@ -262,12 +271,15 @@ function buildDocument(a: Appraisal): Document {
  *  gates access — an out-of-scope id resolves to null → 404. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const appraisal = await getAppraisal(id);
+  const [appraisal, access] = await Promise.all([getAppraisal(id), getAccess()]);
   if (!appraisal) {
     return new Response("Not found", { status: 404 });
   }
 
-  const buffer = await Packer.toBuffer(buildDocument(appraisal));
+  // Staff only get a score in the export once HR has released the final rating.
+  const isPrivileged = access.isHr || access.isSystemAdmin || access.isAdmin;
+  const showScore = isPrivileged || appraisal.rating_released_at != null;
+  const buffer = await Packer.toBuffer(buildDocument(appraisal, showScore));
   const filename = safeName(
     `appraisal-${appraisal.employee_name ?? "outcome"}-${appraisal.cycle_name ?? ""}`,
   );
