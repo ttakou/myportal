@@ -104,11 +104,17 @@ export async function setGroupDistribution(
 }
 
 /**
- * PGM gate: finalise an appraisal at its panel-agreed band. Maps the band to a
- * representative score from the cycle's rating bands, records a calibration
- * adjustment, sets the rating, and moves the gate to "final".
+ * PGM gate: finalise an appraisal. The PGM sees the panel rating and either
+ * confirms it or supplies their own band (`pgmBand`) — the PGM's choice is the
+ * final rating. The band maps to a representative score from the cycle's rating
+ * bands, records a calibration adjustment, sets the rating, and moves the gate
+ * to "final".
  */
-export async function finalisePanelRating(groupId: string, appraisalId: string): Promise<ActionResult> {
+export async function finalisePanelRating(
+  groupId: string,
+  appraisalId: string,
+  pgmBand?: string | null,
+): Promise<ActionResult> {
   if (!(await ensureHr())) return { ok: false, error: "Only HR/PGM can finalise." };
   const supabase = createClient();
   const {
@@ -123,19 +129,23 @@ export async function finalisePanelRating(groupId: string, appraisalId: string):
   if (!ap) return { ok: false, error: "Appraisal not found." };
   const a = ap as Record<string, unknown>;
 
-  // Panel-agreed band = mode of member ratings, else the provisional label.
-  const { data: prs } = await supabase
-    .from("calibration_panel_ratings")
-    .select("band_label")
-    .eq("group_id", groupId)
-    .eq("appraisal_id", appraisalId);
-  const tally = new Map<string, number>();
-  for (const r of (prs ?? []) as { band_label: string }[]) {
-    tally.set(r.band_label, (tally.get(r.band_label) ?? 0) + 1);
+  // The PGM's rating is final; default to the panel-agreed band (mode of member
+  // ratings, else the provisional label) when the PGM confirms without changing.
+  let band: string | null = pgmBand?.trim() || null;
+  if (!band) {
+    const { data: prs } = await supabase
+      .from("calibration_panel_ratings")
+      .select("band_label")
+      .eq("group_id", groupId)
+      .eq("appraisal_id", appraisalId);
+    const tally = new Map<string, number>();
+    for (const r of (prs ?? []) as { band_label: string }[]) {
+      tally.set(r.band_label, (tally.get(r.band_label) ?? 0) + 1);
+    }
+    band = (a.rating_label as string | null) ?? null;
+    let best = 0;
+    for (const [b, n] of tally) if (n > best) { best = n; band = b; }
   }
-  let band: string | null = (a.rating_label as string | null) ?? null;
-  let best = 0;
-  for (const [b, n] of tally) if (n > best) { best = n; band = b; }
   if (!band) return { ok: false, error: "No panel rating to finalise." };
 
   const { data: cyc } = await supabase
@@ -154,7 +164,7 @@ export async function finalisePanelRating(groupId: string, appraisalId: string):
     previous_label: a.rating_label ?? null,
     new_score: score,
     new_label: band,
-    reason: `PGM final rating (panel: ${band})`,
+    reason: `PGM final rating (${band})`,
     adjusted_by: user?.id ?? null,
   });
 

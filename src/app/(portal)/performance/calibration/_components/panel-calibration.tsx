@@ -209,6 +209,7 @@ function StaffRow({
 }) {
   const [band, setBand] = useState(mine?.bandLabel ?? "");
   const [comment, setComment] = useState(mine?.comment ?? "");
+  const [pgmBand, setPgmBand] = useState(staff.panelBand ?? "");
   const gateIdx = CALIBRATION_GATES.indexOf(staff.gate);
   const nextGate = CALIBRATION_GATES[gateIdx + 1] as CalibrationGate | undefined;
 
@@ -225,9 +226,18 @@ function StaffRow({
           </p>
         </div>
         {isHr && staff.gate === "pgm" ? (
-          <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => finalisePanelRating(groupId, staff.appraisalId))}>
-            <Check className="h-4 w-4" /> Finalise{staff.panelBand ? ` (${staff.panelBand})` : ""}
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Panel: {staff.panelBand ?? "—"}</span>
+            <select value={pgmBand} onChange={(e) => setPgmBand(e.target.value)} className={field} aria-label="PGM final rating">
+              <option value="">Final rating…</option>
+              {bands.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+            <Button variant="outline" size="sm" disabled={pending || !pgmBand} onClick={() => run(() => finalisePanelRating(groupId, staff.appraisalId, pgmBand))}>
+              <Check className="h-4 w-4" /> {pgmBand === staff.panelBand ? "Confirm" : "Finalise"}
+            </Button>
+          </div>
         ) : (
           isHr && nextGate && (
             <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => setCalibrationGate(staff.appraisalId, nextGate, groupId))}>
