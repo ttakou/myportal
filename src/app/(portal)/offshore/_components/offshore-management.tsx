@@ -2490,15 +2490,21 @@ function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[
 
   const labelOf = (r: Room) => [r.block, r.room_number].filter(Boolean).join(" ");
 
-  // People on board with no bed yet — the pool we drop into empty beds.
-  const waiting = useMemo(
+  // Everyone on board is a candidate: those with no bed (assign) and those in
+  // another room (move). A person holds a single on-board trip, so pointing that
+  // trip at a new room+bed is inherently "one room at a time" — the move clears
+  // their previous room automatically.
+  const pool = useMemo(
     () =>
-      onboard
-        .filter((p) => !p.room_id)
-        .map((p) => ({ id: p.trip_id, name: p.company ? `${p.name} · ${p.company}` : p.name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
+      onboard.map((p) => ({
+        id: p.trip_id,
+        room_id: p.room_id,
+        name: p.company ? `${p.name} · ${p.company}` : p.name,
+        placedIn: p.room_id ? p.room_label : null,
+      })),
     [onboard],
   );
+  const waitingCount = pool.filter((p) => !p.room_id).length;
 
   const usable = useMemo(
     () => rooms.filter((r) => !["blocked", "maintenance"].includes(r.status)),
@@ -2536,8 +2542,8 @@ function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[
         <span className="font-semibold text-green-700">{totalFree}</span>
         <span className="text-muted-foreground">free bed(s)</span>
         <span className="text-muted-foreground">·</span>
-        <span className={cn("font-semibold", waiting.length ? "text-amber-600" : "text-muted-foreground")}>
-          {waiting.length}
+        <span className={cn("font-semibold", waitingCount ? "text-amber-600" : "text-muted-foreground")}>
+          {waitingCount}
         </span>
         <span className="text-muted-foreground">on board waiting for a bed</span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -2554,11 +2560,17 @@ function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[
         </div>
       </div>
 
-      {waiting.length === 0 && (
+      {pool.length === 0 ? (
         <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          Nobody on board is currently without a bed. Empty beds below can still be filled once people
-          board, or use the Accommodation view to move someone between rooms.
+          Nobody is on board yet — empty beds can be filled once people board.
         </p>
+      ) : (
+        waitingCount === 0 && (
+          <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Everyone on board already has a bed. You can still pick someone to move them into a
+            different room — they only ever occupy one room at a time.
+          </p>
+        )
       )}
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -2575,6 +2587,17 @@ function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[
             const lbl = `Bed ${k}`;
             if (!used.has(lbl)) slotLabels.push(lbl);
           }
+          // Candidates for this room's empty beds: everyone on board except the
+          // people already in it. Waiting (bed-less) people sort to the top;
+          // placed people read as "move from <their room>".
+          const candidates = pool
+            .filter((p) => p.room_id !== r.id)
+            .map((p) => ({
+              id: p.id,
+              waiting: !p.room_id,
+              label: p.placedIn ? `${p.name} — move from ${p.placedIn}` : p.name,
+            }))
+            .sort((a, b) => Number(b.waiting) - Number(a.waiting) || a.label.localeCompare(b.label));
           return (
             <div key={r.id} className="rounded-md border bg-card p-2 text-sm">
               <div className="flex items-center justify-between gap-2">
@@ -2623,7 +2646,7 @@ function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[
                     key={`${r.id}-${lbl}`}
                     roomId={r.id}
                     defaultBed={lbl}
-                    waiting={waiting}
+                    candidates={candidates}
                     pending={pending}
                     run={run}
                   />
@@ -2644,17 +2667,21 @@ function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[
   );
 }
 
-/** One empty bed slot: an editable bed label + a picker that assigns a waiting person on select. */
+/**
+ * One empty bed slot: an editable bed label + a picker that places the chosen
+ * on-board person into this bed on select. Picking someone already in another
+ * room moves them here (a single trip, so one room at a time).
+ */
 function EmptyBed({
   roomId,
   defaultBed,
-  waiting,
+  candidates,
   pending,
   run,
 }: {
   roomId: string;
   defaultBed: string;
-  waiting: { id: string; name: string }[];
+  candidates: { id: string; label: string }[];
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
@@ -2669,11 +2696,11 @@ function EmptyBed({
       />
       <LazySelect
         value={null}
-        options={waiting}
+        options={candidates}
         getOptionValue={(p) => p.id}
-        getOptionLabel={(p) => p.name}
-        placeholder={waiting.length ? "— assign person —" : "— nobody waiting —"}
-        disabled={pending || waiting.length === 0}
+        getOptionLabel={(p) => p.label}
+        placeholder={candidates.length ? "— assign / move person —" : "— nobody available —"}
+        disabled={pending || candidates.length === 0}
         className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
         onChange={(v) => v && run(() => reassignTripRoom(v, roomId, bed.trim() || null))}
       />
