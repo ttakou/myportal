@@ -21,8 +21,7 @@ describe("default permission matrix", () => {
     expect(e.form_view).toBe(true);
     expect(e.comments_view).toBe(true);
     expect(e.scores_view).toBe(false);
-    expect(e.salary_view).toBe(false);
-    expect(e.succession_view).toBe(false);
+    expect(e.promotion_view).toBe(false);
   });
 
   it("gives admins every capability", () => {

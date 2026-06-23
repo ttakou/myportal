@@ -60,9 +60,7 @@ export type PermCapability =
   | "reopen"
   | "calibration"
   | "reports_export"
-  | "salary_view"
-  | "promotion_view"
-  | "succession_view";
+  | "promotion_view";
 
 export const PERM_CAPABILITIES: PermCapability[] = [
   "form_view",
@@ -72,9 +70,7 @@ export const PERM_CAPABILITIES: PermCapability[] = [
   "reopen",
   "calibration",
   "reports_export",
-  "salary_view",
   "promotion_view",
-  "succession_view",
 ];
 
 export const PERM_CAPABILITY_LABEL: Record<PermCapability, string> = {
@@ -85,9 +81,7 @@ export const PERM_CAPABILITY_LABEL: Record<PermCapability, string> = {
   reopen: "Reopen assessments",
   calibration: "Participate in calibration",
   reports_export: "Export reports",
-  salary_view: "View salary recommendation",
   promotion_view: "View promotion recommendation",
-  succession_view: "View succession recommendation",
 };
 
 export type PermissionMatrix = Record<PermRole, Record<PermCapability, boolean>>;
@@ -100,9 +94,7 @@ const NONE: Record<PermCapability, boolean> = {
   reopen: false,
   calibration: false,
   reports_export: false,
-  salary_view: false,
   promotion_view: false,
-  succession_view: false,
 };
 
 /** Build a row from the capabilities that should be `true`. */
@@ -115,9 +107,9 @@ function row(...granted: PermCapability[]): Record<PermCapability, boolean> {
 /**
  * Sensible defaults that mirror today's behaviour: the employee sees only the
  * form and comments (their score is released separately); line/second-level
- * managers and HR see scores and may act; sensitive recommendations
- * (salary / promotion / succession) stay with senior/HR roles; admins get
- * everything. HR can change any of this in the editor.
+ * managers and HR see scores and may act; the promotion recommendation stays
+ * with senior/HR roles; admins get everything. HR can change any of this in the
+ * editor.
  */
 export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
   employee: row("form_view", "comments_view"),
@@ -136,7 +128,6 @@ export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
     "ratings_edit",
     "reports_export",
     "promotion_view",
-    "salary_view",
   ),
   functional_manager: row("form_view", "scores_view", "comments_view"),
   project_manager: row("form_view", "comments_view"),
@@ -146,9 +137,7 @@ export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
     "comments_view",
     "calibration",
     "reports_export",
-    "salary_view",
     "promotion_view",
-    "succession_view",
   ),
   hr_admin: row(...PERM_CAPABILITIES),
   calibration_committee: row(
@@ -162,9 +151,7 @@ export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
     "form_view",
     "scores_view",
     "reports_export",
-    "salary_view",
     "promotion_view",
-    "succession_view",
   ),
   system_admin: row(...PERM_CAPABILITIES),
 };

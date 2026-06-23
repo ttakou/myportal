@@ -33,7 +33,7 @@ export default async function PermissionsSettingsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Permissions</h1>
         <p className="text-muted-foreground">
           Who may see scores and comments, modify ratings, reopen assessments, take part in
-          calibration, export reports, and view salary / promotion / succession recommendations.
+          calibration, export reports, and view the promotion recommendation.
           Per-section visibility &amp; editing stays on each form template.
         </p>
       </div>
