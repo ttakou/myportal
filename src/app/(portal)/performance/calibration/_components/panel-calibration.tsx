@@ -6,12 +6,15 @@ import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CALIBRATION_GATES, GATE_LABEL, type CalibrationGate } from "@/types/calibration-panel";
+import type { DistributionBand } from "@/types/calibration";
 import type { PanelData } from "@/lib/calibration-panel";
 import type { DirectoryEntry } from "@/lib/continuous";
 import {
   setPanelMembers,
   submitPanelRating,
   setCalibrationGate,
+  setGroupDistribution,
+  finalisePanelRating,
 } from "../../settings/calibration-panel-actions";
 
 const field = "rounded-md border bg-background px-2 py-1 text-sm";
@@ -71,6 +74,7 @@ export function PanelCalibration({ data, directory }: { data: PanelData; directo
             ))}
           </ul>
         )}
+        {data.isHr && <PercentEditor groupId={data.group.id} target={data.target} pending={pending} run={run} />}
       </section>
 
       {/* Panel members (HR) */}
@@ -141,6 +145,47 @@ export function PanelCalibration({ data, directory }: { data: PanelData; directo
   );
 }
 
+function PercentEditor({
+  groupId,
+  target,
+  pending,
+  run,
+}: {
+  groupId: string;
+  target: DistributionBand[];
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>) => void;
+}) {
+  const [bands, setBands] = useState<DistributionBand[]>(target);
+  const total = bands.reduce((s, b) => s + (b.percent || 0), 0);
+  return (
+    <div className="border-t pt-3">
+      <p className="mb-1 text-xs font-medium text-muted-foreground">Target percentages (at rating time)</p>
+      <div className="flex flex-wrap items-end gap-2">
+        {bands.map((b, i) => (
+          <label key={b.label} className="text-xs text-muted-foreground">
+            {b.label}
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={b.percent}
+              onChange={(e) => setBands(bands.map((x, j) => (j === i ? { ...x, percent: Number(e.target.value) } : x)))}
+              className={cn(field, "mt-0.5 block w-20")}
+            />
+          </label>
+        ))}
+        <span className="text-xs">
+          Total <span className={cn("font-semibold", total === 100 ? "text-green-700" : "text-amber-700")}>{total}%</span>
+        </span>
+        <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => setGroupDistribution(groupId, bands))}>
+          <Check className="h-4 w-4" /> Save percentages
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function StaffRow({
   groupId,
   staff,
@@ -179,10 +224,16 @@ function StaffRow({
             <span className="rounded-full bg-muted px-1.5 py-0.5">{GATE_LABEL[staff.gate]}</span>
           </p>
         </div>
-        {isHr && nextGate && (
-          <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => setCalibrationGate(staff.appraisalId, nextGate, groupId))}>
-            <ArrowRight className="h-4 w-4" /> {GATE_LABEL[nextGate]}
+        {isHr && staff.gate === "pgm" ? (
+          <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => finalisePanelRating(groupId, staff.appraisalId))}>
+            <Check className="h-4 w-4" /> Finalise{staff.panelBand ? ` (${staff.panelBand})` : ""}
           </Button>
+        ) : (
+          isHr && nextGate && (
+            <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => setCalibrationGate(staff.appraisalId, nextGate, groupId))}>
+              <ArrowRight className="h-4 w-4" /> {GATE_LABEL[nextGate]}
+            </Button>
+          )
         )}
       </div>
 
