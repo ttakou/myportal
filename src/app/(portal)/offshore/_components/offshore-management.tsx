@@ -37,6 +37,7 @@ import {
   type Manifest,
   type ManifestStatus,
   type PobBreakdown,
+  type PobOnboard,
   type Room,
   type RoomAvailability,
   type RoomStatus,
@@ -101,6 +102,7 @@ type Tab =
   | "crews"
   | "calendar"
   | "rooms"
+  | "bedboard"
   | "roster"
   | "assign"
   | "visitors"
@@ -156,6 +158,7 @@ export function OffshoreManagement(props: {
       {tab === "rooms" && (
         <RoomsPanel rooms={props.rooms} installations={props.installations} roster={props.roster} />
       )}
+      {tab === "bedboard" && <BedBoardPanel rooms={props.rooms} onboard={props.pob.people} />}
       {tab === "roster" && (
         <RosterPanel
           roster={props.roster}
@@ -2471,6 +2474,210 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Bed board — every usable room with at least one empty bed, with inline
+ * assignment of an on-board person (one who has no bed yet) straight into a
+ * free bed. Assigning sets that trip's room + bed, so the person leaves the
+ * "waiting for a bed" pool on the next refresh.
+ */
+function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[] }) {
+  const { pending, error, run } = useRun();
+  const [q, setQ] = useState("");
+  const [showFull, setShowFull] = useState(false);
+
+  const labelOf = (r: Room) => [r.block, r.room_number].filter(Boolean).join(" ");
+
+  // People on board with no bed yet — the pool we drop into empty beds.
+  const waiting = useMemo(
+    () =>
+      onboard
+        .filter((p) => !p.room_id)
+        .map((p) => ({ id: p.trip_id, name: p.company ? `${p.name} · ${p.company}` : p.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [onboard],
+  );
+
+  const usable = useMemo(
+    () => rooms.filter((r) => !["blocked", "maintenance"].includes(r.status)),
+    [rooms],
+  );
+  const totalFree = usable.reduce((n, r) => n + Math.max(0, (r.bed_count || 0) - r.occupied), 0);
+
+  const needle = q.trim().toLowerCase();
+  const visible = useMemo(() => {
+    return usable
+      .filter((r) => {
+        const free = (r.bed_count || 0) - r.occupied;
+        if (!showFull && free <= 0) return false;
+        if (!needle) return true;
+        const hay = [r.block, r.floor, r.room_number, r.lifeboat].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(needle);
+      })
+      .sort((a, b) => {
+        // Rooms with a free bed first, then by label.
+        const fa = (a.bed_count || 0) - a.occupied;
+        const fb = (b.bed_count || 0) - b.occupied;
+        return (fb > 0 ? 1 : 0) - (fa > 0 ? 1 : 0) || labelOf(a).localeCompare(labelOf(b));
+      });
+  }, [usable, needle, showFull]);
+
+  return (
+    <div className="space-y-3">
+      {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+      <p className="text-sm text-muted-foreground">
+        Every room with a free bed. Pick a waiting person to drop them straight into an empty bed —
+        their POB record gets that room &amp; bed. Blocked and under-maintenance rooms are hidden.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border bg-card px-3 py-2 text-sm">
+        <span className="font-semibold text-green-700">{totalFree}</span>
+        <span className="text-muted-foreground">free bed(s)</span>
+        <span className="text-muted-foreground">·</span>
+        <span className={cn("font-semibold", waiting.length ? "text-amber-600" : "text-muted-foreground")}>
+          {waiting.length}
+        </span>
+        <span className="text-muted-foreground">on board waiting for a bed</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Filter rooms…"
+            className={cn(field, "py-1")}
+          />
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            <input type="checkbox" checked={showFull} onChange={(e) => setShowFull(e.target.checked)} />
+            Show full rooms
+          </label>
+        </div>
+      </div>
+
+      {waiting.length === 0 && (
+        <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          Nobody on board is currently without a bed. Empty beds below can still be filled once people
+          board, or use the Accommodation view to move someone between rooms.
+        </p>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {visible.map((r) => {
+          const beds = r.bed_count || 0;
+          const free = Math.max(0, beds - r.occupants.length);
+          const over = r.occupied > beds;
+          const used = new Set(r.occupants.map((o) => o.bed_no).filter(Boolean) as string[]);
+          // Suggested labels for the empty beds: the lowest "Bed N" not already taken.
+          const slotLabels: string[] = [];
+          let k = 0;
+          while (slotLabels.length < free) {
+            k++;
+            const lbl = `Bed ${k}`;
+            if (!used.has(lbl)) slotLabels.push(lbl);
+          }
+          return (
+            <div key={r.id} className="rounded-md border bg-card p-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{labelOf(r) || "—"}</span>
+                <span
+                  className={cn(
+                    "shrink-0 text-xs font-semibold",
+                    over ? "text-destructive" : free > 0 ? "text-green-700" : "text-muted-foreground",
+                  )}
+                >
+                  {r.occupied}/{beds}
+                  {over ? " · hot-bunk" : free > 0 ? ` · ${free} free` : " · full"}
+                </span>
+              </div>
+              <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                <span className="rounded bg-muted px-1 py-0.5">{r.room_type}</span>
+                {r.gender_restriction !== "any" && (
+                  <span className="rounded bg-muted px-1 py-0.5">{GENDER_LABEL[r.gender_restriction]}</span>
+                )}
+                {r.status !== "available" && (
+                  <span className="rounded bg-muted px-1 py-0.5">{ROOM_STATUS_LABEL[r.status]}</span>
+                )}
+                {r.lifeboat && <span className="rounded bg-muted px-1 py-0.5">LB {r.lifeboat}</span>}
+              </div>
+
+              <ul className="mt-1.5 space-y-1">
+                {r.occupants.map((o) => (
+                  <li
+                    key={o.trip_id}
+                    className="flex items-center gap-1.5 rounded bg-muted/40 px-2 py-1 text-xs"
+                  >
+                    <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
+                    <span className="truncate font-medium">{o.name}</span>
+                    <button
+                      disabled={pending}
+                      title={`Unassign ${o.name} from this bed (stays on board, returns to the waiting list)`}
+                      onClick={() => run(() => reassignTripRoom(o.trip_id, null))}
+                      className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+                {slotLabels.map((lbl) => (
+                  <EmptyBed
+                    key={`${r.id}-${lbl}`}
+                    roomId={r.id}
+                    defaultBed={lbl}
+                    waiting={waiting}
+                    pending={pending}
+                    run={run}
+                  />
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+        {visible.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            {usable.length === 0
+              ? "No rooms yet."
+              : "No rooms with empty beds. Tick “Show full rooms” to see them all."}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One empty bed slot: an editable bed label + a picker that assigns a waiting person on select. */
+function EmptyBed({
+  roomId,
+  defaultBed,
+  waiting,
+  pending,
+  run,
+}: {
+  roomId: string;
+  defaultBed: string;
+  waiting: { id: string; name: string }[];
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const [bed, setBed] = useState(defaultBed);
+  return (
+    <li className="flex items-center gap-1.5 rounded border border-dashed bg-background px-2 py-1 text-xs">
+      <input
+        value={bed}
+        onChange={(e) => setBed(e.target.value)}
+        aria-label="Bed label"
+        className="w-16 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
+      />
+      <LazySelect
+        value={null}
+        options={waiting}
+        getOptionValue={(p) => p.id}
+        getOptionLabel={(p) => p.name}
+        placeholder={waiting.length ? "— assign person —" : "— nobody waiting —"}
+        disabled={pending || waiting.length === 0}
+        className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
+        onChange={(v) => v && run(() => reassignTripRoom(v, roomId, bed.trim() || null))}
+      />
+    </li>
   );
 }
 

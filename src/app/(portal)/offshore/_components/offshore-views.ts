@@ -9,6 +9,7 @@ export type OffshoreViewKey =
   | "calendar"
   | "manifests"
   | "rooms"
+  | "bedboard"
   | "catering"
   | "roster"
   | "assign"
@@ -37,6 +38,7 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "calendar", label: "Rotation calendar", icon: "CalendarRange" },
   { key: "manifests", label: "Manifests", icon: "ClipboardList" },
   { key: "rooms", label: "Accommodation", icon: "BedDouble" },
+  { key: "bedboard", label: "Bed board", icon: "BedSingle" },
   { key: "catering", label: "Catering", icon: "UtensilsCrossed" },
   { key: "roster", label: "Offshore staff", icon: "Users" },
   { key: "assign", label: "Assign crews", icon: "UserCog" },
