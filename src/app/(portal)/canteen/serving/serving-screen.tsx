@@ -47,6 +47,17 @@ export function ServingScreen({
     setWalkinGuests(0);
   }, [walkin]);
 
+  // Close the walk-in picker with Escape (it's a modal, so it stays in view
+  // wherever the staff triggered it from — no scrolling back to the top).
+  useEffect(() => {
+    if (!walkin) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setWalkin(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [walkin]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = q
@@ -301,56 +312,68 @@ export function ServingScreen({
         </p>
       )}
 
-      {/* Walk-in: entitled employee with no booking — pick a dish to serve. */}
+      {/* Walk-in: entitled employee with no booking — pick a dish to serve. Shown
+          as a centred modal so it appears in view wherever the staff triggered
+          it (e.g. from a row far down the roster), with no scroll to the top. */}
       {walkin && (
-        <div className="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-sm font-medium">
-              <UserPlus className="mr-1.5 inline h-4 w-4 align-text-bottom" />
-              No booking for{" "}
-              <span className="font-semibold">{walkin.name}</span> — serve a walk-in:
-            </p>
-            <button
-              type="button"
-              onClick={() => setWalkin(null)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Cancel walk-in"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Visitors</span>
-            <input
-              type="number"
-              min={0}
-              max={20}
-              value={walkinGuests}
-              onChange={(e) => setWalkinGuests(Math.max(0, Math.min(20, Number(e.target.value) || 0)))}
-              className="w-20 rounded-md border bg-background px-2 py-1 text-sm"
-            />
-            <span className="text-xs text-muted-foreground">
-              {1 + walkinGuests} plate{walkinGuests === 0 ? "" : "s"}
-            </span>
-          </label>
-          {dishes.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No meals on today&apos;s menu to serve.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {dishes.map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  disabled={pending}
-                  onClick={() => serve(d)}
-                  className="rounded-md border bg-background px-3 py-2 text-left text-sm hover:border-primary hover:bg-accent disabled:opacity-50"
-                >
-                  <span className="block text-xs text-muted-foreground">{d.kitchen_name}</span>
-                  <span className="font-medium">{d.name}</span>
-                </button>
-              ))}
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setWalkin(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-md space-y-3 overflow-y-auto rounded-lg border border-primary/40 bg-card p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm font-medium">
+                <UserPlus className="mr-1.5 inline h-4 w-4 align-text-bottom" />
+                No booking for{" "}
+                <span className="font-semibold">{walkin.name}</span> — serve a walk-in:
+              </p>
+              <button
+                type="button"
+                onClick={() => setWalkin(null)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Cancel walk-in"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-          )}
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Visitors</span>
+              <input
+                type="number"
+                min={0}
+                max={20}
+                value={walkinGuests}
+                onChange={(e) => setWalkinGuests(Math.max(0, Math.min(20, Number(e.target.value) || 0)))}
+                className="w-20 rounded-md border bg-background px-2 py-1 text-sm"
+              />
+              <span className="text-xs text-muted-foreground">
+                {1 + walkinGuests} plate{walkinGuests === 0 ? "" : "s"}
+              </span>
+            </label>
+            {dishes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No meals on today&apos;s menu to serve.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {dishes.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    disabled={pending}
+                    onClick={() => serve(d)}
+                    className="rounded-md border bg-background px-3 py-2 text-left text-sm hover:border-primary hover:bg-accent disabled:opacity-50"
+                  >
+                    <span className="block text-xs text-muted-foreground">{d.kitchen_name}</span>
+                    <span className="font-medium">{d.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
