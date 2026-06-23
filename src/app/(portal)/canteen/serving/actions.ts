@@ -47,7 +47,7 @@ export async function searchEmployees(query: string): Promise<EmployeeOption[]> 
 export interface WalkinLookup {
   ok: boolean;
   error?: string;
-  person?: { id: string; name: string; email: string };
+  person?: { id: string; name: string; email: string; allowance: number };
 }
 
 /**
@@ -81,7 +81,21 @@ export async function lookupWalkin(identifier: string): Promise<WalkinLookup> {
   if (!data.lunch_eligible)
     return { ok: false, error: `${name} is not entitled to lunch. Contact HR.` };
 
-  return { ok: true, person: { id: data.id, name, email: data.email } };
+  // The person's own meal allowance for today, so the serving point can flag
+  // visitor plates that go beyond it. Mirrors public.canteen_daily_allowance:
+  // sum of grants covering the date, else 1 (active + lunch-eligible, verified
+  // above). Visitors are extra plates and are never part of this allowance.
+  const date = today();
+  const { data: grants } = await supabase
+    .from("canteen_meal_entitlements")
+    .select("daily_meals")
+    .eq("profile_id", data.id)
+    .lte("starts_on", date)
+    .gte("ends_on", date);
+  const granted = (grants ?? []).reduce((s, g) => s + (g.daily_meals as number), 0);
+  const allowance = granted > 0 ? granted : 1;
+
+  return { ok: true, person: { id: data.id, name, email: data.email, allowance } };
 }
 
 export interface ServeResult {

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ScanLine, Search, UserPlus, Utensils, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ScanLine, Search, UserPlus, Utensils, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { CanteenDish, EntitledPerson, Reservation } from "@/types/canteen";
@@ -15,7 +15,7 @@ import {
   type EmployeeOption,
 } from "./actions";
 
-type WalkinPerson = { id: string; name: string; email: string };
+type WalkinPerson = { id: string; name: string; email: string; allowance: number };
 
 export function ServingScreen({
   reservations,
@@ -341,7 +341,7 @@ export function ServingScreen({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex flex-wrap items-center gap-2 text-sm">
               <span className="text-muted-foreground">Visitors</span>
               <input
                 type="number"
@@ -353,8 +353,23 @@ export function ServingScreen({
               />
               <span className="text-xs text-muted-foreground">
                 {1 + walkinGuests} plate{walkinGuests === 0 ? "" : "s"}
+                {" · entitled to "}
+                {walkin.allowance} meal{walkin.allowance === 1 ? "" : "s"}/day
               </span>
             </label>
+            {1 + walkinGuests > walkin.allowance && (
+              <p className="flex items-start gap-1.5 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {1 + walkinGuests - walkin.allowance} plate
+                  {1 + walkinGuests - walkin.allowance === 1 ? "" : "s"} beyond{" "}
+                  {walkin.name}&apos;s entitlement ({walkin.allowance} meal
+                  {walkin.allowance === 1 ? "" : "s"}/day). Serving {1 + walkinGuests} in
+                  total — the extra cover{1 + walkinGuests - walkin.allowance === 1 ? " is a" : "s are"}{" "}
+                  visitor plate{1 + walkinGuests - walkin.allowance === 1 ? "" : "s"}.
+                </span>
+              </p>
+            )}
             {dishes.length === 0 ? (
               <p className="text-sm text-muted-foreground">No meals on today&apos;s menu to serve.</p>
             ) : (
