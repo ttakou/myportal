@@ -86,7 +86,8 @@ export function MyAppraisalPanel({
         <h2 className="text-lg font-semibold">My appraisal</h2>
         <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
           {STAGE_LABEL[appraisal.stage]} · {STATUS_LABEL[appraisal.status]}
-          {appraisal.final_score != null
+          {/* The employee only sees a score once HR releases the final rating. */}
+          {appraisal.rating_released_at != null && appraisal.final_score != null
             ? ` · ${appraisal.final_score}% · ${appraisal.rating_label ?? ""}`
             : ""}
         </span>
@@ -519,17 +520,26 @@ function SelfAssessment({
 }
 
 function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
+  // What the employee may see: comments/remarks always; their own self-ratings;
+  // but never the line manager's provisional/intermediate ratings. The final
+  // rating appears only once HR has released it.
+  const released = appraisal.rating_released_at != null;
   return (
     <div className="rounded-lg border bg-card p-4 space-y-2">
-      {appraisal.final_score != null && (
+      {released && appraisal.final_score != null ? (
         <div className="flex items-center justify-between rounded-md bg-primary/5 px-3 py-2">
           <span className="text-sm font-medium">Final outcome</span>
           <span className="text-sm font-semibold text-primary">
             {appraisal.final_score}%{appraisal.rating_label ? ` · ${appraisal.rating_label}` : ""}
           </span>
         </div>
+      ) : (
+        <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Your final rating will be shared once it has been calibrated and released by HR. The notes
+          below are your manager&apos;s comments.
+        </p>
       )}
-      <h3 className="text-sm font-semibold">Objectives &amp; ratings</h3>
+      <h3 className="text-sm font-semibold">Objectives</h3>
       <ul className="divide-y text-sm">
         {appraisal.goals.map((g) => (
           <li key={g.id} className="py-2">
@@ -538,7 +548,6 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
               <span className="text-xs text-muted-foreground">
                 {g.weight}%
                 {g.employee_self_rating != null ? ` · self ${g.employee_self_rating}` : ""}
-                {g.manager_rating != null ? ` · mgr ${g.manager_rating}` : ""}
               </span>
             </div>
             {g.key_results.length > 0 && (
@@ -570,7 +579,6 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
               <span>{c.name}</span>
               <span className="text-xs text-muted-foreground">
                 {c.employee_rating != null ? `self ${c.employee_rating}` : ""}
-                {c.manager_rating != null ? ` · mgr ${c.manager_rating}` : ""}
               </span>
             </li>
           ))}

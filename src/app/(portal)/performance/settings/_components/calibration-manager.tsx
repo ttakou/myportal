@@ -217,6 +217,12 @@ function GroupsManager({ groups, cycles }: { groups: CalibrationGroup[]; cycles:
     <section className="space-y-3 rounded-lg border bg-card p-5">
       <h2 className="font-medium">Calibration groups</h2>
 
+      {cycles.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Calibration runs once the cycle is closed for the year. Close an appraisal cycle to
+          calibrate it.
+        </p>
+      ) : (
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-xs text-muted-foreground">
           Name
@@ -237,7 +243,6 @@ function GroupsManager({ groups, cycles }: { groups: CalibrationGroup[]; cycles:
         <label className="text-xs text-muted-foreground">
           Cycle
           <select value={cycleId} onChange={(e) => setCycleId(e.target.value)} className={cn(field, "mt-0.5 block py-1.5")}>
-            <option value="">(none)</option>
             {cycles.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
@@ -245,7 +250,7 @@ function GroupsManager({ groups, cycles }: { groups: CalibrationGroup[]; cycles:
         </label>
         <Button
           size="sm"
-          disabled={pending}
+          disabled={pending || !cycleId}
           onClick={() =>
             run(
               () => createCalibrationGroup({ cycleId: cycleId || null, name, groupBy, groupValue }),
@@ -259,6 +264,7 @@ function GroupsManager({ groups, cycles }: { groups: CalibrationGroup[]; cycles:
           <Plus className="h-4 w-4" /> Add group
         </Button>
       </div>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 

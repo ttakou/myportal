@@ -21,7 +21,7 @@ import {
 
 const APPRAISAL_SELECT =
   "id, cycle_id, employee_id, manager_id, second_level_id, stage, status, overall_rating," +
-  " final_score, rating_label," +
+  " final_score, rating_label, calibration_gate, rating_released_at," +
   " employee_summary, manager_summary, discussion_date, discussion_notes," +
   " acknowledged_at, employee_agreed, employee_ack_comment," +
   " cycle:appraisal_cycles(name)," +
@@ -48,6 +48,8 @@ interface RawAppraisalRow {
   overall_rating?: number | null;
   final_score?: number | null;
   rating_label?: string | null;
+  calibration_gate?: Appraisal["calibration_gate"] | null;
+  rating_released_at?: string | null;
   employee_summary?: string | null;
   manager_summary?: string | null;
   discussion_date?: string | null;
@@ -73,6 +75,8 @@ function mapAppraisal(r: RawAppraisalRow): Appraisal {
     overall_rating: r.overall_rating ?? null,
     final_score: r.final_score ?? null,
     rating_label: r.rating_label ?? null,
+    calibration_gate: r.calibration_gate ?? "provisional",
+    rating_released_at: r.rating_released_at ?? null,
     employee_summary: r.employee_summary ?? null,
     manager_summary: r.manager_summary ?? null,
     discussion_date: r.discussion_date ?? null,

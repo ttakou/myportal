@@ -60,6 +60,26 @@ export async function createCalibrationGroup(input: {
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
 
+  // Calibration is the once-a-year, end-of-year step that turns line managers'
+  // provisional scores into final ratings — so it can only run against a cycle
+  // that has reached its year-end close. No free-floating (cycle-less) groups,
+  // and not while the cycle is still a draft or running.
+  if (!input.cycleId) {
+    return { ok: false, error: "Pick the appraisal cycle to calibrate." };
+  }
+  const { data: cycle } = await supabase
+    .from("appraisal_cycles")
+    .select("status")
+    .eq("id", input.cycleId)
+    .maybeSingle();
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+  if ((cycle as { status?: string }).status !== "closed") {
+    return {
+      ok: false,
+      error: "Calibration opens only after the cycle is closed for the year. Close the cycle first.",
+    };
+  }
+
   const { error } = await supabase.from("calibration_groups").insert({
     tenant_id: tenant.id,
     cycle_id: input.cycleId || null,
@@ -117,16 +137,33 @@ export async function sendRatingsToStaff(
   if (!cycleId) return { ok: false, error: "Pick a cycle." };
 
   const supabase = createClient();
+  // Only release ratings the PGM has signed off (calibration_gate = 'final').
+  // A line-manager's provisional score is not a releasable final rating.
   const { data: aps, error } = await supabase
     .from("appraisals")
     .select("id, tenant_id, employee_id, manager_id, final_score, rating_label")
     .eq("cycle_id", cycleId)
+    .eq("calibration_gate", "final")
     .not("final_score", "is", null)
     .not("rating_label", "is", null);
   if (error) return { ok: false, error: error.message };
 
   const rows = (aps ?? []) as Record<string, unknown>[];
-  if (rows.length === 0) return { ok: false, error: "No finalised ratings to send for this cycle." };
+  if (rows.length === 0) {
+    return {
+      ok: false,
+      error: "No PGM-signed-off ratings to release for this cycle. Finalise them in calibration first.",
+    };
+  }
+
+  // Mark these ratings as released — this is what unlocks the score for the
+  // employee's own view. Until now they saw comments/remarks only.
+  const releasedAt = new Date().toISOString();
+  const { error: relErr } = await supabase
+    .from("appraisals")
+    .update({ rating_released_at: releasedAt })
+    .in("id", rows.map((r) => String(r.id)));
+  if (relErr) return { ok: false, error: relErr.message };
 
   let sent = 0;
   for (const a of rows) {
