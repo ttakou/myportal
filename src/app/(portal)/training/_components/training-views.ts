@@ -29,6 +29,7 @@ export type TrainingViewKey =
   | "dept-needs"
   | "team-plan"
   // HR Administration
+  | "assign"
   | "annual-plan"
   | "matrix"
   | "catalogue"
@@ -77,6 +78,7 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "dept-needs", label: "Department Training Needs", icon: "Target", group: "Team Training" },
   { key: "team-plan", label: "Team Training Plan", icon: "ClipboardList", group: "Team Training" },
   // HR Administration (HR)
+  { key: "assign", label: "Assign / Request Training", icon: "ClipboardPlus", group: "HR Administration" },
   { key: "annual-plan", label: "Annual Training Plan", icon: "CalendarRange", group: "HR Administration" },
   { key: "matrix", label: "Statutory Training Matrix", icon: "Grid3x3", group: "HR Administration" },
   { key: "catalogue", label: "Training Catalogue", icon: "BookOpen", group: "HR Administration" },
@@ -124,6 +126,7 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "team-requests",
   "dept-needs",
   "team-plan",
+  "assign",
   "rpt-compliance",
   "rpt-plan-progress",
   "rpt-costs",

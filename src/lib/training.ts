@@ -148,7 +148,7 @@ export async function getMyRequests(): Promise<TrainingRequest[]> {
   if (!user) return [];
   const { data } = await supabase
     .from("training_requests")
-    .select("id, course_id, course_title, reason, preferred_period, origin, status, decision_note, created_at, course:training_courses(title)")
+    .select("id, course_id, course_title, reason, preferred_period, origin, request_type, status, decision_note, created_at, course:training_courses(title)")
     .eq("profile_id", user.id)
     .order("created_at", { ascending: false });
   return ((data ?? []) as Record<string, any>[]).map((r) => {
@@ -160,11 +160,29 @@ export async function getMyRequests(): Promise<TrainingRequest[]> {
       reason: r.reason ?? null,
       preferred_period: r.preferred_period ?? null,
       origin: r.origin ?? null,
+      request_type: r.request_type ?? null,
       status: r.status,
       decision_note: r.decision_note ?? null,
       created_at: r.created_at,
     };
   });
+}
+
+/** The signed-in manager's direct reports (lightweight, for request pickers). */
+export async function getMyReportsLite(): Promise<{ id: string; name: string }[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, full_name, email")
+    .eq("manager_id", user.id)
+    .eq("is_active", true)
+    .order("full_name");
+  return ((data ?? []) as Record<string, any>[]).map((p) => ({
+    id: p.id as string,
+    name: (p.full_name as string) || (p.email as string) || "—",
+  }));
 }
 
 /** The signed-in user's training plan items. */
@@ -424,6 +442,7 @@ export interface TeamRequestRow {
   course_title: string | null;
   reason: string | null;
   origin: import("@/types/training").RequestOrigin | null;
+  request_type: import("@/types/training").RequestType | null;
   status: import("@/types/training").RequestStatus;
   created_at: string;
 }
@@ -438,7 +457,7 @@ export async function getTeamRequests(): Promise<TeamRequestRow[]> {
   if (ids.length === 0) return [];
   const { data } = await supabase
     .from("training_requests")
-    .select("id, profile_id, course_title, reason, origin, status, created_at, course:training_courses(title), person:profiles!training_requests_profile_id_fkey(full_name)")
+    .select("id, profile_id, course_title, reason, origin, request_type, status, created_at, course:training_courses(title), person:profiles!training_requests_profile_id_fkey(full_name)")
     .in("profile_id", ids)
     .order("created_at", { ascending: false });
   return ((data ?? []) as Record<string, any>[]).map((r) => {
@@ -450,6 +469,40 @@ export async function getTeamRequests(): Promise<TeamRequestRow[]> {
       requester: person?.full_name ?? "—",
       course_title: course?.title ?? r.course_title ?? null,
       reason: r.reason ?? null,
+      origin: r.origin ?? null,
+      request_type: r.request_type ?? null,
+      status: r.status,
+      created_at: r.created_at,
+    };
+  });
+}
+
+export interface AdminRequestRow {
+  id: string;
+  person: string;
+  course_title: string | null;
+  request_type: import("@/types/training").RequestType | null;
+  origin: import("@/types/training").RequestOrigin | null;
+  status: import("@/types/training").RequestStatus;
+  created_at: string;
+}
+
+/** All training requests across the tenant (Training Admin console). */
+export async function getRequestsAdmin(): Promise<AdminRequestRow[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_requests")
+    .select("id, course_title, request_type, origin, status, created_at, course:training_courses(title), person:profiles!training_requests_profile_id_fkey(full_name)")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const course = Array.isArray(r.course) ? r.course[0] : r.course;
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    return {
+      id: r.id,
+      person: person?.full_name ?? "—",
+      course_title: course?.title ?? r.course_title ?? null,
+      request_type: r.request_type ?? null,
       origin: r.origin ?? null,
       status: r.status,
       created_at: r.created_at,

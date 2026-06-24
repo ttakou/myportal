@@ -71,6 +71,14 @@ export async function submitTrainingRequest(input: {
     developmentPlanId = input.developmentPlanId;
   }
 
+  const effectiveOrigin = developmentPlanId ? origin ?? "personal_development_plan" : origin;
+  const requestType =
+    developmentPlanId || effectiveOrigin === "performance_appraisal" || effectiveOrigin === "personal_development_plan"
+      ? "appraisal"
+      : effectiveOrigin === "competency_gap"
+        ? "competency_gap"
+        : "individual";
+
   const supabase = createClient();
   const { error } = await supabase.from("training_requests").insert({
     tenant_id: who.tenant_id,
@@ -79,7 +87,8 @@ export async function submitTrainingRequest(input: {
     course_title: input.courseId ? null : input.courseTitle?.trim() || null,
     reason: input.reason?.trim() || null,
     preferred_period: input.preferredPeriod?.trim() || null,
-    origin: developmentPlanId ? origin ?? "personal_development_plan" : origin,
+    origin: effectiveOrigin,
+    request_type: requestType,
     development_plan_id: developmentPlanId,
   });
   if (error) {
@@ -316,6 +325,165 @@ export async function decideTrainingRequest(
   if (!data || data.length === 0) return { ok: false, error: "You can't decide this request." };
   rev();
   return { ok: true };
+}
+
+// --- Manager: raise a request for a direct report ---------------------------
+
+/**
+ * A line manager raises a training request on behalf of one of their direct
+ * reports. It starts manager-approved (the manager has already endorsed it) so
+ * it flows straight to HR for scheduling.
+ */
+export async function managerRequestForEmployee(input: {
+  profileId: string;
+  courseId?: string | null;
+  courseTitle?: string;
+  reason?: string;
+  preferredPeriod?: string;
+}): Promise<ActionResult> {
+  const user = await getCachedUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  if (!input.profileId) return { ok: false, error: "Pick a team member." };
+  if (!input.courseId && !input.courseTitle?.trim())
+    return { ok: false, error: "Pick a course or describe the training." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+
+  const supabase = createClient();
+  // Must be the caller's direct report.
+  const { data: prof } = await supabase
+    .from("profiles")
+    .select("manager_id")
+    .eq("id", input.profileId)
+    .eq("tenant_id", who.tenant_id)
+    .maybeSingle();
+  if (!prof || prof.manager_id !== user.id) return { ok: false, error: "Not one of your direct reports." };
+
+  const { error } = await supabase.from("training_requests").insert({
+    tenant_id: who.tenant_id,
+    profile_id: input.profileId,
+    course_id: input.courseId || null,
+    course_title: input.courseId ? null : input.courseTitle?.trim() || null,
+    reason: input.reason?.trim() || null,
+    preferred_period: input.preferredPeriod?.trim() || null,
+    origin: "manager_request",
+    request_type: "manager",
+    status: "manager_approved",
+    manager_id: user.id,
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+// --- HR: departmental requests & assignments --------------------------------
+
+/**
+ * Training Admin raises requests / assignments in bulk. Three flavours:
+ *   - 'departmental': a Requested proposal for everyone in a department.
+ *   - 'statutory' / 'adhoc': an already-Approved assignment for a person or a
+ *     department, which also seeds a training plan item so it shows up in the
+ *     employee's plan.
+ * People who already have a live (non-terminal) request for the same course are
+ * skipped, so re-running is idempotent.
+ */
+export async function assignTraining(input: {
+  type: "departmental" | "statutory" | "adhoc";
+  scope: "person" | "department";
+  profileId?: string | null;
+  department?: string | null;
+  courseId?: string | null;
+  courseTitle?: string;
+  reason?: string;
+  preferredPeriod?: string;
+  planYear?: number;
+}): Promise<{ ok: boolean; error?: string; created?: number; skipped?: number }> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  if (!input.courseId && !input.courseTitle?.trim())
+    return { ok: false, error: "Pick a course or describe the training." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+
+  // Resolve the target population.
+  let targets: string[] = [];
+  if (input.scope === "person") {
+    if (!input.profileId) return { ok: false, error: "Pick an employee." };
+    if (!(await inTenant("profiles", input.profileId, who.tenant_id))) return { ok: false, error: "Employee not found." };
+    targets = [input.profileId];
+  } else {
+    if (!input.department) return { ok: false, error: "Pick a department." };
+    const { data: people } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("tenant_id", who.tenant_id)
+      .eq("is_active", true)
+      .eq("department", input.department);
+    targets = ((people ?? []) as Record<string, any>[]).map((p) => p.id as string);
+    if (targets.length === 0) return { ok: false, error: "No active staff in that department." };
+  }
+
+  if (input.courseId && !(await inTenant("training_courses", input.courseId, who.tenant_id)))
+    return { ok: false, error: "Course not found." };
+
+  // Skip anyone who already has a live request for this course (only meaningful
+  // when assigning a catalogue course).
+  let alreadyHas = new Set<string>();
+  if (input.courseId) {
+    const { data: existing } = await supabase
+      .from("training_requests")
+      .select("profile_id")
+      .eq("course_id", input.courseId)
+      .in("status", ["requested", "manager_approved", "approved"])
+      .in("profile_id", targets);
+    alreadyHas = new Set(((existing ?? []) as Record<string, any>[]).map((r) => r.profile_id as string));
+  }
+  const toCreate = targets.filter((id) => !alreadyHas.has(id));
+  if (toCreate.length === 0) return { ok: true, created: 0, skipped: targets.length };
+
+  const isAssignment = input.type === "statutory" || input.type === "adhoc";
+  // origin is the finer source taxonomy; HR-raised rows are closest to a manager
+  // request — the precise classification lives in request_type.
+  const origin = "manager_request";
+  const status = isAssignment ? "approved" : "requested";
+  const nowIso = new Date().toISOString();
+  const courseTitle = input.courseId ? null : input.courseTitle?.trim() || null;
+
+  const rows = toCreate.map((profileId) => ({
+    tenant_id: who.tenant_id,
+    profile_id: profileId,
+    course_id: input.courseId || null,
+    course_title: courseTitle,
+    reason: input.reason?.trim() || null,
+    preferred_period: input.preferredPeriod?.trim() || null,
+    origin,
+    request_type: input.type,
+    status,
+    ...(isAssignment ? { decided_by: who.id, decided_at: nowIso } : {}),
+  }));
+
+  const { error } = await supabase.from("training_requests").insert(rows);
+  if (error) return { ok: false, error: error.message };
+
+  // Assignments are already authorized → seed plan items so they show in plans.
+  if (isAssignment) {
+    const planYear = input.planYear && input.planYear > 2000 ? input.planYear : new Date().getUTCFullYear();
+    const planSource = input.type === "statutory" ? "mandatory" : "manager";
+    const planRows = toCreate.map((profileId) => ({
+      tenant_id: who.tenant_id,
+      profile_id: profileId,
+      course_id: input.courseId || null,
+      course_title: courseTitle,
+      plan_year: planYear,
+      period: input.preferredPeriod?.trim() || null,
+      source: planSource,
+    }));
+    await supabase.from("training_plan_items").insert(planRows);
+  }
+
+  rev();
+  return { ok: true, created: toCreate.length, skipped: targets.length - toCreate.length };
 }
 
 // --- HR: catalogue ----------------------------------------------------------

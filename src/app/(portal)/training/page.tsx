@@ -21,9 +21,11 @@ import {
   getMyEvaluableSessions,
   getMyHistory,
   getOpenSessions,
+  getMyReportsLite,
   getParticipants,
   getPlanItemsAll,
   getProviders,
+  getRequestsAdmin,
   getRequestsByOrigin,
   getRequirements,
   getSessions,
@@ -58,6 +60,7 @@ import {
   TeamCompliancePanel,
   TeamPlanPanel,
 } from "./_components/read-panels";
+import { AssignPanel } from "./_components/assign-panel";
 import { CompetenciesPanel } from "./_components/competencies-panel";
 import { CompetencyMatrixPanel } from "./_components/competency-matrix-panel";
 import { DepartmentNeedsPanel } from "./_components/department-needs-panel";
@@ -175,8 +178,32 @@ export default async function TrainingPage({
       }
       case "team-plan":
         return <TeamPlanPanel rows={await getTeamPlan()} />;
-      case "team-requests":
-        return <TeamRequestsPanel requests={await getTeamRequests()} />;
+      case "team-requests": {
+        const [trReqs, reports, courses] = await Promise.all([getTeamRequests(), getMyReportsLite(), getCourses()]);
+        return (
+          <TeamRequestsPanel
+            requests={trReqs}
+            reports={reports}
+            courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+          />
+        );
+      }
+      case "assign": {
+        const [adminReqs, courses, employees, departments] = await Promise.all([
+          getRequestsAdmin(),
+          getCourses(),
+          getEmployeesLite(),
+          getDepartments(),
+        ]);
+        return (
+          <AssignPanel
+            requests={adminReqs}
+            courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+            employees={employees}
+            departments={departments}
+          />
+        );
+      }
       case "annual-plan": {
         const [items, employees, courses] = await Promise.all([getPlanItemsAll(), getEmployeesLite(), getCourses()]);
         return (

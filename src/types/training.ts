@@ -124,6 +124,28 @@ export const REQUEST_ORIGIN_LABEL: Record<RequestOrigin, string> = {
 
 export const REQUEST_ORIGINS = Object.keys(REQUEST_ORIGIN_LABEL) as RequestOrigin[];
 
+/** The creation workflow of a training request (who raised it / target / kind). */
+export type RequestType =
+  | "individual"
+  | "manager"
+  | "departmental"
+  | "competency_gap"
+  | "appraisal"
+  | "statutory"
+  | "adhoc";
+
+export const REQUEST_TYPE_LABEL: Record<RequestType, string> = {
+  individual: "Employee individual request",
+  manager: "Manager request for employee",
+  departmental: "Departmental request",
+  competency_gap: "Competency-gap request",
+  appraisal: "Performance-appraisal request",
+  statutory: "Statutory assignment",
+  adhoc: "Ad hoc HR assignment",
+};
+
+export const REQUEST_TYPES = Object.keys(REQUEST_TYPE_LABEL) as RequestType[];
+
 export interface TrainingRequest {
   id: string;
   course_id: string | null;
@@ -131,6 +153,7 @@ export interface TrainingRequest {
   reason: string | null;
   preferred_period: string | null;
   origin: RequestOrigin | null;
+  request_type: RequestType | null;
   status: RequestStatus;
   decision_note: string | null;
   created_at: string;
