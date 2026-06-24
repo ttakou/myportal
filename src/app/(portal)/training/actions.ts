@@ -296,7 +296,11 @@ export async function decideTrainingRequest(
   if (!user) return { ok: false, error: "Not signed in." };
   const supabase = createClient();
 
-  const { data: req } = await supabase.from("training_requests").select("profile_id").eq("id", id).maybeSingle();
+  const { data: req } = await supabase
+    .from("training_requests")
+    .select("profile_id, tenant_id, course_id, course_title, preferred_period")
+    .eq("id", id)
+    .maybeSingle();
   if (!req) return { ok: false, error: "Request not found." };
   const { data: prof } = await supabase.from("profiles").select("manager_id").eq("id", req.profile_id).maybeSingle();
   const isManager = prof?.manager_id === user.id;
@@ -323,6 +327,33 @@ export async function decideTrainingRequest(
   const { data, error } = await supabase.from("training_requests").update(patch).eq("id", id).select("id");
   if (error) return { ok: false, error: error.message };
   if (!data || data.length === 0) return { ok: false, error: "You can't decide this request." };
+
+  // An approved request becomes a planned item so it surfaces in the employee's
+  // training plan. Skip if a matching plan item already exists for the course.
+  if (decision === "approve") {
+    let exists = false;
+    if (req.course_id) {
+      const { data: dup } = await supabase
+        .from("training_plan_items")
+        .select("id")
+        .eq("profile_id", req.profile_id)
+        .eq("course_id", req.course_id)
+        .maybeSingle();
+      exists = !!dup;
+    }
+    if (!exists) {
+      await supabase.from("training_plan_items").insert({
+        tenant_id: req.tenant_id,
+        profile_id: req.profile_id,
+        course_id: req.course_id ?? null,
+        course_title: req.course_id ? null : req.course_title ?? null,
+        plan_year: new Date().getUTCFullYear(),
+        period: req.preferred_period ?? null,
+        source: "request",
+      });
+    }
+  }
+
   rev();
   return { ok: true };
 }

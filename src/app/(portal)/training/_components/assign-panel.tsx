@@ -12,7 +12,7 @@ import {
   type RequestType,
 } from "@/types/training";
 import type { AdminRequestRow } from "@/lib/training";
-import { assignTraining } from "../actions";
+import { assignTraining, decideTrainingRequest } from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -57,6 +57,17 @@ export function AssignPanel({
 
   // Departmental requests are inherently population-wide.
   const effectiveScope = type === "departmental" ? "department" : scope;
+
+  const pendingApprovals = requests.filter((r) => r.status === "requested" || r.status === "manager_approved").length;
+
+  function decide(id: string, decision: "approve" | "reject") {
+    setError(null);
+    setInfo(null);
+    startTransition(async () => {
+      const res = await decideTrainingRequest(id, decision);
+      if (!res.ok) setError(res.error ?? "Failed.");
+    });
+  }
 
   function submit() {
     setError(null);
@@ -212,7 +223,14 @@ export function AssignPanel({
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold">Recent requests &amp; assignments</h3>
+        <h3 className="mb-2 text-sm font-semibold">
+          Requests &amp; assignments
+          {pendingApprovals > 0 && (
+            <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+              {pendingApprovals} awaiting approval
+            </span>
+          )}
+        </h3>
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -222,29 +240,47 @@ export function AssignPanel({
                 <th className="px-4 py-2 font-medium">Type</th>
                 <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium">Raised</th>
+                <th className="px-4 py-2 font-medium text-right">Decision</th>
               </tr>
             </thead>
             <tbody>
-              {requests.map((r) => (
-                <tr key={r.id} className="border-t">
-                  <td className="px-4 py-2 font-medium">{r.person}</td>
-                  <td className="px-4 py-2">{r.course_title ?? "—"}</td>
-                  <td className="px-4 py-2 text-muted-foreground">
-                    {r.request_type ? REQUEST_TYPE_LABEL[r.request_type as RequestType] : "—"}
-                  </td>
-                  <td className="px-4 py-2">
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLE[r.status])}>
-                      {REQUEST_STATUS_LABEL[r.status]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 tabular-nums text-muted-foreground">
-                    {new Date(r.created_at).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
-                  </td>
-                </tr>
-              ))}
+              {requests.map((r) => {
+                const pendingRow = r.status === "requested" || r.status === "manager_approved";
+                return (
+                  <tr key={r.id} className="border-t">
+                    <td className="px-4 py-2 font-medium">{r.person}</td>
+                    <td className="px-4 py-2">{r.course_title ?? "—"}</td>
+                    <td className="px-4 py-2 text-muted-foreground">
+                      {r.request_type ? REQUEST_TYPE_LABEL[r.request_type as RequestType] : "—"}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLE[r.status])}>
+                        {REQUEST_STATUS_LABEL[r.status]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 tabular-nums text-muted-foreground">
+                      {new Date(r.created_at).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {pendingRow ? (
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" disabled={pending} onClick={() => decide(r.id, "approve")}>
+                            Approve
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={pending} onClick={() => decide(r.id, "reject")}>
+                            Decline
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {requests.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
                     No requests yet.
                   </td>
                 </tr>
