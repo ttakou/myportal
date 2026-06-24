@@ -83,7 +83,7 @@ export async function updateGuests(
     .from("canteen_bookings")
     .update({ guest_count: clamped, guest_names: guestNames.slice(0, clamped) })
     .eq("id", bookingId);
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, "") };
 
   revalidatePath("/canteen");
   return { ok: true };
