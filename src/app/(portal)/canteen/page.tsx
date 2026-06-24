@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BarChart3, History, LayoutDashboard, MessageSquare, ScanLine, Settings, TrendingUp, UtensilsCrossed, Users } from "lucide-react";
-import { getCanteenCutoff, getMenu, getMyBookings, getServedMealPeriods, resolveServiceDate, today } from "@/lib/canteen";
+import { getCanteenCutoff, getMenu, getMyAllowance, getMyBookings, getServedMealPeriods, resolveServiceDate, today } from "@/lib/canteen";
 import { getAccess } from "@/lib/auth";
 import { MenuBoard } from "./_components/menu-board";
 
@@ -11,12 +11,13 @@ export default async function CanteenPage(
 ) {
   const searchParams = await props.searchParams;
   const serviceDate = resolveServiceDate(searchParams.date);
-  const [dishes, bookings, access, mealPeriods, cutoff] = await Promise.all([
+  const [dishes, bookings, access, mealPeriods, cutoff, allowance] = await Promise.all([
     getMenu(serviceDate),
     getMyBookings(serviceDate),
     getAccess(),
     getServedMealPeriods(),
     getCanteenCutoff(),
+    getMyAllowance(serviceDate),
   ]);
   const bookingClosed =
     cutoff != null && serviceDate === today() && new Date().getHours() >= cutoff;
@@ -153,6 +154,7 @@ export default async function CanteenPage(
           mealPeriods={mealPeriods}
           bookingClosed={bookingClosed}
           cutoffHour={cutoff}
+          allowance={allowance}
         />
       )}
     </div>
