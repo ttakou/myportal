@@ -32,11 +32,18 @@ async function inTenant(table: string, id: string, tenantId: string): Promise<bo
 
 // --- Employee: training requests --------------------------------------------
 
+const REQUEST_ORIGINS = [
+  "employee_request","manager_request","performance_appraisal","competency_gap",
+  "career_development","promotion_preparation","succession_plan","technology_change",
+  "job_change","personal_development_plan","project_requirement",
+];
+
 export async function submitTrainingRequest(input: {
   courseId?: string | null;
   courseTitle?: string;
   reason?: string;
   preferredPeriod?: string;
+  origin?: string;
 }): Promise<ActionResult> {
   const gate = await requireModule("training", "create");
   if (gate) return gate;
@@ -44,6 +51,7 @@ export async function submitTrainingRequest(input: {
     return { ok: false, error: "Pick a course or describe the training." };
   const who = await me();
   if (!who) return { ok: false, error: "No tenant in scope." };
+  const origin = input.origin && REQUEST_ORIGINS.includes(input.origin) ? input.origin : null;
 
   const supabase = createClient();
   const { error } = await supabase.from("training_requests").insert({
@@ -53,6 +61,7 @@ export async function submitTrainingRequest(input: {
     course_title: input.courseId ? null : input.courseTitle?.trim() || null,
     reason: input.reason?.trim() || null,
     preferred_period: input.preferredPeriod?.trim() || null,
+    origin,
   });
   if (error) return { ok: false, error: error.message };
   rev();

@@ -5,7 +5,13 @@ import { FilePlus2, X } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { REQUEST_STATUS_LABEL, type RequestStatus, type TrainingRequest } from "@/types/training";
+import {
+  REQUEST_ORIGINS,
+  REQUEST_ORIGIN_LABEL,
+  REQUEST_STATUS_LABEL,
+  type RequestStatus,
+  type TrainingRequest,
+} from "@/types/training";
 import { cancelTrainingRequest, submitTrainingRequest } from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
@@ -31,6 +37,7 @@ export function RequestPanel({
   const [courseTitle, setCourseTitle] = useState("");
   const [reason, setReason] = useState("");
   const [period, setPeriod] = useState("");
+  const [origin, setOrigin] = useState<string>("employee_request");
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -91,6 +98,20 @@ export function RequestPanel({
           />
         </label>
         <label className="text-xs text-muted-foreground">
+          Originates from
+          <select
+            value={origin}
+            onChange={(e) => setOrigin(e.target.value)}
+            className={cn(field, "mt-0.5 block w-full")}
+          >
+            {REQUEST_ORIGINS.map((o) => (
+              <option key={o} value={o}>
+                {REQUEST_ORIGIN_LABEL[o]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-muted-foreground">
           Preferred period
           <input
             value={period}
@@ -111,12 +132,14 @@ export function RequestPanel({
                     courseTitle,
                     reason,
                     preferredPeriod: period,
+                    origin,
                   }),
                 () => {
                   setCourseId("");
                   setCourseTitle("");
                   setReason("");
                   setPeriod("");
+                  setOrigin("employee_request");
                 },
               )
             }
@@ -131,6 +154,7 @@ export function RequestPanel({
           <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-2 font-medium">Course</th>
+              <th className="px-4 py-2 font-medium">Origin</th>
               <th className="px-4 py-2 font-medium">Reason</th>
               <th className="px-4 py-2 font-medium">Status</th>
               <th className="px-4 py-2 font-medium text-right">Action</th>
@@ -140,6 +164,7 @@ export function RequestPanel({
             {requests.map((r) => (
               <tr key={r.id} className="border-t">
                 <td className="px-4 py-2 font-medium">{r.course_title ?? "—"}</td>
+                <td className="px-4 py-2 text-muted-foreground">{r.origin ? REQUEST_ORIGIN_LABEL[r.origin] : "—"}</td>
                 <td className="px-4 py-2 text-muted-foreground">{r.reason ?? "—"}</td>
                 <td className="px-4 py-2">
                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLE[r.status])}>
@@ -163,7 +188,7 @@ export function RequestPanel({
             ))}
             {requests.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
+                <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
                   No requests yet.
                 </td>
               </tr>

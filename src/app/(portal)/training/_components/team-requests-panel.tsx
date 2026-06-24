@@ -5,7 +5,7 @@ import { Inbox } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { REQUEST_STATUS_LABEL, type RequestStatus } from "@/types/training";
+import { REQUEST_ORIGIN_LABEL, REQUEST_STATUS_LABEL, type RequestStatus } from "@/types/training";
 import type { TeamRequestRow } from "@/lib/training";
 import { decideTrainingRequest } from "../actions";
 
@@ -49,6 +49,7 @@ export function TeamRequestsPanel({ requests }: { requests: TeamRequestRow[] }) 
             <tr>
               <th className="px-4 py-2 font-medium">Member</th>
               <th className="px-4 py-2 font-medium">Course</th>
+              <th className="px-4 py-2 font-medium">Origin</th>
               <th className="px-4 py-2 font-medium">Reason</th>
               <th className="px-4 py-2 font-medium">Status</th>
               <th className="px-4 py-2 font-medium text-right">Decision</th>
@@ -59,6 +60,7 @@ export function TeamRequestsPanel({ requests }: { requests: TeamRequestRow[] }) 
               <tr key={r.id} className="border-t">
                 <td className="px-4 py-2 font-medium">{r.requester}</td>
                 <td className="px-4 py-2">{r.course_title ?? "—"}</td>
+                <td className="px-4 py-2 text-muted-foreground">{r.origin ? REQUEST_ORIGIN_LABEL[r.origin] : "—"}</td>
                 <td className="px-4 py-2 text-muted-foreground">{r.reason ?? "—"}</td>
                 <td className="px-4 py-2">
                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLE[r.status])}>
@@ -83,7 +85,7 @@ export function TeamRequestsPanel({ requests }: { requests: TeamRequestRow[] }) 
             ))}
             {requests.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
+                <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
                   No requests from your team.
                 </td>
               </tr>

@@ -145,7 +145,7 @@ export async function getMyRequests(): Promise<TrainingRequest[]> {
   if (!user) return [];
   const { data } = await supabase
     .from("training_requests")
-    .select("id, course_id, course_title, reason, preferred_period, status, decision_note, created_at, course:training_courses(title)")
+    .select("id, course_id, course_title, reason, preferred_period, origin, status, decision_note, created_at, course:training_courses(title)")
     .eq("profile_id", user.id)
     .order("created_at", { ascending: false });
   return ((data ?? []) as Record<string, any>[]).map((r) => {
@@ -156,6 +156,7 @@ export async function getMyRequests(): Promise<TrainingRequest[]> {
       course_title: course?.title ?? r.course_title ?? null,
       reason: r.reason ?? null,
       preferred_period: r.preferred_period ?? null,
+      origin: r.origin ?? null,
       status: r.status,
       decision_note: r.decision_note ?? null,
       created_at: r.created_at,
@@ -419,6 +420,7 @@ export interface TeamRequestRow {
   requester: string;
   course_title: string | null;
   reason: string | null;
+  origin: import("@/types/training").RequestOrigin | null;
   status: import("@/types/training").RequestStatus;
   created_at: string;
 }
@@ -433,7 +435,7 @@ export async function getTeamRequests(): Promise<TeamRequestRow[]> {
   if (ids.length === 0) return [];
   const { data } = await supabase
     .from("training_requests")
-    .select("id, profile_id, course_title, reason, status, created_at, course:training_courses(title), person:profiles!training_requests_profile_id_fkey(full_name)")
+    .select("id, profile_id, course_title, reason, origin, status, created_at, course:training_courses(title), person:profiles!training_requests_profile_id_fkey(full_name)")
     .in("profile_id", ids)
     .order("created_at", { ascending: false });
   return ((data ?? []) as Record<string, any>[]).map((r) => {
@@ -445,6 +447,7 @@ export async function getTeamRequests(): Promise<TeamRequestRow[]> {
       requester: person?.full_name ?? "—",
       course_title: course?.title ?? r.course_title ?? null,
       reason: r.reason ?? null,
+      origin: r.origin ?? null,
       status: r.status,
       created_at: r.created_at,
     };

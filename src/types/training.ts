@@ -90,12 +90,43 @@ export interface Certificate {
   status: "valid" | "expiring" | "expired";
 }
 
+/** Where an individual training request originates from. */
+export type RequestOrigin =
+  | "employee_request"
+  | "manager_request"
+  | "performance_appraisal"
+  | "competency_gap"
+  | "career_development"
+  | "promotion_preparation"
+  | "succession_plan"
+  | "technology_change"
+  | "job_change"
+  | "personal_development_plan"
+  | "project_requirement";
+
+export const REQUEST_ORIGIN_LABEL: Record<RequestOrigin, string> = {
+  employee_request: "Employee request",
+  manager_request: "Manager request",
+  performance_appraisal: "Performance appraisal",
+  competency_gap: "Competency gap",
+  career_development: "Career development",
+  promotion_preparation: "Promotion preparation",
+  succession_plan: "Succession plan",
+  technology_change: "Technology change",
+  job_change: "Job change",
+  personal_development_plan: "Personal development plan",
+  project_requirement: "Project requirement",
+};
+
+export const REQUEST_ORIGINS = Object.keys(REQUEST_ORIGIN_LABEL) as RequestOrigin[];
+
 export interface TrainingRequest {
   id: string;
   course_id: string | null;
   course_title: string | null;
   reason: string | null;
   preferred_period: string | null;
+  origin: RequestOrigin | null;
   status: RequestStatus;
   decision_note: string | null;
   created_at: string;
