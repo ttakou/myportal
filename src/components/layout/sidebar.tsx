@@ -6,6 +6,8 @@ import { hasDirectReports } from "@/lib/appraisals";
 import { offshoreSubmenu } from "@/app/(portal)/offshore/_components/offshore-views";
 import { performanceSubmenu } from "@/app/(portal)/performance/_components/performance-views";
 import { canteenSubmenu } from "@/app/(portal)/canteen/_components/canteen-views";
+import { trainingSubmenu } from "@/app/(portal)/training/_components/training-views";
+import { isTrainingAdmin as getIsTrainingAdmin } from "@/lib/training";
 import { NavLinks, type NavLink } from "./nav-links";
 
 /**
@@ -23,10 +25,11 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const [services, access, isManager] = await Promise.all([
+  const [services, access, isManager, isTrainingAdmin] = await Promise.all([
     getActiveServices(),
     getAccess(),
     hasDirectReports(),
+    getIsTrainingAdmin(),
   ]);
   const canManageOffshore = access.isAdmin || access.isCampboss || access.isOim;
   const isHr = access.isHr || access.isSystemAdmin || access.isAdmin;
@@ -69,6 +72,15 @@ export async function Sidebar({
           icon: v.icon,
           href: `/offshore?view=${v.key}`,
         })),
+      };
+    }
+    // Training & Competence: My Training for everyone; Team views for managers;
+    // HR Administration + Reports for HR.
+    if (s.route_path === "/training") {
+      return {
+        ...base,
+        defaultSubKey: "mandatory",
+        subItems: trainingSubmenu({ isManager, isTrainingAdmin }),
       };
     }
     return base;
