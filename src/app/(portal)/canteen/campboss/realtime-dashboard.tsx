@@ -8,7 +8,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import { CheckCircle2, Circle, Radio, Users, UtensilsCrossed } from "lucide-react";
+import { CheckCircle2, Circle, Minus, Plus, Radio, Users, UtensilsCrossed } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
@@ -18,7 +18,7 @@ import {
   type OptionDemand,
   type Reservation,
 } from "@/types/canteen";
-import { setReservationCollected, setReservationPrepared } from "./actions";
+import { setGuestCollected, setReservationCollected, setReservationPrepared } from "./actions";
 
 export function RealtimeDashboard({
   serviceDate,
@@ -98,7 +98,26 @@ export function RealtimeDashboard({
     });
   }
 
+  function collectGuest(r: Reservation, delta: 1 | -1) {
+    startTransition(async () => {
+      await setGuestCollected(r.booking_id, delta);
+      refetch();
+    });
+  }
+
   const packedCount = reservations.filter((r) => r.prepared_at).length;
+
+  // Actual service of the day, visitor plates included: each collected host
+  // plate plus every visitor plate handed over (collected_guest_count). This is
+  // what the canteen has truly served, vs the booked "total covers" demand.
+  const servedToday = reservations.reduce(
+    (s, r) => s + (r.collected_at ? 1 : 0) + Number(r.collected_guest_count ?? 0),
+    0,
+  );
+  const visitorsServed = reservations.reduce(
+    (s, r) => s + Number(r.collected_guest_count ?? 0),
+    0,
+  );
 
   const optionsByDish = useMemo(() => {
     const map = new Map<string, OptionDemand[]>();
@@ -115,9 +134,18 @@ export function RealtimeDashboard({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 rounded-lg border bg-card p-4">
-        <div>
-          <p className="text-sm text-muted-foreground">Total covers today</p>
-          <p className="text-3xl font-semibold tabular-nums">{grandTotal}</p>
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
+          <div>
+            <p className="text-sm text-muted-foreground">Booked covers today</p>
+            <p className="text-3xl font-semibold tabular-nums">{grandTotal}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Served today</p>
+            <p className="text-3xl font-semibold tabular-nums text-green-700">{servedToday}</p>
+            <p className="text-xs text-muted-foreground">
+              incl. {visitorsServed} visitor plate{visitorsServed === 1 ? "" : "s"}
+            </p>
+          </div>
         </div>
         <div className="text-right">
           <span
@@ -213,7 +241,35 @@ export function RealtimeDashboard({
                           <span className="text-muted-foreground"> — {r.options}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 tabular-nums">{1 + Number(r.guest_count)}</td>
+                      <td className="px-4 py-3 tabular-nums">
+                        <div>{1 + Number(r.guest_count)}</div>
+                        {Number(r.guest_count) > 0 && (
+                          <div className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <Users className="h-3 w-3" />
+                            <button
+                              type="button"
+                              aria-label="Undo visitor plate"
+                              disabled={pending || Number(r.collected_guest_count) <= 0}
+                              onClick={() => collectGuest(r, -1)}
+                              className="grid h-5 w-5 place-items-center rounded border disabled:opacity-40"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="tabular-nums font-medium">
+                              {Number(r.collected_guest_count)}/{Number(r.guest_count)}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label="Serve visitor plate"
+                              disabled={pending || Number(r.collected_guest_count) >= Number(r.guest_count)}
+                              onClick={() => collectGuest(r, 1)}
+                              className="grid h-5 w-5 place-items-center rounded border disabled:opacity-40"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
