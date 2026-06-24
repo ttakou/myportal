@@ -9,7 +9,11 @@ import {
   getMyRequests,
   getMyUpcomingSessions,
   getBudgets,
+  getCompetencies,
+  getCompetencyLinks,
+  getEmployeeCompetencies,
   getEvaluations,
+  getMyCompetencies,
   getParticipants,
   getPlanItemsAll,
   getProviders,
@@ -38,12 +42,15 @@ import {
   CertificatesPanel,
   DeptNeedsPanel,
   MandatoryPanel,
+  MyCompetenciesPanel,
   NoAccessPanel,
   PlanPanel,
   PlannedPanel,
   TeamCompliancePanel,
   TeamPlanPanel,
 } from "./_components/read-panels";
+import { CompetenciesPanel } from "./_components/competencies-panel";
+import { CompetencyMatrixPanel } from "./_components/competency-matrix-panel";
 import { TeamRequestsPanel } from "./_components/team-requests-panel";
 import {
   ComplianceReportPanel,
@@ -66,9 +73,9 @@ import { ParticipantsPanel } from "./_components/participants-panel";
 export default async function TrainingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; session?: string }>;
+  searchParams: Promise<{ view?: string; session?: string; person?: string }>;
 }) {
-  const { view, session } = await searchParams;
+  const { view, session, person } = await searchParams;
   const key = resolveTrainingView(view);
   const [admin, manager] = await Promise.all([isTrainingAdmin(), hasDirectReports()]);
   const access: TrainingAccess = { isManager: manager, isTrainingAdmin: admin };
@@ -178,6 +185,28 @@ export default async function TrainingPage({
         return <PlanProgressReportPanel data={await getPlanProgressReport()} />;
       case "rpt-effectiveness":
         return <EffectivenessReportPanel data={await getEffectivenessReport()} />;
+      case "my-competencies":
+        return <MyCompetenciesPanel items={await getMyCompetencies()} />;
+      case "competencies": {
+        const [competencies, links, courses] = await Promise.all([
+          getCompetencies(),
+          getCompetencyLinks(),
+          getCourses(),
+        ]);
+        return (
+          <CompetenciesPanel
+            competencies={competencies}
+            links={links}
+            courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+          />
+        );
+      }
+      case "competency-matrix": {
+        const employees = await getEmployeesLite();
+        const selected = person && employees.some((e) => e.id === person) ? person : null;
+        const items = selected ? await getEmployeeCompetencies(selected) : [];
+        return <CompetencyMatrixPanel employees={employees} selectedId={selected} items={items} />;
+      }
       default:
         return <PlannedPanel label={meta?.label ?? "This view"} />;
     }

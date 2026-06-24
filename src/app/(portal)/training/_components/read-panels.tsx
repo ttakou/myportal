@@ -1,8 +1,9 @@
-import { Award, CalendarDays, ClipboardList, ListChecks, ShieldAlert, ShieldCheck, Target } from "lucide-react";
+import { Award, CalendarDays, ClipboardList, ListChecks, ShieldAlert, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   PLAN_STATUS_LABEL,
   type Certificate,
+  type EmployeeCompetency,
   type MandatoryItem,
   type PlanItem,
   type UpcomingSession,
@@ -259,6 +260,44 @@ export function TeamPlanPanel({ rows }: { rows: TeamPlanRow[] }) {
               <td className="px-4 py-2 tabular-nums text-muted-foreground">{r.plan_year}</td>
               <td className="px-4 py-2 text-muted-foreground">{r.period ?? "—"}</td>
               <td className="px-4 py-2 text-muted-foreground">{PLAN_STATUS_LABEL[r.status]}</td>
+            </tr>
+          ))}
+        </Table>
+      )}
+    </Section>
+  );
+}
+
+export function MyCompetenciesPanel({ items }: { items: EmployeeCompetency[] }) {
+  return (
+    <Section
+      icon={<Sparkles className="h-5 w-5 text-primary" />}
+      title="My Competencies"
+      subtitle={`${items.filter((i) => i.current_level > 0).length} of ${items.length} competencies assessed`}
+    >
+      {items.length === 0 ? (
+        <Empty>No competencies defined yet.</Empty>
+      ) : (
+        <Table head={["Competency", "Level", "Last assessed"]}>
+          {items.map((c) => (
+            <tr key={c.competency_id} className="border-t">
+              <td className="px-4 py-2 font-medium">
+                {c.name}
+                {c.category && <span className="ml-2 text-xs text-muted-foreground">{c.category}</span>}
+              </td>
+              <td className="px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-0.5">
+                    {Array.from({ length: c.max_level }).map((_, i) => (
+                      <span key={i} className={cn("h-2.5 w-2.5 rounded-sm", i < c.current_level ? "bg-primary" : "bg-muted")} />
+                    ))}
+                  </div>
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {c.current_level}/{c.max_level}
+                  </span>
+                </div>
+              </td>
+              <td className="px-4 py-2 tabular-nums text-muted-foreground">{fmtDate(c.assessed_on)}</td>
             </tr>
           ))}
         </Table>

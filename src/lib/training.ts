@@ -721,6 +721,84 @@ export async function getEvaluations(sessionId: string): Promise<EvalRow[]> {
   });
 }
 
+// --- Competence -------------------------------------------------------------
+
+export async function getCompetencies(): Promise<import("@/types/training").Competency[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_competencies")
+    .select("id, code, name, category, description, max_level, is_active")
+    .order("name");
+  return (data ?? []) as import("@/types/training").Competency[];
+}
+
+export interface CompetencyLink {
+  id: string;
+  competency_id: string;
+  course_id: string;
+  course_title: string;
+  target_level: number;
+}
+
+/** Course → competency links (which course develops which competency, to level). */
+export async function getCompetencyLinks(): Promise<CompetencyLink[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_course_competencies")
+    .select("id, competency_id, course_id, target_level, course:training_courses(title)");
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const course = Array.isArray(r.course) ? r.course[0] : r.course;
+    return {
+      id: r.id,
+      competency_id: r.competency_id,
+      course_id: r.course_id,
+      course_title: course?.title ?? "—",
+      target_level: r.target_level,
+    };
+  });
+}
+
+function overlayCompetencies(
+  competencies: Record<string, any>[],
+  levels: Record<string, any>[],
+): import("@/types/training").EmployeeCompetency[] {
+  const byComp = new Map<string, { current_level: number; assessed_on: string | null }>();
+  for (const l of levels) byComp.set(l.competency_id, { current_level: l.current_level ?? 0, assessed_on: l.assessed_on ?? null });
+  return competencies.map((c) => {
+    const lvl = byComp.get(c.id);
+    return {
+      competency_id: c.id,
+      name: c.name,
+      category: c.category ?? null,
+      max_level: c.max_level ?? 5,
+      current_level: lvl?.current_level ?? 0,
+      assessed_on: lvl?.assessed_on ?? null,
+    };
+  });
+}
+
+/** The signed-in user's competency levels (catalogue overlaid with their levels). */
+export async function getMyCompetencies(): Promise<import("@/types/training").EmployeeCompetency[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const [{ data: comps }, { data: levels }] = await Promise.all([
+    supabase.from("training_competencies").select("id, name, category, max_level").eq("is_active", true).order("name"),
+    supabase.from("training_employee_competencies").select("competency_id, current_level, assessed_on").eq("profile_id", user.id),
+  ]);
+  return overlayCompetencies((comps ?? []) as Record<string, any>[], (levels ?? []) as Record<string, any>[]);
+}
+
+/** An employee's competency levels (for the HR matrix). */
+export async function getEmployeeCompetencies(profileId: string): Promise<import("@/types/training").EmployeeCompetency[]> {
+  const supabase = createClient();
+  const [{ data: comps }, { data: levels }] = await Promise.all([
+    supabase.from("training_competencies").select("id, name, category, max_level").eq("is_active", true).order("name"),
+    supabase.from("training_employee_competencies").select("competency_id, current_level, assessed_on").eq("profile_id", profileId),
+  ]);
+  return overlayCompetencies((comps ?? []) as Record<string, any>[], (levels ?? []) as Record<string, any>[]);
+}
+
 /** Active employees for enrolment pickers. */
 export async function getEmployeesLite(): Promise<{ id: string; name: string }[]> {
   const supabase = createClient();

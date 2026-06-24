@@ -318,6 +318,110 @@ export async function deleteEvaluation(id: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+// --- Competence -------------------------------------------------------------
+
+export async function upsertCompetency(input: {
+  id?: string;
+  name: string;
+  code?: string;
+  category?: string;
+  maxLevel?: number;
+  description?: string;
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  if (!input.name.trim()) return { ok: false, error: "Name is required." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const row = {
+    tenant_id: who.tenant_id,
+    name: input.name.trim(),
+    code: input.code?.trim() || null,
+    category: input.category?.trim() || null,
+    max_level: input.maxLevel && input.maxLevel > 0 ? input.maxLevel : 5,
+    description: input.description?.trim() || null,
+  };
+  const supabase = createClient();
+  const { error } = input.id
+    ? await supabase.from("training_competencies").update(row).eq("id", input.id)
+    : await supabase.from("training_competencies").insert(row);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function setCompetencyActive(id: string, isActive: boolean): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("training_competencies").update({ is_active: isActive }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function linkCourseCompetency(input: {
+  competencyId: string;
+  courseId: string;
+  targetLevel: number;
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  if (!input.competencyId || !input.courseId) return { ok: false, error: "Pick a competency and a course." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+  const { error } = await supabase.from("training_course_competencies").upsert(
+    {
+      tenant_id: who.tenant_id,
+      competency_id: input.competencyId,
+      course_id: input.courseId,
+      target_level: input.targetLevel || 1,
+    },
+    { onConflict: "course_id,competency_id" },
+  );
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function unlinkCourseCompetency(id: string): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("training_course_competencies").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Set (assess) an employee's level against a competency. */
+export async function setEmployeeCompetency(
+  profileId: string,
+  competencyId: string,
+  level: number,
+): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+  const { error } = await supabase.from("training_employee_competencies").upsert(
+    {
+      tenant_id: who.tenant_id,
+      profile_id: profileId,
+      competency_id: competencyId,
+      current_level: level,
+      assessed_on: new Date().toISOString().slice(0, 10),
+      assessed_by: who.id,
+    },
+    { onConflict: "profile_id,competency_id" },
+  );
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 // --- HR: providers & trainers -----------------------------------------------
 
 export async function upsertProvider(input: {
@@ -534,6 +638,30 @@ export async function recordCompletion(
     .from("training_participants")
     .update({ status: "passed", attended: true, completed_at: new Date().toISOString(), score: opts?.score ?? null })
     .eq("id", participantId);
+
+  // Auto-raise any competencies this course develops to their target level.
+  const { data: links } = await supabase
+    .from("training_course_competencies")
+    .select("competency_id, target_level")
+    .eq("course_id", session.course_id as string);
+  if (links && links.length) {
+    const compIds = links.map((l) => l.competency_id as string);
+    const { data: existing } = await supabase
+      .from("training_employee_competencies")
+      .select("competency_id, current_level")
+      .eq("profile_id", part.profile_id as string)
+      .in("competency_id", compIds);
+    const cur = new Map(((existing ?? []) as Record<string, any>[]).map((e) => [e.competency_id as string, (e.current_level as number) ?? 0]));
+    const rows = links.map((l) => ({
+      tenant_id: who.tenant_id,
+      profile_id: part.profile_id as string,
+      competency_id: l.competency_id as string,
+      current_level: Math.max(cur.get(l.competency_id as string) ?? 0, (l.target_level as number) ?? 1),
+      assessed_on: completedDate,
+      assessed_by: who.id,
+    }));
+    await supabase.from("training_employee_competencies").upsert(rows, { onConflict: "profile_id,competency_id" });
+  }
 
   rev();
   return { ok: true };

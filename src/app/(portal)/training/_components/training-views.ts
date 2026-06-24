@@ -15,6 +15,7 @@ export type TrainingViewKey =
   | "my-plan"
   | "calendar"
   | "certificates"
+  | "my-competencies"
   // Team Training
   | "team-compliance"
   | "team-requests"
@@ -30,6 +31,8 @@ export type TrainingViewKey =
   | "trainers"
   | "budgets"
   | "evaluations"
+  | "competencies"
+  | "competency-matrix"
   // Reports
   | "rpt-compliance"
   | "rpt-plan-progress"
@@ -52,6 +55,7 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "my-plan", label: "My Training Plan", icon: "ListChecks", group: "My Training" },
   { key: "calendar", label: "Training Calendar", icon: "CalendarDays", group: "My Training" },
   { key: "certificates", label: "Certificates", icon: "Award", group: "My Training" },
+  { key: "my-competencies", label: "My Competencies", icon: "Sparkles", group: "My Training" },
   // Team Training (managers + HR)
   { key: "team-compliance", label: "Team Compliance", icon: "ShieldCheck", group: "Team Training" },
   { key: "team-requests", label: "Training Requests", icon: "Inbox", group: "Team Training" },
@@ -67,6 +71,8 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "trainers", label: "Trainers", icon: "GraduationCap", group: "HR Administration" },
   { key: "budgets", label: "Budgets", icon: "Wallet", group: "HR Administration" },
   { key: "evaluations", label: "Evaluations", icon: "Star", group: "HR Administration" },
+  { key: "competencies", label: "Competency Catalogue", icon: "Layers", group: "HR Administration" },
+  { key: "competency-matrix", label: "Competency Matrix", icon: "Network", group: "HR Administration" },
   // Reports (HR)
   { key: "rpt-compliance", label: "Statutory Compliance", icon: "ShieldCheck", group: "Reports" },
   { key: "rpt-plan-progress", label: "Training Plan Progress", icon: "TrendingUp", group: "Reports" },
@@ -100,6 +106,9 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "rpt-costs",
   "rpt-expiring",
   "rpt-effectiveness",
+  "my-competencies",
+  "competencies",
+  "competency-matrix",
 ]);
 
 export const TRAINING_VIEW_KEYS = TRAINING_VIEWS.map((v) => v.key);

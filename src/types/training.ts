@@ -183,3 +183,23 @@ export interface Participant {
   recorded: boolean;
 }
 
+export interface Competency {
+  id: string;
+  code: string | null;
+  name: string;
+  category: string | null;
+  description: string | null;
+  max_level: number;
+  is_active: boolean;
+}
+
+/** An employee's level against a competency (catalogue overlaid with their level). */
+export interface EmployeeCompetency {
+  competency_id: string;
+  name: string;
+  category: string | null;
+  max_level: number;
+  current_level: number;
+  assessed_on: string | null;
+}
+
