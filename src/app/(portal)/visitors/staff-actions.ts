@@ -18,6 +18,7 @@ async function recordCheckIn(
   profileId: string,
   method: "self" | "guard",
   coords: { lat: number; lng: number } | null,
+  vehicle?: { type?: string | null; plate?: string | null },
 ): Promise<ActionResult> {
   const supabase = createClient();
   const user = await getCachedUser();
@@ -35,6 +36,8 @@ async function recordCheckIn(
       checked_in_by: user?.id ?? null,
       check_in_lat: coords?.lat ?? null,
       check_in_lng: coords?.lng ?? null,
+      vehicle_type: vehicle?.type?.trim() || null,
+      vehicle_plate: vehicle?.plate?.trim() || null,
     },
     { onConflict: "profile_id,attendance_date" },
   );
@@ -59,10 +62,13 @@ async function recordCheckOut(profileId: string): Promise<ActionResult> {
 
 // ---- Guard / reception (acts on any staff member) ---------------------------
 
-export async function staffCheckIn(profileId: string): Promise<ActionResult> {
+export async function staffCheckIn(
+  profileId: string,
+  vehicle?: { type?: string | null; plate?: string | null },
+): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
-  return recordCheckIn(profileId, "guard", null);
+  return recordCheckIn(profileId, "guard", null, vehicle);
 }
 
 export async function staffCheckOut(profileId: string): Promise<ActionResult> {

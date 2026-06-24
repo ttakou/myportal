@@ -17,6 +17,9 @@ export type StaffAttendance = {
   status: AttendanceStatus;
   check_in_at: string | null;
   check_out_at: string | null;
+  /** Vehicle the guard recorded at the gate on check-in (optional). */
+  vehicle_type: string | null;
+  vehicle_plate: string | null;
 };
 
 /** The signed-in user's own attendance for the day (self check-in card). */
