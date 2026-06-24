@@ -487,6 +487,159 @@ export async function getTeamPlan(): Promise<TeamPlanRow[]> {
   });
 }
 
+// --- Reports (Training Admin) -----------------------------------------------
+
+export interface ComplianceReport {
+  overall: { required: number; compliant: number; rate: number };
+  byCourse: { title: string; required: number; compliant: number; expired: number; missing: number; rate: number }[];
+}
+
+/** Org-wide statutory compliance: required vs compliant across active staff. */
+export async function getComplianceReport(): Promise<ComplianceReport> {
+  const supabase = createClient();
+  const ref = today();
+  const [{ data: profiles }, { data: courses }, { data: reqs }, { data: records }] = await Promise.all([
+    supabase.from("profiles").select("id, department, job_title, employee_type").eq("is_active", true),
+    supabase.from("training_courses").select("id, title, is_statutory").eq("is_active", true),
+    supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
+    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on"),
+  ]);
+  const courseRows = (courses ?? []) as Record<string, any>[];
+  const reqRows = (reqs ?? []) as Record<string, any>[];
+  const latest = new Map<string, { completed_on: string; expires_on: string | null }>();
+  for (const r of (records ?? []) as Record<string, any>[]) {
+    const k = `${r.profile_id}|${r.course_id}`;
+    const prev = latest.get(k);
+    if (!prev || r.completed_on > prev.completed_on) latest.set(k, { completed_on: r.completed_on, expires_on: r.expires_on ?? null });
+  }
+  const per = new Map<string, { title: string; required: number; compliant: number; expired: number; missing: number }>();
+  for (const c of courseRows) per.set(c.id, { title: c.title, required: 0, compliant: 0, expired: 0, missing: 0 });
+
+  for (const p of (profiles ?? []) as Record<string, any>[]) {
+    const matches = (a: string, v: string | null) =>
+      a === "all" ||
+      (a === "department" && !!v && v === p.department) ||
+      (a === "job_title" && !!v && v === p.job_title) ||
+      (a === "employee_type" && !!v && v === p.employee_type);
+    const requiredIds = new Set<string>();
+    for (const r of reqRows) if (matches(r.applies_to, r.applies_value ?? null)) requiredIds.add(r.course_id);
+    for (const c of courseRows) {
+      if (!c.is_statutory && !requiredIds.has(c.id)) continue;
+      const agg = per.get(c.id)!;
+      agg.required += 1;
+      const rec = latest.get(`${p.id}|${c.id}`);
+      if (!rec) agg.missing += 1;
+      else if (rec.expires_on && rec.expires_on < ref) agg.expired += 1;
+      else agg.compliant += 1;
+    }
+  }
+  const byCourse = [...per.values()]
+    .filter((a) => a.required > 0)
+    .map((a) => ({ ...a, rate: a.required ? Math.round((a.compliant / a.required) * 100) : 0 }))
+    .sort((a, b) => a.rate - b.rate);
+  const required = byCourse.reduce((s, a) => s + a.required, 0);
+  const compliant = byCourse.reduce((s, a) => s + a.compliant, 0);
+  return { overall: { required, compliant, rate: required ? Math.round((compliant / required) * 100) : 0 }, byCourse };
+}
+
+export interface ExpiringRow {
+  id: string;
+  person: string;
+  course_title: string;
+  expires_on: string;
+  days: number;
+  expired: boolean;
+}
+
+/** Certificates expiring within `days` (or already expired). */
+export async function getExpiringReport(days = 90): Promise<ExpiringRow[]> {
+  const supabase = createClient();
+  const ref = today();
+  const horizon = new Date(ref + "T00:00:00Z");
+  horizon.setUTCDate(horizon.getUTCDate() + days);
+  const horizonIso = horizon.toISOString().slice(0, 10);
+  const { data } = await supabase
+    .from("training_records")
+    .select("id, expires_on, course:training_courses(title), person:profiles!training_records_profile_id_fkey(full_name)")
+    .not("expires_on", "is", null)
+    .lte("expires_on", horizonIso)
+    .order("expires_on", { ascending: true });
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const course = Array.isArray(r.course) ? r.course[0] : r.course;
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    const days = Math.round((new Date(r.expires_on + "T00:00:00Z").getTime() - new Date(ref + "T00:00:00Z").getTime()) / 86400000);
+    return { id: r.id, person: person?.full_name ?? "—", course_title: course?.title ?? "—", expires_on: r.expires_on, days, expired: r.expires_on < ref };
+  });
+}
+
+export interface CostReport {
+  total: number;
+  byCourse: { title: string; sessions: number; cost: number }[];
+}
+
+/** Training costs from scheduled sessions, by course. */
+export async function getCostReport(): Promise<CostReport> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_sessions")
+    .select("cost, status, course:training_courses(title)")
+    .neq("status", "cancelled");
+  const per = new Map<string, { sessions: number; cost: number }>();
+  let total = 0;
+  for (const s of (data ?? []) as Record<string, any>[]) {
+    const course = Array.isArray(s.course) ? s.course[0] : s.course;
+    const title = course?.title ?? "—";
+    const cost = Number(s.cost) || 0;
+    total += cost;
+    const e = per.get(title) ?? { sessions: 0, cost: 0 };
+    e.sessions += 1;
+    e.cost += cost;
+    per.set(title, e);
+  }
+  return {
+    total,
+    byCourse: [...per.entries()].map(([title, v]) => ({ title, ...v })).sort((a, b) => b.cost - a.cost),
+  };
+}
+
+export interface PlanProgressReport {
+  byStatus: { status: string; count: number }[];
+  total: number;
+}
+
+/** Training plan progress: plan items grouped by status. */
+export async function getPlanProgressReport(): Promise<PlanProgressReport> {
+  const supabase = createClient();
+  const { data } = await supabase.from("training_plan_items").select("status");
+  const counts = new Map<string, number>();
+  for (const r of (data ?? []) as Record<string, any>[]) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+  const byStatus = [...counts.entries()].map(([status, count]) => ({ status, count }));
+  return { byStatus, total: byStatus.reduce((s, r) => s + r.count, 0) };
+}
+
+export interface EffectivenessReport {
+  byKind: { kind: string; avg: number | null; count: number }[];
+  total: number;
+}
+
+/** Training effectiveness from evaluations (Kirkpatrick levels). */
+export async function getEffectivenessReport(): Promise<EffectivenessReport> {
+  const supabase = createClient();
+  const { data } = await supabase.from("training_evaluations").select("kind, score");
+  const agg = new Map<string, { sum: number; n: number; count: number }>();
+  for (const r of (data ?? []) as Record<string, any>[]) {
+    const e = agg.get(r.kind) ?? { sum: 0, n: 0, count: 0 };
+    e.count += 1;
+    if (r.score != null) {
+      e.sum += Number(r.score);
+      e.n += 1;
+    }
+    agg.set(r.kind, e);
+  }
+  const byKind = [...agg.entries()].map(([kind, v]) => ({ kind, avg: v.n ? Math.round((v.sum / v.n) * 10) / 10 : null, count: v.count }));
+  return { byKind, total: byKind.reduce((s, r) => s + r.count, 0) };
+}
+
 /** Active employees for enrolment pickers. */
 export async function getEmployeesLite(): Promise<{ id: string; name: string }[]> {
   const supabase = createClient();

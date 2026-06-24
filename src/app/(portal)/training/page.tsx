@@ -16,6 +16,11 @@ import {
   getTeamPlan,
   getTeamRequests,
   getTrainers,
+  getComplianceReport,
+  getCostReport,
+  getEffectivenessReport,
+  getExpiringReport,
+  getPlanProgressReport,
   isTrainingAdmin,
 } from "@/lib/training";
 import {
@@ -37,6 +42,13 @@ import {
   TeamPlanPanel,
 } from "./_components/read-panels";
 import { TeamRequestsPanel } from "./_components/team-requests-panel";
+import {
+  ComplianceReportPanel,
+  CostReportPanel,
+  EffectivenessReportPanel,
+  ExpiringReportPanel,
+  PlanProgressReportPanel,
+} from "./_components/report-panels";
 import { RequestPanel } from "./_components/request-panel";
 import { CataloguePanel } from "./_components/catalogue-panel";
 import { MatrixPanel } from "./_components/matrix-panel";
@@ -126,6 +138,16 @@ export default async function TrainingPage({
           />
         );
       }
+      case "rpt-compliance":
+        return <ComplianceReportPanel data={await getComplianceReport()} />;
+      case "rpt-expiring":
+        return <ExpiringReportPanel rows={await getExpiringReport()} />;
+      case "rpt-costs":
+        return <CostReportPanel data={await getCostReport()} />;
+      case "rpt-plan-progress":
+        return <PlanProgressReportPanel data={await getPlanProgressReport()} />;
+      case "rpt-effectiveness":
+        return <EffectivenessReportPanel data={await getEffectivenessReport()} />;
       default:
         return <PlannedPanel label={meta?.label ?? "This view"} />;
     }
