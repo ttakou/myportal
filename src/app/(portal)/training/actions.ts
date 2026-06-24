@@ -52,12 +52,19 @@ export async function submitTrainingRequest(input: {
 export async function cancelTrainingRequest(id: string): Promise<ActionResult> {
   const gate = await requireModule("training", "create");
   if (gate) return gate;
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
   const supabase = createClient();
-  const { error } = await supabase
+  // Only the owner may cancel, and only while still pending.
+  const { data, error } = await supabase
     .from("training_requests")
     .update({ status: "cancelled" })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("profile_id", who.id)
+    .eq("status", "requested")
+    .select("id");
   if (error) return { ok: false, error: error.message };
+  if (!data || data.length === 0) return { ok: false, error: "This request can no longer be cancelled." };
   rev();
   return { ok: true };
 }
@@ -73,27 +80,33 @@ export async function decideTrainingRequest(
   if (!user) return { ok: false, error: "Not signed in." };
   const supabase = createClient();
 
-  // Allow the requester's line manager; otherwise require training:approve.
   const { data: req } = await supabase.from("training_requests").select("profile_id").eq("id", id).maybeSingle();
   if (!req) return { ok: false, error: "Request not found." };
   const { data: prof } = await supabase.from("profiles").select("manager_id").eq("id", req.profile_id).maybeSingle();
   const isManager = prof?.manager_id === user.id;
+
+  // Authorize: the requester's line manager, or a Training Admin (training:manage).
+  // We require `manage` (not `approve`) for non-managers because the RLS update
+  // policies on training_requests only admit the line manager or a manage holder
+  // — gating on `approve` would pass here yet be silently blocked by RLS.
   if (!isManager) {
-    const gate = await requireModule("training", "approve");
+    const gate = await requireModule("training", "manage");
     if (gate) return gate;
   }
 
-  const { error } = await supabase
-    .from("training_requests")
-    .update({
-      status: decision === "approve" ? "manager_approved" : "rejected",
-      manager_id: decision === "approve" ? user.id : null,
-      decided_by: user.id,
-      decided_at: new Date().toISOString(),
-      decision_note: note?.trim() || null,
-    })
-    .eq("id", id);
+  const patch: Record<string, unknown> = {
+    status: decision === "approve" ? "approved" : "rejected",
+    decided_by: user.id,
+    decided_at: new Date().toISOString(),
+    decision_note: note?.trim() || null,
+  };
+  // Record the line manager only when the actual line manager approves (the
+  // approver may be a Training Admin who isn't this person's manager).
+  if (isManager && decision === "approve") patch.manager_id = user.id;
+
+  const { data, error } = await supabase.from("training_requests").update(patch).eq("id", id).select("id");
   if (error) return { ok: false, error: error.message };
+  if (!data || data.length === 0) return { ok: false, error: "You can't decide this request." };
   rev();
   return { ok: true };
 }

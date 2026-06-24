@@ -148,7 +148,7 @@ export function RequestPanel({
                   {r.decision_note && <span className="ml-2 text-xs text-muted-foreground">{r.decision_note}</span>}
                 </td>
                 <td className="px-4 py-2 text-right">
-                  {(r.status === "requested" || r.status === "manager_approved") && (
+                  {r.status === "requested" && (
                     <button
                       disabled={pending}
                       title="Cancel request"

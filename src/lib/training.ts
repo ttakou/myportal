@@ -30,8 +30,8 @@ const EXPIRING_DAYS = 60;
 function certStatus(expires: string | null, ref: string): Certificate["status"] {
   if (!expires) return "valid";
   if (expires < ref) return "expired";
-  const soon = new Date(ref);
-  soon.setDate(soon.getDate() + EXPIRING_DAYS);
+  const soon = new Date(ref + "T00:00:00Z");
+  soon.setUTCDate(soon.getUTCDate() + EXPIRING_DAYS);
   return expires <= soon.toISOString().slice(0, 10) ? "expiring" : "valid";
 }
 
