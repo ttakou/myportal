@@ -192,6 +192,132 @@ export async function deleteRequirement(id: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+// --- HR: annual plan --------------------------------------------------------
+
+export async function addPlanItem(input: {
+  profileId: string;
+  courseId?: string | null;
+  courseTitle?: string;
+  planYear: number;
+  period?: string;
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  if (!input.profileId) return { ok: false, error: "Pick an employee." };
+  if (!input.courseId && !input.courseTitle?.trim()) return { ok: false, error: "Pick a course." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+  const { error } = await supabase.from("training_plan_items").insert({
+    tenant_id: who.tenant_id,
+    profile_id: input.profileId,
+    course_id: input.courseId || null,
+    course_title: input.courseId ? null : input.courseTitle?.trim() || null,
+    plan_year: input.planYear,
+    period: input.period?.trim() || null,
+    source: "manager",
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function setPlanItemStatus(id: string, status: string): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("training_plan_items").update({ status }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function deletePlanItem(id: string): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("training_plan_items").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+// --- HR: budgets ------------------------------------------------------------
+
+export async function upsertBudget(input: {
+  id?: string;
+  budgetYear: number;
+  department?: string;
+  amount: number;
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  if (!input.budgetYear) return { ok: false, error: "Year is required." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const row = {
+    tenant_id: who.tenant_id,
+    budget_year: input.budgetYear,
+    department: input.department?.trim() || null,
+    amount: input.amount || 0,
+  };
+  const supabase = createClient();
+  const { error } = input.id
+    ? await supabase.from("training_budgets").update(row).eq("id", input.id)
+    : await supabase.from("training_budgets").upsert(row, { onConflict: "tenant_id,budget_year,department" });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function deleteBudget(id: string): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("training_budgets").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+// --- HR: evaluations --------------------------------------------------------
+
+export async function addEvaluation(input: {
+  sessionId: string;
+  profileId: string;
+  kind: string;
+  score?: number | null;
+  comments?: string;
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  if (!input.sessionId || !input.profileId) return { ok: false, error: "Pick a participant." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+  const { error } = await supabase.from("training_evaluations").insert({
+    tenant_id: who.tenant_id,
+    session_id: input.sessionId,
+    profile_id: input.profileId,
+    kind: input.kind || "reaction",
+    score: input.score ?? null,
+    comments: input.comments?.trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function deleteEvaluation(id: string): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("training_evaluations").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 // --- HR: providers & trainers -----------------------------------------------
 
 export async function upsertProvider(input: {

@@ -640,6 +640,87 @@ export async function getEffectivenessReport(): Promise<EffectivenessReport> {
   return { byKind, total: byKind.reduce((s, r) => s + r.count, 0) };
 }
 
+// --- HR: annual plan, budgets, evaluations ----------------------------------
+
+export interface PlanRowAll {
+  id: string;
+  member: string;
+  course_title: string | null;
+  plan_year: number;
+  period: string | null;
+  status: import("@/types/training").PlanStatus;
+  source: string;
+}
+
+/** Every training plan item (Training Admin view). */
+export async function getPlanItemsAll(): Promise<PlanRowAll[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_plan_items")
+    .select("id, plan_year, period, status, source, course_title, course:training_courses(title), person:profiles!training_plan_items_profile_id_fkey(full_name)")
+    .order("plan_year", { ascending: false });
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const course = Array.isArray(r.course) ? r.course[0] : r.course;
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    return {
+      id: r.id,
+      member: person?.full_name ?? "—",
+      course_title: course?.title ?? r.course_title ?? null,
+      plan_year: r.plan_year,
+      period: r.period ?? null,
+      status: r.status,
+      source: r.source,
+    };
+  });
+}
+
+export interface BudgetRow {
+  id: string;
+  budget_year: number;
+  department: string | null;
+  amount: number;
+  currency: string;
+}
+
+export async function getBudgets(): Promise<BudgetRow[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_budgets")
+    .select("id, budget_year, department, amount, currency")
+    .order("budget_year", { ascending: false });
+  return (data ?? []) as BudgetRow[];
+}
+
+export interface EvalRow {
+  id: string;
+  person: string;
+  kind: string;
+  score: number | null;
+  comments: string | null;
+  evaluated_on: string;
+}
+
+/** Evaluations recorded against a session. */
+export async function getEvaluations(sessionId: string): Promise<EvalRow[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_evaluations")
+    .select("id, kind, score, comments, evaluated_on, person:profiles!training_evaluations_profile_id_fkey(full_name)")
+    .eq("session_id", sessionId)
+    .order("evaluated_on", { ascending: false });
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    return {
+      id: r.id,
+      person: person?.full_name ?? "—",
+      kind: r.kind,
+      score: r.score ?? null,
+      comments: r.comments ?? null,
+      evaluated_on: r.evaluated_on,
+    };
+  });
+}
+
 /** Active employees for enrolment pickers. */
 export async function getEmployeesLite(): Promise<{ id: string; name: string }[]> {
   const supabase = createClient();

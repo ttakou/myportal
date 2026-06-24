@@ -8,7 +8,10 @@ import {
   getMyPlan,
   getMyRequests,
   getMyUpcomingSessions,
+  getBudgets,
+  getEvaluations,
   getParticipants,
+  getPlanItemsAll,
   getProviders,
   getRequirements,
   getSessions,
@@ -49,6 +52,9 @@ import {
   ExpiringReportPanel,
   PlanProgressReportPanel,
 } from "./_components/report-panels";
+import { AnnualPlanPanel } from "./_components/annual-plan-panel";
+import { BudgetsPanel } from "./_components/budgets-panel";
+import { EvaluationsPanel } from "./_components/evaluations-panel";
 import { RequestPanel } from "./_components/request-panel";
 import { CataloguePanel } from "./_components/catalogue-panel";
 import { MatrixPanel } from "./_components/matrix-panel";
@@ -109,6 +115,30 @@ export default async function TrainingPage({
         return <TeamPlanPanel rows={await getTeamPlan()} />;
       case "team-requests":
         return <TeamRequestsPanel requests={await getTeamRequests()} />;
+      case "annual-plan": {
+        const [items, employees, courses] = await Promise.all([getPlanItemsAll(), getEmployeesLite(), getCourses()]);
+        return (
+          <AnnualPlanPanel
+            items={items}
+            employees={employees}
+            courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+          />
+        );
+      }
+      case "budgets": {
+        const [budgets, cost] = await Promise.all([getBudgets(), getCostReport()]);
+        return <BudgetsPanel budgets={budgets} scheduledCost={cost.total} />;
+      }
+      case "evaluations": {
+        const sessions = await getSessions();
+        const selected = session && sessions.some((s) => s.id === session) ? session : null;
+        const [participants, evaluations] = selected
+          ? await Promise.all([getParticipants(selected), getEvaluations(selected)])
+          : [[], []];
+        return (
+          <EvaluationsPanel sessions={sessions} selectedId={selected} participants={participants} evaluations={evaluations} />
+        );
+      }
       case "providers":
         return <ProvidersPanel providers={await getProviders()} />;
       case "trainers": {
