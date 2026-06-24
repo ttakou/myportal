@@ -40,7 +40,15 @@ export function ServingScreen({
   const [options, setOptions] = useState<EmployeeOption[]>([]);
   const [showOptions, setShowOptions] = useState(false);
 
-  const served = reservations.filter((r) => r.collected_at).length;
+  // Plate-aware tallies (host + visitors), so serving a visitor plate moves the
+  // headline counters — the host-only booking count doesn't reflect visitors.
+  const totalPlates = reservations.reduce((s, r) => s + 1 + Number(r.guest_count), 0);
+  const servedPlates = reservations.reduce(
+    (s, r) => s + (r.collected_at ? 1 : 0) + Number(r.collected_guest_count),
+    0,
+  );
+  const visitorPlates = reservations.reduce((s, r) => s + Number(r.guest_count), 0);
+  const visitorsServedCount = reservations.reduce((s, r) => s + Number(r.collected_guest_count), 0);
 
   // Reset the visitor count whenever the walk-in target changes.
   useEffect(() => {
@@ -277,9 +285,29 @@ export function ServingScreen({
     <div className="space-y-6">
       {/* Live counters */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Counter label="Reservations" value={reservations.length} />
-        <Counter label="Served" value={served} tone="green" />
-        <Counter label="Remaining" value={reservations.length - served} tone="amber" />
+        <Counter
+          label="Plates"
+          value={totalPlates}
+          hint={`${reservations.length} reservation${reservations.length === 1 ? "" : "s"}${
+            visitorPlates > 0 ? ` · ${visitorPlates} visitor` : ""
+          }`}
+        />
+        <Counter
+          label="Served"
+          value={servedPlates}
+          tone="green"
+          hint={visitorsServedCount > 0 ? `incl. ${visitorsServedCount} visitor` : undefined}
+        />
+        <Counter
+          label="Remaining"
+          value={totalPlates - servedPlates}
+          tone="amber"
+          hint={
+            visitorPlates - visitorsServedCount > 0
+              ? `incl. ${visitorPlates - visitorsServedCount} visitor`
+              : undefined
+          }
+        />
       </div>
 
       {/* Scan / badge input + name typeahead (keyboard-wedge scanners still work) */}
@@ -579,7 +607,17 @@ export function ServingScreen({
   );
 }
 
-function Counter({ label, value, tone }: { label: string; value: number; tone?: "green" | "amber" }) {
+function Counter({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: number;
+  tone?: "green" | "amber";
+  hint?: string;
+}) {
   return (
     <div className="rounded-lg border bg-card p-4">
       <p className="text-sm text-muted-foreground">{label}</p>
@@ -592,6 +630,7 @@ function Counter({ label, value, tone }: { label: string; value: number; tone?: 
       >
         {value}
       </p>
+      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }

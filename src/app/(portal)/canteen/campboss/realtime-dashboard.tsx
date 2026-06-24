@@ -12,8 +12,10 @@ import { CheckCircle2, Circle, Minus, Plus, Radio, Users, UtensilsCrossed } from
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
+  KITCHEN_LABEL,
   MEAL_PERIOD_LABEL,
   type DishDemand,
+  type KitchenKind,
   type MealPeriod,
   type OptionDemand,
   type Reservation,
@@ -131,6 +133,18 @@ export function RealtimeDashboard({
 
   const grandTotal = demand.reduce((sum, d) => sum + Number(d.total_covers), 0);
 
+  // Per-kitchen breakdown (Chinese vs Local) of both booked covers and what has
+  // actually been served (host plate + visitor plates), plus the grand total.
+  const KINDS: KitchenKind[] = ["chinese", "local"];
+  const bookedByKind = (kind: KitchenKind) =>
+    demand.filter((d) => d.kitchen_kind === kind).reduce((s, d) => s + Number(d.total_covers), 0);
+  const servedByKind = (kind: KitchenKind) =>
+    reservations
+      .filter((r) => r.kitchen_kind === kind)
+      .reduce((s, r) => s + (r.collected_at ? 1 : 0) + Number(r.collected_guest_count ?? 0), 0);
+  const kindLine = (fn: (k: KitchenKind) => number) =>
+    KINDS.map((k) => `${KITCHEN_LABEL[k]} ${fn(k)}`).join(" · ");
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 rounded-lg border bg-card p-4">
@@ -138,12 +152,14 @@ export function RealtimeDashboard({
           <div>
             <p className="text-sm text-muted-foreground">Booked covers today</p>
             <p className="text-3xl font-semibold tabular-nums">{grandTotal}</p>
+            <p className="text-xs text-muted-foreground">{kindLine(bookedByKind)}</p>
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Served today</p>
             <p className="text-3xl font-semibold tabular-nums text-green-700">{servedToday}</p>
             <p className="text-xs text-muted-foreground">
-              incl. {visitorsServed} visitor plate{visitorsServed === 1 ? "" : "s"}
+              {kindLine(servedByKind)} · incl. {visitorsServed} visitor plate
+              {visitorsServed === 1 ? "" : "s"}
             </p>
           </div>
         </div>
