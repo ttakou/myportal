@@ -1,4 +1,4 @@
-import { Award, CalendarDays, ListChecks, ShieldAlert } from "lucide-react";
+import { Award, CalendarDays, ClipboardList, ListChecks, ShieldAlert, ShieldCheck, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   PLAN_STATUS_LABEL,
@@ -7,6 +7,7 @@ import {
   type PlanItem,
   type UpcomingSession,
 } from "@/types/training";
+import type { TeamPlanRow, TeamReport } from "@/lib/training";
 
 function fmtDate(d: string | null): string {
   return d ? new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -151,6 +152,113 @@ export function CalendarPanel({ items }: { items: UpcomingSession[] }) {
               <td className="px-4 py-2 tabular-nums text-muted-foreground">{fmtDateTime(s.ends_at)}</td>
               <td className="px-4 py-2 text-muted-foreground">{s.location ?? "—"}</td>
               <td className="px-4 py-2 capitalize text-muted-foreground">{s.status.replace("_", " ")}</td>
+            </tr>
+          ))}
+        </Table>
+      )}
+    </Section>
+  );
+}
+
+export function TeamCompliancePanel({ reports }: { reports: TeamReport[] }) {
+  return (
+    <Section
+      icon={<ShieldCheck className="h-5 w-5 text-primary" />}
+      title="Team Compliance"
+      subtitle={`${reports.length} direct report(s)`}
+    >
+      {reports.length === 0 ? (
+        <Empty>You have no direct reports.</Empty>
+      ) : (
+        <Table head={["Member", "Department", "Compliant", "Issues"]}>
+          {reports.map((r) => {
+            const total = r.items.length;
+            const ok = r.items.filter((i) => i.status === "compliant").length;
+            const expired = r.items.filter((i) => i.status === "expired").length;
+            const missing = r.items.filter((i) => i.status === "missing").length;
+            const expiring = r.items.filter((i) => i.status === "expiring").length;
+            return (
+              <tr key={r.profile_id} className="border-t">
+                <td className="px-4 py-2 font-medium">{r.name}</td>
+                <td className="px-4 py-2 text-muted-foreground">{r.department ?? "—"}</td>
+                <td className="px-4 py-2 tabular-nums">
+                  <span className={cn(ok === total ? "text-green-700" : "text-foreground")}>{ok}</span>
+                  <span className="text-muted-foreground">/{total}</span>
+                </td>
+                <td className="px-4 py-2">
+                  <div className="flex flex-wrap gap-1 text-xs">
+                    {expired > 0 && <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-destructive">{expired} expired</span>}
+                    {missing > 0 && <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{missing} not done</span>}
+                    {expiring > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">{expiring} expiring</span>}
+                    {expired + missing + expiring === 0 && <span className="text-green-700">All good</span>}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </Table>
+      )}
+    </Section>
+  );
+}
+
+export function DeptNeedsPanel({ reports }: { reports: TeamReport[] }) {
+  const byCourse = new Map<string, { needing: number; total: number }>();
+  for (const r of reports) {
+    for (const i of r.items) {
+      const e = byCourse.get(i.title) ?? { needing: 0, total: 0 };
+      e.total += 1;
+      if (i.status !== "compliant") e.needing += 1;
+      byCourse.set(i.title, e);
+    }
+  }
+  const rows = [...byCourse.entries()]
+    .map(([title, v]) => ({ title, ...v }))
+    .filter((r) => r.needing > 0)
+    .sort((a, b) => b.needing - a.needing);
+  return (
+    <Section
+      icon={<Target className="h-5 w-5 text-primary" />}
+      title="Department Training Needs"
+      subtitle="Mandatory courses your team still needs (not done / expired / expiring)."
+    >
+      {rows.length === 0 ? (
+        <Empty>No outstanding training needs across your team.</Empty>
+      ) : (
+        <Table head={["Course", "Team members needing it"]}>
+          {rows.map((r) => (
+            <tr key={r.title} className="border-t">
+              <td className="px-4 py-2 font-medium">{r.title}</td>
+              <td className="px-4 py-2 tabular-nums">
+                <span className="font-semibold text-amber-700">{r.needing}</span>
+                <span className="text-muted-foreground"> / {r.total} required</span>
+              </td>
+            </tr>
+          ))}
+        </Table>
+      )}
+    </Section>
+  );
+}
+
+export function TeamPlanPanel({ rows }: { rows: TeamPlanRow[] }) {
+  return (
+    <Section
+      icon={<ClipboardList className="h-5 w-5 text-primary" />}
+      title="Team Training Plan"
+      subtitle={`${rows.length} planned item(s) across your team`}
+    >
+      {rows.length === 0 ? (
+        <Empty>No planned training for your team yet.</Empty>
+      ) : (
+        <Table head={["Member", "Course", "Year", "Period", "Status"]}>
+          {rows.map((r) => (
+            <tr key={r.id} className="border-t">
+              <td className="px-4 py-2 font-medium">{r.member}</td>
+              <td className="px-4 py-2">{r.course_title ?? "—"}</td>
+              <td className="px-4 py-2 tabular-nums text-muted-foreground">{r.plan_year}</td>
+              <td className="px-4 py-2 text-muted-foreground">{r.period ?? "—"}</td>
+              <td className="px-4 py-2 text-muted-foreground">{PLAN_STATUS_LABEL[r.status]}</td>
             </tr>
           ))}
         </Table>

@@ -339,6 +339,154 @@ export async function getParticipants(
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 }
 
+// --- Team Training (manager) ------------------------------------------------
+
+export interface TeamReport {
+  profile_id: string;
+  name: string;
+  department: string | null;
+  items: import("@/types/training").MandatoryItem[];
+}
+
+/** The signed-in manager's direct reports with each one's mandatory compliance. */
+export async function getTeamMandatory(): Promise<TeamReport[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const ref = today();
+
+  const { data: reports } = await supabase
+    .from("profiles")
+    .select("id, full_name, department, job_title, employee_type")
+    .eq("manager_id", user.id)
+    .eq("is_active", true)
+    .order("full_name");
+  const reportList = (reports ?? []) as Record<string, any>[];
+  if (reportList.length === 0) return [];
+  const ids = reportList.map((r) => r.id as string);
+
+  const [{ data: courses }, { data: reqs }, { data: records }] = await Promise.all([
+    supabase.from("training_courses").select("id, title, is_statutory, validity_months").eq("is_active", true),
+    supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
+    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on").in("profile_id", ids),
+  ]);
+
+  // latest record per (profile, course)
+  const latest = new Map<string, { completed_on: string; expires_on: string | null }>();
+  for (const r of (records ?? []) as Record<string, any>[]) {
+    const k = `${r.profile_id}|${r.course_id}`;
+    const prev = latest.get(k);
+    if (!prev || r.completed_on > prev.completed_on) latest.set(k, { completed_on: r.completed_on, expires_on: r.expires_on ?? null });
+  }
+  const reqRows = (reqs ?? []) as Record<string, any>[];
+  const courseRows = (courses ?? []) as Record<string, any>[];
+
+  return reportList.map((p) => {
+    const matches = (applies_to: string, value: string | null) =>
+      applies_to === "all" ||
+      (applies_to === "department" && !!value && value === p.department) ||
+      (applies_to === "job_title" && !!value && value === p.job_title) ||
+      (applies_to === "employee_type" && !!value && value === p.employee_type);
+    const requiredIds = new Set<string>();
+    for (const r of reqRows) if (matches(r.applies_to, r.applies_value ?? null)) requiredIds.add(r.course_id);
+
+    const items = courseRows
+      .filter((c) => c.is_statutory || requiredIds.has(c.id))
+      .map((c) => {
+        const rec = latest.get(`${p.id}|${c.id}`);
+        let status: import("@/types/training").MandatoryItem["status"];
+        if (!rec) status = "missing";
+        else if (rec.expires_on && rec.expires_on < ref) status = "expired";
+        else if (rec.expires_on && certStatus(rec.expires_on, ref) === "expiring") status = "expiring";
+        else status = "compliant";
+        return {
+          course_id: c.id,
+          title: c.title,
+          is_statutory: c.is_statutory,
+          validity_months: c.validity_months ?? null,
+          completed_on: rec?.completed_on ?? null,
+          expires_on: rec?.expires_on ?? null,
+          status,
+        };
+      });
+    return { profile_id: p.id, name: p.full_name ?? "—", department: p.department ?? null, items };
+  });
+}
+
+export interface TeamRequestRow {
+  id: string;
+  profile_id: string;
+  requester: string;
+  course_title: string | null;
+  reason: string | null;
+  status: import("@/types/training").RequestStatus;
+  created_at: string;
+}
+
+/** Training requests raised by the manager's direct reports. */
+export async function getTeamRequests(): Promise<TeamRequestRow[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const { data: reports } = await supabase.from("profiles").select("id").eq("manager_id", user.id);
+  const ids = ((reports ?? []) as Record<string, any>[]).map((r) => r.id as string);
+  if (ids.length === 0) return [];
+  const { data } = await supabase
+    .from("training_requests")
+    .select("id, profile_id, course_title, reason, status, created_at, course:training_courses(title), person:profiles!training_requests_profile_id_fkey(full_name)")
+    .in("profile_id", ids)
+    .order("created_at", { ascending: false });
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const course = Array.isArray(r.course) ? r.course[0] : r.course;
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    return {
+      id: r.id,
+      profile_id: r.profile_id,
+      requester: person?.full_name ?? "—",
+      course_title: course?.title ?? r.course_title ?? null,
+      reason: r.reason ?? null,
+      status: r.status,
+      created_at: r.created_at,
+    };
+  });
+}
+
+export interface TeamPlanRow {
+  id: string;
+  member: string;
+  course_title: string | null;
+  plan_year: number;
+  period: string | null;
+  status: import("@/types/training").PlanStatus;
+}
+
+/** Training plan items for the manager's direct reports. */
+export async function getTeamPlan(): Promise<TeamPlanRow[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const { data: reports } = await supabase.from("profiles").select("id").eq("manager_id", user.id);
+  const ids = ((reports ?? []) as Record<string, any>[]).map((r) => r.id as string);
+  if (ids.length === 0) return [];
+  const { data } = await supabase
+    .from("training_plan_items")
+    .select("id, plan_year, period, status, course_title, course:training_courses(title), person:profiles!training_plan_items_profile_id_fkey(full_name)")
+    .in("profile_id", ids)
+    .order("plan_year", { ascending: false });
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const course = Array.isArray(r.course) ? r.course[0] : r.course;
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    return {
+      id: r.id,
+      member: person?.full_name ?? "—",
+      course_title: course?.title ?? r.course_title ?? null,
+      plan_year: r.plan_year,
+      period: r.period ?? null,
+      status: r.status,
+    };
+  });
+}
+
 /** Active employees for enrolment pickers. */
 export async function getEmployeesLite(): Promise<{ id: string; name: string }[]> {
   const supabase = createClient();

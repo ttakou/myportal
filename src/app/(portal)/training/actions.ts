@@ -62,6 +62,42 @@ export async function cancelTrainingRequest(id: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+// --- Manager: decide a report's training request ----------------------------
+
+export async function decideTrainingRequest(
+  id: string,
+  decision: "approve" | "reject",
+  note?: string,
+): Promise<ActionResult> {
+  const user = await getCachedUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const supabase = createClient();
+
+  // Allow the requester's line manager; otherwise require training:approve.
+  const { data: req } = await supabase.from("training_requests").select("profile_id").eq("id", id).maybeSingle();
+  if (!req) return { ok: false, error: "Request not found." };
+  const { data: prof } = await supabase.from("profiles").select("manager_id").eq("id", req.profile_id).maybeSingle();
+  const isManager = prof?.manager_id === user.id;
+  if (!isManager) {
+    const gate = await requireModule("training", "approve");
+    if (gate) return gate;
+  }
+
+  const { error } = await supabase
+    .from("training_requests")
+    .update({
+      status: decision === "approve" ? "manager_approved" : "rejected",
+      manager_id: decision === "approve" ? user.id : null,
+      decided_by: user.id,
+      decided_at: new Date().toISOString(),
+      decision_note: note?.trim() || null,
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 // --- HR: catalogue ----------------------------------------------------------
 
 export async function upsertCourse(input: {

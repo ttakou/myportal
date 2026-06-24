@@ -88,6 +88,10 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "participants",
   "providers",
   "trainers",
+  "team-compliance",
+  "team-requests",
+  "dept-needs",
+  "team-plan",
 ]);
 
 export const TRAINING_VIEW_KEYS = TRAINING_VIEWS.map((v) => v.key);

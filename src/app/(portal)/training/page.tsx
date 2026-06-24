@@ -12,6 +12,9 @@ import {
   getProviders,
   getRequirements,
   getSessions,
+  getTeamMandatory,
+  getTeamPlan,
+  getTeamRequests,
   getTrainers,
   isTrainingAdmin,
 } from "@/lib/training";
@@ -25,11 +28,15 @@ import {
 import {
   CalendarPanel,
   CertificatesPanel,
+  DeptNeedsPanel,
   MandatoryPanel,
   NoAccessPanel,
   PlanPanel,
   PlannedPanel,
+  TeamCompliancePanel,
+  TeamPlanPanel,
 } from "./_components/read-panels";
+import { TeamRequestsPanel } from "./_components/team-requests-panel";
 import { RequestPanel } from "./_components/request-panel";
 import { CataloguePanel } from "./_components/catalogue-panel";
 import { MatrixPanel } from "./_components/matrix-panel";
@@ -82,6 +89,14 @@ export default async function TrainingPage({
           />
         );
       }
+      case "team-compliance":
+        return <TeamCompliancePanel reports={await getTeamMandatory()} />;
+      case "dept-needs":
+        return <DeptNeedsPanel reports={await getTeamMandatory()} />;
+      case "team-plan":
+        return <TeamPlanPanel rows={await getTeamPlan()} />;
+      case "team-requests":
+        return <TeamRequestsPanel requests={await getTeamRequests()} />;
       case "providers":
         return <ProvidersPanel providers={await getProviders()} />;
       case "trainers": {
