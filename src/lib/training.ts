@@ -644,6 +644,87 @@ export async function getEffectivenessReport(): Promise<EffectivenessReport> {
   return { byKind, total: byKind.reduce((s, r) => s + r.count, 0) };
 }
 
+// --- Department training needs ----------------------------------------------
+
+/** Distinct departments across active staff (for the needs picker). */
+export async function getDepartments(): Promise<string[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("department")
+    .eq("is_active", true)
+    .not("department", "is", null);
+  const set = new Set<string>();
+  for (const r of (data ?? []) as Record<string, any>[]) if (r.department) set.add(r.department as string);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+export interface DeptNeedRow {
+  title: string;
+  needing: number;
+  total: number;
+}
+
+/**
+ * Outstanding mandatory training across a population — the whole organisation
+ * (department null) or one department. A "need" is a required course (statutory
+ * or matched by the matrix) that the person hasn't satisfied (missing / expired
+ * / expiring). Used by the Training Admin's Department Training Needs view.
+ */
+export async function getDepartmentNeeds(
+  department: string | null,
+): Promise<{ needs: DeptNeedRow[]; population: number }> {
+  const supabase = createClient();
+  const ref = today();
+  let pq = supabase
+    .from("profiles")
+    .select("id, department, job_title, employee_type")
+    .eq("is_active", true);
+  if (department) pq = pq.eq("department", department);
+
+  const [{ data: profiles }, { data: courses }, { data: reqs }, { data: records }] = await Promise.all([
+    pq,
+    supabase.from("training_courses").select("id, title, is_statutory").eq("is_active", true),
+    supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
+    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on"),
+  ]);
+  const profileRows = (profiles ?? []) as Record<string, any>[];
+  const courseRows = (courses ?? []) as Record<string, any>[];
+  const reqRows = (reqs ?? []) as Record<string, any>[];
+
+  const latest = new Map<string, { completed_on: string; expires_on: string | null }>();
+  for (const r of (records ?? []) as Record<string, any>[]) {
+    const k = `${r.profile_id}|${r.course_id}`;
+    const prev = latest.get(k);
+    if (!prev || r.completed_on > prev.completed_on) latest.set(k, { completed_on: r.completed_on, expires_on: r.expires_on ?? null });
+  }
+
+  const per = new Map<string, { needing: number; total: number }>();
+  for (const p of profileRows) {
+    const matches = (a: string, v: string | null) =>
+      a === "all" ||
+      (a === "department" && !!v && v === p.department) ||
+      (a === "job_title" && !!v && v === p.job_title) ||
+      (a === "employee_type" && !!v && v === p.employee_type);
+    const requiredIds = new Set<string>();
+    for (const r of reqRows) if (matches(r.applies_to, r.applies_value ?? null)) requiredIds.add(r.course_id);
+    for (const c of courseRows) {
+      if (!c.is_statutory && !requiredIds.has(c.id)) continue;
+      const e = per.get(c.title) ?? { needing: 0, total: 0 };
+      e.total += 1;
+      const rec = latest.get(`${p.id}|${c.id}`);
+      const ok = rec && !(rec.expires_on && rec.expires_on < ref) && !(rec.expires_on && certStatus(rec.expires_on, ref) === "expiring");
+      if (!ok) e.needing += 1;
+      per.set(c.title, e);
+    }
+  }
+  const needs = [...per.entries()]
+    .map(([title, v]) => ({ title, ...v }))
+    .filter((r) => r.needing > 0)
+    .sort((a, b) => b.needing - a.needing);
+  return { needs, population: profileRows.length };
+}
+
 // --- HR: annual plan, budgets, evaluations ----------------------------------
 
 export interface PlanRowAll {

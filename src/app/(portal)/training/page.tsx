@@ -11,6 +11,8 @@ import {
   getBudgets,
   getCompetencies,
   getCompetencyLinks,
+  getDepartmentNeeds,
+  getDepartments,
   getEmployeeCompetencies,
   getEvaluations,
   getMyCompetencies,
@@ -51,6 +53,7 @@ import {
 } from "./_components/read-panels";
 import { CompetenciesPanel } from "./_components/competencies-panel";
 import { CompetencyMatrixPanel } from "./_components/competency-matrix-panel";
+import { DepartmentNeedsPanel } from "./_components/department-needs-panel";
 import { TeamRequestsPanel } from "./_components/team-requests-panel";
 import {
   ComplianceReportPanel,
@@ -73,9 +76,9 @@ import { ParticipantsPanel } from "./_components/participants-panel";
 export default async function TrainingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; session?: string; person?: string }>;
+  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string }>;
 }) {
-  const { view, session, person } = await searchParams;
+  const { view, session, person, dept } = await searchParams;
   const key = resolveTrainingView(view);
   const [admin, manager] = await Promise.all([isTrainingAdmin(), hasDirectReports()]);
   const access: TrainingAccess = { isManager: manager, isTrainingAdmin: admin };
@@ -116,8 +119,17 @@ export default async function TrainingPage({
       }
       case "team-compliance":
         return <TeamCompliancePanel reports={await getTeamMandatory()} />;
-      case "dept-needs":
+      case "dept-needs": {
+        // Training Admins get a department-/org-wide view (they usually have no
+        // direct reports); a pure line manager sees their own team.
+        if (access.isTrainingAdmin) {
+          const departments = await getDepartments();
+          const selectedDept = dept && departments.includes(dept) ? dept : null;
+          const { needs, population } = await getDepartmentNeeds(selectedDept);
+          return <DepartmentNeedsPanel departments={departments} selected={selectedDept} needs={needs} population={population} />;
+        }
         return <DeptNeedsPanel reports={await getTeamMandatory()} />;
+      }
       case "team-plan":
         return <TeamPlanPanel rows={await getTeamPlan()} />;
       case "team-requests":
