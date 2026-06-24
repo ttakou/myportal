@@ -20,6 +20,16 @@ async function me(): Promise<{ id: string; tenant_id: string } | null> {
   return { id: user.id, tenant_id: data.tenant_id as string };
 }
 
+/** Confirm a referenced row belongs to the caller's tenant — child rows carry
+ *  the tenant_id, but their FK targets (profiles/sessions/courses) don't, so we
+ *  validate them here to keep tenant isolation on inserts. */
+async function inTenant(table: string, id: string, tenantId: string): Promise<boolean> {
+  if (!id) return false;
+  const supabase = createClient();
+  const { data } = await supabase.from(table).select("id").eq("id", id).eq("tenant_id", tenantId).maybeSingle();
+  return !!data;
+}
+
 // --- Employee: training requests --------------------------------------------
 
 export async function submitTrainingRequest(input: {
@@ -220,6 +230,7 @@ export async function addPlanItem(input: {
   if (!input.courseId && !input.courseTitle?.trim()) return { ok: false, error: "Pick a course." };
   const who = await me();
   if (!who) return { ok: false, error: "No tenant in scope." };
+  if (!(await inTenant("profiles", input.profileId, who.tenant_id))) return { ok: false, error: "Employee not found." };
   const supabase = createClient();
   const { error } = await supabase.from("training_plan_items").insert({
     tenant_id: who.tenant_id,
@@ -307,6 +318,8 @@ export async function addEvaluation(input: {
   if (!input.sessionId || !input.profileId) return { ok: false, error: "Pick a participant." };
   const who = await me();
   if (!who) return { ok: false, error: "No tenant in scope." };
+  if (!(await inTenant("training_sessions", input.sessionId, who.tenant_id))) return { ok: false, error: "Session not found." };
+  if (!(await inTenant("profiles", input.profileId, who.tenant_id))) return { ok: false, error: "Employee not found." };
   const supabase = createClient();
   const { error } = await supabase.from("training_evaluations").insert({
     tenant_id: who.tenant_id,
@@ -418,6 +431,7 @@ export async function setEmployeeCompetency(
   if (gate) return gate;
   const who = await me();
   if (!who) return { ok: false, error: "No tenant in scope." };
+  if (!(await inTenant("profiles", profileId, who.tenant_id))) return { ok: false, error: "Employee not found." };
   const supabase = createClient();
   const { error } = await supabase.from("training_employee_competencies").upsert(
     {
@@ -567,6 +581,8 @@ export async function enrolParticipant(sessionId: string, profileId: string): Pr
   if (!profileId) return { ok: false, error: "Pick an employee." };
   const who = await me();
   if (!who) return { ok: false, error: "No tenant in scope." };
+  if (!(await inTenant("training_sessions", sessionId, who.tenant_id))) return { ok: false, error: "Session not found." };
+  if (!(await inTenant("profiles", profileId, who.tenant_id))) return { ok: false, error: "Employee not found." };
   const supabase = createClient();
   const { error } = await supabase
     .from("training_participants")

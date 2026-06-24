@@ -491,7 +491,7 @@ export async function getTeamPlan(): Promise<TeamPlanRow[]> {
 
 export interface ComplianceReport {
   overall: { required: number; compliant: number; rate: number };
-  byCourse: { title: string; required: number; compliant: number; expired: number; missing: number; rate: number }[];
+  byCourse: { title: string; required: number; compliant: number; expiring: number; expired: number; missing: number; rate: number }[];
 }
 
 /** Org-wide statutory compliance: required vs compliant across active staff. */
@@ -512,8 +512,8 @@ export async function getComplianceReport(): Promise<ComplianceReport> {
     const prev = latest.get(k);
     if (!prev || r.completed_on > prev.completed_on) latest.set(k, { completed_on: r.completed_on, expires_on: r.expires_on ?? null });
   }
-  const per = new Map<string, { title: string; required: number; compliant: number; expired: number; missing: number }>();
-  for (const c of courseRows) per.set(c.id, { title: c.title, required: 0, compliant: 0, expired: 0, missing: 0 });
+  const per = new Map<string, { title: string; required: number; compliant: number; expiring: number; expired: number; missing: number }>();
+  for (const c of courseRows) per.set(c.id, { title: c.title, required: 0, compliant: 0, expiring: 0, expired: 0, missing: 0 });
 
   for (const p of (profiles ?? []) as Record<string, any>[]) {
     const matches = (a: string, v: string | null) =>
@@ -530,7 +530,11 @@ export async function getComplianceReport(): Promise<ComplianceReport> {
       const rec = latest.get(`${p.id}|${c.id}`);
       if (!rec) agg.missing += 1;
       else if (rec.expires_on && rec.expires_on < ref) agg.expired += 1;
-      else agg.compliant += 1;
+      else {
+        // A valid cert counts as compliant; flag the ones expiring soon.
+        agg.compliant += 1;
+        if (rec.expires_on && certStatus(rec.expires_on, ref) === "expiring") agg.expiring += 1;
+      }
     }
   }
   const byCourse = [...per.values()]

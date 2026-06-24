@@ -56,11 +56,12 @@ export function ComplianceReportPanel({ data }: { data: ComplianceReport }) {
       {data.byCourse.length === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No statutory courses defined yet.</p>
       ) : (
-        <Table head={["Course", "Compliant", "Expired", "Not done", "Rate"]}>
+        <Table head={["Course", "Compliant", "Expiring", "Expired", "Not done", "Rate"]}>
           {data.byCourse.map((c) => (
             <tr key={c.title} className="border-t">
               <td className="px-4 py-2 font-medium">{c.title}</td>
               <td className="px-4 py-2 tabular-nums">{c.compliant}/{c.required}</td>
+              <td className="px-4 py-2 tabular-nums text-amber-700">{c.expiring || "—"}</td>
               <td className="px-4 py-2 tabular-nums text-destructive">{c.expired || "—"}</td>
               <td className="px-4 py-2 tabular-nums text-muted-foreground">{c.missing || "—"}</td>
               <td className="px-4 py-2">
