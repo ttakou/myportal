@@ -121,3 +121,65 @@ export interface UpcomingSession {
   location: string | null;
   status: ParticipantStatus;
 }
+
+export const PARTICIPANT_STATUS_LABEL: Record<ParticipantStatus, string> = {
+  enrolled: "Enrolled",
+  attended: "Attended",
+  passed: "Passed",
+  failed: "Failed",
+  no_show: "No-show",
+  cancelled: "Cancelled",
+};
+
+export const SESSION_STATUS_LABEL: Record<SessionStatus, string> = {
+  planned: "Planned",
+  open: "Open",
+  in_progress: "In progress",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+export interface Provider {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  is_active: boolean;
+}
+
+export interface Trainer {
+  id: string;
+  full_name: string;
+  email: string | null;
+  expertise: string | null;
+  provider_id: string | null;
+  is_internal: boolean;
+  is_active: boolean;
+}
+
+export interface Session {
+  id: string;
+  course_id: string;
+  course_title: string;
+  trainer_id: string | null;
+  trainer_name: string | null;
+  location: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  capacity: number | null;
+  status: SessionStatus;
+  enrolled: number;
+}
+
+export interface Participant {
+  id: string;
+  profile_id: string;
+  full_name: string;
+  status: ParticipantStatus;
+  score: number | null;
+  completed_at: string | null;
+  /** Whether a completion/certificate record already exists for this booking. */
+  recorded: boolean;
+}
+

@@ -2,12 +2,17 @@ import { GraduationCap } from "lucide-react";
 import { hasDirectReports } from "@/lib/appraisals";
 import {
   getCourses,
+  getEmployeesLite,
   getMyCertificates,
   getMyMandatory,
   getMyPlan,
   getMyRequests,
   getMyUpcomingSessions,
+  getParticipants,
+  getProviders,
   getRequirements,
+  getSessions,
+  getTrainers,
   isTrainingAdmin,
 } from "@/lib/training";
 import {
@@ -28,13 +33,17 @@ import {
 import { RequestPanel } from "./_components/request-panel";
 import { CataloguePanel } from "./_components/catalogue-panel";
 import { MatrixPanel } from "./_components/matrix-panel";
+import { ProvidersPanel } from "./_components/providers-panel";
+import { TrainersPanel } from "./_components/trainers-panel";
+import { SessionsPanel } from "./_components/sessions-panel";
+import { ParticipantsPanel } from "./_components/participants-panel";
 
 export default async function TrainingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; session?: string }>;
 }) {
-  const { view } = await searchParams;
+  const { view, session } = await searchParams;
   const key = resolveTrainingView(view);
   const [admin, manager] = await Promise.all([isTrainingAdmin(), hasDirectReports()]);
   const access: TrainingAccess = { isManager: manager, isTrainingAdmin: admin };
@@ -70,6 +79,35 @@ export default async function TrainingPage({
           <MatrixPanel
             requirements={requirements}
             courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+          />
+        );
+      }
+      case "providers":
+        return <ProvidersPanel providers={await getProviders()} />;
+      case "trainers": {
+        const [trainers, providers] = await Promise.all([getTrainers(), getProviders()]);
+        return <TrainersPanel trainers={trainers} providers={providers} />;
+      }
+      case "sessions": {
+        const [sessions, courses, trainers] = await Promise.all([getSessions(), getCourses(), getTrainers()]);
+        return (
+          <SessionsPanel
+            sessions={sessions}
+            courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+            trainers={trainers}
+          />
+        );
+      }
+      case "participants": {
+        const [sessions, employees] = await Promise.all([getSessions(), getEmployeesLite()]);
+        const selected = session && sessions.some((s) => s.id === session) ? session : null;
+        const participants = selected ? await getParticipants(selected) : [];
+        return (
+          <ParticipantsPanel
+            sessions={sessions}
+            selectedId={selected}
+            participants={participants}
+            employees={employees}
           />
         );
       }

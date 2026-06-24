@@ -260,3 +260,95 @@ export async function getRequirements(): Promise<RequirementRow[]> {
     };
   });
 }
+
+export async function getProviders(): Promise<import("@/types/training").Provider[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_providers")
+    .select("id, name, contact_name, email, phone, is_active")
+    .order("name");
+  return (data ?? []) as import("@/types/training").Provider[];
+}
+
+export async function getTrainers(): Promise<import("@/types/training").Trainer[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_trainers")
+    .select("id, full_name, email, expertise, provider_id, is_internal, is_active")
+    .order("full_name");
+  return (data ?? []) as import("@/types/training").Trainer[];
+}
+
+/** Sessions with course title, trainer name and live enrolment count. */
+export async function getSessions(): Promise<import("@/types/training").Session[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_sessions")
+    .select(
+      "id, course_id, trainer_id, location, starts_at, ends_at, capacity, status," +
+        " course:training_courses(title), trainer:training_trainers(full_name)," +
+        " training_participants(count)",
+    )
+    .order("starts_at", { ascending: false, nullsFirst: false });
+  return ((data ?? []) as Record<string, any>[]).map((s) => {
+    const course = Array.isArray(s.course) ? s.course[0] : s.course;
+    const trainer = Array.isArray(s.trainer) ? s.trainer[0] : s.trainer;
+    return {
+      id: s.id,
+      course_id: s.course_id,
+      course_title: course?.title ?? "—",
+      trainer_id: s.trainer_id ?? null,
+      trainer_name: trainer?.full_name ?? null,
+      location: s.location ?? null,
+      starts_at: s.starts_at ?? null,
+      ends_at: s.ends_at ?? null,
+      capacity: s.capacity ?? null,
+      status: s.status,
+      enrolled: s.training_participants?.[0]?.count ?? 0,
+    };
+  });
+}
+
+/** Participants of a session, with whether a completion record already exists. */
+export async function getParticipants(
+  sessionId: string,
+): Promise<import("@/types/training").Participant[]> {
+  const supabase = createClient();
+  const { data: parts } = await supabase
+    .from("training_participants")
+    .select("id, profile_id, status, score, completed_at, person:profiles!training_participants_profile_id_fkey(full_name)")
+    .eq("session_id", sessionId);
+  const { data: recs } = await supabase
+    .from("training_records")
+    .select("profile_id")
+    .eq("session_id", sessionId);
+  const recorded = new Set((recs ?? []).map((r) => r.profile_id as string));
+  return ((parts ?? []) as Record<string, any>[])
+    .map((p) => {
+      const person = Array.isArray(p.person) ? p.person[0] : p.person;
+      return {
+        id: p.id,
+        profile_id: p.profile_id,
+        full_name: person?.full_name ?? "—",
+        status: p.status,
+        score: p.score ?? null,
+        completed_at: p.completed_at ?? null,
+        recorded: recorded.has(p.profile_id),
+      } as import("@/types/training").Participant;
+    })
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+}
+
+/** Active employees for enrolment pickers. */
+export async function getEmployeesLite(): Promise<{ id: string; name: string }[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, full_name, email")
+    .eq("is_active", true)
+    .order("full_name");
+  return ((data ?? []) as Record<string, any>[]).map((p) => ({
+    id: p.id as string,
+    name: (p.full_name as string) || (p.email as string) || "—",
+  }));
+}
