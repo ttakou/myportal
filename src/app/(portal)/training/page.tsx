@@ -16,9 +16,15 @@ import {
   getEmployeeCompetencies,
   getEvaluations,
   getMyCompetencies,
+  getMyCompetencyGaps,
+  getMyDevelopmentPlan,
+  getMyEvaluableSessions,
+  getMyHistory,
+  getOpenSessions,
   getParticipants,
   getPlanItemsAll,
   getProviders,
+  getRequestsByOrigin,
   getRequirements,
   getSessions,
   getTeamMandatory,
@@ -30,6 +36,7 @@ import {
   getEffectivenessReport,
   getExpiringReport,
   getPlanProgressReport,
+  getTrainingDashboard,
   isTrainingAdmin,
 } from "@/lib/training";
 import {
@@ -41,10 +48,10 @@ import {
 } from "./_components/training-views";
 import {
   CalendarPanel,
-  CertificatesPanel,
+  DashboardPanel,
   DeptNeedsPanel,
+  HistoryPanel,
   MandatoryPanel,
-  MyCompetenciesPanel,
   NoAccessPanel,
   PlanPanel,
   PlannedPanel,
@@ -61,7 +68,15 @@ import {
   EffectivenessReportPanel,
   ExpiringReportPanel,
   PlanProgressReportPanel,
+  RequestsByOriginReportPanel,
 } from "./_components/report-panels";
+import { CertificatesPanel } from "./_components/certificates-panel";
+import { SelfCompetenciesPanel } from "./_components/self-competencies-panel";
+import { IdpPanel } from "./_components/idp-panel";
+import { GapsPanel } from "./_components/gaps-panel";
+import { BrowseCataloguePanel } from "./_components/browse-catalogue-panel";
+import { OpenSessionsPanel } from "./_components/open-sessions-panel";
+import { MyEvaluationsPanel } from "./_components/my-evaluations-panel";
 import { AnnualPlanPanel } from "./_components/annual-plan-panel";
 import { BudgetsPanel } from "./_components/budgets-panel";
 import { EvaluationsPanel } from "./_components/evaluations-panel";
@@ -89,10 +104,38 @@ export default async function TrainingPage({
     if (!IMPLEMENTED_VIEWS.has(key)) return <PlannedPanel label={meta?.label ?? "This view"} />;
 
     switch (key) {
+      case "dashboard":
+        return <DashboardPanel data={await getTrainingDashboard()} />;
       case "mandatory":
         return <MandatoryPanel items={await getMyMandatory()} />;
-      case "certificates":
-        return <CertificatesPanel items={await getMyCertificates()} />;
+      case "certificates": {
+        const [items, courses] = await Promise.all([getMyCertificates(), getCourses()]);
+        return (
+          <CertificatesPanel
+            items={items}
+            courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+          />
+        );
+      }
+      case "history":
+        return <HistoryPanel items={await getMyHistory()} />;
+      case "gaps":
+        return <GapsPanel gaps={await getMyCompetencyGaps()} />;
+      case "idp": {
+        const [items, courses] = await Promise.all([getMyDevelopmentPlan(), getCourses()]);
+        return (
+          <IdpPanel
+            items={items}
+            courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+          />
+        );
+      }
+      case "browse":
+        return <BrowseCataloguePanel courses={await getCourses()} />;
+      case "open-sessions":
+        return <OpenSessionsPanel sessions={await getOpenSessions()} />;
+      case "my-evaluations":
+        return <MyEvaluationsPanel sessions={await getMyEvaluableSessions()} />;
       case "my-plan":
         return <PlanPanel items={await getMyPlan()} />;
       case "calendar":
@@ -197,8 +240,10 @@ export default async function TrainingPage({
         return <PlanProgressReportPanel data={await getPlanProgressReport()} />;
       case "rpt-effectiveness":
         return <EffectivenessReportPanel data={await getEffectivenessReport()} />;
+      case "rpt-origins":
+        return <RequestsByOriginReportPanel data={await getRequestsByOrigin()} />;
       case "my-competencies":
-        return <MyCompetenciesPanel items={await getMyCompetencies()} />;
+        return <SelfCompetenciesPanel items={await getMyCompetencies()} />;
       case "competencies": {
         const [competencies, links, courses] = await Promise.all([
           getCompetencies(),

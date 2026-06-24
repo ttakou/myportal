@@ -57,7 +57,8 @@ export async function getMyMandatory(): Promise<MandatoryItem[]> {
       supabase
         .from("training_records")
         .select("course_id, completed_on, expires_on")
-        .eq("profile_id", user.id),
+        .eq("profile_id", user.id)
+        .eq("verified", true),
     ]);
 
   const p = (profile ?? {}) as { department?: string; job_title?: string; employee_type?: string };
@@ -120,7 +121,7 @@ export async function getMyCertificates(): Promise<Certificate[]> {
   const ref = today();
   const { data } = await supabase
     .from("training_records")
-    .select("id, course_id, completed_on, expires_on, certificate_no, certificate_url, course:training_courses(title)")
+    .select("id, course_id, completed_on, expires_on, certificate_no, certificate_url, source, verified, course:training_courses(title)")
     .eq("profile_id", user.id)
     .order("completed_on", { ascending: false });
   return ((data ?? []) as Record<string, any>[]).map((r) => {
@@ -134,6 +135,8 @@ export async function getMyCertificates(): Promise<Certificate[]> {
       certificate_no: r.certificate_no ?? null,
       certificate_url: r.certificate_url ?? null,
       status: certStatus(r.expires_on ?? null, ref),
+      source: r.source ?? "manual",
+      verified: r.verified ?? true,
     };
   });
 }
@@ -369,7 +372,7 @@ export async function getTeamMandatory(): Promise<TeamReport[]> {
   const [{ data: courses }, { data: reqs }, { data: records }] = await Promise.all([
     supabase.from("training_courses").select("id, title, is_statutory, validity_months").eq("is_active", true),
     supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
-    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on").in("profile_id", ids),
+    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on").eq("verified", true).in("profile_id", ids),
   ]);
 
   // latest record per (profile, course)
@@ -505,7 +508,7 @@ export async function getComplianceReport(): Promise<ComplianceReport> {
     supabase.from("profiles").select("id, department, job_title, employee_type").eq("is_active", true),
     supabase.from("training_courses").select("id, title, is_statutory").eq("is_active", true),
     supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
-    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on"),
+    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on").eq("verified", true),
   ]);
   const courseRows = (courses ?? []) as Record<string, any>[];
   const reqRows = (reqs ?? []) as Record<string, any>[];
@@ -568,6 +571,7 @@ export async function getExpiringReport(days = 90): Promise<ExpiringRow[]> {
   const { data } = await supabase
     .from("training_records")
     .select("id, expires_on, course:training_courses(title), person:profiles!training_records_profile_id_fkey(full_name)")
+    .eq("verified", true)
     .not("expires_on", "is", null)
     .lte("expires_on", horizonIso)
     .order("expires_on", { ascending: true });
@@ -689,7 +693,7 @@ export async function getDepartmentNeeds(
     pq,
     supabase.from("training_courses").select("id, title, is_statutory").eq("is_active", true),
     supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
-    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on"),
+    supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on").eq("verified", true),
   ]);
   const profileRows = (profiles ?? []) as Record<string, any>[];
   const courseRows = (courses ?? []) as Record<string, any>[];
@@ -850,8 +854,8 @@ function overlayCompetencies(
   competencies: Record<string, any>[],
   levels: Record<string, any>[],
 ): import("@/types/training").EmployeeCompetency[] {
-  const byComp = new Map<string, { current_level: number; assessed_on: string | null }>();
-  for (const l of levels) byComp.set(l.competency_id, { current_level: l.current_level ?? 0, assessed_on: l.assessed_on ?? null });
+  const byComp = new Map<string, Record<string, any>>();
+  for (const l of levels) byComp.set(l.competency_id, l);
   return competencies.map((c) => {
     const lvl = byComp.get(c.id);
     return {
@@ -861,6 +865,8 @@ function overlayCompetencies(
       max_level: c.max_level ?? 5,
       current_level: lvl?.current_level ?? 0,
       assessed_on: lvl?.assessed_on ?? null,
+      self_level: lvl?.self_level ?? null,
+      self_assessed_on: lvl?.self_assessed_on ?? null,
     };
   });
 }
@@ -872,7 +878,7 @@ export async function getMyCompetencies(): Promise<import("@/types/training").Em
   if (!user) return [];
   const [{ data: comps }, { data: levels }] = await Promise.all([
     supabase.from("training_competencies").select("id, name, category, max_level").eq("is_active", true).order("name"),
-    supabase.from("training_employee_competencies").select("competency_id, current_level, assessed_on").eq("profile_id", user.id),
+    supabase.from("training_employee_competencies").select("competency_id, current_level, assessed_on, self_level, self_assessed_on").eq("profile_id", user.id),
   ]);
   return overlayCompetencies((comps ?? []) as Record<string, any>[], (levels ?? []) as Record<string, any>[]);
 }
@@ -882,7 +888,7 @@ export async function getEmployeeCompetencies(profileId: string): Promise<import
   const supabase = createClient();
   const [{ data: comps }, { data: levels }] = await Promise.all([
     supabase.from("training_competencies").select("id, name, category, max_level").eq("is_active", true).order("name"),
-    supabase.from("training_employee_competencies").select("competency_id, current_level, assessed_on").eq("profile_id", profileId),
+    supabase.from("training_employee_competencies").select("competency_id, current_level, assessed_on, self_level, self_assessed_on").eq("profile_id", profileId),
   ]);
   return overlayCompetencies((comps ?? []) as Record<string, any>[], (levels ?? []) as Record<string, any>[]);
 }
@@ -899,4 +905,257 @@ export async function getEmployeesLite(): Promise<{ id: string; name: string }[]
     id: p.id as string,
     name: (p.full_name as string) || (p.email as string) || "—",
   }));
+}
+
+// --- Reports: requests by origin --------------------------------------------
+
+export interface OriginRow {
+  origin: string;
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
+/** Training requests grouped by where they originate from (Reports). */
+export async function getRequestsByOrigin(): Promise<{ rows: OriginRow[]; total: number }> {
+  const supabase = createClient();
+  const { data } = await supabase.from("training_requests").select("origin, status");
+  const per = new Map<string, OriginRow>();
+  for (const r of (data ?? []) as Record<string, any>[]) {
+    const origin = (r.origin as string) || "unspecified";
+    const e = per.get(origin) ?? { origin, total: 0, pending: 0, approved: 0, rejected: 0 };
+    e.total += 1;
+    if (r.status === "requested" || r.status === "manager_approved") e.pending += 1;
+    else if (r.status === "approved") e.approved += 1;
+    else if (r.status === "rejected") e.rejected += 1;
+    per.set(origin, e);
+  }
+  const rows = [...per.values()].sort((a, b) => b.total - a.total);
+  return { rows, total: rows.reduce((s, r) => s + r.total, 0) };
+}
+
+// --- Employee: competency gaps ----------------------------------------------
+
+/**
+ * Competencies where the employee sits below the level the catalogue is set up
+ * to develop. The "target" is the highest target_level across the active courses
+ * linked to that competency, so each gap comes with the courses that can close
+ * it (feeding a one-click training request with origin `competency_gap`).
+ */
+export async function getMyCompetencyGaps(): Promise<import("@/types/training").CompetencyGap[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const [{ data: comps }, { data: levels }, { data: links }] = await Promise.all([
+    supabase.from("training_competencies").select("id, name, category, max_level").eq("is_active", true),
+    supabase.from("training_employee_competencies").select("competency_id, current_level").eq("profile_id", user.id),
+    supabase
+      .from("training_course_competencies")
+      .select("competency_id, target_level, course:training_courses(id, title, is_active)"),
+  ]);
+  const cur = new Map<string, number>();
+  for (const l of (levels ?? []) as Record<string, any>[]) cur.set(l.competency_id, (l.current_level as number) ?? 0);
+
+  const targetByComp = new Map<string, number>();
+  const coursesByComp = new Map<string, { id: string; title: string }[]>();
+  for (const l of (links ?? []) as Record<string, any>[]) {
+    const course = Array.isArray(l.course) ? l.course[0] : l.course;
+    if (!course?.is_active) continue;
+    const t = Math.max(targetByComp.get(l.competency_id) ?? 0, (l.target_level as number) ?? 1);
+    targetByComp.set(l.competency_id, t);
+    const arr = coursesByComp.get(l.competency_id) ?? [];
+    if (!arr.some((c) => c.id === course.id)) arr.push({ id: course.id, title: course.title });
+    coursesByComp.set(l.competency_id, arr);
+  }
+
+  const out: import("@/types/training").CompetencyGap[] = [];
+  for (const c of (comps ?? []) as Record<string, any>[]) {
+    const target = targetByComp.get(c.id);
+    if (!target) continue; // no course develops it → can't define a gap
+    const current = cur.get(c.id) ?? 0;
+    if (current >= target) continue;
+    out.push({
+      competency_id: c.id,
+      name: c.name,
+      category: c.category ?? null,
+      max_level: c.max_level ?? 5,
+      current_level: current,
+      target_level: target,
+      gap: target - current,
+      courses: coursesByComp.get(c.id) ?? [],
+    });
+  }
+  return out.sort((a, b) => b.gap - a.gap || a.name.localeCompare(b.name));
+}
+
+// --- Employee: individual development plan (from appraisals) -----------------
+
+/** The signed-in employee's IDP rows, with any linked training-request status. */
+export async function getMyDevelopmentPlan(): Promise<import("@/types/training").DevelopmentPlanItem[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const { data: appraisals } = await supabase.from("appraisals").select("id").eq("employee_id", user.id);
+  const appraisalIds = ((appraisals ?? []) as Record<string, any>[]).map((a) => a.id as string);
+  if (appraisalIds.length === 0) return [];
+  const [{ data: plans }, { data: reqs }] = await Promise.all([
+    supabase
+      .from("appraisal_development_plans")
+      .select("id, area, action, target_date, status")
+      .in("appraisal_id", appraisalIds)
+      .order("created_at"),
+    supabase
+      .from("training_requests")
+      .select("development_plan_id, status, created_at")
+      .eq("profile_id", user.id)
+      .not("development_plan_id", "is", null)
+      .order("created_at", { ascending: true }),
+  ]);
+  // Most recent request per IDP row wins (handles re-requests after a rejection).
+  const reqByPlan = new Map<string, string>();
+  for (const r of (reqs ?? []) as Record<string, any>[]) reqByPlan.set(r.development_plan_id, r.status);
+  return ((plans ?? []) as Record<string, any>[]).map((p) => ({
+    id: p.id,
+    area: p.area,
+    action: p.action ?? null,
+    target_date: p.target_date ?? null,
+    status: p.status,
+    request_status: (reqByPlan.get(p.id) as import("@/types/training").RequestStatus) ?? null,
+  }));
+}
+
+// --- Employee: training history ---------------------------------------------
+
+/** Everything the employee has completed (verified or self-reported). */
+export async function getMyHistory(): Promise<import("@/types/training").HistoryItem[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("training_records")
+    .select("id, completed_on, expires_on, source, verified, certificate_no, certificate_url, course:training_courses(title)")
+    .eq("profile_id", user.id)
+    .order("completed_on", { ascending: false });
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const course = Array.isArray(r.course) ? r.course[0] : r.course;
+    return {
+      id: r.id,
+      course_title: course?.title ?? "—",
+      completed_on: r.completed_on,
+      expires_on: r.expires_on ?? null,
+      source: r.source ?? "manual",
+      verified: r.verified ?? true,
+      certificate_no: r.certificate_no ?? null,
+      certificate_url: r.certificate_url ?? null,
+    };
+  });
+}
+
+// --- Employee: open sessions to self-enrol into -----------------------------
+
+export async function getOpenSessions(): Promise<import("@/types/training").OpenSession[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("training_sessions")
+    .select(
+      "id, location, starts_at, ends_at, capacity, course:training_courses(title)," +
+        " trainer:training_trainers(full_name), training_participants(count)",
+    )
+    .eq("status", "open")
+    .order("starts_at", { ascending: true, nullsFirst: false });
+  const sessions = (data ?? []) as Record<string, any>[];
+  const ids = sessions.map((s) => s.id as string);
+  const mine = new Map<string, { id: string; status: string }>();
+  if (ids.length) {
+    const { data: parts } = await supabase
+      .from("training_participants")
+      .select("id, session_id, status")
+      .eq("profile_id", user.id)
+      .in("session_id", ids);
+    for (const p of (parts ?? []) as Record<string, any>[]) mine.set(p.session_id, { id: p.id, status: p.status });
+  }
+  return sessions.map((s) => {
+    const course = Array.isArray(s.course) ? s.course[0] : s.course;
+    const trainer = Array.isArray(s.trainer) ? s.trainer[0] : s.trainer;
+    const m = mine.get(s.id);
+    return {
+      id: s.id,
+      course_title: course?.title ?? "—",
+      trainer_name: trainer?.full_name ?? null,
+      location: s.location ?? null,
+      starts_at: s.starts_at ?? null,
+      ends_at: s.ends_at ?? null,
+      capacity: s.capacity ?? null,
+      enrolled: s.training_participants?.[0]?.count ?? 0,
+      my_participant_id: m?.id ?? null,
+      my_status: (m?.status as import("@/types/training").ParticipantStatus) ?? null,
+    };
+  });
+}
+
+// --- Employee: sessions to evaluate -----------------------------------------
+
+export async function getMyEvaluableSessions(): Promise<import("@/types/training").EvaluableSession[]> {
+  const supabase = createClient();
+  const user = await getCachedUser();
+  if (!user) return [];
+  const [{ data: parts }, { data: evals }] = await Promise.all([
+    supabase
+      .from("training_participants")
+      .select("status, session:training_sessions(id, ends_at, course:training_courses(title))")
+      .eq("profile_id", user.id)
+      .in("status", ["attended", "passed", "failed"]),
+    supabase.from("training_evaluations").select("session_id").eq("profile_id", user.id),
+  ]);
+  const evaluated = new Set(((evals ?? []) as Record<string, any>[]).map((e) => e.session_id as string));
+  const out: import("@/types/training").EvaluableSession[] = [];
+  for (const p of (parts ?? []) as Record<string, any>[]) {
+    const s = Array.isArray(p.session) ? p.session[0] : p.session;
+    if (!s?.id) continue;
+    const course = Array.isArray(s.course) ? s.course[0] : s.course;
+    out.push({
+      session_id: s.id,
+      course_title: course?.title ?? "—",
+      ended_on: s.ends_at ? (s.ends_at as string).slice(0, 10) : null,
+      evaluated: evaluated.has(s.id),
+    });
+  }
+  return out.sort((a, b) => (b.ended_on ?? "").localeCompare(a.ended_on ?? ""));
+}
+
+// --- Employee: dashboard overview -------------------------------------------
+
+export interface TrainingDashboard {
+  mandatoryOpen: number;
+  mandatoryTotal: number;
+  certsExpiring: number;
+  certsTotal: number;
+  pendingRequests: number;
+  upcomingSessions: number;
+  gaps: number;
+  nextSession: import("@/types/training").UpcomingSession | null;
+}
+
+/** A compact overview for the employee's Training landing page. */
+export async function getTrainingDashboard(): Promise<TrainingDashboard> {
+  const [mandatory, certs, requests, upcoming, gaps] = await Promise.all([
+    getMyMandatory(),
+    getMyCertificates(),
+    getMyRequests(),
+    getMyUpcomingSessions(),
+    getMyCompetencyGaps(),
+  ]);
+  return {
+    mandatoryOpen: mandatory.filter((m) => m.status !== "compliant").length,
+    mandatoryTotal: mandatory.length,
+    certsExpiring: certs.filter((c) => c.status !== "valid").length,
+    certsTotal: certs.length,
+    pendingRequests: requests.filter((r) => r.status === "requested" || r.status === "manager_approved").length,
+    upcomingSessions: upcoming.length,
+    gaps: gaps.length,
+    nextSession: upcoming[0] ?? null,
+  };
 }

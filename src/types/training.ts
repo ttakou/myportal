@@ -88,6 +88,10 @@ export interface Certificate {
   certificate_no: string | null;
   certificate_url: string | null;
   status: "valid" | "expiring" | "expired";
+  /** 'session' | 'manual' | 'external' | 'self' — where the record came from. */
+  source: string;
+  /** Self-uploaded certificates stay unverified until HR confirms them. */
+  verified: boolean;
 }
 
 /** Where an individual training request originates from. */
@@ -232,5 +236,68 @@ export interface EmployeeCompetency {
   max_level: number;
   current_level: number;
   assessed_on: string | null;
+  /** The employee's own self-assessed level (separate from the validated one). */
+  self_level: number | null;
+  self_assessed_on: string | null;
+}
+
+/** A competency where the employee is below the level the catalogue can develop. */
+export interface CompetencyGap {
+  competency_id: string;
+  name: string;
+  category: string | null;
+  max_level: number;
+  current_level: number;
+  target_level: number;
+  gap: number;
+  /** Catalogue courses that develop this competency (to close the gap). */
+  courses: { id: string; title: string }[];
+}
+
+/** An IDP development-plan row, surfaced in Training with its request state. */
+export interface DevelopmentPlanItem {
+  id: string;
+  area: string;
+  action: string | null;
+  target_date: string | null;
+  status: "planned" | "in_progress" | "done";
+  /** Status of any training request already raised from this IDP row. */
+  request_status: RequestStatus | null;
+}
+
+/** A completed training the employee has on record (history view). */
+export interface HistoryItem {
+  id: string;
+  course_title: string;
+  completed_on: string;
+  expires_on: string | null;
+  source: string;
+  verified: boolean;
+  certificate_no: string | null;
+  certificate_url: string | null;
+}
+
+/** An OPEN session an employee can self-enrol into. */
+export interface OpenSession {
+  id: string;
+  course_title: string;
+  trainer_name: string | null;
+  location: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  capacity: number | null;
+  enrolled: number;
+  /** The caller's participant row id, if already enrolled. */
+  my_participant_id: string | null;
+  my_status: ParticipantStatus | null;
+}
+
+/** A session the employee took part in and may evaluate. */
+export interface EvaluableSession {
+  session_id: string;
+  course_title: string;
+  ended_on: string | null;
+  /** Whether the employee has already submitted an evaluation. */
+  evaluated: boolean;
 }
 

@@ -10,11 +10,18 @@ export type TrainingGroup =
 
 export type TrainingViewKey =
   // My Training
+  | "dashboard"
   | "mandatory"
+  | "gaps"
+  | "idp"
+  | "browse"
   | "requests"
+  | "open-sessions"
   | "my-plan"
   | "calendar"
+  | "history"
   | "certificates"
+  | "my-evaluations"
   | "my-competencies"
   // Team Training
   | "team-compliance"
@@ -38,7 +45,8 @@ export type TrainingViewKey =
   | "rpt-plan-progress"
   | "rpt-costs"
   | "rpt-expiring"
-  | "rpt-effectiveness";
+  | "rpt-effectiveness"
+  | "rpt-origins";
 
 export interface TrainingView {
   key: TrainingViewKey;
@@ -50,12 +58,19 @@ export interface TrainingView {
 
 export const TRAINING_VIEWS: TrainingView[] = [
   // My Training (everyone with the module)
+  { key: "dashboard", label: "My Training Dashboard", icon: "LayoutDashboard", group: "My Training" },
   { key: "mandatory", label: "Mandatory Training", icon: "ShieldAlert", group: "My Training" },
+  { key: "my-competencies", label: "My Competencies", icon: "Sparkles", group: "My Training" },
+  { key: "gaps", label: "Competency Gaps", icon: "TriangleAlert", group: "My Training" },
+  { key: "idp", label: "Development Plan", icon: "Compass", group: "My Training" },
+  { key: "browse", label: "Course Catalogue", icon: "BookOpen", group: "My Training" },
   { key: "requests", label: "Individual Training Requests", icon: "FilePlus2", group: "My Training" },
+  { key: "open-sessions", label: "Open Sessions", icon: "CalendarPlus", group: "My Training" },
   { key: "my-plan", label: "My Training Plan", icon: "ListChecks", group: "My Training" },
   { key: "calendar", label: "Training Calendar", icon: "CalendarDays", group: "My Training" },
+  { key: "history", label: "Training History", icon: "History", group: "My Training" },
   { key: "certificates", label: "Certificates", icon: "Award", group: "My Training" },
-  { key: "my-competencies", label: "My Competencies", icon: "Sparkles", group: "My Training" },
+  { key: "my-evaluations", label: "Training Evaluations", icon: "Star", group: "My Training" },
   // Team Training (managers + HR)
   { key: "team-compliance", label: "Team Compliance", icon: "ShieldCheck", group: "Team Training" },
   { key: "team-requests", label: "Training Requests", icon: "Inbox", group: "Team Training" },
@@ -79,15 +94,23 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "rpt-costs", label: "Training Costs", icon: "DollarSign", group: "Reports" },
   { key: "rpt-expiring", label: "Expiring Certifications", icon: "CalendarX", group: "Reports" },
   { key: "rpt-effectiveness", label: "Training Effectiveness", icon: "BarChart3", group: "Reports" },
+  { key: "rpt-origins", label: "Requests by Origin", icon: "GitBranch", group: "Reports" },
 ];
 
 /** Views implemented in the current phase (others render a "planned" notice). */
 export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingViewKey>([
+  "dashboard",
   "mandatory",
+  "gaps",
+  "idp",
+  "browse",
   "requests",
+  "open-sessions",
   "my-plan",
   "calendar",
+  "history",
   "certificates",
+  "my-evaluations",
   "catalogue",
   "matrix",
   "sessions",
@@ -106,13 +129,14 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "rpt-costs",
   "rpt-expiring",
   "rpt-effectiveness",
+  "rpt-origins",
   "my-competencies",
   "competencies",
   "competency-matrix",
 ]);
 
 export const TRAINING_VIEW_KEYS = TRAINING_VIEWS.map((v) => v.key);
-export const DEFAULT_TRAINING_VIEW: TrainingViewKey = "mandatory";
+export const DEFAULT_TRAINING_VIEW: TrainingViewKey = "dashboard";
 
 export function resolveTrainingView(raw: string | null | undefined): TrainingViewKey {
   if (raw && (TRAINING_VIEW_KEYS as string[]).includes(raw)) return raw as TrainingViewKey;

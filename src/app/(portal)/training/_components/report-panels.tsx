@@ -1,11 +1,12 @@
-import { BarChart3, CalendarX, DollarSign, ShieldCheck, TrendingUp } from "lucide-react";
+import { BarChart3, CalendarX, DollarSign, GitBranch, ShieldCheck, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PLAN_STATUS_LABEL, type PlanStatus } from "@/types/training";
+import { PLAN_STATUS_LABEL, REQUEST_ORIGIN_LABEL, type PlanStatus, type RequestOrigin } from "@/types/training";
 import type {
   ComplianceReport,
   CostReport,
   EffectivenessReport,
   ExpiringRow,
+  OriginRow,
   PlanProgressReport,
 } from "@/lib/training";
 
@@ -140,6 +141,43 @@ export function PlanProgressReportPanel({ data }: { data: PlanProgressReport }) 
               <tr key={s.status} className="border-t">
                 <td className="px-4 py-2 font-medium">{PLAN_STATUS_LABEL[s.status as PlanStatus] ?? s.status}</td>
                 <td className="px-4 py-2 tabular-nums">{s.count}</td>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <Bar pct={pct} />
+                    <span className="tabular-nums text-xs">{pct}%</span>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </Table>
+      )}
+    </Section>
+  );
+}
+
+export function RequestsByOriginReportPanel({ data }: { data: { rows: OriginRow[]; total: number } }) {
+  const originLabel = (o: string) =>
+    o === "unspecified" ? "Unspecified" : REQUEST_ORIGIN_LABEL[o as RequestOrigin] ?? o;
+  return (
+    <Section
+      icon={<GitBranch className="h-5 w-5 text-primary" />}
+      title="Requests by Origin"
+      subtitle={`${data.total} training request(s), grouped by where they originate from.`}
+    >
+      {data.total === 0 ? (
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No training requests yet.</p>
+      ) : (
+        <Table head={["Origin", "Total", "Pending", "Approved", "Rejected", "Share"]}>
+          {data.rows.map((r) => {
+            const pct = data.total ? Math.round((r.total / data.total) * 100) : 0;
+            return (
+              <tr key={r.origin} className="border-t">
+                <td className="px-4 py-2 font-medium">{originLabel(r.origin)}</td>
+                <td className="px-4 py-2 tabular-nums">{r.total}</td>
+                <td className="px-4 py-2 tabular-nums text-muted-foreground">{r.pending || "—"}</td>
+                <td className="px-4 py-2 tabular-nums text-green-700">{r.approved || "—"}</td>
+                <td className="px-4 py-2 tabular-nums text-destructive">{r.rejected || "—"}</td>
                 <td className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     <Bar pct={pct} />

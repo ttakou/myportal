@@ -79,7 +79,7 @@ export async function Sidebar({
     if (s.route_path === "/training") {
       return {
         ...base,
-        defaultSubKey: "mandatory",
+        defaultSubKey: "dashboard",
         subItems: trainingSubmenu({ isManager, isTrainingAdmin }),
       };
     }

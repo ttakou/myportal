@@ -44,6 +44,8 @@ export async function submitTrainingRequest(input: {
   reason?: string;
   preferredPeriod?: string;
   origin?: string;
+  /** When set, links the request to the IDP development-plan row it satisfies. */
+  developmentPlanId?: string | null;
 }): Promise<ActionResult> {
   const gate = await requireModule("training", "create");
   if (gate) return gate;
@@ -53,6 +55,22 @@ export async function submitTrainingRequest(input: {
   if (!who) return { ok: false, error: "No tenant in scope." };
   const origin = input.origin && REQUEST_ORIGINS.includes(input.origin) ? input.origin : null;
 
+  // An IDP-linked request must reference one of the caller's own development-plan
+  // rows; default its origin to the personal development plan.
+  let developmentPlanId: string | null = null;
+  if (input.developmentPlanId) {
+    const supabase = createClient();
+    const { data: plan } = await supabase
+      .from("appraisal_development_plans")
+      .select("id, appraisal:appraisals!inner(employee_id)")
+      .eq("id", input.developmentPlanId)
+      .maybeSingle();
+    const appraisal = plan && (Array.isArray((plan as any).appraisal) ? (plan as any).appraisal[0] : (plan as any).appraisal);
+    if (!plan || appraisal?.employee_id !== who.id)
+      return { ok: false, error: "Development-plan item not found." };
+    developmentPlanId = input.developmentPlanId;
+  }
+
   const supabase = createClient();
   const { error } = await supabase.from("training_requests").insert({
     tenant_id: who.tenant_id,
@@ -61,7 +79,177 @@ export async function submitTrainingRequest(input: {
     course_title: input.courseId ? null : input.courseTitle?.trim() || null,
     reason: input.reason?.trim() || null,
     preferred_period: input.preferredPeriod?.trim() || null,
-    origin,
+    origin: developmentPlanId ? origin ?? "personal_development_plan" : origin,
+    development_plan_id: developmentPlanId,
+  });
+  if (error) {
+    if (error.code === "23505")
+      return { ok: false, error: "A training request for this development item already exists." };
+    return { ok: false, error: error.message };
+  }
+  rev();
+  return { ok: true };
+}
+
+// --- Employee self-service ---------------------------------------------------
+
+/** Self-enrol the signed-in employee into an OPEN session. */
+export async function selfEnrolSession(sessionId: string): Promise<ActionResult> {
+  const gate = await requireModule("training", "create");
+  if (gate) return gate;
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+  const { data: sess } = await supabase
+    .from("training_sessions")
+    .select("id, status, capacity, training_participants(count)")
+    .eq("id", sessionId)
+    .eq("tenant_id", who.tenant_id)
+    .maybeSingle();
+  if (!sess) return { ok: false, error: "Session not found." };
+  if (sess.status !== "open") return { ok: false, error: "This session is not open for enrolment." };
+  const enrolled = (sess as any).training_participants?.[0]?.count ?? 0;
+  if (sess.capacity != null && enrolled >= sess.capacity) return { ok: false, error: "This session is full." };
+
+  const { error } = await supabase
+    .from("training_participants")
+    .upsert(
+      { tenant_id: who.tenant_id, session_id: sessionId, profile_id: who.id, status: "enrolled" },
+      { onConflict: "session_id,profile_id", ignoreDuplicates: true },
+    );
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Withdraw the signed-in employee from a session they enrolled in. */
+export async function withdrawEnrolment(participantId: string): Promise<ActionResult> {
+  const gate = await requireModule("training", "create");
+  if (gate) return gate;
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("training_participants")
+    .update({ status: "cancelled" })
+    .eq("id", participantId)
+    .eq("profile_id", who.id)
+    .in("status", ["enrolled", "attended"])
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!data || data.length === 0) return { ok: false, error: "You can no longer withdraw from this session." };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Self-upload an external certificate. It is recorded UNVERIFIED (source 'self')
+ * so it shows in the employee's history but does not count toward statutory
+ * compliance until a Training Admin verifies it.
+ */
+export async function uploadCertificate(input: {
+  courseId?: string | null;
+  courseTitle?: string;
+  completedOn: string;
+  expiresOn?: string | null;
+  certificateNo?: string;
+  certificateUrl?: string;
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "create");
+  if (gate) return gate;
+  if (!input.completedOn) return { ok: false, error: "Completion date is required." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+
+  // Resolve the course: pick from catalogue, or fall back to a free-text title we
+  // store on a placeholder? training_records requires a course_id, so a catalogue
+  // course must be chosen.
+  if (!input.courseId) return { ok: false, error: "Pick the course this certificate is for." };
+  if (!(await inTenant("training_courses", input.courseId, who.tenant_id)))
+    return { ok: false, error: "Course not found." };
+
+  const supabase = createClient();
+  const { error } = await supabase.from("training_records").insert({
+    tenant_id: who.tenant_id,
+    profile_id: who.id,
+    course_id: input.courseId,
+    completed_on: input.completedOn,
+    expires_on: input.expiresOn || null,
+    certificate_no: input.certificateNo?.trim() || null,
+    certificate_url: input.certificateUrl?.trim() || null,
+    source: "self",
+    verified: false,
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Record the employee's own self-assessment for a competency (kept separate). */
+export async function selfAssessCompetency(competencyId: string, level: number): Promise<ActionResult> {
+  const gate = await requireModule("training", "create");
+  if (gate) return gate;
+  if (!competencyId) return { ok: false, error: "Pick a competency." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  if (!(await inTenant("training_competencies", competencyId, who.tenant_id)))
+    return { ok: false, error: "Competency not found." };
+  const supabase = createClient();
+  const today = new Date().toISOString().slice(0, 10);
+  // Update an existing row's self_* only, else insert a fresh row.
+  const { data: existing } = await supabase
+    .from("training_employee_competencies")
+    .select("id")
+    .eq("profile_id", who.id)
+    .eq("competency_id", competencyId)
+    .maybeSingle();
+  const { error } = existing
+    ? await supabase
+        .from("training_employee_competencies")
+        .update({ self_level: level, self_assessed_on: today })
+        .eq("id", existing.id)
+    : await supabase.from("training_employee_competencies").insert({
+        tenant_id: who.tenant_id,
+        profile_id: who.id,
+        competency_id: competencyId,
+        current_level: 0,
+        self_level: level,
+        self_assessed_on: today,
+      });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Submit the employee's own post-training evaluation for a session they took. */
+export async function submitSelfEvaluation(input: {
+  sessionId: string;
+  kind?: string;
+  score?: number | null;
+  comments?: string;
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "create");
+  if (gate) return gate;
+  if (!input.sessionId) return { ok: false, error: "Pick a session." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+  // Must have actually taken part in the session.
+  const { data: part } = await supabase
+    .from("training_participants")
+    .select("id")
+    .eq("session_id", input.sessionId)
+    .eq("profile_id", who.id)
+    .maybeSingle();
+  if (!part) return { ok: false, error: "You weren't a participant in this session." };
+  const { error } = await supabase.from("training_evaluations").insert({
+    tenant_id: who.tenant_id,
+    session_id: input.sessionId,
+    participant_id: part.id,
+    profile_id: who.id,
+    kind: input.kind || "reaction",
+    score: input.score ?? null,
+    comments: input.comments?.trim() || null,
   });
   if (error) return { ok: false, error: error.message };
   rev();

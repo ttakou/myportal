@@ -1,14 +1,30 @@
-import { Award, CalendarDays, ClipboardList, ListChecks, ShieldAlert, ShieldCheck, Sparkles, Target } from "lucide-react";
+import Link from "next/link";
+import {
+  Award,
+  CalendarDays,
+  CalendarClock,
+  ClipboardList,
+  FilePlus2,
+  History,
+  LayoutDashboard,
+  ListChecks,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  TriangleAlert,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   PLAN_STATUS_LABEL,
   type Certificate,
   type EmployeeCompetency,
+  type HistoryItem,
   type MandatoryItem,
   type PlanItem,
   type UpcomingSession,
 } from "@/types/training";
-import type { TeamPlanRow, TeamReport } from "@/lib/training";
+import type { TeamPlanRow, TeamReport, TrainingDashboard } from "@/lib/training";
 
 function fmtDate(d: string | null): string {
   return d ? new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -298,6 +314,147 @@ export function MyCompetenciesPanel({ items }: { items: EmployeeCompetency[] }) 
                 </div>
               </td>
               <td className="px-4 py-2 tabular-nums text-muted-foreground">{fmtDate(c.assessed_on)}</td>
+            </tr>
+          ))}
+        </Table>
+      )}
+    </Section>
+  );
+}
+
+function StatCard({ label, value, hint, tone, href }: { label: string; value: number | string; hint?: string; tone?: "warn" | "danger" | "ok"; href: string }) {
+  const toneCls =
+    tone === "danger" ? "text-destructive" : tone === "warn" ? "text-amber-700" : tone === "ok" ? "text-green-700" : "text-foreground";
+  return (
+    <Link href={href} className="rounded-lg border bg-card p-4 transition-colors hover:bg-muted/40">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("mt-1 text-2xl font-semibold tabular-nums", toneCls)}>{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+    </Link>
+  );
+}
+
+export function DashboardPanel({ data }: { data: TrainingDashboard }) {
+  return (
+    <Section
+      icon={<LayoutDashboard className="h-5 w-5 text-primary" />}
+      title="My Training Dashboard"
+      subtitle="Your compliance, certificates, requests and upcoming learning at a glance."
+    >
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard
+          label="Mandatory outstanding"
+          value={data.mandatoryOpen}
+          hint={`of ${data.mandatoryTotal} required`}
+          tone={data.mandatoryOpen > 0 ? "danger" : "ok"}
+          href="/training?view=mandatory"
+        />
+        <StatCard
+          label="Certificates expiring"
+          value={data.certsExpiring}
+          hint={`of ${data.certsTotal} on record`}
+          tone={data.certsExpiring > 0 ? "warn" : "ok"}
+          href="/training?view=certificates"
+        />
+        <StatCard
+          label="Competency gaps"
+          value={data.gaps}
+          hint="below catalogue target"
+          tone={data.gaps > 0 ? "warn" : "ok"}
+          href="/training?view=gaps"
+        />
+        <StatCard
+          label="Pending requests"
+          value={data.pendingRequests}
+          hint="awaiting a decision"
+          href="/training?view=requests"
+        />
+        <StatCard
+          label="Upcoming sessions"
+          value={data.upcomingSessions}
+          hint="you're enrolled in"
+          tone="ok"
+          href="/training?view=calendar"
+        />
+        <StatCard label="Open sessions" value="Browse" hint="self-enrol now" href="/training?view=open-sessions" />
+      </div>
+
+      {data.nextSession && (
+        <div className="rounded-lg border bg-card p-4">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <CalendarClock className="h-4 w-4 text-primary" /> Next session
+          </p>
+          <p className="mt-1 text-sm">
+            <span className="font-medium">{data.nextSession.course_title}</span>
+            {data.nextSession.starts_at && (
+              <span className="text-muted-foreground"> · {fmtDateTime(data.nextSession.starts_at)}</span>
+            )}
+            {data.nextSession.location && <span className="text-muted-foreground"> · {data.nextSession.location}</span>}
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <QuickLink href="/training?view=requests" icon={<FilePlus2 className="h-4 w-4" />}>Request training</QuickLink>
+        <QuickLink href="/training?view=idp" icon={<Target className="h-4 w-4" />}>Development plan</QuickLink>
+        <QuickLink href="/training?view=browse" icon={<Award className="h-4 w-4" />}>Browse catalogue</QuickLink>
+        <QuickLink href="/training?view=gaps" icon={<TriangleAlert className="h-4 w-4" />}>Close a gap</QuickLink>
+        <QuickLink href="/training?view=history" icon={<History className="h-4 w-4" />}>Training history</QuickLink>
+      </div>
+    </Section>
+  );
+}
+
+function QuickLink({ href, icon, children }: { href: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted/40"
+    >
+      {icon}
+      {children}
+    </Link>
+  );
+}
+
+export function HistoryPanel({ items }: { items: HistoryItem[] }) {
+  return (
+    <Section
+      icon={<History className="h-5 w-5 text-primary" />}
+      title="Training History"
+      subtitle={`${items.length} completed training record(s)`}
+    >
+      {items.length === 0 ? (
+        <Empty>No completed training on record yet.</Empty>
+      ) : (
+        <Table head={["Course", "Completed", "Expires", "Source", "Certificate"]}>
+          {items.map((h) => (
+            <tr key={h.id} className="border-t">
+              <td className="px-4 py-2 font-medium">{h.course_title}</td>
+              <td className="px-4 py-2 tabular-nums text-muted-foreground">{fmtDate(h.completed_on)}</td>
+              <td className="px-4 py-2 tabular-nums text-muted-foreground">{fmtDate(h.expires_on)}</td>
+              <td className="px-4 py-2">
+                <span className="capitalize text-muted-foreground">{h.source}</span>
+                {h.source === "self" && (
+                  <span
+                    className={cn(
+                      "ml-2 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                      h.verified ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700",
+                    )}
+                  >
+                    {h.verified ? "verified" : "unverified"}
+                  </span>
+                )}
+              </td>
+              <td className="px-4 py-2 text-muted-foreground">
+                {h.certificate_url ? (
+                  <a href={h.certificate_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    {h.certificate_no || "Download"}
+                  </a>
+                ) : (
+                  h.certificate_no || "—"
+                )}
+              </td>
             </tr>
           ))}
         </Table>
