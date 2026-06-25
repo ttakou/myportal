@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getAccess, getCachedUser } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
@@ -1115,20 +1116,38 @@ export async function getOpenSessions(): Promise<import("@/types/training").Open
     .from("training_sessions")
     .select(
       "id, location, starts_at, ends_at, capacity, course:training_courses(title)," +
-        " trainer:training_trainers(full_name), training_participants(count)",
+        " trainer:training_trainers(full_name)",
     )
     .eq("status", "open")
     .order("starts_at", { ascending: true, nullsFirst: false });
   const sessions = (data ?? []) as Record<string, any>[];
   const ids = sessions.map((s) => s.id as string);
   const mine = new Map<string, { id: string; status: string }>();
+  const enrolledBy = new Map<string, number>();
   if (ids.length) {
+    // The caller can only read their own participant rows under RLS, so fetch
+    // their enrolments with the user client …
     const { data: parts } = await supabase
       .from("training_participants")
       .select("id, session_id, status")
       .eq("profile_id", user.id)
       .in("session_id", ids);
     for (const p of (parts ?? []) as Record<string, any>[]) mine.set(p.session_id, { id: p.id, status: p.status });
+
+    // … and the true seat counts (everyone's live enrolments) with the
+    // service-role client, since RLS would otherwise hide other people's rows
+    // and make every session look empty.
+    const admin = createAdminClient();
+    if (admin) {
+      const { data: all } = await admin
+        .from("training_participants")
+        .select("session_id, status")
+        .in("session_id", ids)
+        .neq("status", "cancelled");
+      for (const p of (all ?? []) as Record<string, any>[]) {
+        enrolledBy.set(p.session_id, (enrolledBy.get(p.session_id) ?? 0) + 1);
+      }
+    }
   }
   return sessions.map((s) => {
     const course = Array.isArray(s.course) ? s.course[0] : s.course;
@@ -1142,7 +1161,7 @@ export async function getOpenSessions(): Promise<import("@/types/training").Open
       starts_at: s.starts_at ?? null,
       ends_at: s.ends_at ?? null,
       capacity: s.capacity ?? null,
-      enrolled: s.training_participants?.[0]?.count ?? 0,
+      enrolled: enrolledBy.get(s.id) ?? 0,
       my_participant_id: m?.id ?? null,
       my_status: (m?.status as import("@/types/training").ParticipantStatus) ?? null,
     };

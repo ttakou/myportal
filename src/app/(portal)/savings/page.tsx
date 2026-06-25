@@ -14,7 +14,9 @@ export default async function SavingsPage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const [access, role] = await Promise.all([getAccess(), getCurrentRole()]);
-  const isAdmin = isAdminRole(role);
+  // Mirror the sidebar/console gate (isOrgAdmin): the system_admin functional
+  // role counts as admin, so the Administration nav and the page agree.
+  const isAdmin = isAdminRole(role) || access.isSystemAdmin;
   const view = resolveSavingsView((await searchParams).view, isAdmin);
   const [mine, accounts, users] = await Promise.all([
     getMyAccount(),

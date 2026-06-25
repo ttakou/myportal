@@ -74,10 +74,13 @@ export interface ModuleAdminLink {
   href: string;
 }
 
-/** Each subscribed module's admin destination, filtered to what the user may run.
- *  `activeSlugs` keeps the cards to modules the tenant actually has enabled. */
-export function moduleAdminLinks(f: AdminFlags, activeSlugs: string[]): ModuleAdminLink[] {
-  const has = (slug: string) => activeSlugs.includes(slug);
+/** Each module's admin destination, filtered to what the user may run. Optionally
+ *  narrowed to the tenant's enabled modules when an `activeSlugs` list is given
+ *  (omit it to gate purely on capability — a user's admin capability can come
+ *  from a functional role whose slug isn't in their personal module allowlist,
+ *  so we must not hide a card just because the slug is absent there). */
+export function moduleAdminLinks(f: AdminFlags, activeSlugs?: string[]): ModuleAdminLink[] {
+  const enabled = (slug: string) => !activeSlugs || activeSlugs.includes(slug);
   const all: (ModuleAdminLink & { show: boolean; slug: string })[] = [
     { slug: "canteen", show: f.isCanteenManager, key: "canteen", label: "Canteen", description: "Menus, forecast, campboss & entitlements", icon: "UtensilsCrossed", href: "/canteen/manage" },
     { slug: "training", show: f.isTrainingAdmin, key: "training", label: "Training & Competence", description: "Catalogue, assignments, approvals & reports", icon: "GraduationCap", href: "/training?view=assign" },
@@ -88,5 +91,5 @@ export function moduleAdminLinks(f: AdminFlags, activeSlugs: string[]): ModuleAd
     { slug: "savings", show: f.isOrgAdmin, key: "savings", label: "Employees Saving", description: "Accounts, contributions & loans", icon: "Wallet", href: "/savings?view=admin" },
     { slug: "emergency", show: f.isSafetyAdmin, key: "emergency", label: "Emergency Support", description: "Command centre & incident history", icon: "Siren", href: "/emergency/command" },
   ];
-  return all.filter((m) => m.show && has(m.slug)).map(({ show: _show, slug: _slug, ...rest }) => rest);
+  return all.filter((m) => m.show && enabled(m.slug)).map(({ show: _show, slug: _slug, ...rest }) => rest);
 }

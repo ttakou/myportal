@@ -4,7 +4,6 @@ import { getAccess } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getTenantUsers, getTenantModules, getImpersonationLog } from "@/lib/admin";
 import { getAccessRoles } from "@/lib/access-roles";
-import { getActiveServices } from "@/lib/services";
 import { getTenantBranding } from "@/lib/branding";
 import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
 import { isTrainingAdmin as getIsTrainingAdmin } from "@/lib/training";
@@ -85,7 +84,7 @@ export default async function AdminPage({
         <p className="text-muted-foreground">{head.subtitle}</p>
       </div>
       {view === "overview" && <Overview flags={flags} />}
-      {view === "people" && <PeopleView flags={flags} />}
+      {view === "people" && <PeopleView flags={flags} canImpersonate={access.isAdmin} />}
       {view === "roles" && <RolesView />}
       {view === "modules" && <ModulesView />}
       {view === "settings" && <SettingsView flags={flags} />}
@@ -105,9 +104,10 @@ const CORE_CARDS: { view: string; label: string; description: string; icon: stri
 ];
 
 async function Overview({ flags }: { flags: AdminFlags }) {
-  const services = await getActiveServices();
-  const activeSlugs = services.map((s) => s.slug);
-  const modules = moduleAdminLinks(flags, activeSlugs);
+  // Gate cards on capability only — a user's admin capability can come from a
+  // functional role whose module slug isn't in their personal allowlist, so we
+  // must not narrow by getActiveServices() (which is that personal allowlist).
+  const modules = moduleAdminLinks(flags);
 
   return (
     <div className="space-y-8">
@@ -177,8 +177,7 @@ async function Overview({ flags }: { flags: AdminFlags }) {
 
 // --- People -----------------------------------------------------------------
 
-async function PeopleView({ flags }: { flags: AdminFlags }) {
-  const canImpersonate = flags.isOrgAdmin;
+async function PeopleView({ flags, canImpersonate }: { flags: AdminFlags; canImpersonate: boolean }) {
   const [users, accessRoles, me, impersonationLog] = await Promise.all([
     getTenantUsers(),
     getAccessRoles(),

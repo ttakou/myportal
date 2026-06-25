@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCachedUser } from "@/lib/auth";
 import { requireModule } from "@/lib/permissions-server";
 import {
@@ -125,14 +126,25 @@ export async function selfEnrolSession(sessionId: string): Promise<ActionResult>
   const supabase = createClient();
   const { data: sess } = await supabase
     .from("training_sessions")
-    .select("id, status, capacity, training_participants(count)")
+    .select("id, status, capacity")
     .eq("id", sessionId)
     .eq("tenant_id", who.tenant_id)
     .maybeSingle();
   if (!sess) return { ok: false, error: "Session not found." };
   if (sess.status !== "open") return { ok: false, error: "This session is not open for enrolment." };
-  const enrolled = (sess as any).training_participants?.[0]?.count ?? 0;
-  if (sess.capacity != null && enrolled >= sess.capacity) return { ok: false, error: "This session is full." };
+  if (sess.capacity != null) {
+    // Count live enrolments with the service-role client: RLS would otherwise
+    // hide other people's participant rows and make the seat count read as 0.
+    const admin = createAdminClient();
+    if (admin) {
+      const { count } = await admin
+        .from("training_participants")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", sessionId)
+        .neq("status", "cancelled");
+      if ((count ?? 0) >= sess.capacity) return { ok: false, error: "This session is full." };
+    }
+  }
 
   const { error } = await supabase
     .from("training_participants")
@@ -157,7 +169,7 @@ export async function withdrawEnrolment(participantId: string): Promise<ActionRe
     .update({ status: "cancelled" })
     .eq("id", participantId)
     .eq("profile_id", who.id)
-    .in("status", ["enrolled", "attended"])
+    .eq("status", "enrolled")
     .select("id");
   if (error) return { ok: false, error: error.message };
   if (!data || data.length === 0) return { ok: false, error: "You can no longer withdraw from this session." };

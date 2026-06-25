@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/permissions-server";
 import { notifyUsers } from "@/lib/notify";
 import type { IssueType } from "@/types/feedback";
@@ -35,11 +36,17 @@ export async function submitFeedback(input: {
   });
   if (error) return { ok: false, error: error.message };
 
-  const { data: managers } = await supabase
-    .from("profile_roles")
-    .select("profile_id")
-    .eq("tenant_id", tenant.id)
-    .eq("role", "canteen_manager");
+  // Resolve managers with the service-role client: the submitting employee
+  // cannot read other users' role rows under RLS, which would otherwise leave
+  // the recipient list empty and silently drop the notification.
+  const admin = createAdminClient();
+  const { data: managers } = admin
+    ? await admin
+        .from("profile_roles")
+        .select("profile_id")
+        .eq("tenant_id", tenant.id)
+        .eq("role", "canteen_manager")
+    : { data: [] as { profile_id: string }[] };
   await notifyUsers({
     tenantId: tenant.id,
     profileIds: (managers ?? []).map((m) => m.profile_id),
