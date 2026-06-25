@@ -12,6 +12,8 @@ export interface NavSubItem {
   label: string;
   icon: string;
   href: string;
+  /** Optional section heading to group items under within the submenu. */
+  section?: string;
 }
 
 export interface NavLink {
@@ -96,27 +98,42 @@ function SubMenu({ items, defaultKey }: { items: NavSubItem[]; defaultKey?: stri
     return (currentView ?? defaultKey) === itemView;
   };
 
+  const rows: React.ReactNode[] = [];
+  let lastSection: string | undefined;
+  for (const si of items) {
+    if (si.section && si.section !== lastSection) {
+      lastSection = si.section;
+      rows.push(
+        <p
+          key={`sec-${si.section}`}
+          className="px-2.5 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 first:pt-0.5"
+        >
+          {si.section}
+        </p>,
+      );
+    }
+    const SubIcon = resolveIcon(si.icon);
+    const isCurrent = isActive(si.href);
+    rows.push(
+      <Link
+        key={si.key}
+        href={si.href}
+        className={cn(
+          "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
+          isCurrent
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground",
+        )}
+      >
+        <SubIcon className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{si.label}</span>
+      </Link>,
+    );
+  }
+
   return (
     <div className="mb-1 ml-5 mt-0.5 flex flex-col gap-0.5 border-l pl-2">
-      {items.map((si) => {
-        const SubIcon = resolveIcon(si.icon);
-        const isCurrent = isActive(si.href);
-        return (
-          <Link
-            key={si.key}
-            href={si.href}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
-              isCurrent
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground",
-            )}
-          >
-            <SubIcon className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{si.label}</span>
-          </Link>
-        );
-      })}
+      {rows}
     </div>
   );
 }

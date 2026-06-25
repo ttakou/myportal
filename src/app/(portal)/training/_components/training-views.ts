@@ -174,14 +174,27 @@ export interface TrainingNavItem {
   label: string;
   icon: string;
   href: string;
+  /** Macro-section the item is grouped under in the sidebar. */
+  section: string;
 }
 
-/** Submenu for the sidebar, gated by role. */
+// The four functional groups collapse into two sidebar sections: everything a
+// user/manager does sits under "User Training"; the admin tools under
+// "Training Admin Console".
+const SECTION: Record<TrainingGroup, string> = {
+  "My Training": "User Training",
+  "Team Training": "User Training",
+  "HR Administration": "Training Admin Console",
+  Reports: "Training Admin Console",
+};
+
+/** Submenu for the sidebar, gated by role and grouped into two sections. */
 export function trainingSubmenu(opts: TrainingAccess): TrainingNavItem[] {
   return TRAINING_VIEWS.filter((v) => GROUP_ACCESS[v.group](opts)).map((v) => ({
     key: v.key,
     label: v.label,
     icon: v.icon,
     href: `/training?view=${v.key}`,
+    section: SECTION[v.group],
   }));
 }
