@@ -5,6 +5,7 @@ import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getStatement } from "@/lib/savings";
 import { getTenantBranding } from "@/lib/branding";
 import { money, type SavingsTxn, type Statement } from "@/types/savings";
+import { MedallionStamp } from "@/components/ui/medallion-stamp";
 import { PrintButton } from "./print-button";
 
 const SOFTWARE_NAME = "MyEnterprisePortal";
@@ -260,7 +261,15 @@ function StatementDocument({
           All amounts shown in XAF (Central African CFA franc). Withdrawals are debits; deposits are
           credits. This is a system-generated statement and is valid without a handwritten signature.
         </p>
-        <Stamp brandName={brandName} primary={primary} date={generatedAt} />
+        <MedallionStamp
+          color={primary}
+          topText={brandName}
+          bottomText="Official Statement"
+          centerText="Verified"
+          subText={isoDate(generatedAt)}
+          size={124}
+          className="-rotate-12 shrink-0"
+        />
       </div>
 
       <footer className="mt-3 flex items-center justify-between border-t pt-2 text-[10.5px] text-neutral-500">
@@ -280,16 +289,18 @@ function StatementDocument({
 function renderRows(statement: Statement, zebra: React.CSSProperties) {
   let running = statement.openingBalance;
   return statement.transactions.map((t: SavingsTxn, i: number) => {
-    const isIn = t.kind === "contribution";
+    const isIn = t.kind !== "withdrawal";
     running += isIn ? t.amount : -t.amount;
     const date = (t.period ?? t.created_at).slice(0, 10);
     const ref = t.id.replace(/[^0-9a-f]/gi, "").slice(0, 4).toUpperCase();
+    const fallbackDesc =
+      t.kind === "interest" ? "Interest" : t.kind === "contribution" ? "Contribution" : "Withdrawal";
     // Opening row was index 0, so transactions start striped on the off-beat.
     const striped = i % 2 === 1;
     return (
       <tr key={t.id} style={striped ? zebra : undefined}>
         <td className="border px-3 py-1.5 tabular-nums text-neutral-600">{date}</td>
-        <td className="border px-3 py-1.5">{t.note ?? (isIn ? "Contribution" : "Withdrawal")}</td>
+        <td className="border px-3 py-1.5">{t.note ?? fallbackDesc}</td>
         <td className="border px-3 py-1.5 tabular-nums text-neutral-500">{ref}</td>
         <td className="border px-3 py-1.5 text-right tabular-nums text-red-700">{isIn ? "" : money(t.amount)}</td>
         <td className="border px-3 py-1.5 text-right tabular-nums text-green-700">{isIn ? money(t.amount) : ""}</td>
@@ -297,37 +308,4 @@ function renderRows(statement: Statement, zebra: React.CSSProperties) {
       </tr>
     );
   });
-}
-
-/** A circular "electronic stamp" rendered inline as SVG so it prints crisply. */
-function Stamp({ brandName, primary, date }: { brandName: string; primary: string; date: Date }) {
-  const stamped = date.toISOString().slice(0, 10);
-  const top = brandName.toUpperCase().slice(0, 26);
-  return (
-    <svg width="118" height="118" viewBox="0 0 132 132" className="-rotate-12 shrink-0 opacity-90" aria-label="Electronic stamp">
-      <defs>
-        <path id="stamp-top" d="M 66 66 m -46 0 a 46 46 0 1 1 92 0" fill="none" />
-        <path id="stamp-bottom" d="M 20 66 a 46 46 0 0 0 92 0" fill="none" />
-      </defs>
-      <circle cx="66" cy="66" r="62" fill="none" stroke={primary} strokeWidth="2" />
-      <circle cx="66" cy="66" r="50" fill="none" stroke={primary} strokeWidth="1" />
-      <text fill={primary} fontSize="9" fontWeight="bold" letterSpacing="1.2">
-        <textPath href="#stamp-top" startOffset="50%" textAnchor="middle">
-          {top}
-        </textPath>
-      </text>
-      <text fill={primary} fontSize="8" letterSpacing="1">
-        <textPath href="#stamp-bottom" startOffset="50%" textAnchor="middle">
-          OFFICIAL · SAVINGS
-        </textPath>
-      </text>
-      <text x="66" y="58" textAnchor="middle" fill={primary} fontSize="11" fontWeight="bold">
-        VERIFIED
-      </text>
-      <line x1="34" y1="66" x2="98" y2="66" stroke={primary} strokeWidth="1" />
-      <text x="66" y="80" textAnchor="middle" fill={primary} fontSize="8">
-        {stamped}
-      </text>
-    </svg>
-  );
 }

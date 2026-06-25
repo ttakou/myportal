@@ -54,55 +54,104 @@ export async function postTransaction(input: {
   return { ok: true };
 }
 
-/** Disburse a loan with computed amortized monthly payment. */
-export async function disburseLoan(input: {
-  accountId: string;
-  principal: number;
-  annualRatePct: number;
-  termMonths: number;
-}): Promise<ActionResult> {
-  const gate = await requireModule("savings", "approve");
+// ---------------------------------------------------------------------------
+// Interest configuration + monthly accrual
+// ---------------------------------------------------------------------------
+
+/** Set the tenant's annual savings interest rate (percent). Admin only. */
+export async function setSavingsAnnualRate(annualRatePct: number): Promise<ActionResult> {
+  const gate = await requireModule("savings", "operate");
   if (gate) return gate;
-  if (!(input.principal > 0) || !(input.termMonths > 0))
-    return { ok: false, error: "Principal and term must be positive." };
-
-  const r = (input.annualRatePct || 0) / 100 / 12;
-  const n = Math.floor(input.termMonths);
-  const monthly =
-    r === 0
-      ? input.principal / n
-      : (input.principal * r) / (1 - Math.pow(1 + r, -n));
-
-  const supabase = createClient();
-  const t = await tenantId(supabase);
+  if (!(annualRatePct >= 0) || annualRatePct > 100)
+    return { ok: false, error: "Rate must be between 0 and 100." };
+  const rls = createClient();
+  const t = await tenantId(rls);
   if (!t) return { ok: false, error: "No tenant in scope." };
-  const { error } = await supabase.from("loans").insert({
-    tenant_id: t,
-    account_id: input.accountId,
-    principal: input.principal,
-    annual_rate: (input.annualRatePct || 0) / 100,
-    term_months: n,
-    monthly_payment: Math.round(monthly * 100) / 100,
-    outstanding: input.principal,
-  });
-  if (error) return { ok: false, error: error.message };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
 
-  const { data: account } = await supabase
+  const { data: row } = await admin.from("tenants").select("settings").eq("id", t).maybeSingle();
+  const settings = (row?.settings as Record<string, unknown>) ?? {};
+  const savings = { ...((settings.savings as Record<string, unknown>) ?? {}) };
+  savings.annualRatePct = Math.round(annualRatePct * 100) / 100;
+  const { error } = await admin
+    .from("tenants")
+    .update({ settings: { ...settings, savings } })
+    .eq("id", t);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/savings");
+  return { ok: true };
+}
+
+export interface InterestRunResult {
+  ok: boolean;
+  error?: string;
+  period?: string;
+  ratePct?: number;
+  applied?: number;
+  skipped?: number;
+  totalInterest?: number;
+}
+
+/**
+ * Post one month of interest to every account. Interest = balance × (annual
+ * rate / 12), rounded to whole XAF. It compounds: because the credit raises the
+ * balance, next month's accrual is computed on the larger total. Idempotent per
+ * month via the (account, kind, period) unique index — re-running a month skips
+ * accounts already accrued.
+ */
+export async function postMonthlyInterest(input: { period: string }): Promise<InterestRunResult> {
+  const gate = await requireModule("savings", "create");
+  if (gate) return { ok: false, error: gate.error };
+  if (!/^\d{4}-\d{2}$/.test(input.period))
+    return { ok: false, error: "Period must be a month, e.g. 2026-06." };
+  const periodDate = `${input.period}-01`;
+
+  const rls = createClient();
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+  const db = createAdminClient() ?? rls;
+
+  // Resolve the configured rate from tenant settings.
+  const { data: trow } = await db.from("tenants").select("settings").eq("id", t).maybeSingle();
+  const s = ((trow?.settings as Record<string, any>) ?? {}).savings ?? {};
+  const ratePct = Number.isFinite(Number(s.annualRatePct)) ? Number(s.annualRatePct) : 7;
+  const monthlyRate = ratePct / 100 / 12;
+
+  const { data: accts } = await db
     .from("savings_accounts")
-    .select("profile_id")
-    .eq("id", input.accountId)
-    .maybeSingle();
-  await notifyUsers({
-    tenantId: t,
-    profileIds: [account?.profile_id],
-    category: "approval",
-    title: "Loan approved and disbursed",
-    body: "Your loan has been approved and disbursed to your account.",
-    url: "/savings",
-  });
+    .select("id, balance")
+    .eq("tenant_id", t);
+
+  let applied = 0;
+  let skipped = 0;
+  let totalInterest = 0;
+  for (const a of (accts ?? []) as Record<string, any>[]) {
+    const interest = Math.round(Number(a.balance) * monthlyRate);
+    if (!(interest >= 1)) {
+      skipped++;
+      continue;
+    }
+    const { error } = await db.from("savings_transactions").insert({
+      tenant_id: t,
+      account_id: a.id,
+      kind: "interest",
+      amount: interest,
+      period: periodDate,
+      note: `Monthly interest ${input.period} (${ratePct}%/yr)`,
+    });
+    if (error) {
+      // already accrued for this month → idempotent skip
+      if (error.code === "23505" || error.message.includes("duplicate")) skipped++;
+      else return { ok: false, error: error.message };
+    } else {
+      applied++;
+      totalInterest += interest;
+    }
+  }
 
   rev();
-  return { ok: true };
+  return { ok: true, period: input.period, ratePct, applied, skipped, totalInterest };
 }
 
 // ---------------------------------------------------------------------------
@@ -448,43 +497,6 @@ export async function releaseWithdrawal(id: string): Promise<ActionResult> {
     body: "The approved savings withdrawal has been released and deducted from the account.",
     url: "/savings?view=mine",
   });
-  rev();
-  return { ok: true };
-}
-
-export async function recordRepayment(loanId: string, amount: number): Promise<ActionResult> {
-  const gate = await requireModule("savings", "operate");
-  if (gate) return gate;
-  if (!(amount > 0)) return { ok: false, error: "Amount must be positive." };
-  const supabase = createClient();
-  const t = await tenantId(supabase);
-  if (!t) return { ok: false, error: "No tenant in scope." };
-  const { error } = await supabase
-    .from("loan_repayments")
-    .insert({ tenant_id: t, loan_id: loanId, amount });
-  if (error) return { ok: false, error: error.message };
-
-  const { data: loan } = await supabase
-    .from("loans")
-    .select("account_id")
-    .eq("id", loanId)
-    .maybeSingle();
-  const { data: account } = loan?.account_id
-    ? await supabase
-        .from("savings_accounts")
-        .select("profile_id")
-        .eq("id", loan.account_id)
-        .maybeSingle()
-    : { data: null };
-  await notifyUsers({
-    tenantId: t,
-    profileIds: [account?.profile_id],
-    category: "general",
-    title: "Loan repayment recorded",
-    body: "Your loan repayment has been processed.",
-    url: "/savings",
-  });
-
   rev();
   return { ok: true };
 }

@@ -1,6 +1,8 @@
-export type SavingsTxnKind = "contribution" | "withdrawal";
-export type LoanStatus = "active" | "closed";
+export type SavingsTxnKind = "contribution" | "withdrawal" | "interest";
 export type WithdrawalStatus = "requested" | "approved" | "rejected" | "released";
+
+/** A savings transaction is a debit only when it is a withdrawal. */
+export const isCredit = (kind: SavingsTxnKind) => kind !== "withdrawal";
 
 export interface WithdrawalRequest {
   id: string;
@@ -26,24 +28,12 @@ export interface SavingsTxn {
   created_at: string;
 }
 
-export interface Loan {
-  id: string;
-  principal: number;
-  annual_rate: number;
-  term_months: number;
-  monthly_payment: number;
-  outstanding: number;
-  status: LoanStatus;
-  start_date: string;
-}
-
 export interface SavingsAccount {
   id: string;
   profile_id: string;
   person_name: string | null;
   balance: number;
   transactions: SavingsTxn[];
-  loans: Loan[];
 }
 
 export interface AccountSummary {
