@@ -155,11 +155,16 @@ export default async function TrainingPage({
       case "catalogue":
         return <CataloguePanel courses={await getCourses()} />;
       case "matrix": {
-        const [requirements, courses] = await Promise.all([getRequirements(), getCourses()]);
+        const [requirements, courses, competencies] = await Promise.all([
+          getRequirements(),
+          getCourses(),
+          getCompetencies(),
+        ]);
         return (
           <MatrixPanel
             requirements={requirements}
             courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
+            competencies={competencies.filter((c) => c.is_active).map((c) => ({ id: c.id, name: c.name }))}
           />
         );
       }

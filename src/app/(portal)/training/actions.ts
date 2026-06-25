@@ -631,9 +631,14 @@ export async function addRequirement(input: {
   if (!input.courseId) return { ok: false, error: "Pick a course." };
   const who = await me();
   if (!who) return { ok: false, error: "No tenant in scope." };
+  const ALLOWED_APPLIES = ["all", "department", "job_title", "employee_type", "competency"];
+  if (!ALLOWED_APPLIES.includes(input.appliesTo)) return { ok: false, error: "Invalid target." };
   const needsValue = input.appliesTo !== "all";
   if (needsValue && !input.appliesValue?.trim())
-    return { ok: false, error: "Provide the department / job title / employee type." };
+    return { ok: false, error: "Provide the department / job title / employee type / competency." };
+  // A competency-targeted requirement must reference a competency in this tenant.
+  if (input.appliesTo === "competency" && !(await inTenant("training_competencies", input.appliesValue!.trim(), who.tenant_id)))
+    return { ok: false, error: "Competency not found." };
 
   const supabase = createClient();
   const { error } = await supabase.from("training_requirements").insert({

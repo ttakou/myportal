@@ -43,7 +43,7 @@ export async function getMyMandatory(): Promise<MandatoryItem[]> {
   if (!user) return [];
   const ref = today();
 
-  const [{ data: profile }, { data: courses }, { data: reqs }, { data: records }] =
+  const [{ data: profile }, { data: courses }, { data: reqs }, { data: records }, { data: myComps }] =
     await Promise.all([
       supabase
         .from("profiles")
@@ -60,14 +60,21 @@ export async function getMyMandatory(): Promise<MandatoryItem[]> {
         .select("course_id, completed_on, expires_on")
         .eq("profile_id", user.id)
         .eq("verified", true),
+      supabase
+        .from("training_employee_competencies")
+        .select("competency_id")
+        .eq("profile_id", user.id)
+        .gt("current_level", 0),
     ]);
 
   const p = (profile ?? {}) as { department?: string; job_title?: string; employee_type?: string };
+  const heldComps = new Set(((myComps ?? []) as Record<string, any>[]).map((c) => c.competency_id as string));
   const matches = (applies_to: string, value: string | null) => {
     if (applies_to === "all") return true;
     if (applies_to === "department") return !!value && value === p.department;
     if (applies_to === "job_title") return !!value && value === p.job_title;
     if (applies_to === "employee_type") return !!value && value === p.employee_type;
+    if (applies_to === "competency") return !!value && heldComps.has(value);
     return false;
   };
 
@@ -261,6 +268,9 @@ export interface RequirementRow {
   course_title: string;
   applies_to: string;
   applies_value: string | null;
+  /** Human label for applies_value — the competency name for competency rows,
+   *  otherwise the raw value. */
+  applies_value_label: string | null;
   recurrence_months: number | null;
 }
 
@@ -271,14 +281,31 @@ export async function getRequirements(): Promise<RequirementRow[]> {
     .from("training_requirements")
     .select("id, course_id, applies_to, applies_value, recurrence_months, course:training_courses(title)")
     .order("created_at", { ascending: false });
-  return ((data ?? []) as Record<string, any>[]).map((r) => {
+  const rows = (data ?? []) as Record<string, any>[];
+
+  // Resolve competency names so competency-targeted rows show a name, not a uuid.
+  const compIds = rows
+    .filter((r) => r.applies_to === "competency" && r.applies_value)
+    .map((r) => r.applies_value as string);
+  const compName = new Map<string, string>();
+  if (compIds.length) {
+    const { data: comps } = await supabase
+      .from("training_competencies")
+      .select("id, name")
+      .in("id", [...new Set(compIds)]);
+    for (const c of (comps ?? []) as Record<string, any>[]) compName.set(c.id as string, c.name as string);
+  }
+
+  return rows.map((r) => {
     const course = Array.isArray(r.course) ? r.course[0] : r.course;
+    const value = (r.applies_value as string | null) ?? null;
     return {
       id: r.id,
       course_id: r.course_id,
       course_title: course?.title ?? "—",
       applies_to: r.applies_to,
-      applies_value: r.applies_value ?? null,
+      applies_value: value,
+      applies_value_label: r.applies_to === "competency" && value ? compName.get(value) ?? "—" : value,
       recurrence_months: r.recurrence_months ?? null,
     };
   });
@@ -388,10 +415,11 @@ export async function getTeamMandatory(): Promise<TeamReport[]> {
   if (reportList.length === 0) return [];
   const ids = reportList.map((r) => r.id as string);
 
-  const [{ data: courses }, { data: reqs }, { data: records }] = await Promise.all([
+  const [{ data: courses }, { data: reqs }, { data: records }, { data: comps }] = await Promise.all([
     supabase.from("training_courses").select("id, title, is_statutory, validity_months").eq("is_active", true),
     supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
     supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on").eq("verified", true).in("profile_id", ids),
+    supabase.from("training_employee_competencies").select("profile_id, competency_id").gt("current_level", 0).in("profile_id", ids),
   ]);
 
   // latest record per (profile, course)
@@ -401,15 +429,24 @@ export async function getTeamMandatory(): Promise<TeamReport[]> {
     const prev = latest.get(k);
     if (!prev || r.completed_on > prev.completed_on) latest.set(k, { completed_on: r.completed_on, expires_on: r.expires_on ?? null });
   }
+  // competencies held per profile
+  const heldByProfile = new Map<string, Set<string>>();
+  for (const c of (comps ?? []) as Record<string, any>[]) {
+    const set = heldByProfile.get(c.profile_id) ?? new Set<string>();
+    set.add(c.competency_id as string);
+    heldByProfile.set(c.profile_id, set);
+  }
   const reqRows = (reqs ?? []) as Record<string, any>[];
   const courseRows = (courses ?? []) as Record<string, any>[];
 
   return reportList.map((p) => {
+    const held = heldByProfile.get(p.id as string) ?? new Set<string>();
     const matches = (applies_to: string, value: string | null) =>
       applies_to === "all" ||
       (applies_to === "department" && !!value && value === p.department) ||
       (applies_to === "job_title" && !!value && value === p.job_title) ||
-      (applies_to === "employee_type" && !!value && value === p.employee_type);
+      (applies_to === "employee_type" && !!value && value === p.employee_type) ||
+      (applies_to === "competency" && !!value && held.has(value));
     const requiredIds = new Set<string>();
     for (const r of reqRows) if (matches(r.applies_to, r.applies_value ?? null)) requiredIds.add(r.course_id);
 
@@ -558,11 +595,12 @@ export interface ComplianceReport {
 export async function getComplianceReport(): Promise<ComplianceReport> {
   const supabase = createClient();
   const ref = today();
-  const [{ data: profiles }, { data: courses }, { data: reqs }, { data: records }] = await Promise.all([
+  const [{ data: profiles }, { data: courses }, { data: reqs }, { data: records }, { data: comps }] = await Promise.all([
     supabase.from("profiles").select("id, department, job_title, employee_type").eq("is_active", true),
     supabase.from("training_courses").select("id, title, is_statutory").eq("is_active", true),
     supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
     supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on").eq("verified", true),
+    supabase.from("training_employee_competencies").select("profile_id, competency_id").gt("current_level", 0),
   ]);
   const courseRows = (courses ?? []) as Record<string, any>[];
   const reqRows = (reqs ?? []) as Record<string, any>[];
@@ -572,15 +610,23 @@ export async function getComplianceReport(): Promise<ComplianceReport> {
     const prev = latest.get(k);
     if (!prev || r.completed_on > prev.completed_on) latest.set(k, { completed_on: r.completed_on, expires_on: r.expires_on ?? null });
   }
+  const heldByProfile = new Map<string, Set<string>>();
+  for (const c of (comps ?? []) as Record<string, any>[]) {
+    const set = heldByProfile.get(c.profile_id) ?? new Set<string>();
+    set.add(c.competency_id as string);
+    heldByProfile.set(c.profile_id, set);
+  }
   const per = new Map<string, { title: string; required: number; compliant: number; expiring: number; expired: number; missing: number }>();
   for (const c of courseRows) per.set(c.id, { title: c.title, required: 0, compliant: 0, expiring: 0, expired: 0, missing: 0 });
 
   for (const p of (profiles ?? []) as Record<string, any>[]) {
+    const held = heldByProfile.get(p.id as string) ?? new Set<string>();
     const matches = (a: string, v: string | null) =>
       a === "all" ||
       (a === "department" && !!v && v === p.department) ||
       (a === "job_title" && !!v && v === p.job_title) ||
-      (a === "employee_type" && !!v && v === p.employee_type);
+      (a === "employee_type" && !!v && v === p.employee_type) ||
+      (a === "competency" && !!v && held.has(v));
     const requiredIds = new Set<string>();
     for (const r of reqRows) if (matches(r.applies_to, r.applies_value ?? null)) requiredIds.add(r.course_id);
     for (const c of courseRows) {
@@ -743,11 +789,12 @@ export async function getDepartmentNeeds(
     .eq("is_active", true);
   if (department) pq = pq.eq("department", department);
 
-  const [{ data: profiles }, { data: courses }, { data: reqs }, { data: records }] = await Promise.all([
+  const [{ data: profiles }, { data: courses }, { data: reqs }, { data: records }, { data: comps }] = await Promise.all([
     pq,
     supabase.from("training_courses").select("id, title, is_statutory").eq("is_active", true),
     supabase.from("training_requirements").select("course_id, applies_to, applies_value"),
     supabase.from("training_records").select("profile_id, course_id, completed_on, expires_on").eq("verified", true),
+    supabase.from("training_employee_competencies").select("profile_id, competency_id").gt("current_level", 0),
   ]);
   const profileRows = (profiles ?? []) as Record<string, any>[];
   const courseRows = (courses ?? []) as Record<string, any>[];
@@ -759,14 +806,22 @@ export async function getDepartmentNeeds(
     const prev = latest.get(k);
     if (!prev || r.completed_on > prev.completed_on) latest.set(k, { completed_on: r.completed_on, expires_on: r.expires_on ?? null });
   }
+  const heldByProfile = new Map<string, Set<string>>();
+  for (const c of (comps ?? []) as Record<string, any>[]) {
+    const set = heldByProfile.get(c.profile_id) ?? new Set<string>();
+    set.add(c.competency_id as string);
+    heldByProfile.set(c.profile_id, set);
+  }
 
   const per = new Map<string, { needing: number; total: number }>();
   for (const p of profileRows) {
+    const held = heldByProfile.get(p.id as string) ?? new Set<string>();
     const matches = (a: string, v: string | null) =>
       a === "all" ||
       (a === "department" && !!v && v === p.department) ||
       (a === "job_title" && !!v && v === p.job_title) ||
-      (a === "employee_type" && !!v && v === p.employee_type);
+      (a === "employee_type" && !!v && v === p.employee_type) ||
+      (a === "competency" && !!v && held.has(v));
     const requiredIds = new Set<string>();
     for (const r of reqRows) if (matches(r.applies_to, r.applies_value ?? null)) requiredIds.add(r.course_id);
     for (const c of courseRows) {

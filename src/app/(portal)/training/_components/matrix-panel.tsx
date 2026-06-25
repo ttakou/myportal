@@ -15,14 +15,17 @@ const APPLIES = [
   { value: "department", label: "Department" },
   { value: "job_title", label: "Job title" },
   { value: "employee_type", label: "Employee type" },
+  { value: "competency", label: "Competency holders" },
 ];
 
 export function MatrixPanel({
   requirements,
   courses,
+  competencies,
 }: {
   requirements: RequirementRow[];
   courses: { id: string; title: string }[];
+  competencies: { id: string; name: string }[];
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +46,7 @@ export function MatrixPanel({
   const appliesLabel = (r: RequirementRow) =>
     r.applies_to === "all"
       ? "Everyone"
-      : `${APPLIES.find((a) => a.value === r.applies_to)?.label ?? r.applies_to}: ${r.applies_value ?? "—"}`;
+      : `${APPLIES.find((a) => a.value === r.applies_to)?.label ?? r.applies_to}: ${r.applies_value_label ?? "—"}`;
 
   return (
     <section className="space-y-4">
@@ -76,7 +79,7 @@ export function MatrixPanel({
             value={appliesTo}
             onChange={(e) => {
               setAppliesTo(e.target.value);
-              if (e.target.value === "all") setAppliesValue("");
+              setAppliesValue("");
             }}
             className={cn(field, "mt-0.5 block w-full")}
           >
@@ -89,13 +92,28 @@ export function MatrixPanel({
         </label>
         <label className="text-xs text-muted-foreground">
           Value
-          <input
-            value={appliesValue}
-            onChange={(e) => setAppliesValue(e.target.value)}
-            disabled={appliesTo === "all"}
-            placeholder={appliesTo === "all" ? "—" : "e.g. Operations"}
-            className={cn(field, "mt-0.5 block w-full disabled:opacity-50")}
-          />
+          {appliesTo === "competency" ? (
+            <select
+              value={appliesValue}
+              onChange={(e) => setAppliesValue(e.target.value)}
+              className={cn(field, "mt-0.5 block w-full")}
+            >
+              <option value="">— choose competency —</option>
+              {competencies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={appliesValue}
+              onChange={(e) => setAppliesValue(e.target.value)}
+              disabled={appliesTo === "all"}
+              placeholder={appliesTo === "all" ? "—" : "e.g. Operations"}
+              className={cn(field, "mt-0.5 block w-full disabled:opacity-50")}
+            />
+          )}
         </label>
         <label className="text-xs text-muted-foreground">
           Refresh (months)
