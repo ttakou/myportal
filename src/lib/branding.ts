@@ -22,6 +22,10 @@ export interface TenantBranding {
   charcoal: string;
   /** Optional logo image URL (static asset path or uploaded URL). */
   logoUrl: string | null;
+  /** Optional postal address lines for formal documents (statements, letters). */
+  addressLines?: string[] | null;
+  /** Optional contact line (phone / email) for formal documents. */
+  contact?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +122,8 @@ export async function getTenantBranding(): Promise<TenantBranding> {
       primaryDark: branding?.primaryDark ?? fallback.primaryDark,
       charcoal: branding?.charcoal ?? fallback.charcoal,
       logoUrl: branding?.logoUrl ?? fallback.logoUrl,
+      addressLines: branding?.addressLines ?? null,
+      contact: branding?.contact ?? null,
     };
   } catch {
     return fallback;
