@@ -9,6 +9,7 @@ import { getTenantBranding, brandingToCssVars } from "@/lib/branding";
 import { getMyNotifications } from "@/lib/notifications";
 import { UserMenu } from "./_components/user-menu";
 import { NotificationBell } from "./_components/notification-bell";
+import { AutoAttendance } from "./_components/auto-attendance";
 import { PortalShell } from "./_components/portal-shell";
 import { ImpersonationBanner } from "./_components/impersonation-banner";
 
@@ -78,6 +79,7 @@ export default async function PortalLayout({
       >
         {children}
       </PortalShell>
+      <AutoAttendance />
       </PermissionsProvider>
     </div>
   );
