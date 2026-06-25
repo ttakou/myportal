@@ -1160,3 +1160,88 @@ export async function recordCompletion(
   rev();
   return { ok: true };
 }
+
+// --- HR: manually record a (completed/external) training -------------------
+
+/**
+ * Record a completed training for an employee directly — e.g. an external
+ * certificate or a back-filled completion — without going through a session.
+ * Writes a verified training_record with the expiry auto-computed from the
+ * course's validity_months (unless an explicit expiry is given), and auto-raises
+ * any competencies the course develops so the holder pool stays in sync.
+ */
+export async function recordTrainingForEmployee(input: {
+  profileId: string;
+  courseId: string;
+  completedOn: string;
+  expiresOn?: string | null;
+  certificateNo?: string;
+  certificateUrl?: string;
+  score?: number | null;
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  if (!input.profileId) return { ok: false, error: "Pick an employee." };
+  if (!input.courseId) return { ok: false, error: "Pick a course." };
+  if (!input.completedOn) return { ok: false, error: "Completion date is required." };
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+  if (!(await inTenant("profiles", input.profileId, who.tenant_id))) return { ok: false, error: "Employee not found." };
+  if (!(await inTenant("training_courses", input.courseId, who.tenant_id))) return { ok: false, error: "Course not found." };
+
+  const supabase = createClient();
+  const { data: course } = await supabase
+    .from("training_courses")
+    .select("validity_months")
+    .eq("id", input.courseId)
+    .maybeSingle();
+  const validity = (course?.validity_months as number | null) ?? null;
+
+  let expiresOn: string | null = input.expiresOn?.trim() || null;
+  if (!expiresOn && validity && validity > 0) {
+    const d = new Date(input.completedOn + "T00:00:00Z");
+    d.setUTCMonth(d.getUTCMonth() + validity);
+    expiresOn = d.toISOString().slice(0, 10);
+  }
+
+  const { error } = await supabase.from("training_records").insert({
+    tenant_id: who.tenant_id,
+    profile_id: input.profileId,
+    course_id: input.courseId,
+    completed_on: input.completedOn,
+    expires_on: expiresOn,
+    certificate_no: input.certificateNo?.trim() || null,
+    certificate_url: input.certificateUrl?.trim() || null,
+    score: input.score ?? null,
+    source: "manual",
+    verified: true,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  // Auto-raise any competencies this course develops to their target level.
+  const { data: links } = await supabase
+    .from("training_course_competencies")
+    .select("competency_id, target_level")
+    .eq("course_id", input.courseId);
+  if (links && links.length) {
+    const compIds = links.map((l) => l.competency_id as string);
+    const { data: existing } = await supabase
+      .from("training_employee_competencies")
+      .select("competency_id, current_level")
+      .eq("profile_id", input.profileId)
+      .in("competency_id", compIds);
+    const cur = new Map(((existing ?? []) as Record<string, any>[]).map((e) => [e.competency_id as string, (e.current_level as number) ?? 0]));
+    const rows = links.map((l) => ({
+      tenant_id: who.tenant_id,
+      profile_id: input.profileId,
+      competency_id: l.competency_id as string,
+      current_level: Math.max(cur.get(l.competency_id as string) ?? 0, (l.target_level as number) ?? 1),
+      assessed_on: input.completedOn,
+      assessed_by: who.id,
+    }));
+    await supabase.from("training_employee_competencies").upsert(rows, { onConflict: "profile_id,competency_id" });
+  }
+
+  rev();
+  return { ok: true };
+}

@@ -62,6 +62,7 @@ import {
   TeamPlanPanel,
 } from "./_components/read-panels";
 import { AssignPanel } from "./_components/assign-panel";
+import { RecordTrainingPanel } from "./_components/record-training-panel";
 import { CompetenciesPanel } from "./_components/competencies-panel";
 import { CompetencyMatrixPanel } from "./_components/competency-matrix-panel";
 import { CompetencyHoldersPanel } from "./_components/competency-holders-panel";
@@ -167,6 +168,17 @@ export default async function TrainingPage({
             requirements={requirements}
             courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}
             competencies={competencies.filter((c) => c.is_active).map((c) => ({ id: c.id, name: c.name }))}
+          />
+        );
+      }
+      case "record-training": {
+        const [employees, courses] = await Promise.all([getEmployeesLite(), getCourses()]);
+        return (
+          <RecordTrainingPanel
+            employees={employees}
+            courses={courses
+              .filter((c) => c.is_active)
+              .map((c) => ({ id: c.id, title: c.title, validity_months: c.validity_months }))}
           />
         );
       }
