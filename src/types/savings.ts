@@ -1,5 +1,21 @@
 export type SavingsTxnKind = "contribution" | "withdrawal";
 export type LoanStatus = "active" | "closed";
+export type WithdrawalStatus = "requested" | "approved" | "rejected" | "released";
+
+export interface WithdrawalRequest {
+  id: string;
+  profile_id: string;
+  person_name: string | null;
+  amount: number;
+  reason: string | null;
+  status: WithdrawalStatus;
+  decision_note: string | null;
+  decided_at: string | null;
+  released_at: string | null;
+  created_at: string;
+  /** The requester's current account balance (for the approver's context). */
+  account_balance?: number;
+}
 
 export interface SavingsTxn {
   id: string;

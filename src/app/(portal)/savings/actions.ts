@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/permissions-server";
 import { notifyUsers } from "@/lib/notify";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -252,6 +253,203 @@ export async function importMonthlySavings(input: {
     failed: results.filter((r) => r.status === "failed").length,
     results,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Member withdrawal requests (request -> finance approval -> release)
+// ---------------------------------------------------------------------------
+
+/** Profile ids of the tenant's finance approvers (finance role + admins). */
+async function financeApproverIds(
+  db: SupabaseClient,
+  tenant: string,
+): Promise<string[]> {
+  const [{ data: admins }, { data: roleRows }] = await Promise.all([
+    db.from("profiles").select("id").eq("tenant_id", tenant).eq("is_active", true).in("role", ["tenant_admin", "super_admin"]),
+    db.from("profile_roles").select("profile_id").eq("tenant_id", tenant).in("role", ["finance", "system_admin"]),
+  ]);
+  const ids = new Set<string>();
+  for (const r of admins ?? []) ids.add(r.id as string);
+  for (const r of roleRows ?? []) ids.add(r.profile_id as string);
+  return [...ids];
+}
+
+/** A member requests to withdraw funds; routed to finance for approval. */
+export async function requestWithdrawal(input: {
+  amount: number;
+  reason?: string;
+}): Promise<ActionResult> {
+  if (!(input.amount > 0)) return { ok: false, error: "Amount must be positive." };
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: acct } = await supabase
+    .from("savings_accounts")
+    .select("id, tenant_id, balance")
+    .eq("profile_id", user.id)
+    .maybeSingle();
+  if (!acct) return { ok: false, error: "You don't have a savings account yet." };
+  if (input.amount > Number(acct.balance))
+    return { ok: false, error: "Amount exceeds your available balance." };
+
+  // Block stacking multiple open requests.
+  const { count } = await supabase
+    .from("savings_withdrawal_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("profile_id", user.id)
+    .in("status", ["requested", "approved"]);
+  if ((count ?? 0) > 0)
+    return { ok: false, error: "You already have a pending withdrawal request." };
+
+  const { error } = await supabase.from("savings_withdrawal_requests").insert({
+    tenant_id: acct.tenant_id,
+    account_id: acct.id,
+    profile_id: user.id,
+    amount: input.amount,
+    reason: input.reason?.trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  // Notify finance approvers.
+  const admin = createAdminClient();
+  if (admin) {
+    const approvers = await financeApproverIds(admin, acct.tenant_id as string);
+    await notifyUsers({
+      tenantId: acct.tenant_id as string,
+      profileIds: approvers,
+      category: "approval",
+      title: "Savings withdrawal request",
+      body: "A member has requested a savings withdrawal awaiting your approval.",
+      url: "/savings?view=admin",
+    });
+  }
+  rev();
+  return { ok: true };
+}
+
+/** Finance approves or rejects a pending withdrawal request. */
+export async function decideWithdrawal(
+  id: string,
+  approve: boolean,
+  note?: string,
+): Promise<ActionResult> {
+  const gate = await requireModule("savings", "approve");
+  if (gate) return gate;
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const db = createAdminClient() ?? supabase;
+
+  const { data: req } = await db
+    .from("savings_withdrawal_requests")
+    .select("id, tenant_id, profile_id, amount, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!req) return { ok: false, error: "Request not found." };
+  if (req.status !== "requested")
+    return { ok: false, error: `Request is already ${req.status}.` };
+
+  const { error } = await db
+    .from("savings_withdrawal_requests")
+    .update({
+      status: approve ? "approved" : "rejected",
+      decided_by: user?.id ?? null,
+      decided_at: new Date().toISOString(),
+      decision_note: note?.trim() || null,
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  await notifyUsers({
+    tenantId: req.tenant_id as string,
+    profileIds: [req.profile_id as string],
+    category: "approval",
+    title: approve ? "Withdrawal approved" : "Withdrawal declined",
+    body: approve
+      ? "Your savings withdrawal has been approved and is pending release of funds."
+      : `Your savings withdrawal was declined.${note ? ` Note: ${note.trim()}` : ""}`,
+    url: "/savings?view=mine",
+  });
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Finance releases the funds for an approved request: posts the withdrawal
+ * (the balance trigger deducts it), links the transaction and marks the request
+ * released. Notifies the member and the finance team.
+ */
+export async function releaseWithdrawal(id: string): Promise<ActionResult> {
+  const gate = await requireModule("savings", "approve");
+  if (gate) return gate;
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const db = createAdminClient() ?? supabase;
+
+  const { data: req } = await db
+    .from("savings_withdrawal_requests")
+    .select("id, tenant_id, account_id, profile_id, amount, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!req) return { ok: false, error: "Request not found." };
+  if (req.status !== "approved")
+    return { ok: false, error: "Only approved requests can be released." };
+
+  const { data: acct } = await db
+    .from("savings_accounts")
+    .select("balance")
+    .eq("id", req.account_id)
+    .maybeSingle();
+  if (!acct) return { ok: false, error: "Account not found." };
+  if (Number(req.amount) > Number(acct.balance))
+    return { ok: false, error: "Insufficient balance to release this withdrawal." };
+
+  // Post the withdrawal; the trigger debits the account balance.
+  const { data: txn, error: txErr } = await db
+    .from("savings_transactions")
+    .insert({
+      tenant_id: req.tenant_id,
+      account_id: req.account_id,
+      kind: "withdrawal",
+      amount: req.amount,
+      note: "Approved withdrawal",
+    })
+    .select("id")
+    .maybeSingle();
+  if (txErr) return { ok: false, error: txErr.message };
+
+  const { error } = await db
+    .from("savings_withdrawal_requests")
+    .update({
+      status: "released",
+      released_by: user?.id ?? null,
+      released_at: new Date().toISOString(),
+      transaction_id: txn?.id ?? null,
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  // Notify the member and the finance team that funds were released.
+  const adminForIds = createAdminClient();
+  const financeIds = adminForIds
+    ? await financeApproverIds(adminForIds, req.tenant_id as string)
+    : [];
+  await notifyUsers({
+    tenantId: req.tenant_id as string,
+    profileIds: [req.profile_id as string, ...financeIds],
+    category: "general",
+    title: "Savings withdrawal released",
+    body: "The approved savings withdrawal has been released and deducted from the account.",
+    url: "/savings?view=mine",
+  });
+  rev();
+  return { ok: true };
 }
 
 export async function recordRepayment(loanId: string, amount: number): Promise<ActionResult> {

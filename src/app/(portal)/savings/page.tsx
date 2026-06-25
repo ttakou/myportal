@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { FileBarChart, FileText } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
-import { getAccounts, getMyAccount } from "@/lib/savings";
+import {
+  getAccounts,
+  getMyAccount,
+  getMyWithdrawalRequests,
+  getWithdrawalRequests,
+} from "@/lib/savings";
 import { getTenantUsers } from "@/lib/admin";
 import { money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
+import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
 import { resolveSavingsView } from "./_components/savings-views";
 
 export default async function SavingsPage({
@@ -18,10 +24,13 @@ export default async function SavingsPage({
   // role counts as admin, so the Administration nav and the page agree.
   const isAdmin = isAdminRole(role) || access.isSystemAdmin;
   const view = resolveSavingsView((await searchParams).view, isAdmin);
-  const [mine, accounts, users] = await Promise.all([
+  const isAdminView = isAdmin && view === "admin";
+  const [mine, myWithdrawals, accounts, users, withdrawals] = await Promise.all([
     getMyAccount(),
-    isAdmin && view === "admin" ? getAccounts() : Promise.resolve([]),
-    isAdmin && view === "admin" ? getTenantUsers() : Promise.resolve([]),
+    getMyWithdrawalRequests(),
+    isAdminView ? getAccounts() : Promise.resolve([]),
+    isAdminView ? getTenantUsers() : Promise.resolve([]),
+    isAdminView ? getWithdrawalRequests() : Promise.resolve([]),
   ]);
 
   if (view === "admin") {
@@ -34,6 +43,7 @@ export default async function SavingsPage({
         <SavingsAdmin
           accounts={accounts}
           users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
+          withdrawals={withdrawals}
         />
       </div>
     );
@@ -90,6 +100,8 @@ export default async function SavingsPage({
           )}
         </div>
       </div>
+
+      <WithdrawalRequestPanel balance={mine?.balance ?? 0} requests={myWithdrawals} />
 
       {mine && mine.transactions.length > 0 && <Ledger txns={mine.transactions} />}
     </div>

@@ -4,16 +4,19 @@ import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { PiggyBank } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { money, type AccountSummary } from "@/types/savings";
+import { money, type AccountSummary, type WithdrawalRequest } from "@/types/savings";
 import { disburseLoan, ensureAccount, postTransaction } from "../actions";
 import { SavingsImportPanel } from "./savings-import-panel";
+import { WithdrawalAdminPanel } from "./withdrawal-admin-panel";
 
 export function SavingsAdmin({
   accounts,
   users,
+  withdrawals,
 }: {
   accounts: AccountSummary[];
   users: { id: string; name: string }[];
+  withdrawals: WithdrawalRequest[];
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +43,8 @@ export function SavingsAdmin({
 
   return (
     <div className="space-y-6">
+      <WithdrawalAdminPanel requests={withdrawals} />
+
       <SavingsImportPanel />
 
       <h2 className="text-lg font-semibold">Fund manager</h2>

@@ -1,10 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   AccountSummary,
   SavingsAccount,
   SavingsTxn,
   Statement,
   StatementHolder,
+  WithdrawalRequest,
 } from "@/types/savings";
 
 const ACCT_SELECT =
@@ -41,6 +43,61 @@ function mapAccount(row: Record<string, any>): SavingsAccount {
       start_date: l.start_date,
     })),
   };
+}
+
+function mapWithdrawal(row: Record<string, any>): WithdrawalRequest {
+  const person = Array.isArray(row.person) ? row.person[0] : row.person;
+  const acct = Array.isArray(row.account) ? row.account[0] : row.account;
+  return {
+    id: row.id,
+    profile_id: row.profile_id,
+    person_name: person?.full_name ?? null,
+    amount: Number(row.amount),
+    reason: row.reason ?? null,
+    status: row.status,
+    decision_note: row.decision_note ?? null,
+    decided_at: row.decided_at ?? null,
+    released_at: row.released_at ?? null,
+    created_at: row.created_at,
+    account_balance: acct ? Number(acct.balance) : undefined,
+  };
+}
+
+/** The signed-in member's own withdrawal requests, newest first. */
+export async function getMyWithdrawalRequests(): Promise<WithdrawalRequest[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("savings_withdrawal_requests")
+    .select("id, profile_id, amount, reason, status, decision_note, decided_at, released_at, created_at")
+    .eq("profile_id", user.id)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map(mapWithdrawal);
+}
+
+/**
+ * All withdrawal requests in the current tenant, for finance/admin review.
+ * Uses the service role so finance approvers who aren't the tenant_admin role
+ * can still see pending requests; callers must gate on finance/admin access.
+ */
+export async function getWithdrawalRequests(): Promise<WithdrawalRequest[]> {
+  const rls = createClient();
+  const { data: t } = await rls.from("tenants").select("id").limit(1).maybeSingle();
+  if (!t?.id) return [];
+  const db = createAdminClient() ?? rls;
+  const { data } = await db
+    .from("savings_withdrawal_requests")
+    .select(
+      "id, profile_id, amount, reason, status, decision_note, decided_at, released_at, created_at," +
+        " person:profiles!savings_withdrawal_requests_profile_id_fkey(full_name)," +
+        " account:savings_accounts!savings_withdrawal_requests_account_id_fkey(balance)",
+    )
+    .eq("tenant_id", t.id)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map(mapWithdrawal);
 }
 
 export async function getMyAccount(): Promise<SavingsAccount | null> {
