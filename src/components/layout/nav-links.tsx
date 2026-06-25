@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { icons, LayoutDashboard, type LucideIcon } from "lucide-react";
+import { icons, ChevronRight, LayoutDashboard, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface NavSubItem {
@@ -98,23 +98,10 @@ function SubMenu({ items, defaultKey }: { items: NavSubItem[]; defaultKey?: stri
     return (currentView ?? defaultKey) === itemView;
   };
 
-  const rows: React.ReactNode[] = [];
-  let lastSection: string | undefined;
-  for (const si of items) {
-    if (si.section && si.section !== lastSection) {
-      lastSection = si.section;
-      rows.push(
-        <p
-          key={`sec-${si.section}`}
-          className="px-2.5 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 first:pt-0.5"
-        >
-          {si.section}
-        </p>,
-      );
-    }
+  const renderLink = (si: NavSubItem) => {
     const SubIcon = resolveIcon(si.icon);
     const isCurrent = isActive(si.href);
-    rows.push(
+    return (
       <Link
         key={si.key}
         href={si.href}
@@ -127,13 +114,51 @@ function SubMenu({ items, defaultKey }: { items: NavSubItem[]; defaultKey?: stri
       >
         <SubIcon className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{si.label}</span>
-      </Link>,
+      </Link>
     );
+  };
+
+  // Group consecutive items by section. Items without a section render plainly
+  // (other modules); sectioned groups get a clickable, foldable header.
+  const groups: { section?: string; items: NavSubItem[] }[] = [];
+  for (const si of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.section === si.section) last.items.push(si);
+    else groups.push({ section: si.section, items: [si] });
   }
+  const sectioned = groups.some((g) => g.section);
+
+  // Foldable sections start collapsed, except the one holding the active item
+  // (so you always see where you are). Falls back to opening the first section.
+  const [open, setOpen] = useState<Record<string, boolean>>(() => {
+    if (!sectioned) return {};
+    const activeSection = groups.find((g) => g.section && g.items.some((si) => isActive(si.href)))?.section;
+    const firstSection = groups.find((g) => g.section)?.section;
+    const target = activeSection ?? firstSection;
+    return target ? { [target]: true } : {};
+  });
 
   return (
     <div className="mb-1 ml-5 mt-0.5 flex flex-col gap-0.5 border-l pl-2">
-      {rows}
+      {groups.map((g, i) => {
+        if (!g.section) return <div key={`u${i}`} className="flex flex-col gap-0.5">{g.items.map(renderLink)}</div>;
+        const isOpen = open[g.section] ?? false;
+        const count = g.items.length;
+        return (
+          <div key={g.section} className="flex flex-col gap-0.5">
+            <button
+              type="button"
+              onClick={() => setOpen((o) => ({ ...o, [g.section!]: !isOpen }))}
+              className="flex w-full items-center gap-1 rounded-md px-2.5 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 transition-colors first:pt-0.5 hover:text-foreground"
+            >
+              <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform", isOpen && "rotate-90")} />
+              <span className="truncate">{g.section}</span>
+              {!isOpen && <span className="ml-auto text-muted-foreground/50">{count}</span>}
+            </button>
+            {isOpen && <div className="flex flex-col gap-0.5">{g.items.map(renderLink)}</div>}
+          </div>
+        );
+      })}
     </div>
   );
 }
