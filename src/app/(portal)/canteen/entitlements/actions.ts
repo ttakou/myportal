@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
+import { notifyUsers } from "@/lib/notify";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -59,6 +60,18 @@ export async function grantEntitlements(input: {
   const { error } = await supabase.from("canteen_meal_entitlements").insert(rows);
   if (error) return { ok: false, error: error.message };
 
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (tenant) {
+    await notifyUsers({
+      tenantId: tenant.id,
+      profileIds: ids,
+      category: "general",
+      title: "Meal entitlement granted",
+      body: "Your canteen meal entitlement has been updated.",
+      url: "/canteen",
+    });
+  }
+
   revalidatePath("/canteen/entitlements");
   return { ok: true };
 }
@@ -69,11 +82,27 @@ export async function removeEntitlement(id: string): Promise<ActionResult> {
   if (denied) return denied;
 
   const supabase = createClient();
+  const { data: entitlement } = await supabase
+    .from("canteen_meal_entitlements")
+    .select("tenant_id, profile_id")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabase
     .from("canteen_meal_entitlements")
     .delete()
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  if (entitlement?.tenant_id) {
+    await notifyUsers({
+      tenantId: entitlement.tenant_id,
+      profileIds: [entitlement.profile_id],
+      category: "general",
+      title: "Meal entitlement removed",
+      body: "Your special meal entitlement has ended.",
+      url: "/canteen",
+    });
+  }
 
   revalidatePath("/canteen/entitlements");
   return { ok: true };

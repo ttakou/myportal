@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, rev, tenantId } from "./_shared";
 
@@ -38,6 +39,14 @@ export async function assignToCrew(
     .in("profile_id", profileIds)
     .eq("status", "onboard");
   if (tripErr) return { ok: false, error: tripErr.message };
+  await notifyUsers({
+    tenantId: tenant,
+    profileIds: profileIds,
+    category: "general",
+    title: "Crew assignment updated",
+    body: "Your offshore crew assignment has changed.",
+    url: "/offshore",
+  });
   rev();
   return { ok: true };
 }
@@ -65,11 +74,29 @@ export async function offboardTrip(tripId: string): Promise<ActionResult> {
   if (gate) return gate;
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
+
+  // Read the affected person + tenant from the trip before demobilising it.
+  const { data: trip } = await supabase
+    .from("offshore_trips")
+    .select("profile_id, tenant_id")
+    .eq("id", tripId)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("offshore_trips")
     .update({ status: "demobilised", demob_date: today })
     .eq("id", tripId);
   if (error) return { ok: false, error: error.message };
+  if (trip?.tenant_id && trip.profile_id) {
+    await notifyUsers({
+      tenantId: trip.tenant_id as string,
+      profileIds: [trip.profile_id as string],
+      category: "general",
+      title: "Demobilised",
+      body: "Your offshore trip has been demobilised.",
+      url: "/offshore",
+    });
+  }
   rev();
   return { ok: true };
 }
@@ -126,6 +153,48 @@ export async function setRoomDefaultOwners(roomId: string): Promise<ActionResult
         .eq("profile_id", s.back_to_back_id as string);
     }
   }
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Directly set (or clear) one roster member's default/fixed room — independent
+ * of whether they're currently on board. Picking a person as a room's default
+ * owner, moving them to another room, or clearing it all flow through here.
+ * Passing roomId = null clears their fixed room (and bed).
+ */
+export async function setStaffFixedRoom(
+  profileId: string,
+  roomId: string | null,
+  bedNo?: string | null,
+): Promise<ActionResult> {
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
+  if (!profileId) return { ok: false, error: "No person selected." };
+  const supabase = createClient();
+  const patch: Record<string, unknown> = { fixed_room_id: roomId || null };
+  // Clearing the room clears the bed too; otherwise only touch the bed when given.
+  if (!roomId) patch.fixed_bed = null;
+  else if (bedNo !== undefined) patch.fixed_bed = bedNo?.trim() || null;
+  const { error } = await supabase
+    .from("offshore_staff")
+    .update(patch)
+    .eq("profile_id", profileId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Clear every default owner of a room (unset their fixed room and bed). */
+export async function clearRoomDefaultOwners(roomId: string): Promise<ActionResult> {
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("offshore_staff")
+    .update({ fixed_room_id: null, fixed_bed: null })
+    .eq("fixed_room_id", roomId);
+  if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
 }

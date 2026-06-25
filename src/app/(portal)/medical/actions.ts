@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
+import { notifyUsers } from "@/lib/notify";
 import type { FitnessStatus } from "@/types/medical";
 
 import type { ActionResult } from "@/types/actions";
@@ -34,6 +35,16 @@ export async function recordMedical(input: {
     notes: input.notes?.trim() || null,
   });
   if (error) return { ok: false, error: error.message };
+
+  await notifyUsers({
+    tenantId: tenant.id,
+    profileIds: [input.profileId],
+    category: "approval",
+    title: "Medical assessment recorded",
+    body: "Your fitness-to-work assessment has been recorded.",
+    url: "/medical",
+  });
+
   revalidatePath("/medical");
   return { ok: true };
 }

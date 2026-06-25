@@ -283,6 +283,33 @@ export async function getMyBookings(serviceDate: string): Promise<CanteenBooking
   }));
 }
 
+/**
+ * The current user's daily meal allowance for a date — the total plates (host +
+ * visitors) they may consume. Mirrors public.canteen_daily_allowance: sum of
+ * entitlement grants covering the date, else 1 for an active lunch-eligible
+ * person, else 0.
+ */
+export async function getMyAllowance(serviceDate: string): Promise<number> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return 0;
+
+  const [{ data: profile }, { data: grants }] = await Promise.all([
+    supabase.from("profiles").select("is_active, lunch_eligible").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("canteen_meal_entitlements")
+      .select("daily_meals")
+      .eq("profile_id", user.id)
+      .lte("starts_on", serviceDate)
+      .gte("ends_on", serviceDate),
+  ]);
+  const granted = (grants ?? []).reduce((s, g) => s + (g.daily_meals as number), 0);
+  if (granted > 0) return granted;
+  return profile?.is_active && profile?.lunch_eligible ? 1 : 0;
+}
+
 /** Per-option pick counts for the campboss (admin-scoped via RLS). */
 export async function getOptionDemand(serviceDate: string): Promise<OptionDemand[]> {
   const supabase = createClient();
@@ -324,6 +351,7 @@ export async function getEntitledToday(serviceDate: string): Promise<EntitledPer
       name: (p.full_name as string | null) ?? email ?? "(no name)",
       email,
       guestCount,
+      guestsCollected: r?.collected_guest_count ?? 0,
       plates: 1 + guestCount,
       hasBooking: !!r,
       bookingId: r?.booking_id ?? null,

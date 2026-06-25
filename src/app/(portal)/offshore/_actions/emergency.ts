@@ -48,6 +48,54 @@ export async function setEmergencyRole(input: {
   return { ok: true };
 }
 
+/** Add one person to an emergency response team (HLO / fire team) for a window. Teams are unlimited. */
+export async function addEmergencyTeamMember(input: {
+  fromDate: string;
+  toDate: string;
+  team: "hlo" | "fire_team";
+  profileId: string;
+}): Promise<ActionResult> {
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
+  if (!input.fromDate || !input.toDate) return { ok: false, error: "Rotation window dates are required." };
+  if (!input.profileId) return { ok: false, error: "Select a person to add." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  // Ignore duplicates — the same person can't be added to a team twice in a window.
+  const { error } = await supabase.from("offshore_emergency_teams").upsert(
+    {
+      tenant_id: tenant,
+      from_date: input.fromDate,
+      to_date: input.toDate,
+      team: input.team,
+      profile_id: input.profileId,
+    },
+    { onConflict: "tenant_id,from_date,to_date,team,profile_id", ignoreDuplicates: true },
+  );
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Remove one emergency team member by row id. */
+export async function removeEmergencyTeamMember(id: string): Promise<ActionResult> {
+  const gate = await requireOffshore("manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const { error } = await supabase
+    .from("offshore_emergency_teams")
+    .delete()
+    .eq("tenant_id", tenant)
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 /** Remove every role row for a rotation window. */
 export async function deleteEmergencyWindow(fromDate: string, toDate: string): Promise<ActionResult> {
   const gate = await requireOffshore("manage");

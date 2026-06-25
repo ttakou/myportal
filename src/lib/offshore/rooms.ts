@@ -30,7 +30,7 @@ export async function getRooms(): Promise<Room[]> {
     supabase
       .from("offshore_staff")
       .select(
-        "fixed_room_id, fixed_bed," +
+        "profile_id, fixed_room_id, fixed_bed," +
           " profile:profiles!offshore_staff_profile_id_fkey(full_name)," +
           " b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)",
       )
@@ -48,12 +48,13 @@ export async function getRooms(): Promise<Room[]> {
   }
 
   // Default owners (fixed room) per room.
-  const ownersByRoom = new Map<string, { name: string; bed: string | null; back_to_back: string | null }[]>();
+  const ownersByRoom = new Map<string, { profile_id: string; name: string; bed: string | null; back_to_back: string | null }[]>();
   for (const s of (fixedOwners ?? []) as Record<string, any>[]) {
     const rid = s.fixed_room_id as string | null;
     if (!rid) continue;
     const list = ownersByRoom.get(rid) ?? [];
     list.push({
+      profile_id: s.profile_id as string,
       name: one<{ full_name?: string }>(s.profile)?.full_name ?? "—",
       bed: (s.fixed_bed as string | null) ?? null,
       back_to_back: one<{ full_name?: string }>(s.b2b)?.full_name ?? null,

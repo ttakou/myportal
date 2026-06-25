@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useStatusTransition } from "@/components/activity";
 import {
   AlertTriangle,
@@ -25,8 +25,11 @@ import {
   VISIT_STATUS_LABEL,
   VISITOR_TYPE_LABEL,
   EMERGENCY_ROLE_LABEL,
+  EMERGENCY_TEAM_LABEL,
   type EmergencyRole,
   type EmergencyRoleKind,
+  type EmergencyTeamKind,
+  type EmergencyTeamMember,
   type MusterDrill,
   type AccommodationSummary,
   type AssignableEmployee,
@@ -37,6 +40,7 @@ import {
   type Manifest,
   type ManifestStatus,
   type PobBreakdown,
+  type PobOnboard,
   type Room,
   type RoomAvailability,
   type RoomStatus,
@@ -61,11 +65,15 @@ import {
   startMusterDrill,
   setMusterCheckin,
   endMusterDrill,
+  addEmergencyTeamMember,
+  removeEmergencyTeamMember,
   offboardTrip,
   reassignTripRoom,
   setBackToBack,
   setRoomDefaultOwners,
   setAllRoomDefaults,
+  setStaffFixedRoom,
+  clearRoomDefaultOwners,
   setTripCategory,
   findAvailableBeds,
   createManifest,
@@ -95,10 +103,12 @@ import { resolveManagementView } from "./offshore-views";
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
   | "dashboard"
+  | "board"
   | "installations"
   | "crews"
   | "calendar"
   | "rooms"
+  | "bedboard"
   | "roster"
   | "assign"
   | "visitors"
@@ -124,6 +134,7 @@ export function OffshoreManagement(props: {
   employees: AssignableEmployee[];
   suggestions: CrewChangeSuggestion[];
   emergencyRoles: EmergencyRole[];
+  emergencyTeams: EmergencyTeamMember[];
   musterGroups: string[];
   musterDrill: MusterDrill | null;
   musterDrillHistory: MusterDrillSummary[];
@@ -146,6 +157,13 @@ export function OffshoreManagement(props: {
           roster={props.roster}
         />
       )}
+      {tab === "board" && (
+        <LiveBoardPanel
+          people={props.pob.people}
+          emergencyRoles={props.emergencyRoles}
+          emergencyTeams={props.emergencyTeams}
+        />
+      )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
       {tab === "crews" && (
         <CrewsPanel crews={props.crews} installations={props.installations} suggestions={props.suggestions} />
@@ -154,6 +172,7 @@ export function OffshoreManagement(props: {
       {tab === "rooms" && (
         <RoomsPanel rooms={props.rooms} installations={props.installations} roster={props.roster} />
       )}
+      {tab === "bedboard" && <BedBoardPanel rooms={props.rooms} onboard={props.pob.people} />}
       {tab === "roster" && (
         <RosterPanel
           roster={props.roster}
@@ -177,6 +196,7 @@ export function OffshoreManagement(props: {
       {tab === "emergency" && (
         <EmergencyRolesPanel
           roles={props.emergencyRoles}
+          teams={props.emergencyTeams}
           musterGroups={props.musterGroups}
           roster={props.roster}
         />
@@ -194,13 +214,264 @@ const EMERGENCY_ORDER: EmergencyRoleKind[] = [
   "headcount_assistant",
 ];
 
+/** Unlimited-membership emergency teams, in display order. */
+const EMERGENCY_TEAMS: EmergencyTeamKind[] = ["hlo", "fire_team"];
+
+/** Compact leader labels for the live board chips. */
+const LEADER_SHORT: Record<EmergencyRoleKind, string> = {
+  evac_leader: "Evac lead",
+  evac_assistant: "Evac asst",
+  headcount_principal: "HC lead",
+  headcount_assistant: "HC asst",
+};
+
+/**
+ * Live offshore board — who is on board right now, grouped by muster station
+ * (lifeboat), each with its assigned room/bed, plus the evacuation & head-count
+ * leaders for the current rotation window (flagged by whether the leader is
+ * actually on board). Auto-refreshes so it can run on a control-room screen.
+ */
+function LiveBoardPanel({
+  people,
+  emergencyRoles,
+  emergencyTeams,
+}: {
+  people: PobOnboard[];
+  emergencyRoles: EmergencyRole[];
+  emergencyTeams: EmergencyTeamMember[];
+}) {
+  const router = useRouter();
+  const [auto, setAuto] = useState(true);
+
+  useEffect(() => {
+    if (!auto) return;
+    const t = setInterval(() => router.refresh(), 30000);
+    return () => clearInterval(t);
+  }, [auto, router]);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Active rotation window for the emergency org: the one covering today, else
+  // the most recent on record (drawn from both leader roles and team rows).
+  const windows = useMemo(() => {
+    const seen = new Map<string, { from: string; to: string }>();
+    for (const r of [...emergencyRoles, ...emergencyTeams]) {
+      const k = `${r.from_date}|${r.to_date}`;
+      if (!seen.has(k)) seen.set(k, { from: r.from_date, to: r.to_date });
+    }
+    return [...seen.values()].sort((a, b) => b.from.localeCompare(a.from));
+  }, [emergencyRoles, emergencyTeams]);
+  const active = useMemo(
+    () => windows.find((w) => w.from <= today && w.to >= today) ?? windows[0] ?? null,
+    [windows, today],
+  );
+  const roles = useMemo(
+    () =>
+      active
+        ? emergencyRoles.filter((r) => r.from_date === active.from && r.to_date === active.to)
+        : [],
+    [active, emergencyRoles],
+  );
+
+  const onboardIds = useMemo(
+    () => new Set(people.map((p) => p.profile_id).filter(Boolean) as string[]),
+    [people],
+  );
+
+  // Response teams (HLO, fire) for the active window, split into who is actually
+  // on board now vs assigned-but-ashore — the board only lists on-board personnel.
+  const teamBuckets = useMemo(() => {
+    const map = new Map<EmergencyTeamKind, { onboard: string[]; ashore: number }>();
+    for (const team of EMERGENCY_TEAMS) map.set(team, { onboard: [], ashore: 0 });
+    if (active) {
+      for (const m of emergencyTeams) {
+        if (m.from_date !== active.from || m.to_date !== active.to) continue;
+        const bucket = map.get(m.team);
+        if (!bucket) continue;
+        if (onboardIds.has(m.profile_id)) bucket.onboard.push(m.person_name ?? "—");
+        else bucket.ashore++;
+      }
+    }
+    for (const b of map.values()) b.onboard.sort((a, c) => a.localeCompare(c));
+    return map;
+  }, [emergencyTeams, active, onboardIds]);
+  const hasTeams = [...teamBuckets.values()].some((b) => b.onboard.length || b.ashore);
+
+  // Group on-board people by muster station (lifeboat); the "—" bucket collects
+  // anyone without one — a safety gap worth surfacing prominently.
+  const groups = useMemo(() => {
+    const m = new Map<string, PobOnboard[]>();
+    for (const p of people) {
+      const lb = p.lifeboat || "—";
+      const list = m.get(lb) ?? [];
+      list.push(p);
+      m.set(lb, list);
+    }
+    return [...m.entries()]
+      .sort(([a], [b]) => (a === "—" ? 1 : b === "—" ? -1 : a.localeCompare(b)))
+      .map(([lb, list]) => ({
+        lb,
+        people: list.sort((x, y) => x.name.localeCompare(y.name)),
+        roles: roles.filter((r) => r.lifeboat === lb),
+      }));
+  }, [people, roles]);
+
+  const visitorCount = people.filter((p) => p.category === "visitor").length;
+  const noBed = people.filter((p) => !p.room_id).length;
+  const stationCount = groups.filter((g) => g.lb !== "—").length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-card px-3 py-2 text-sm">
+        <span className="text-base font-semibold">{people.length} on board</span>
+        <span className="text-muted-foreground">· {stationCount} muster station(s)</span>
+        {visitorCount > 0 && <span className="text-muted-foreground">· {visitorCount} visitor(s)</span>}
+        {noBed > 0 && <span className="font-medium text-destructive">· {noBed} without a bed</span>}
+        {active && (
+          <span className="text-xs text-muted-foreground">Emergency org: {active.from} → {active.to}</span>
+        )}
+        <label className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+          Auto-refresh (30s)
+        </label>
+        <Button size="sm" variant="outline" onClick={() => router.refresh()}>
+          Refresh
+        </Button>
+      </div>
+
+      {hasTeams && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {EMERGENCY_TEAMS.map((team) => {
+            const b = teamBuckets.get(team)!;
+            return (
+              <div key={team} className="rounded-lg border bg-card p-3">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">
+                    {EMERGENCY_TEAM_LABEL[team]}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {b.onboard.length} on board{b.ashore ? ` · ${b.ashore} ashore` : ""}
+                  </span>
+                </div>
+                {b.onboard.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {b.onboard.map((n, i) => (
+                      <span
+                        key={`${n}-${i}`}
+                        className="rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-[11px] text-green-700"
+                      >
+                        {n}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs italic text-muted-foreground">None on board.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {people.length === 0 && (
+        <p className="rounded-md border border-dashed bg-muted/30 px-3 py-6 text-center text-sm text-muted-foreground">
+          Nobody is currently on board.
+        </p>
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {groups.map((g) => (
+          <div key={g.lb} className="rounded-lg border bg-card">
+            <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+              <span className={cn("font-semibold", g.lb === "—" && "text-destructive")}>
+                {g.lb === "—" ? "No muster station" : `Muster ${g.lb}`}
+              </span>
+              <span className="text-xs font-medium text-muted-foreground">{g.people.length} on board</span>
+            </div>
+
+            {/* Evacuation & head-count leaders for this station (current window). */}
+            {g.lb !== "—" && (
+              <div className="flex flex-wrap gap-1.5 border-b bg-muted/30 px-3 py-2">
+                {EMERGENCY_ORDER.map((kind) => {
+                  const holder = g.roles.find((r) => r.role === kind);
+                  const filled = Boolean(holder?.person_name);
+                  const onBoard = holder?.profile_id ? onboardIds.has(holder.profile_id) : false;
+                  return (
+                    <span
+                      key={kind}
+                      title={EMERGENCY_ROLE_LABEL[kind] + (filled && !onBoard ? " — not on board" : "")}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
+                        !filled && "border-dashed text-muted-foreground",
+                        filled && !onBoard && "border-amber-300 bg-amber-50 text-amber-700",
+                        onBoard && "border-green-300 bg-green-50 text-green-700",
+                      )}
+                    >
+                      <span className="font-semibold">{LEADER_SHORT[kind]}</span>
+                      <span>{holder?.person_name ?? "—"}</span>
+                      {filled && (
+                        <span
+                          className={cn(
+                            "ml-0.5 h-1.5 w-1.5 rounded-full",
+                            onBoard ? "bg-green-500" : "bg-amber-400",
+                          )}
+                        />
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            <ul className="divide-y">
+              {g.people.map((p) => {
+                const room = p.room_label
+                  ? p.bed_no
+                    ? `${p.room_label} · ${p.bed_no}`
+                    : p.room_label
+                  : null;
+                const leads = g.roles.filter((r) => r.profile_id && r.profile_id === p.profile_id);
+                return (
+                  <li key={p.trip_id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                    <span className="truncate font-medium">{p.name}</span>
+                    {p.category === "visitor" && (
+                      <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                        visitor
+                      </span>
+                    )}
+                    {leads.map((r) => (
+                      <span
+                        key={r.id}
+                        title={EMERGENCY_ROLE_LABEL[r.role]}
+                        className="shrink-0 rounded bg-green-100 px-1 py-0.5 text-[10px] font-semibold text-green-700"
+                      >
+                        {LEADER_SHORT[r.role]}
+                      </span>
+                    ))}
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">{p.crew_name ?? ""}</span>
+                    <span className={cn("shrink-0 text-xs", room ? "text-foreground" : "text-destructive")}>
+                      {room ?? "no bed"}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Per rotation window + muster group: evacuation & head-count role holders. */
 function EmergencyRolesPanel({
   roles,
+  teams,
   musterGroups,
   roster,
 }: {
   roles: EmergencyRole[];
+  teams: EmergencyTeamMember[];
   musterGroups: string[];
   roster: RosterEntry[];
 }) {
@@ -209,12 +480,12 @@ function EmergencyRolesPanel({
 
   const windows = useMemo(() => {
     const seen = new Map<string, { from: string; to: string }>();
-    for (const r of roles) {
+    for (const r of [...roles, ...teams]) {
       const k = r.from_date + "|" + r.to_date;
       if (!seen.has(k)) seen.set(k, { from: r.from_date, to: r.to_date });
     }
     return [...seen.values()].sort((a, b) => b.from.localeCompare(a.from));
-  }, [roles]);
+  }, [roles, teams]);
 
   const [from, setFrom] = useState(windows[0]?.from ?? today);
   const [to, setTo] = useState(windows[0]?.to ?? today);
@@ -302,6 +573,65 @@ function EmergencyRolesPanel({
           ))}
         </div>
       )}
+
+      <div className="space-y-2">
+        <p className="text-sm font-semibold">Response teams</p>
+        <p className="text-xs text-muted-foreground">
+          HLO and fire teams for this window — installation-wide, with no member limit.
+        </p>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {EMERGENCY_TEAMS.map((team) => {
+            const members = teams.filter(
+              (t) => t.from_date === from && t.to_date === to && t.team === team,
+            );
+            const memberIds = new Set(members.map((m) => m.profile_id));
+            return (
+              <div key={team} className="rounded-lg border bg-card p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">
+                    {EMERGENCY_TEAM_LABEL[team]}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{members.length} member(s)</span>
+                </div>
+                {members.length > 0 ? (
+                  <ul className="mb-2 flex flex-wrap gap-1">
+                    {members.map((m) => (
+                      <li
+                        key={m.id}
+                        className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs"
+                      >
+                        <span>{m.person_name ?? "—"}</span>
+                        <button
+                          disabled={pending}
+                          title={`Remove ${m.person_name ?? "member"}`}
+                          onClick={() => run(() => removeEmergencyTeamMember(m.id))}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mb-2 text-xs italic text-muted-foreground">No members yet.</p>
+                )}
+                <LazySelect
+                  value={null}
+                  options={people.filter((p) => !memberIds.has(p.id))}
+                  getOptionValue={(p) => p.id}
+                  getOptionLabel={(p) => p.name}
+                  placeholder="— add person —"
+                  disabled={pending || !from || !to}
+                  className={cn(field, "w-full py-1")}
+                  onChange={(v) =>
+                    v && run(() => addEmergencyTeamMember({ fromDate: from, toDate: to, team, profileId: v }))
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {windows.some((w) => w.from === from && w.to === to) && (
         <Button
@@ -2140,11 +2470,24 @@ const ROTATION_CELL: Record<RotationDay, string> = {
   change_in: "bg-green-500",
 };
 
+/** Crew-name text colour by today's rotation status (mirrors ROTATION_CELL). */
+const ROTATION_TEXT: Record<RotationDay, string> = {
+  offshore: "text-primary",
+  onshore: "text-blue-600",
+  change_out: "text-amber-600",
+  change_in: "text-green-600",
+};
+
 function RotationCalendarPanel({ calendar, crews }: { calendar: RotationCalendar; crews: Crew[] }) {
   const fmt = (d: string) =>
     new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { day: "2-digit", month: "short" });
   const [repFrom, setRepFrom] = useState(() => new Date().toISOString().slice(0, 10));
   const [repWeeks, setRepWeeks] = useState(8);
+  // Find today's column so each crew name can be coloured by where the crew is
+  // right now (offshore vs onshore); fall back to the first plotted day.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIdx = calendar.days.indexOf(todayIso);
+  const statusCol = todayIdx >= 0 ? todayIdx : 0;
   // Label every 7th day to keep the header readable.
   return (
     <div className="space-y-3">
@@ -2192,10 +2535,17 @@ function RotationCalendarPanel({ calendar, crews }: { calendar: RotationCalendar
             </tr>
           </thead>
           <tbody>
-            {calendar.crews.map((c) => (
+            {calendar.crews.map((c) => {
+              const todayStatus = c.statuses[statusCol] ?? null;
+              return (
               <tr key={c.id} className="border-t">
                 <td className="sticky left-0 z-10 bg-card px-2 py-1 align-top">
-                  <div className="font-medium">{c.name}</div>
+                  <div
+                    className={cn("font-medium", todayStatus ? ROTATION_TEXT[todayStatus] : "")}
+                    title={todayStatus ? `Currently ${todayStatus.replace("_", " ")}` : "No rotation plotted"}
+                  >
+                    {c.name}
+                  </div>
                   <div className="text-[10px] text-muted-foreground">
                     {c.offshore_days}/{c.onshore_days} · {c.member_count}
                   </div>
@@ -2209,13 +2559,15 @@ function RotationCalendarPanel({ calendar, crews }: { calendar: RotationCalendar
                   </td>
                 ))}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
       <p className="text-xs text-muted-foreground">
         Bands are derived from each crew&apos;s rotation pattern and cycle start date. Set a cycle
-        start on the Crew change tab to plot a crew.
+        start on the Crew change tab to plot a crew. Each crew name is tinted by where the crew is
+        today (offshore / onshore / crew change).
       </p>
 
       <CrewBackToBackList calendar={calendar} crews={crews} />
@@ -2401,29 +2753,65 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
                   <div className="mt-1.5 border-t pt-1 text-[11px] text-muted-foreground">
                     <div className="flex items-center justify-between gap-1">
                       <span className="font-medium">Default owner(s)</span>
-                      {r.occupied > 0 && (
-                        <button
-                          disabled={pending}
-                          title="Set the current occupants (and their back-to-backs) as this room's fixed owners"
-                          onClick={() => run(() => setRoomDefaultOwners(r.id))}
-                          className="rounded border px-1.5 py-0.5 hover:bg-accent"
-                        >
-                          Set from current
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {r.occupied > 0 && (
+                          <button
+                            disabled={pending}
+                            title="Set the current occupants (and their back-to-backs) as this room's fixed owners"
+                            onClick={() => run(() => setRoomDefaultOwners(r.id))}
+                            className="rounded border px-1.5 py-0.5 hover:bg-accent"
+                          >
+                            Set from current
+                          </button>
+                        )}
+                        {r.owners.length > 0 && (
+                          <button
+                            disabled={pending}
+                            title="Clear all default owners of this room"
+                            onClick={() => run(() => clearRoomDefaultOwners(r.id))}
+                            className="rounded border px-1.5 py-0.5 hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {r.owners.length > 0 ? (
                       <ul className="mt-0.5 space-y-0.5">
-                        {r.owners.map((o, i) => (
-                          <li key={i}>
-                            <span className="font-mono">{o.bed || "•"}</span> {o.name}
+                        {r.owners.map((o) => (
+                          <li key={o.profile_id} className="flex items-center gap-1">
+                            <span className="font-mono">{o.bed || "•"}</span>
+                            <span>{o.name}</span>
                             {o.back_to_back ? <span className="text-muted-foreground/70"> ⇄ {o.back_to_back}</span> : ""}
+                            <button
+                              disabled={pending}
+                              title={`Remove ${o.name} as a default owner`}
+                              onClick={() => run(() => setStaffFixedRoom(o.profile_id, null))}
+                              className="ml-auto rounded p-0.5 hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
                           </li>
                         ))}
                       </ul>
                     ) : (
                       <p className="mt-0.5 italic">none set</p>
                     )}
+                    {/* Assign any roster member as a default owner — no need for them
+                        to be on board first. */}
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="shrink-0">Add owner:</span>
+                      <LazySelect
+                        value={null}
+                        options={mates.filter((m) => !r.owners.some((o) => o.profile_id === m.id))}
+                        getOptionValue={(m) => m.id}
+                        getOptionLabel={(m) => m.name}
+                        placeholder="— pick a person —"
+                        disabled={pending}
+                        className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
+                        onChange={(v) => v && run(() => setStaffFixedRoom(v, r.id))}
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -2433,6 +2821,237 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Bed board — every usable room with at least one empty bed, with inline
+ * assignment of an on-board person (one who has no bed yet) straight into a
+ * free bed. Assigning sets that trip's room + bed, so the person leaves the
+ * "waiting for a bed" pool on the next refresh.
+ */
+function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[] }) {
+  const { pending, error, run } = useRun();
+  const [q, setQ] = useState("");
+  const [showFull, setShowFull] = useState(false);
+
+  const labelOf = (r: Room) => [r.block, r.room_number].filter(Boolean).join(" ");
+
+  // Everyone on board is a candidate: those with no bed (assign) and those in
+  // another room (move). A person holds a single on-board trip, so pointing that
+  // trip at a new room+bed is inherently "one room at a time" — the move clears
+  // their previous room automatically.
+  const pool = useMemo(
+    () =>
+      onboard.map((p) => ({
+        id: p.trip_id,
+        room_id: p.room_id,
+        name: p.company ? `${p.name} · ${p.company}` : p.name,
+        placedIn: p.room_id ? p.room_label : null,
+      })),
+    [onboard],
+  );
+  const waitingCount = pool.filter((p) => !p.room_id).length;
+
+  const usable = useMemo(
+    () => rooms.filter((r) => !["blocked", "maintenance"].includes(r.status)),
+    [rooms],
+  );
+  const totalFree = usable.reduce((n, r) => n + Math.max(0, (r.bed_count || 0) - r.occupied), 0);
+
+  const needle = q.trim().toLowerCase();
+  const visible = useMemo(() => {
+    return usable
+      .filter((r) => {
+        const free = (r.bed_count || 0) - r.occupied;
+        if (!showFull && free <= 0) return false;
+        if (!needle) return true;
+        const hay = [r.block, r.floor, r.room_number, r.lifeboat].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(needle);
+      })
+      .sort((a, b) => {
+        // Rooms with a free bed first, then by label.
+        const fa = (a.bed_count || 0) - a.occupied;
+        const fb = (b.bed_count || 0) - b.occupied;
+        return (fb > 0 ? 1 : 0) - (fa > 0 ? 1 : 0) || labelOf(a).localeCompare(labelOf(b));
+      });
+  }, [usable, needle, showFull]);
+
+  return (
+    <div className="space-y-3">
+      {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+      <p className="text-sm text-muted-foreground">
+        Every room with a free bed. Pick a waiting person to drop them straight into an empty bed —
+        their POB record gets that room &amp; bed. Blocked and under-maintenance rooms are hidden.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border bg-card px-3 py-2 text-sm">
+        <span className="font-semibold text-green-700">{totalFree}</span>
+        <span className="text-muted-foreground">free bed(s)</span>
+        <span className="text-muted-foreground">·</span>
+        <span className={cn("font-semibold", waitingCount ? "text-amber-600" : "text-muted-foreground")}>
+          {waitingCount}
+        </span>
+        <span className="text-muted-foreground">on board waiting for a bed</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Filter rooms…"
+            className={cn(field, "py-1")}
+          />
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            <input type="checkbox" checked={showFull} onChange={(e) => setShowFull(e.target.checked)} />
+            Show full rooms
+          </label>
+        </div>
+      </div>
+
+      {pool.length === 0 ? (
+        <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          Nobody is on board yet — empty beds can be filled once people board.
+        </p>
+      ) : (
+        waitingCount === 0 && (
+          <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Everyone on board already has a bed. You can still pick someone to move them into a
+            different room — they only ever occupy one room at a time.
+          </p>
+        )
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {visible.map((r) => {
+          const beds = r.bed_count || 0;
+          const free = Math.max(0, beds - r.occupants.length);
+          const over = r.occupied > beds;
+          const used = new Set(r.occupants.map((o) => o.bed_no).filter(Boolean) as string[]);
+          // Suggested labels for the empty beds: the lowest "Bed N" not already taken.
+          const slotLabels: string[] = [];
+          let k = 0;
+          while (slotLabels.length < free) {
+            k++;
+            const lbl = `Bed ${k}`;
+            if (!used.has(lbl)) slotLabels.push(lbl);
+          }
+          // Candidates for this room's empty beds: everyone on board except the
+          // people already in it. Waiting (bed-less) people sort to the top;
+          // placed people read as "move from <their room>".
+          const candidates = pool
+            .filter((p) => p.room_id !== r.id)
+            .map((p) => ({
+              id: p.id,
+              waiting: !p.room_id,
+              label: p.placedIn ? `${p.name} — move from ${p.placedIn}` : p.name,
+            }))
+            .sort((a, b) => Number(b.waiting) - Number(a.waiting) || a.label.localeCompare(b.label));
+          return (
+            <div key={r.id} className="rounded-md border bg-card p-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{labelOf(r) || "—"}</span>
+                <span
+                  className={cn(
+                    "shrink-0 text-xs font-semibold",
+                    over ? "text-destructive" : free > 0 ? "text-green-700" : "text-muted-foreground",
+                  )}
+                >
+                  {r.occupied}/{beds}
+                  {over ? " · hot-bunk" : free > 0 ? ` · ${free} free` : " · full"}
+                </span>
+              </div>
+              <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                <span className="rounded bg-muted px-1 py-0.5">{r.room_type}</span>
+                {r.gender_restriction !== "any" && (
+                  <span className="rounded bg-muted px-1 py-0.5">{GENDER_LABEL[r.gender_restriction]}</span>
+                )}
+                {r.status !== "available" && (
+                  <span className="rounded bg-muted px-1 py-0.5">{ROOM_STATUS_LABEL[r.status]}</span>
+                )}
+                {r.lifeboat && <span className="rounded bg-muted px-1 py-0.5">LB {r.lifeboat}</span>}
+              </div>
+
+              <ul className="mt-1.5 space-y-1">
+                {r.occupants.map((o) => (
+                  <li
+                    key={o.trip_id}
+                    className="flex items-center gap-1.5 rounded bg-muted/40 px-2 py-1 text-xs"
+                  >
+                    <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
+                    <span className="truncate font-medium">{o.name}</span>
+                    <button
+                      disabled={pending}
+                      title={`Unassign ${o.name} from this bed (stays on board, returns to the waiting list)`}
+                      onClick={() => run(() => reassignTripRoom(o.trip_id, null))}
+                      className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+                {slotLabels.map((lbl) => (
+                  <EmptyBed
+                    key={`${r.id}-${lbl}`}
+                    roomId={r.id}
+                    defaultBed={lbl}
+                    candidates={candidates}
+                    pending={pending}
+                    run={run}
+                  />
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+        {visible.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            {usable.length === 0
+              ? "No rooms yet."
+              : "No rooms with empty beds. Tick “Show full rooms” to see them all."}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One empty bed slot: an editable bed label + a picker that places the chosen
+ * on-board person into this bed on select. Picking someone already in another
+ * room moves them here (a single trip, so one room at a time).
+ */
+function EmptyBed({
+  roomId,
+  defaultBed,
+  candidates,
+  pending,
+  run,
+}: {
+  roomId: string;
+  defaultBed: string;
+  candidates: { id: string; label: string }[];
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const [bed, setBed] = useState(defaultBed);
+  return (
+    <li className="flex items-center gap-1.5 rounded border border-dashed bg-background px-2 py-1 text-xs">
+      <input
+        value={bed}
+        onChange={(e) => setBed(e.target.value)}
+        aria-label="Bed label"
+        className="w-16 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
+      />
+      <LazySelect
+        value={null}
+        options={candidates}
+        getOptionValue={(p) => p.id}
+        getOptionLabel={(p) => p.label}
+        placeholder={candidates.length ? "— assign / move person —" : "— nobody available —"}
+        disabled={pending || candidates.length === 0}
+        className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
+        onChange={(v) => v && run(() => reassignTripRoom(v, roomId, bed.trim() || null))}
+      />
+    </li>
   );
 }
 

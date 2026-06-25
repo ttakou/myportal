@@ -16,6 +16,7 @@ import {
   getCrewChangeSuggestions,
   getCrews,
   getEmergencyRoles,
+  getEmergencyTeams,
   getMusterGroups,
   getFlights,
   getInstallations,
@@ -78,6 +79,7 @@ export default async function OffshorePage({
     employees,
     suggestions,
     emergencyRoles,
+    emergencyTeams,
     musterGroups,
     musterDrill,
     musterDrillHistory,
@@ -97,11 +99,12 @@ export default async function OffshorePage({
         getAssignableEmployees(),
         getCrewChangeSuggestions(),
         getEmergencyRoles(),
+        getEmergencyTeams(),
         getMusterGroups(),
         getActiveMusterDrill(),
         getMusterDrills(),
       ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], null, []];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], [], null, []];
 
   return (
     <div className="space-y-8">
@@ -144,6 +147,7 @@ export default async function OffshorePage({
           employees={employees}
           suggestions={suggestions}
           emergencyRoles={emergencyRoles}
+          emergencyTeams={emergencyTeams}
           musterGroups={musterGroups}
           musterDrill={musterDrill}
           musterDrillHistory={musterDrillHistory}

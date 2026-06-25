@@ -1,34 +1,75 @@
 import Link from "next/link";
-import { FileBarChart } from "lucide-react";
+import { FileBarChart, FileText } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
-import { getAccounts, getMyAccount } from "@/lib/savings";
+import {
+  getAccounts,
+  getMyAccount,
+  getMyWithdrawalRequests,
+  getWithdrawalRequests,
+} from "@/lib/savings";
 import { getTenantUsers } from "@/lib/admin";
 import { money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
+import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
+import { resolveSavingsView } from "./_components/savings-views";
 
-export default async function SavingsPage() {
+export default async function SavingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
   const [access, role] = await Promise.all([getAccess(), getCurrentRole()]);
-  const isAdmin = isAdminRole(role);
-  const [mine, accounts, users] = await Promise.all([
+  // Mirror the sidebar/console gate (isOrgAdmin): the system_admin functional
+  // role counts as admin, so the Administration nav and the page agree.
+  const isAdmin = isAdminRole(role) || access.isSystemAdmin;
+  const view = resolveSavingsView((await searchParams).view, isAdmin);
+  const isAdminView = isAdmin && view === "admin";
+  const [mine, myWithdrawals, accounts, users, withdrawals] = await Promise.all([
     getMyAccount(),
-    isAdmin ? getAccounts() : Promise.resolve([]),
-    isAdmin ? getTenantUsers() : Promise.resolve([]),
+    getMyWithdrawalRequests(),
+    isAdminView ? getAccounts() : Promise.resolve([]),
+    isAdminView ? getTenantUsers() : Promise.resolve([]),
+    isAdminView ? getWithdrawalRequests() : Promise.resolve([]),
   ]);
+
+  if (view === "admin") {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Employees Saving Management</h1>
+          <p className="text-muted-foreground">Accounts, contributions and loan management.</p>
+        </div>
+        <SavingsAdmin
+          accounts={accounts}
+          users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
+          withdrawals={withdrawals}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Employees Saving Management</h1>
         <p className="text-muted-foreground">Cooperative fund, ledger and loans.</p>
-        {(access.isFinance || access.isAdmin) && (
+        <div className="mt-2 flex flex-wrap gap-2">
           <Link
-            href="/reports/loan-arrears"
-            className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            href="/savings/statement"
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
           >
-            <FileBarChart className="h-4 w-4" /> Savings &amp; loan arrears report
+            <FileText className="h-4 w-4" /> Print account statement
           </Link>
-        )}
+          {(access.isFinance || access.isAdmin) && (
+            <Link
+              href="/reports/loan-arrears"
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              <FileBarChart className="h-4 w-4" /> Savings &amp; loan arrears report
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -60,14 +101,9 @@ export default async function SavingsPage() {
         </div>
       </div>
 
-      {mine && mine.transactions.length > 0 && <Ledger txns={mine.transactions} />}
+      <WithdrawalRequestPanel balance={mine?.balance ?? 0} requests={myWithdrawals} />
 
-      {isAdmin && (
-        <SavingsAdmin
-          accounts={accounts}
-          users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
-        />
-      )}
+      {mine && mine.transactions.length > 0 && <Ledger txns={mine.transactions} />}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
   setUserActive,
   setUserDepartment,
   setUserLunchEligible,
+  setUserEmployeeNumber,
   setUserFullName,
   setUserJobTitle,
   setUserManager,
@@ -317,6 +318,14 @@ export function UsersPanel({
                             placeholder="Job title"
                             pending={pending}
                             onSave={(v) => run(() => setUserJobTitle(u.id, v))}
+                          />
+                        </Field>
+                        <Field label="Employee #">
+                          <InlineText
+                            value={u.emp_num ?? ""}
+                            placeholder="Employee number"
+                            pending={pending}
+                            onSave={(v) => run(() => setUserEmployeeNumber(u.id, v))}
                           />
                         </Field>
                         <Field label="Email">

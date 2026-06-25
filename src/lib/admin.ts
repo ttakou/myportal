@@ -7,6 +7,7 @@ export interface TenantUser {
   id: string;
   full_name: string | null;
   email: string | null;
+  emp_num: string | null;
   role: UserRole;
   job_title: string | null;
   manager_id: string | null;
@@ -33,7 +34,7 @@ export async function getTenantUsers(): Promise<TenantUser[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type, profile_roles(role), profile_access_roles(role_id)")
+    .select("id, full_name, email, emp_num, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type, profile_roles(role), profile_access_roles(role_id)")
     .order("full_name");
   if (error) {
     console.error("getTenantUsers:", error.message);

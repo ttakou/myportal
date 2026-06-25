@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
+import { notifyUsers } from "@/lib/notify";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -95,6 +96,16 @@ export async function preRegisterVisitor(input: {
   }
   const { error } = await supabase.from("visitors").insert(row);
   if (error) return { ok: false, error: error.message };
+  if (input.hostId) {
+    await notifyUsers({
+      tenantId: tenant.id as string,
+      profileIds: [input.hostId],
+      category: "general",
+      title: "Visitor pre-registered",
+      body: "A visitor has been pre-registered with you as host.",
+      url: "/visitors",
+    });
+  }
   revalidate();
   return { ok: true };
 }
@@ -106,6 +117,12 @@ export async function checkInVisitor(
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
   const supabase = createClient();
+
+  const { data: visitor } = await supabase
+    .from("visitors")
+    .select("tenant_id, host_id, full_name")
+    .eq("id", id)
+    .maybeSingle();
 
   // Records the arrival time. Vehicle type/plate are only overwritten when
   // provided at check-in, so a pre-registered plate is never wiped by a blank.
@@ -119,6 +136,17 @@ export async function checkInVisitor(
 
   const { error } = await supabase.from("visitors").update(patch).eq("id", id);
   if (error) return { ok: false, error: error.message };
+  if (visitor?.host_id) {
+    const name = (visitor.full_name as string | null)?.trim();
+    await notifyUsers({
+      tenantId: visitor.tenant_id as string,
+      profileIds: [visitor.host_id as string],
+      category: "general",
+      title: "Your visitor checked in",
+      body: name ? `${name} has arrived on site.` : "Your visitor has arrived on site.",
+      url: "/visitors",
+    });
+  }
   revalidate();
   return { ok: true };
 }
@@ -127,11 +155,27 @@ export async function checkOutVisitor(id: string): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
   const supabase = createClient();
+  const { data: visitor } = await supabase
+    .from("visitors")
+    .select("tenant_id, host_id, full_name")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabase
     .from("visitors")
     .update({ status: "checked_out", check_out_at: new Date().toISOString() })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  if (visitor?.host_id) {
+    const name = (visitor.full_name as string | null)?.trim();
+    await notifyUsers({
+      tenantId: visitor.tenant_id as string,
+      profileIds: [visitor.host_id as string],
+      category: "general",
+      title: "Your visitor checked out",
+      body: name ? `${name} has departed.` : "Your visitor has departed.",
+      url: "/visitors",
+    });
+  }
   revalidate();
   return { ok: true };
 }

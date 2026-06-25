@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, rev, tenantId } from "./_shared";
 import { boardMember } from "./mobilise";
@@ -370,6 +371,15 @@ export async function confirmManifestMovement(id: string): Promise<ActionResult>
     .eq("manifest_id", id)
     .eq("no_show", false);
   await supabase.from("offshore_manifests").update({ status: "completed" }).eq("id", id);
+  await notifyUsers({
+    tenantId: tenant,
+    // Visitor rows carry no profile_id and are excluded from `travelling`.
+    profileIds: travelling.map((p) => p.profile_id as string),
+    category: "general",
+    title: "Manifest confirmed",
+    body: "Your offshore manifest movement has been confirmed.",
+    url: "/offshore",
+  });
   rev();
   return { ok: true };
 }
