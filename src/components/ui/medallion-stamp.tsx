@@ -108,8 +108,10 @@ export function MedallionStamp({
           <stop offset="45%" stopColor="rgba(255,255,255,0.12)" />
           <stop offset="100%" stopColor="rgba(255,255,255,0)" />
         </radialGradient>
-        <path id={topId} d={`M ${cx} ${cy} m -80 0 a 80 80 0 1 1 160 0`} fill="none" />
-        <path id={botId} d={`M ${cx - 80} ${cy} a 80 80 0 0 0 160 0`} fill="none" />
+        {/* Top legend rides a smaller arc (glyphs rise outward) and the bottom a
+            larger one (glyphs fall inward) so both sit centred in the band. */}
+        <path id={topId} d={`M ${cx} ${cy} m -72 0 a 72 72 0 1 1 144 0`} fill="none" />
+        <path id={botId} d={`M ${cx - 81} ${cy} a 81 81 0 0 0 162 0`} fill="none" />
       </defs>
 
       {/* Serrated metal edge + disc */}
