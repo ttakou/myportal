@@ -65,7 +65,7 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "my-competencies", label: "My Competencies", icon: "Sparkles", group: "My Training" },
   { key: "gaps", label: "Competency Gaps", icon: "TriangleAlert", group: "My Training" },
   { key: "idp", label: "Development Plan", icon: "Compass", group: "My Training" },
-  { key: "browse", label: "Course Catalogue", icon: "BookOpen", group: "My Training" },
+  { key: "browse", label: "Browse Courses", icon: "BookOpen", group: "My Training" },
   { key: "requests", label: "Individual Training Requests", icon: "FilePlus2", group: "My Training" },
   { key: "open-sessions", label: "Open Sessions", icon: "CalendarPlus", group: "My Training" },
   { key: "my-plan", label: "My Training Plan", icon: "ListChecks", group: "My Training" },

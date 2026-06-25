@@ -47,7 +47,7 @@ export function BrowseCataloguePanel({ courses }: { courses: TrainingCourse[] })
     <section className="space-y-4">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <BookOpen className="h-5 w-5 text-primary" /> Course Catalogue
+          <BookOpen className="h-5 w-5 text-primary" /> Browse Courses
         </h2>
         <p className="text-sm text-muted-foreground">Browse available courses and request the ones you need.</p>
       </div>
