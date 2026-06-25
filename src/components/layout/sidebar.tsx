@@ -11,6 +11,7 @@ import { emergencySubmenu } from "@/app/(portal)/emergency/_components/emergency
 import { visitorsSubmenu } from "@/app/(portal)/visitors/_components/visitors-views";
 import { medicalSubmenu } from "@/app/(portal)/medical/_components/medical-views";
 import { savingsSubmenu } from "@/app/(portal)/savings/_components/savings-views";
+import { adminSubmenu, canSeeAdminConsole, type AdminFlags } from "@/app/(portal)/admin/_components/admin-views";
 import { isTrainingAdmin as getIsTrainingAdmin } from "@/lib/training";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
@@ -42,6 +43,17 @@ export async function Sidebar({
   const isHr = access.isHr || access.isSystemAdmin || access.isAdmin;
   const isOrgAdmin = access.isAdmin || access.isSystemAdmin;
   const canMuster = isOrgAdmin || hasPermission(perms, "visitors", "operate");
+  const adminFlags: AdminFlags = {
+    isSystemAdmin: access.isSystemAdmin,
+    isHr,
+    isCanteenManager: access.isCanteenManager,
+    isTrainingAdmin,
+    canManageOffshore,
+    isFinance: access.isFinance,
+    isSafetyAdmin: access.isSafetyAdmin,
+    isOrgAdmin,
+    canMuster,
+  };
 
   let links: NavLink[] = services.map((s) => {
     const base: NavLink = { name: s.name, href: s.route_path, icon: s.icon };
@@ -92,6 +104,10 @@ export async function Sidebar({
         subItems: trainingSubmenu({ isManager, isTrainingAdmin }),
       };
     }
+    // Admin Console (core service): an indented submenu of the console sections.
+    if (s.route_path === "/admin") {
+      return { ...base, defaultSubKey: "overview", subItems: adminSubmenu(adminFlags) };
+    }
     // Emergency: everyone gets the support view; safety coordinators also get the
     // command centre + incident history.
     if (s.route_path === "/emergency") {
@@ -138,6 +154,19 @@ export async function Sidebar({
     links = links.flatMap((l) =>
       l.href === "/transportation" ? [merged] : l.href === "/out-of-town" ? [] : [l],
     );
+  }
+
+  // The Admin Console is surfaced via the "core" service for system admins. For
+  // module admins (who don't get that service) inject the console link so they
+  // can reach their module's administration from one place (tiered access).
+  if (!links.some((l) => l.href === "/admin") && canSeeAdminConsole(adminFlags)) {
+    links.unshift({
+      name: "Admin Console",
+      href: "/admin",
+      icon: "ShieldCheck",
+      defaultSubKey: "overview",
+      subItems: adminSubmenu(adminFlags),
+    });
   }
 
   // Reports hub: every user has at least the personal "My meals" report.
