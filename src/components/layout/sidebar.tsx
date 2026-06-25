@@ -34,7 +34,7 @@ export async function Sidebar({
   const canManageOffshore = access.isAdmin || access.isCampboss || access.isOim;
   const isHr = access.isHr || access.isSystemAdmin || access.isAdmin;
 
-  const links: NavLink[] = services.map((s) => {
+  let links: NavLink[] = services.map((s) => {
     const base: NavLink = { name: s.name, href: s.route_path, icon: s.icon };
     // Performance: indented submenu (home / my appraisal / team / HR / settings),
     // role-aware. Appraisal views default to "My appraisal".
@@ -85,6 +85,28 @@ export async function Sidebar({
     }
     return base;
   });
+
+  // Merge the two travel modules — "Transportation Request" (/transportation)
+  // and "Out of Town Trip" (/out-of-town) — under a single "Transportation"
+  // parent with an indented submenu (like Training/Canteen). The parent stays
+  // highlighted on either route. Only merges when the tenant has both enabled.
+  const transport = links.find((l) => l.href === "/transportation");
+  const outOfTown = links.find((l) => l.href === "/out-of-town");
+  if (transport && outOfTown) {
+    const merged: NavLink = {
+      name: "Transportation",
+      href: "/transportation",
+      icon: transport.icon ?? "Car",
+      matchPaths: ["/transportation", "/out-of-town"],
+      subItems: [
+        { key: "transportation", label: "Transportation Request", icon: transport.icon ?? "Car", href: "/transportation" },
+        { key: "out-of-town", label: "Out of Town Trip", icon: outOfTown.icon ?? "Plane", href: "/out-of-town" },
+      ],
+    };
+    links = links.flatMap((l) =>
+      l.href === "/transportation" ? [merged] : l.href === "/out-of-town" ? [] : [l],
+    );
+  }
 
   // Reports hub: every user has at least the personal "My meals" report.
   const canSeeReports = true;

@@ -22,6 +22,9 @@ export interface NavLink {
   subItems?: NavSubItem[];
   /** Default sub-view to highlight when no `?view=` is present. */
   defaultSubKey?: string;
+  /** Extra path prefixes that also mark this link active (for merged menus that
+   *  span more than one route, e.g. Transportation = /transportation + /out-of-town). */
+  matchPaths?: string[];
 }
 
 function resolveIcon(name: string | null): LucideIcon {
@@ -44,8 +47,9 @@ export function NavLinks({ links }: { links: NavLink[] }) {
     <nav className="flex flex-1 flex-col gap-1 px-3">
       {links.map((link) => {
         const Icon = resolveIcon(link.icon);
+        const matchesPath = (p: string) => pathname === p || pathname.startsWith(p + "/");
         const active =
-          pathname === link.href || pathname.startsWith(link.href + "/");
+          matchesPath(link.href) || (link.matchPaths?.some(matchesPath) ?? false);
         return (
           <div key={link.href}>
             <Link
