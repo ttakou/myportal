@@ -11,6 +11,7 @@ import {
   getBudgets,
   getCompetencies,
   getCompetencyLinks,
+  getCompetencyRoster,
   getDepartmentNeeds,
   getDepartments,
   getEmployeeCompetencies,
@@ -63,6 +64,7 @@ import {
 import { AssignPanel } from "./_components/assign-panel";
 import { CompetenciesPanel } from "./_components/competencies-panel";
 import { CompetencyMatrixPanel } from "./_components/competency-matrix-panel";
+import { CompetencyHoldersPanel } from "./_components/competency-holders-panel";
 import { DepartmentNeedsPanel } from "./_components/department-needs-panel";
 import { TeamRequestsPanel } from "./_components/team-requests-panel";
 import {
@@ -94,9 +96,9 @@ import { ParticipantsPanel } from "./_components/participants-panel";
 export default async function TrainingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string }>;
+  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string; competency?: string }>;
 }) {
-  const { view, session, person, dept } = await searchParams;
+  const { view, session, person, dept, competency } = await searchParams;
   const key = resolveTrainingView(view);
   const [admin, manager] = await Promise.all([isTrainingAdmin(), hasDirectReports()]);
   const access: TrainingAccess = { isManager: manager, isTrainingAdmin: admin };
@@ -295,6 +297,13 @@ export default async function TrainingPage({
         const selected = person && employees.some((e) => e.id === person) ? person : null;
         const items = selected ? await getEmployeeCompetencies(selected) : [];
         return <CompetencyMatrixPanel employees={employees} selectedId={selected} items={items} />;
+      }
+      case "competency-holders": {
+        const competencies = await getCompetencies();
+        const active = competencies.filter((c) => c.is_active).map((c) => ({ id: c.id, name: c.name }));
+        const selected = competency && active.some((c) => c.id === competency) ? competency : null;
+        const roster = selected ? await getCompetencyRoster(selected) : { competency: null, people: [] };
+        return <CompetencyHoldersPanel key={selected ?? "none"} competencies={active} selectedId={selected} roster={roster} />;
       }
       default:
         return <PlannedPanel label={meta?.label ?? "This view"} />;

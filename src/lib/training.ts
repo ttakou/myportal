@@ -1016,6 +1016,34 @@ export async function getEmployeesLite(): Promise<{ id: string; name: string }[]
   }));
 }
 
+export interface CompetencyRosterPerson {
+  id: string;
+  name: string;
+  level: number;
+}
+export interface CompetencyRoster {
+  competency: { id: string; name: string; max_level: number } | null;
+  people: CompetencyRosterPerson[];
+}
+
+/**
+ * The full roster for one competency: every active employee with their held
+ * level (0 = not a holder). Powers the drag-and-drop holders board, where the
+ * whole population is visible so it's easy to see who holds it and who's missing.
+ */
+export async function getCompetencyRoster(competencyId: string): Promise<CompetencyRoster> {
+  const supabase = createClient();
+  const [{ data: comp }, employees, { data: levels }] = await Promise.all([
+    supabase.from("training_competencies").select("id, name, max_level").eq("id", competencyId).maybeSingle(),
+    getEmployeesLite(),
+    supabase.from("training_employee_competencies").select("profile_id, current_level").eq("competency_id", competencyId),
+  ]);
+  if (!comp) return { competency: null, people: [] };
+  const lvl = new Map(((levels ?? []) as Record<string, any>[]).map((l) => [l.profile_id as string, (l.current_level as number) ?? 0]));
+  const people = employees.map((e) => ({ id: e.id, name: e.name, level: lvl.get(e.id) ?? 0 }));
+  return { competency: { id: comp.id as string, name: comp.name as string, max_level: (comp.max_level as number) ?? 5 }, people };
+}
+
 // --- Reports: requests by origin --------------------------------------------
 
 export interface OriginRow {

@@ -41,6 +41,7 @@ export type TrainingViewKey =
   | "evaluations"
   | "competencies"
   | "competency-matrix"
+  | "competency-holders"
   // Reports
   | "rpt-compliance"
   | "rpt-plan-progress"
@@ -90,6 +91,7 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "evaluations", label: "Evaluations", icon: "Star", group: "HR Administration" },
   { key: "competencies", label: "Competency Catalogue", icon: "Layers", group: "HR Administration" },
   { key: "competency-matrix", label: "Competency Matrix", icon: "Network", group: "HR Administration" },
+  { key: "competency-holders", label: "Competency Holders", icon: "Users", group: "HR Administration" },
   // Reports (HR)
   { key: "rpt-compliance", label: "Statutory Compliance", icon: "ShieldCheck", group: "Reports" },
   { key: "rpt-plan-progress", label: "Training Plan Progress", icon: "TrendingUp", group: "Reports" },
@@ -136,6 +138,7 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "my-competencies",
   "competencies",
   "competency-matrix",
+  "competency-holders",
 ]);
 
 export const TRAINING_VIEW_KEYS = TRAINING_VIEWS.map((v) => v.key);
