@@ -4,6 +4,14 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCachedUser } from "@/lib/auth";
 import { requireModule } from "@/lib/permissions-server";
+import {
+  notifyCompletionRecorded,
+  notifyEnrolled,
+  notifyManagerRequestForReport,
+  notifyRequestDecided,
+  notifyRequestRaised,
+  notifyTrainingAssigned,
+} from "@/lib/training-notify";
 import type { ActionResult } from "@/types/actions";
 
 function rev() {
@@ -96,6 +104,12 @@ export async function submitTrainingRequest(input: {
       return { ok: false, error: "A training request for this development item already exists." };
     return { ok: false, error: error.message };
   }
+  await notifyRequestRaised({
+    tenantId: who.tenant_id,
+    requesterId: who.id,
+    courseId: input.courseId || null,
+    courseTitle: input.courseId ? null : input.courseTitle,
+  });
   rev();
   return { ok: true };
 }
@@ -354,6 +368,13 @@ export async function decideTrainingRequest(
     }
   }
 
+  await notifyRequestDecided({
+    tenantId: req.tenant_id,
+    profileId: req.profile_id,
+    courseId: req.course_id,
+    courseTitle: req.course_title,
+    decision,
+  });
   rev();
   return { ok: true };
 }
@@ -403,6 +424,13 @@ export async function managerRequestForEmployee(input: {
     manager_id: user.id,
   });
   if (error) return { ok: false, error: error.message };
+  await notifyManagerRequestForReport({
+    tenantId: who.tenant_id,
+    reportId: input.profileId,
+    managerId: user.id,
+    courseId: input.courseId || null,
+    courseTitle: input.courseId ? null : input.courseTitle,
+  });
   rev();
   return { ok: true };
 }
@@ -511,6 +539,13 @@ export async function assignTraining(input: {
       source: planSource,
     }));
     await supabase.from("training_plan_items").insert(planRows);
+    await notifyTrainingAssigned({
+      tenantId: who.tenant_id,
+      profileIds: toCreate,
+      courseId: input.courseId || null,
+      courseTitle: courseTitle,
+      mandatory: input.type === "statutory",
+    });
   }
 
   rev();
@@ -987,6 +1022,17 @@ export async function enrolParticipant(sessionId: string, profileId: string): Pr
       { onConflict: "session_id,profile_id", ignoreDuplicates: true },
     );
   if (error) return { ok: false, error: error.message };
+  const { data: sess } = await supabase
+    .from("training_sessions")
+    .select("course_id, starts_at")
+    .eq("id", sessionId)
+    .maybeSingle();
+  await notifyEnrolled({
+    tenantId: who.tenant_id,
+    profileId,
+    courseId: sess?.course_id ?? null,
+    startsAt: sess?.starts_at ?? null,
+  });
   rev();
   return { ok: true };
 }
@@ -1058,6 +1104,12 @@ export async function recordCompletion(
     source: "session",
   });
   if (recErr) return { ok: false, error: recErr.message };
+
+  await notifyCompletionRecorded({
+    tenantId: who.tenant_id,
+    profileId: part.profile_id as string,
+    courseId: session.course_id as string,
+  });
 
   await supabase
     .from("training_participants")

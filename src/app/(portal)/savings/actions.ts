@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
+import { notifyUsers } from "@/lib/notify";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -83,6 +84,21 @@ export async function disburseLoan(input: {
     outstanding: input.principal,
   });
   if (error) return { ok: false, error: error.message };
+
+  const { data: account } = await supabase
+    .from("savings_accounts")
+    .select("profile_id")
+    .eq("id", input.accountId)
+    .maybeSingle();
+  await notifyUsers({
+    tenantId: t,
+    profileIds: [account?.profile_id],
+    category: "approval",
+    title: "Loan approved and disbursed",
+    body: "Your loan has been approved and disbursed to your account.",
+    url: "/savings",
+  });
+
   rev();
   return { ok: true };
 }
@@ -98,6 +114,28 @@ export async function recordRepayment(loanId: string, amount: number): Promise<A
     .from("loan_repayments")
     .insert({ tenant_id: t, loan_id: loanId, amount });
   if (error) return { ok: false, error: error.message };
+
+  const { data: loan } = await supabase
+    .from("loans")
+    .select("account_id")
+    .eq("id", loanId)
+    .maybeSingle();
+  const { data: account } = loan?.account_id
+    ? await supabase
+        .from("savings_accounts")
+        .select("profile_id")
+        .eq("id", loan.account_id)
+        .maybeSingle()
+    : { data: null };
+  await notifyUsers({
+    tenantId: t,
+    profileIds: [account?.profile_id],
+    category: "general",
+    title: "Loan repayment recorded",
+    body: "Your loan repayment has been processed.",
+    url: "/savings",
+  });
+
   rev();
   return { ok: true };
 }

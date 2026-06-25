@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, rev } from "./_shared";
 
@@ -105,6 +106,14 @@ export async function requestOffshoreTripGroup(input: {
 
   const { error } = await adminCli.from("offshore_trips").insert(rows);
   if (error) return { ok: false, error: error.message };
+  await notifyUsers({
+    tenantId,
+    profileIds: validIds.filter((pid) => pid !== user.id),
+    category: "general",
+    title: "Offshore trip booked",
+    body: "You've been added to an offshore trip.",
+    url: "/offshore",
+  });
   rev();
   return { ok: true };
 }

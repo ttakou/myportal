@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, rev, tenantId } from "./_shared";
 
@@ -71,6 +72,14 @@ export async function boardMember(profileId: string): Promise<ActionResult> {
     lifeboat: staff?.lifeboat ?? null,
   });
   if (error) return { ok: false, error: error.message };
+  await notifyUsers({
+    tenantId: tenant,
+    profileIds: [profileId],
+    category: "general",
+    title: "Boarded offshore",
+    body: "You are now recorded on board (POB).",
+    url: "/offshore",
+  });
   rev();
   return { ok: true };
 }
@@ -140,6 +149,14 @@ export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
   if (rows.length === 0) return { ok: true }; // already all aboard
   const { error } = await supabase.from("offshore_trips").insert(rows);
   if (error) return { ok: false, error: error.message };
+  await notifyUsers({
+    tenantId: tenant,
+    profileIds: rows.map((r) => r.profile_id as string),
+    category: "general",
+    title: "Crew mobilised",
+    body: "Your crew has been mobilised — you are now on board.",
+    url: "/offshore",
+  });
   rev();
   return { ok: true };
 }
@@ -150,12 +167,31 @@ export async function demobiliseCrew(crewId: string): Promise<ActionResult> {
   if (gate) return gate;
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
+
+  // Capture who is being demobilised before the update clears the onboard flag.
+  const { data: affected } = await supabase
+    .from("offshore_trips")
+    .select("profile_id")
+    .eq("crew_id", crewId)
+    .eq("status", "onboard");
+
   const { error } = await supabase
     .from("offshore_trips")
     .update({ status: "demobilised", demob_date: today })
     .eq("crew_id", crewId)
     .eq("status", "onboard");
   if (error) return { ok: false, error: error.message };
+  const tenant = await tenantId();
+  if (tenant) {
+    await notifyUsers({
+      tenantId: tenant,
+      profileIds: (affected ?? []).map((a) => a.profile_id as string),
+      category: "general",
+      title: "Crew demobilised",
+      body: "Your crew has been demobilised — you are no longer on board.",
+      url: "/offshore",
+    });
+  }
   rev();
   return { ok: true };
 }

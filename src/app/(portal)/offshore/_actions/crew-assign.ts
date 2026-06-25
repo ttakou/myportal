@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, rev, tenantId } from "./_shared";
 
@@ -38,6 +39,14 @@ export async function assignToCrew(
     .in("profile_id", profileIds)
     .eq("status", "onboard");
   if (tripErr) return { ok: false, error: tripErr.message };
+  await notifyUsers({
+    tenantId: tenant,
+    profileIds: profileIds,
+    category: "general",
+    title: "Crew assignment updated",
+    body: "Your offshore crew assignment has changed.",
+    url: "/offshore",
+  });
   rev();
   return { ok: true };
 }
@@ -65,11 +74,29 @@ export async function offboardTrip(tripId: string): Promise<ActionResult> {
   if (gate) return gate;
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
+
+  // Read the affected person + tenant from the trip before demobilising it.
+  const { data: trip } = await supabase
+    .from("offshore_trips")
+    .select("profile_id, tenant_id")
+    .eq("id", tripId)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("offshore_trips")
     .update({ status: "demobilised", demob_date: today })
     .eq("id", tripId);
   if (error) return { ok: false, error: error.message };
+  if (trip?.tenant_id && trip.profile_id) {
+    await notifyUsers({
+      tenantId: trip.tenant_id as string,
+      profileIds: [trip.profile_id as string],
+      category: "general",
+      title: "Demobilised",
+      body: "Your offshore trip has been demobilised.",
+      url: "/offshore",
+    });
+  }
   rev();
   return { ok: true };
 }

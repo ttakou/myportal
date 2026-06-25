@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
+import { notifyUsers } from "@/lib/notify";
 import type { IssueType } from "@/types/feedback";
 
 import type { ActionResult } from "@/types/actions";
@@ -33,6 +34,21 @@ export async function submitFeedback(input: {
     comment: input.comment?.trim() || null,
   });
   if (error) return { ok: false, error: error.message };
+
+  const { data: managers } = await supabase
+    .from("profile_roles")
+    .select("profile_id")
+    .eq("tenant_id", tenant.id)
+    .eq("role", "canteen_manager");
+  await notifyUsers({
+    tenantId: tenant.id,
+    profileIds: (managers ?? []).map((m) => m.profile_id),
+    category: "general",
+    title: "New canteen feedback",
+    body: "An employee submitted feedback about meal service.",
+    url: "/canteen/feedback",
+  });
+
   revalidatePath("/canteen/feedback");
   return { ok: true };
 }
@@ -44,6 +60,11 @@ export async function resolveFeedback(id: string, resolved: boolean): Promise<Ac
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const { data: feedback } = await supabase
+    .from("canteen_feedback")
+    .select("tenant_id, profile_id")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabase
     .from("canteen_feedback")
     .update({
@@ -53,6 +74,18 @@ export async function resolveFeedback(id: string, resolved: boolean): Promise<Ac
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  if (resolved && feedback?.tenant_id) {
+    await notifyUsers({
+      tenantId: feedback.tenant_id,
+      profileIds: [feedback.profile_id],
+      category: "general",
+      title: "Your canteen feedback was resolved",
+      body: "We've reviewed and resolved your feedback. Thank you.",
+      url: "/canteen/feedback",
+    });
+  }
+
   revalidatePath("/canteen/feedback");
   return { ok: true };
 }
