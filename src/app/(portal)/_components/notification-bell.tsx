@@ -44,6 +44,7 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
   const ref = useRef<HTMLDivElement>(null);
 
   const prevUnread = useRef(initial.unread);
+  const prevEmergency = useRef(initial.items.filter((n) => n.category === "emergency" && !n.read_at).length);
   const mutedRef = useRef(false);
   const audioCtx = useRef<AudioContext | null>(null);
   const flashTimer = useRef<number | null>(null);
@@ -56,10 +57,11 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
     mutedRef.current = m;
   }, []);
 
-  // A short two-tone chime, synthesised so no audio asset is needed. Best-effort:
+  // A short chime, synthesised so no audio asset is needed. Best-effort:
   // browsers only allow audio after a user gesture, so it stays silent until the
-  // user has interacted with the page at least once.
-  function playChime() {
+  // user has interacted with the page at least once. Emergencies get a louder,
+  // harsher, repeating alarm.
+  function playChime(urgent = false) {
     if (mutedRef.current) return;
     try {
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -68,33 +70,42 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
       const ctx = audioCtx.current;
       if (ctx.state === "suspended") void ctx.resume();
       const start = ctx.currentTime;
-      [880, 1320].forEach((freq, i) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        const t = start + i * 0.16;
-        gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(t);
-        osc.stop(t + 0.16);
-      });
+      const peak = urgent ? 0.6 : 0.3;
+      const tones = urgent ? [1000, 1400] : [880, 1320];
+      const cycles = urgent ? 3 : 1;
+      const toneLen = urgent ? 0.18 : 0.16;
+      const cycleGap = urgent ? 0.12 : 0;
+      for (let c = 0; c < cycles; c++) {
+        const cycleStart = start + c * (tones.length * toneLen + cycleGap);
+        tones.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = urgent ? "square" : "sine";
+          osc.frequency.value = freq;
+          const t = cycleStart + i * toneLen;
+          gain.gain.setValueAtTime(0.0001, t);
+          gain.gain.exponentialRampToValueAtTime(peak, t + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + toneLen - 0.01);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + toneLen);
+        });
+      }
     } catch {
       /* best-effort */
     }
   }
 
   // Flash the browser tab title so a background desktop tab grabs attention.
-  function startFlash(unread: number) {
-    if (flashTimer.current != null) return;
+  function startFlash(unread: number, urgent = false) {
+    if (flashTimer.current != null) stopFlash();
     baseTitle.current = document.title;
+    const alert = urgent ? "🚨 EMERGENCY ALERT" : `🔔 (${unread}) New notification`;
     let on = false;
     flashTimer.current = window.setInterval(() => {
       on = !on;
-      document.title = on ? `🔔 (${unread}) New notification` : baseTitle.current;
-    }, 1000);
+      document.title = on ? alert : baseTitle.current;
+    }, urgent ? 600 : 1000);
   }
   function stopFlash() {
     if (flashTimer.current != null) {
@@ -109,11 +120,14 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
   useEffect(() => {
     const tick = async () => {
       const f = await fetchMyNotifications();
+      const emergencyUnread = f.items.filter((n) => n.category === "emergency" && !n.read_at).length;
       if (f.unread > prevUnread.current) {
-        playChime();
-        if (document.hidden) startFlash(f.unread);
+        const urgent = emergencyUnread > prevEmergency.current;
+        playChime(urgent);
+        if (document.hidden) startFlash(f.unread, urgent);
       }
       prevUnread.current = f.unread;
+      prevEmergency.current = emergencyUnread;
       setFeed(f);
     };
     const id = setInterval(() => void tick(), 20000);
