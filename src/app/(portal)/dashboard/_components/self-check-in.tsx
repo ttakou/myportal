@@ -39,6 +39,15 @@ export function SelfCheckIn({ initial }: { initial: MyAttendance }) {
       // distance to the base before recording the check-in.
       const coords = await getLocation();
       setLocating(false);
+      // Remember that location was granted, so the silent auto-reconcile can run
+      // even on browsers without the Permissions API (Safari/iOS).
+      if (coords) {
+        try {
+          localStorage.setItem("geo-granted", "1");
+        } catch {
+          /* ignore */
+        }
+      }
       startTransition(async () => {
         const res = await selfCheckIn(coords);
         if (!res.ok) setError(res.error ?? "Couldn't check you in.");

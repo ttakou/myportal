@@ -20,8 +20,15 @@ function getLocation(timeout = 10000): Promise<{ lat: number; lng: number } | nu
 }
 
 /** Only run the silent auto-check when location is already granted — we never
- *  pop a permission prompt on our own (the manual "I'm in" button does that). */
+ *  pop a permission prompt on our own (the manual "I'm in" button does that).
+ *  Falls back to a flag set after a successful manual check-in, because Safari /
+ *  iOS doesn't support the Permissions API for geolocation. */
 async function locationGranted(): Promise<boolean> {
+  try {
+    if (typeof localStorage !== "undefined" && localStorage.getItem("geo-granted") === "1") return true;
+  } catch {
+    /* ignore */
+  }
   try {
     if (!navigator.permissions?.query) return false;
     const s = await navigator.permissions.query({ name: "geolocation" as PermissionName });
