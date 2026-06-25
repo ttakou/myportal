@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileBarChart } from "lucide-react";
+import { FileBarChart, FileText } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getAccounts, getMyAccount } from "@/lib/savings";
 import { getTenantUsers } from "@/lib/admin";
@@ -44,14 +44,22 @@ export default async function SavingsPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Employees Saving Management</h1>
         <p className="text-muted-foreground">Cooperative fund, ledger and loans.</p>
-        {(access.isFinance || access.isAdmin) && (
+        <div className="mt-2 flex flex-wrap gap-2">
           <Link
-            href="/reports/loan-arrears"
-            className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            href="/savings/statement"
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
           >
-            <FileBarChart className="h-4 w-4" /> Savings &amp; loan arrears report
+            <FileText className="h-4 w-4" /> Print account statement
           </Link>
-        )}
+          {(access.isFinance || access.isAdmin) && (
+            <Link
+              href="/reports/loan-arrears"
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              <FileBarChart className="h-4 w-4" /> Savings &amp; loan arrears report
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

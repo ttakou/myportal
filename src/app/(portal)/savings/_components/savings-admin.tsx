@@ -6,6 +6,7 @@ import { PiggyBank } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { money, type AccountSummary } from "@/types/savings";
 import { disburseLoan, ensureAccount, postTransaction } from "../actions";
+import { SavingsImportPanel } from "./savings-import-panel";
 
 export function SavingsAdmin({
   accounts,
@@ -39,6 +40,8 @@ export function SavingsAdmin({
 
   return (
     <div className="space-y-6">
+      <SavingsImportPanel />
+
       <h2 className="text-lg font-semibold">Fund manager</h2>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 

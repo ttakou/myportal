@@ -20,6 +20,7 @@ export interface SavingsNavItem {
 export function savingsSubmenu(opts: { isAdmin: boolean; canReport: boolean }): SavingsNavItem[] {
   const items: SavingsNavItem[] = [
     { key: "mine", label: "My Savings", icon: "Wallet", href: "/savings?view=mine" },
+    { key: "statement", label: "Account Statement", icon: "FileText", href: "/savings/statement" },
   ];
   if (opts.isAdmin) {
     items.push({ key: "admin", label: "Administration", icon: "Settings", href: "/savings?view=admin" });

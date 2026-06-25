@@ -1,10 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
-import type { AccountSummary, SavingsAccount } from "@/types/savings";
+import type {
+  AccountSummary,
+  SavingsAccount,
+  SavingsTxn,
+  Statement,
+  StatementHolder,
+} from "@/types/savings";
 
 const ACCT_SELECT =
   "id, profile_id, balance," +
   " person:profiles!savings_accounts_profile_id_fkey(full_name)," +
-  " savings_transactions(id, kind, amount, note, created_at)," +
+  " savings_transactions(id, kind, amount, note, period, created_at)," +
   " loans(id, principal, annual_rate, term_months, monthly_payment, outstanding, status, start_date)";
 
 function mapAccount(row: Record<string, any>): SavingsAccount {
@@ -20,6 +26,7 @@ function mapAccount(row: Record<string, any>): SavingsAccount {
         kind: t.kind,
         amount: Number(t.amount),
         note: t.note,
+        period: t.period ?? null,
         created_at: t.created_at,
       }))
       .sort((a: any, b: any) => (a.created_at < b.created_at ? 1 : -1)),
@@ -69,4 +76,88 @@ export async function getAccounts(): Promise<AccountSummary[]> {
       balance: Number(r.balance),
     };
   });
+}
+
+/**
+ * A transaction's effective date for statement purposes: the savings month it
+ * belongs to (`period`, for monthly imports) or, lacking one, when it was
+ * recorded. So a June contribution uploaded in July still falls in June.
+ */
+function effectiveDate(t: SavingsTxn): string {
+  return (t.period ?? t.created_at).slice(0, 10);
+}
+
+const signed = (t: SavingsTxn) => (t.kind === "contribution" ? t.amount : -t.amount);
+
+/**
+ * Build a bank-style statement for one member over [from, to] (inclusive ISO
+ * dates). Opening balance is the signed running total of everything before
+ * `from`; the period rows and closing balance follow. RLS scopes the query —
+ * a member sees only their own account; admins can pass any profileId.
+ */
+export async function getStatement(
+  profileId: string,
+  from: string,
+  to: string,
+): Promise<Statement | null> {
+  const supabase = createClient();
+
+  const [{ data: acct }, { data: prof }] = await Promise.all([
+    supabase
+      .from("savings_accounts")
+      .select("id, profile_id, savings_transactions(id, kind, amount, note, period, created_at)")
+      .eq("profile_id", profileId)
+      .maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("id, full_name, emp_num, email, department, job_title, employee_type")
+      .eq("id", profileId)
+      .maybeSingle(),
+  ]);
+
+  if (!prof) return null;
+
+  const holder: StatementHolder = {
+    profile_id: prof.id,
+    full_name: prof.full_name ?? null,
+    emp_num: prof.emp_num ?? null,
+    email: prof.email ?? null,
+    department: prof.department ?? null,
+    job_title: prof.job_title ?? null,
+    employee_type: prof.employee_type ?? null,
+  };
+
+  const all: SavingsTxn[] = ((acct?.savings_transactions ?? []) as Record<string, any>[]).map(
+    (t) => ({
+      id: t.id,
+      kind: t.kind,
+      amount: Number(t.amount),
+      note: t.note,
+      period: t.period ?? null,
+      created_at: t.created_at,
+    }),
+  );
+
+  let opening = 0;
+  const period: SavingsTxn[] = [];
+  for (const t of all) {
+    const d = effectiveDate(t);
+    if (d < from) opening += signed(t);
+    else if (d <= to) period.push(t);
+  }
+  period.sort((a, b) => (effectiveDate(a) < effectiveDate(b) ? -1 : 1));
+
+  const totalIn = period.filter((t) => t.kind === "contribution").reduce((s, t) => s + t.amount, 0);
+  const totalOut = period.filter((t) => t.kind === "withdrawal").reduce((s, t) => s + t.amount, 0);
+
+  return {
+    holder,
+    from,
+    to,
+    openingBalance: opening,
+    closingBalance: opening + totalIn - totalOut,
+    totalIn,
+    totalOut,
+    transactions: period,
+  };
 }

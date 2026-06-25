@@ -6,6 +6,7 @@ export interface SavingsTxn {
   kind: SavingsTxnKind;
   amount: number;
   note: string | null;
+  period: string | null;
   created_at: string;
 }
 
@@ -36,5 +37,36 @@ export interface AccountSummary {
   balance: number;
 }
 
+/**
+ * All savings amounts are in Central African CFA francs (XAF). XAF has no minor
+ * unit, so we render whole francs with thousands separators (e.g. "1 250 000 FCFA").
+ */
 export const money = (n: number) =>
-  n.toLocaleString(undefined, { style: "currency", currency: "USD" });
+  n.toLocaleString("fr-FR", {
+    style: "currency",
+    currency: "XAF",
+    maximumFractionDigits: 0,
+  });
+
+/** A printable account statement for a member over a chosen period. */
+export interface StatementHolder {
+  profile_id: string;
+  full_name: string | null;
+  emp_num: string | null;
+  email: string | null;
+  department: string | null;
+  job_title: string | null;
+  employee_type: string | null;
+}
+
+export interface Statement {
+  holder: StatementHolder;
+  /** ISO dates bounding the period (inclusive of from, exclusive of to+1day). */
+  from: string;
+  to: string;
+  openingBalance: number;
+  closingBalance: number;
+  totalIn: number;
+  totalOut: number;
+  transactions: SavingsTxn[];
+}
