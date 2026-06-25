@@ -27,10 +27,10 @@ export default async function ReportsPage() {
       show: access.isSystemAdmin || access.isAdmin || access.isFinance,
     },
     {
-      href: "/reports/loan-arrears",
-      title: "Savings & loan arrears",
+      href: "/reports/savings",
+      title: "Savings & withdrawals",
       description:
-        "Loan portfolio with arrears (scheduled-to-date vs repayments) and savings balances. Filter by period, department and borrower.",
+        "Member savings balances with contributions, interest and withdrawals over a period. Filter by period, department and member.",
       icon: Banknote,
       show: access.isSystemAdmin || access.isAdmin || access.isFinance,
     },
