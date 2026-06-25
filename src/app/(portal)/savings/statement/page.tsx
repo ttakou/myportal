@@ -4,9 +4,18 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getStatement } from "@/lib/savings";
 import { getTenantBranding } from "@/lib/branding";
-import { money, type SavingsTxn, type Statement } from "@/types/savings";
+import { type SavingsTxn, type Statement } from "@/types/savings";
 import { MedallionStamp } from "@/components/ui/medallion-stamp";
 import { PrintButton } from "./print-button";
+
+/**
+ * Statement cells show plain grouped numbers (currency lives in the column
+ * headers) so even billion-XAF figures fit the fixed columns. "1 000 000 000",
+ * never "1 000 000 000 FCFA" in every cell.
+ */
+function amt(n: number): string {
+  return n.toLocaleString("fr-FR", { maximumFractionDigits: 0 });
+}
 
 const SOFTWARE_NAME = "MyEnterprisePortal";
 
@@ -227,9 +236,9 @@ function StatementDocument({
             <th className="border px-2 py-2 text-left font-semibold sm:px-3" style={headerCell}>Date</th>
             <th className="border px-2 py-2 text-left font-semibold sm:px-3" style={headerCell}>Description</th>
             <th className="border px-2 py-2 text-left font-semibold sm:px-3" style={headerCell}>Ref.</th>
-            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Withdrawals</th>
-            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Deposits</th>
-            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Balance</th>
+            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Withdrawals<span className="font-normal opacity-80"> (XAF)</span></th>
+            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Deposits<span className="font-normal opacity-80"> (XAF)</span></th>
+            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Balance<span className="font-normal opacity-80"> (XAF)</span></th>
           </tr>
         </thead>
         <tbody>
@@ -240,7 +249,7 @@ function StatementDocument({
             <td className="border px-2 py-1.5 sm:px-3" />
             <td className="border px-2 py-1.5 sm:px-3" />
             <td className="border px-2 py-1.5 sm:px-3" />
-            <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums sm:px-3">{money(statement.openingBalance)}</td>
+            <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums sm:px-3">{amt(statement.openingBalance)}</td>
           </tr>
 
           {statement.transactions.length === 0 ? (
@@ -258,8 +267,8 @@ function StatementDocument({
             <td className="border px-2 py-2 sm:px-3" />
             <td className="border px-2 py-2 text-center tracking-wide text-neutral-600 sm:px-3">*** Totals ***</td>
             <td className="border px-2 py-2 sm:px-3" />
-            <td className="whitespace-nowrap border px-2 py-2 text-right tabular-nums sm:px-3">{money(statement.totalOut)}</td>
-            <td className="whitespace-nowrap border px-2 py-2 text-right tabular-nums sm:px-3">{money(statement.totalIn)}</td>
+            <td className="whitespace-nowrap border px-2 py-2 text-right tabular-nums sm:px-3">{amt(statement.totalOut)}</td>
+            <td className="whitespace-nowrap border px-2 py-2 text-right tabular-nums sm:px-3">{amt(statement.totalIn)}</td>
             <td className="border px-2 py-2 text-right tabular-nums sm:px-3" />
           </tr>
           {/* Closing balance */}
@@ -269,7 +278,7 @@ function StatementDocument({
               Closing balance
             </td>
             <td className="whitespace-nowrap border px-2 py-2 text-right tabular-nums sm:px-3" style={{ color: primary }}>
-              {money(statement.closingBalance)}
+              {amt(statement.closingBalance)}
             </td>
           </tr>
         </tbody>
@@ -322,9 +331,9 @@ function renderRows(statement: Statement, zebra: React.CSSProperties) {
         <td className="whitespace-nowrap border px-2 py-1.5 tabular-nums text-neutral-600 sm:px-3">{date}</td>
         <td className="border px-2 py-1.5 sm:px-3">{t.note ?? fallbackDesc}</td>
         <td className="truncate border px-2 py-1.5 tabular-nums text-neutral-500 sm:px-3">{ref}</td>
-        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums text-red-700 sm:px-3">{isIn ? "" : money(t.amount)}</td>
-        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums text-green-700 sm:px-3">{isIn ? money(t.amount) : ""}</td>
-        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums font-medium sm:px-3">{money(running)}</td>
+        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums text-red-700 sm:px-3">{isIn ? "" : amt(t.amount)}</td>
+        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums text-green-700 sm:px-3">{isIn ? amt(t.amount) : ""}</td>
+        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums font-medium sm:px-3">{amt(running)}</td>
       </tr>
     );
   });
