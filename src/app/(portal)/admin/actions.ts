@@ -170,6 +170,25 @@ export async function setUserFullName(
   return { ok: true };
 }
 
+export async function setUserEmployeeNumber(
+  userId: string,
+  empNum: string,
+): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ emp_num: empNum.trim() || null })
+    .eq("id", userId);
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: "That employee number is already in use." };
+    return { ok: false, error: error.message };
+  }
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
 export async function setUserJobTitle(
   userId: string,
   jobTitle: string,
@@ -385,6 +404,7 @@ export async function registerStaff(input: {
   department?: string;
   employeeType?: EmployeeType;
   lunchEligible?: boolean;
+  empNum?: string;
   functionalRoles?: FunctionalRole[];
   accessRoleIds?: string[];
 }): Promise<RegisterStaffResult> {
@@ -493,11 +513,19 @@ export async function registerStaff(input: {
       department: input.department?.trim() || null,
       employee_type: employeeType,
       lunch_eligible: input.lunchEligible ?? true,
+      emp_num: input.empNum?.trim() || null,
       is_active: true,
     },
     { onConflict: "id" },
   );
-  if (profileError) return { ok: false, error: `Account created but profile setup failed: ${profileError.message}` };
+  if (profileError)
+    return {
+      ok: false,
+      error:
+        profileError.code === "23505" && profileError.message.includes("emp_num")
+          ? "That employee number is already in use."
+          : `Account created but profile setup failed: ${profileError.message}`,
+    };
 
   // 3. Pre-assign functional + access roles (already authorized above).
   const functional = requestedFunctional;
