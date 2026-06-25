@@ -129,7 +129,7 @@ export async function Sidebar({
       return {
         ...base,
         defaultSubKey: "mine",
-        subItems: savingsSubmenu({ isAdmin: isOrgAdmin, canReport: access.isFinance || access.isAdmin }),
+        subItems: savingsSubmenu({ isAdmin: isOrgAdmin }),
       };
     }
     return base;

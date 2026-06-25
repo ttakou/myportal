@@ -1,14 +1,15 @@
 import Link from "next/link";
-import { FileBarChart, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import {
   getAccounts,
   getMyAccount,
   getMyWithdrawalRequests,
+  getSavingsConfig,
   getWithdrawalRequests,
 } from "@/lib/savings";
 import { getTenantUsers } from "@/lib/admin";
-import { money, type SavingsTxn } from "@/types/savings";
+import { isCredit, money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
 import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
@@ -25,9 +26,10 @@ export default async function SavingsPage({
   const isAdmin = isAdminRole(role) || access.isSystemAdmin;
   const view = resolveSavingsView((await searchParams).view, isAdmin);
   const isAdminView = isAdmin && view === "admin";
-  const [mine, myWithdrawals, accounts, users, withdrawals] = await Promise.all([
+  const [mine, myWithdrawals, config, accounts, users, withdrawals] = await Promise.all([
     getMyAccount(),
     getMyWithdrawalRequests(),
+    getSavingsConfig(),
     isAdminView ? getAccounts() : Promise.resolve([]),
     isAdminView ? getTenantUsers() : Promise.resolve([]),
     isAdminView ? getWithdrawalRequests() : Promise.resolve([]),
@@ -38,22 +40,27 @@ export default async function SavingsPage({
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Employees Saving Management</h1>
-          <p className="text-muted-foreground">Accounts, contributions and loan management.</p>
+          <p className="text-muted-foreground">Accounts, contributions, interest and withdrawals.</p>
         </div>
         <SavingsAdmin
           accounts={accounts}
           users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
           withdrawals={withdrawals}
+          annualRatePct={config.annualRatePct}
         />
       </div>
     );
   }
 
+  const interestToDate = (mine?.transactions ?? [])
+    .filter((t) => t.kind === "interest")
+    .reduce((s, t) => s + t.amount, 0);
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Employees Saving Management</h1>
-        <p className="text-muted-foreground">Cooperative fund, ledger and loans.</p>
+        <p className="text-muted-foreground">Your savings, interest and withdrawals.</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <Link
             href="/savings/statement"
@@ -61,43 +68,22 @@ export default async function SavingsPage({
           >
             <FileText className="h-4 w-4" /> Print account statement
           </Link>
-          {(access.isFinance || access.isAdmin) && (
-            <Link
-              href="/reports/loan-arrears"
-              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
-            >
-              <FileBarChart className="h-4 w-4" /> Savings &amp; loan arrears report
-            </Link>
-          )}
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border bg-card p-5 md:col-span-1">
+        <div className="rounded-lg border bg-card p-5">
           <p className="text-sm text-muted-foreground">My savings balance</p>
-          <p className="mt-1 text-3xl font-semibold tabular-nums">
-            {money(mine?.balance ?? 0)}
-          </p>
+          <p className="mt-1 text-3xl font-semibold tabular-nums">{money(mine?.balance ?? 0)}</p>
         </div>
-        <div className="rounded-lg border bg-card p-5 md:col-span-2">
-          <p className="mb-2 text-sm font-medium">My loans</p>
-          {mine && mine.loans.length > 0 ? (
-            <div className="space-y-1 text-sm">
-              {mine.loans.map((l) => (
-                <div key={l.id} className="flex justify-between">
-                  <span>
-                    {money(l.principal)} @ {(l.annual_rate * 100).toFixed(1)}% · {l.term_months}mo ·{" "}
-                    {money(l.monthly_payment)}/mo
-                  </span>
-                  <span className={cn(l.status === "closed" ? "text-green-600" : "text-muted-foreground")}>
-                    {l.status === "closed" ? "Paid off" : `${money(l.outstanding)} left`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No active loans.</p>
-          )}
+        <div className="rounded-lg border bg-card p-5">
+          <p className="text-sm text-muted-foreground">Interest earned to date</p>
+          <p className="mt-1 text-3xl font-semibold tabular-nums text-green-600">{money(interestToDate)}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-5">
+          <p className="text-sm text-muted-foreground">Interest rate</p>
+          <p className="mt-1 text-3xl font-semibold tabular-nums">{config.annualRatePct}%</p>
+          <p className="text-xs text-muted-foreground">per year, compounded monthly</p>
         </div>
       </div>
 
@@ -123,8 +109,8 @@ function Ledger({ txns }: { txns: SavingsTxn[] }) {
                 <td className="px-4 py-3 text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</td>
                 <td className="px-4 py-3 capitalize">{t.kind}</td>
                 <td className="px-4 py-3 text-muted-foreground">{t.note ?? "—"}</td>
-                <td className={cn("px-4 py-3 text-right tabular-nums", t.kind === "contribution" ? "text-green-600" : "text-destructive")}>
-                  {t.kind === "contribution" ? "+" : "−"}{money(t.amount)}
+                <td className={cn("px-4 py-3 text-right tabular-nums", isCredit(t.kind) ? "text-green-600" : "text-destructive")}>
+                  {isCredit(t.kind) ? "+" : "−"}{money(t.amount)}
                 </td>
               </tr>
             ))}

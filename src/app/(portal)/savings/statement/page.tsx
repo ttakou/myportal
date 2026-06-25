@@ -280,16 +280,18 @@ function StatementDocument({
 function renderRows(statement: Statement, zebra: React.CSSProperties) {
   let running = statement.openingBalance;
   return statement.transactions.map((t: SavingsTxn, i: number) => {
-    const isIn = t.kind === "contribution";
+    const isIn = t.kind !== "withdrawal";
     running += isIn ? t.amount : -t.amount;
     const date = (t.period ?? t.created_at).slice(0, 10);
     const ref = t.id.replace(/[^0-9a-f]/gi, "").slice(0, 4).toUpperCase();
+    const fallbackDesc =
+      t.kind === "interest" ? "Interest" : t.kind === "contribution" ? "Contribution" : "Withdrawal";
     // Opening row was index 0, so transactions start striped on the off-beat.
     const striped = i % 2 === 1;
     return (
       <tr key={t.id} style={striped ? zebra : undefined}>
         <td className="border px-3 py-1.5 tabular-nums text-neutral-600">{date}</td>
-        <td className="border px-3 py-1.5">{t.note ?? (isIn ? "Contribution" : "Withdrawal")}</td>
+        <td className="border px-3 py-1.5">{t.note ?? fallbackDesc}</td>
         <td className="border px-3 py-1.5 tabular-nums text-neutral-500">{ref}</td>
         <td className="border px-3 py-1.5 text-right tabular-nums text-red-700">{isIn ? "" : money(t.amount)}</td>
         <td className="border px-3 py-1.5 text-right tabular-nums text-green-700">{isIn ? money(t.amount) : ""}</td>

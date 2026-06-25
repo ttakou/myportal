@@ -12,8 +12,7 @@ import type {
 const ACCT_SELECT =
   "id, profile_id, balance," +
   " person:profiles!savings_accounts_profile_id_fkey(full_name)," +
-  " savings_transactions(id, kind, amount, note, period, created_at)," +
-  " loans(id, principal, annual_rate, term_months, monthly_payment, outstanding, status, start_date)";
+  " savings_transactions(id, kind, amount, note, period, created_at)";
 
 function mapAccount(row: Record<string, any>): SavingsAccount {
   const person = Array.isArray(row.person) ? row.person[0] : row.person;
@@ -32,17 +31,16 @@ function mapAccount(row: Record<string, any>): SavingsAccount {
         created_at: t.created_at,
       }))
       .sort((a: any, b: any) => (a.created_at < b.created_at ? 1 : -1)),
-    loans: (row.loans ?? []).map((l: Record<string, any>) => ({
-      id: l.id,
-      principal: Number(l.principal),
-      annual_rate: Number(l.annual_rate),
-      term_months: l.term_months,
-      monthly_payment: Number(l.monthly_payment),
-      outstanding: Number(l.outstanding),
-      status: l.status,
-      start_date: l.start_date,
-    })),
   };
+}
+
+/** The tenant's configurable annual savings interest rate (percent). Default 7%. */
+export async function getSavingsConfig(): Promise<{ annualRatePct: number }> {
+  const supabase = createClient();
+  const { data } = await supabase.from("tenants").select("settings").limit(1).maybeSingle();
+  const s = ((data?.settings as Record<string, any>) ?? {}).savings ?? {};
+  const pct = Number(s.annualRatePct);
+  return { annualRatePct: Number.isFinite(pct) && pct >= 0 ? pct : 7 };
 }
 
 function mapWithdrawal(row: Record<string, any>): WithdrawalRequest {
@@ -144,7 +142,7 @@ function effectiveDate(t: SavingsTxn): string {
   return (t.period ?? t.created_at).slice(0, 10);
 }
 
-const signed = (t: SavingsTxn) => (t.kind === "contribution" ? t.amount : -t.amount);
+const signed = (t: SavingsTxn) => (t.kind === "withdrawal" ? -t.amount : t.amount);
 
 /**
  * Build a bank-style statement for one member over [from, to] (inclusive ISO
@@ -204,7 +202,7 @@ export async function getStatement(
   }
   period.sort((a, b) => (effectiveDate(a) < effectiveDate(b) ? -1 : 1));
 
-  const totalIn = period.filter((t) => t.kind === "contribution").reduce((s, t) => s + t.amount, 0);
+  const totalIn = period.filter((t) => t.kind !== "withdrawal").reduce((s, t) => s + t.amount, 0);
   const totalOut = period.filter((t) => t.kind === "withdrawal").reduce((s, t) => s + t.amount, 0);
 
   return {

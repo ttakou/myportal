@@ -5,18 +5,21 @@ import { useStatusTransition } from "@/components/activity";
 import { PiggyBank } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { money, type AccountSummary, type WithdrawalRequest } from "@/types/savings";
-import { disburseLoan, ensureAccount, postTransaction } from "../actions";
+import { ensureAccount, postTransaction } from "../actions";
 import { SavingsImportPanel } from "./savings-import-panel";
 import { WithdrawalAdminPanel } from "./withdrawal-admin-panel";
+import { InterestPanel } from "./interest-panel";
 
 export function SavingsAdmin({
   accounts,
   users,
   withdrawals,
+  annualRatePct,
 }: {
   accounts: AccountSummary[];
   users: { id: string; name: string }[];
   withdrawals: WithdrawalRequest[];
+  annualRatePct: number;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -26,11 +29,6 @@ export function SavingsAdmin({
   const [kind, setKind] = useState<"contribution" | "withdrawal">("contribution");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-
-  const [loanAcct, setLoanAcct] = useState(accounts[0]?.id ?? "");
-  const [principal, setPrincipal] = useState("");
-  const [rate, setRate] = useState("8");
-  const [term, setTerm] = useState("12");
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -45,12 +43,14 @@ export function SavingsAdmin({
     <div className="space-y-6">
       <WithdrawalAdminPanel requests={withdrawals} />
 
+      <InterestPanel annualRatePct={annualRatePct} />
+
       <SavingsImportPanel />
 
       <h2 className="text-lg font-semibold">Fund manager</h2>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2">
         {/* Open account */}
         <div className="space-y-2 rounded-lg border bg-card p-4">
           <p className="text-sm font-medium">Open account</p>
@@ -77,20 +77,6 @@ export function SavingsAdmin({
           </div>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" className="w-full rounded-md border bg-background px-2 py-2 text-sm" />
           <Button size="sm" disabled={pending || !acct} onClick={() => run(() => postTransaction({ accountId: acct, kind, amount: Number(amount), note }), () => { setAmount(""); setNote(""); })}>Post</Button>
-        </div>
-
-        {/* Disburse loan */}
-        <div className="space-y-2 rounded-lg border bg-card p-4">
-          <p className="text-sm font-medium">Disburse loan</p>
-          <select value={loanAcct} onChange={(e) => setLoanAcct(e.target.value)} className="w-full rounded-md border bg-background px-2 py-2 text-sm">
-            {accounts.map((a) => <option key={a.id} value={a.id}>{a.person_name}</option>)}
-          </select>
-          <div className="flex gap-2">
-            <input value={principal} onChange={(e) => setPrincipal(e.target.value)} type="number" min={0} placeholder="Principal" className="w-full rounded-md border bg-background px-2 py-2 text-sm" />
-            <input value={rate} onChange={(e) => setRate(e.target.value)} type="number" min={0} step="0.1" placeholder="Rate %" className="w-20 rounded-md border bg-background px-2 py-2 text-sm" />
-            <input value={term} onChange={(e) => setTerm(e.target.value)} type="number" min={1} placeholder="Months" className="w-20 rounded-md border bg-background px-2 py-2 text-sm" />
-          </div>
-          <Button size="sm" disabled={pending || !loanAcct} onClick={() => run(() => disburseLoan({ accountId: loanAcct, principal: Number(principal), annualRatePct: Number(rate), termMonths: Number(term) }), () => setPrincipal(""))}>Disburse</Button>
         </div>
       </div>
 
