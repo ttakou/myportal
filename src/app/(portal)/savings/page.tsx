@@ -6,15 +6,36 @@ import { getTenantUsers } from "@/lib/admin";
 import { money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
+import { resolveSavingsView } from "./_components/savings-views";
 
-export default async function SavingsPage() {
+export default async function SavingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
   const [access, role] = await Promise.all([getAccess(), getCurrentRole()]);
   const isAdmin = isAdminRole(role);
+  const view = resolveSavingsView((await searchParams).view, isAdmin);
   const [mine, accounts, users] = await Promise.all([
     getMyAccount(),
-    isAdmin ? getAccounts() : Promise.resolve([]),
-    isAdmin ? getTenantUsers() : Promise.resolve([]),
+    isAdmin && view === "admin" ? getAccounts() : Promise.resolve([]),
+    isAdmin && view === "admin" ? getTenantUsers() : Promise.resolve([]),
   ]);
+
+  if (view === "admin") {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Employees Saving Management</h1>
+          <p className="text-muted-foreground">Accounts, contributions and loan management.</p>
+        </div>
+        <SavingsAdmin
+          accounts={accounts}
+          users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -61,13 +82,6 @@ export default async function SavingsPage() {
       </div>
 
       {mine && mine.transactions.length > 0 && <Ledger txns={mine.transactions} />}
-
-      {isAdmin && (
-        <SavingsAdmin
-          accounts={accounts}
-          users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
-        />
-      )}
     </div>
   );
 }

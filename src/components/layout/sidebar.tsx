@@ -7,7 +7,13 @@ import { offshoreSubmenu } from "@/app/(portal)/offshore/_components/offshore-vi
 import { performanceSubmenu } from "@/app/(portal)/performance/_components/performance-views";
 import { canteenSubmenu } from "@/app/(portal)/canteen/_components/canteen-views";
 import { trainingSubmenu } from "@/app/(portal)/training/_components/training-views";
+import { emergencySubmenu } from "@/app/(portal)/emergency/_components/emergency-views";
+import { visitorsSubmenu } from "@/app/(portal)/visitors/_components/visitors-views";
+import { medicalSubmenu } from "@/app/(portal)/medical/_components/medical-views";
+import { savingsSubmenu } from "@/app/(portal)/savings/_components/savings-views";
 import { isTrainingAdmin as getIsTrainingAdmin } from "@/lib/training";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import { NavLinks, type NavLink } from "./nav-links";
 
 /**
@@ -25,14 +31,17 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const [services, access, isManager, isTrainingAdmin] = await Promise.all([
+  const [services, access, isManager, isTrainingAdmin, perms] = await Promise.all([
     getActiveServices(),
     getAccess(),
     hasDirectReports(),
     getIsTrainingAdmin(),
+    getMyPermissions(),
   ]);
   const canManageOffshore = access.isAdmin || access.isCampboss || access.isOim;
   const isHr = access.isHr || access.isSystemAdmin || access.isAdmin;
+  const isOrgAdmin = access.isAdmin || access.isSystemAdmin;
+  const canMuster = isOrgAdmin || hasPermission(perms, "visitors", "operate");
 
   let links: NavLink[] = services.map((s) => {
     const base: NavLink = { name: s.name, href: s.route_path, icon: s.icon };
@@ -81,6 +90,29 @@ export async function Sidebar({
         ...base,
         defaultSubKey: "dashboard",
         subItems: trainingSubmenu({ isManager, isTrainingAdmin }),
+      };
+    }
+    // Emergency: everyone gets the support view; safety coordinators also get the
+    // command centre + incident history.
+    if (s.route_path === "/emergency") {
+      return { ...base, subItems: emergencySubmenu({ canCommand: access.isSafetyAdmin }) };
+    }
+    // Visitors: reception view for everyone with the module; the muster roll for
+    // admins / security / responders (visitors:operate).
+    if (s.route_path === "/visitors") {
+      return { ...base, subItems: visitorsSubmenu({ canMuster }) };
+    }
+    // Medical: the employee's own status, plus an Administration view for admins.
+    if (s.route_path === "/medical") {
+      return { ...base, defaultSubKey: "mine", subItems: medicalSubmenu({ isAdmin: isOrgAdmin }) };
+    }
+    // Savings: my savings (balance/loans/ledger), Administration for admins, and
+    // the arrears report for finance/admin.
+    if (s.route_path === "/savings") {
+      return {
+        ...base,
+        defaultSubKey: "mine",
+        subItems: savingsSubmenu({ isAdmin: isOrgAdmin, canReport: access.isFinance || access.isAdmin }),
       };
     }
     return base;
