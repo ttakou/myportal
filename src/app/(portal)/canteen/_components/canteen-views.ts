@@ -24,6 +24,7 @@ export function canteenSubmenu(opts: {
   canManage: boolean;
   canEntitle: boolean;
   canReport: boolean;
+  isOim: boolean;
 }): CanteenNavItem[] {
   const items: CanteenNavItem[] = [
     { key: "menu", label: "Today's menu", icon: "UtensilsCrossed", href: "/canteen" },
@@ -45,5 +46,13 @@ export function canteenSubmenu(opts: {
   if (opts.canReport) {
     items.push({ key: "reports", label: "Reports", icon: "BarChart3", href: "/canteen/reports" });
   }
+  // Cross-module canteen reports (previously buttons on the menu page).
+  if (opts.canReport || opts.isOim) {
+    items.push({ key: "consumption", label: "Consumption report", icon: "BarChart3", href: "/reports/canteen" });
+  }
+  if (opts.canEntitle || opts.canManage) {
+    items.push({ key: "feedback-report", label: "Feedback report", icon: "MessageSquareText", href: "/reports/canteen-feedback" });
+  }
+  items.push({ key: "my-meals", label: "My meals", icon: "ClipboardList", href: "/reports/my-meals" });
   return items;
 }

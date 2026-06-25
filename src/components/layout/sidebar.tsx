@@ -77,6 +77,7 @@ export async function Sidebar({
           canManage: access.isCanteenManager,
           canEntitle: access.isHr,
           canReport: access.isFinance || access.isCanteenManager,
+          isOim: access.isOim,
         }),
       };
     }
