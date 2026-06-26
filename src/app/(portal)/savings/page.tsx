@@ -7,6 +7,7 @@ import {
   getMyAccount,
   getMyPendingImportApprovals,
   getMyWithdrawalRequests,
+  getSavingsAuditLog,
   getSavingsConfig,
   getSavingsImportSteps,
   getWithdrawalRequests,
@@ -15,6 +16,7 @@ import { getTenantUsers } from "@/lib/admin";
 import { isCredit, money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
+import { SavingsAuditPanel } from "./_components/savings-audit-panel";
 import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
 import { ImportApprovalsInbox } from "./_components/import-approvals-inbox";
 import { resolveSavingsView } from "./_components/savings-views";
@@ -30,7 +32,7 @@ export default async function SavingsPage({
   const isAdmin = isAdminRole(role) || access.isSystemAdmin;
   const view = resolveSavingsView((await searchParams).view, isAdmin);
   const isAdminView = isAdmin && view === "admin";
-  const [mine, myWithdrawals, config, pendingApprovals, accounts, users, withdrawals, importSteps, batches] =
+  const [mine, myWithdrawals, config, pendingApprovals, accounts, users, withdrawals, importSteps, batches, audit] =
     await Promise.all([
       getMyAccount(),
       getMyWithdrawalRequests(),
@@ -41,6 +43,7 @@ export default async function SavingsPage({
       isAdminView ? getWithdrawalRequests() : Promise.resolve([]),
       isAdminView ? getSavingsImportSteps() : Promise.resolve([]),
       isAdminView ? getImportBatches() : Promise.resolve([]),
+      isAdminView ? getSavingsAuditLog() : Promise.resolve([]),
     ]);
 
   if (view === "admin") {
@@ -58,6 +61,7 @@ export default async function SavingsPage({
           importSteps={importSteps}
           batches={batches}
         />
+        <SavingsAuditPanel entries={audit} />
       </div>
     );
   }

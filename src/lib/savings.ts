@@ -43,6 +43,40 @@ export async function getSavingsConfig(): Promise<{ annualRatePct: number }> {
   return { annualRatePct: Number.isFinite(pct) && pct >= 0 ? pct : 7 };
 }
 
+export interface SavingsAuditEntry {
+  id: string;
+  action: string;
+  entity: string;
+  summary: string;
+  actorName: string | null;
+  createdAt: string;
+}
+
+/** Recent savings-module audit entries (admin-gated by the page). */
+export async function getSavingsAuditLog(limit = 100): Promise<SavingsAuditEntry[]> {
+  const rls = createClient();
+  const { data: tRow } = await rls.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tRow?.id) return [];
+  const db = createAdminClient() ?? rls;
+  const { data } = await db
+    .from("savings_audit_log")
+    .select("id, action, entity, summary, created_at, actor:profiles!savings_audit_log_actor_id_fkey(full_name)")
+    .eq("tenant_id", tRow.id)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return ((data ?? []) as Record<string, any>[]).map((r) => {
+    const actor = Array.isArray(r.actor) ? r.actor[0] : r.actor;
+    return {
+      id: r.id,
+      action: r.action,
+      entity: r.entity,
+      summary: r.summary,
+      actorName: actor?.full_name ?? null,
+      createdAt: r.created_at,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Import approval workflow (config + validator inbox + admin overview)
 // ---------------------------------------------------------------------------

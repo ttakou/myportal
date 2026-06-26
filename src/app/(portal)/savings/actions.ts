@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/permissions-server";
 import { notifyUsers } from "@/lib/notify";
+import { logSavings } from "@/lib/savings-audit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ActionResult } from "@/types/actions";
@@ -13,6 +14,11 @@ const rev = () => revalidatePath("/savings");
 async function tenantId(supabase: ReturnType<typeof createClient>) {
   const { data } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   return data?.id as string | undefined;
+}
+/** Current signed-in user id (the actor for audit entries). */
+async function actorId(supabase: ReturnType<typeof createClient>) {
+  const { data } = await supabase.auth.getUser();
+  return data.user?.id as string | undefined;
 }
 
 /** Create a savings account for a member if they don't have one. */
@@ -26,6 +32,16 @@ export async function ensureAccount(profileId: string): Promise<ActionResult> {
     .from("savings_accounts")
     .insert({ tenant_id: t, profile_id: profileId });
   if (error && !error.message.includes("duplicate")) return { ok: false, error: error.message };
+  if (!error) {
+    await logSavings({
+      tenantId: t,
+      actorId: await actorId(supabase),
+      action: "account.open",
+      entity: "account",
+      entityId: profileId,
+      summary: "Opened a savings account",
+    });
+  }
   rev();
   return { ok: true };
 }
@@ -50,6 +66,15 @@ export async function postTransaction(input: {
     note: input.note?.trim() || null,
   });
   if (error) return { ok: false, error: error.message };
+  await logSavings({
+    tenantId: t,
+    actorId: await actorId(supabase),
+    action: `transaction.${input.kind}`,
+    entity: "transaction",
+    entityId: input.accountId,
+    summary: `Posted a ${input.kind} of ${input.amount} XAF`,
+    meta: { amount: input.amount, kind: input.kind, note: input.note?.trim() || null },
+  });
   rev();
   return { ok: true };
 }
@@ -79,6 +104,14 @@ export async function setSavingsAnnualRate(annualRatePct: number): Promise<Actio
     .update({ settings: { ...settings, savings } })
     .eq("id", t);
   if (error) return { ok: false, error: error.message };
+  await logSavings({
+    tenantId: t,
+    actorId: await actorId(rls),
+    action: "config.rate",
+    entity: "config",
+    summary: `Set the annual interest rate to ${savings.annualRatePct}%`,
+    meta: { annualRatePct: savings.annualRatePct },
+  });
   revalidatePath("/savings");
   return { ok: true };
 }
@@ -150,6 +183,14 @@ export async function postMonthlyInterest(input: { period: string }): Promise<In
     }
   }
 
+  await logSavings({
+    tenantId: t,
+    actorId: await actorId(rls),
+    action: "interest.run",
+    entity: "interest",
+    summary: `Ran ${input.period} interest at ${ratePct}%/yr — ${applied} account(s) credited ${totalInterest} XAF`,
+    meta: { period: input.period, ratePct, applied, skipped, totalInterest },
+  });
   rev();
   return { ok: true, period: input.period, ratePct, applied, skipped, totalInterest };
 }
@@ -431,16 +472,21 @@ export async function importMonthlySavings(input: {
   const db = createAdminClient() ?? rls;
 
   const results = await applyImportRows(db, t, input.period, input.rows);
+  const applied = results.filter((r) => r.status === "applied").length;
+  const skipped = results.filter((r) => r.status === "skipped").length;
+  const failed = results.filter((r) => r.status === "failed").length;
+
+  await logSavings({
+    tenantId: t,
+    actorId: await actorId(rls),
+    action: "import.commit",
+    entity: "import_batch",
+    summary: `Committed ${input.period} import directly — ${applied} credited, ${skipped} skipped, ${failed} failed`,
+    meta: { period: input.period, applied, skipped, failed, direct: true },
+  });
 
   rev();
-  return {
-    ok: true,
-    period: input.period,
-    applied: results.filter((r) => r.status === "applied").length,
-    skipped: results.filter((r) => r.status === "skipped").length,
-    failed: results.filter((r) => r.status === "failed").length,
-    results,
-  };
+  return { ok: true, period: input.period, applied, skipped, failed, results };
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +538,17 @@ export async function setSavingsImportSteps(steps: SavingsImportStep[]): Promise
     .update({ settings: { ...settings, savings } })
     .eq("id", t);
   if (error) return { ok: false, error: error.message };
+  await logSavings({
+    tenantId: t,
+    actorId: await actorId(rls),
+    action: "config.workflow",
+    entity: "config",
+    summary:
+      clean.length === 0
+        ? "Set imports to commit directly (no approval steps)"
+        : `Configured ${clean.length}-step import approval workflow`,
+    meta: { steps: clean.map((s) => ({ name: s.name, validators: s.validators.length })) },
+  });
   revalidatePath("/savings");
   return { ok: true };
 }
@@ -543,6 +600,15 @@ export async function submitImportForApproval(input: {
     title: "Savings import awaiting approval",
     body: `A monthly savings import for ${input.period} needs your approval (${steps[0].name}).`,
     url: "/savings?view=mine",
+  });
+  await logSavings({
+    tenantId: t,
+    actorId: user?.id,
+    action: "import.submit",
+    entity: "import_batch",
+    entityId: batch.id,
+    summary: `Submitted ${input.period} import for approval (${input.rows.length} rows, ${steps.length} step(s))`,
+    meta: { period: input.period, rows: input.rows.length, steps: steps.length },
   });
   rev();
   return { ok: true, batchId: batch.id };
@@ -605,6 +671,15 @@ export async function decideImportBatch(
       body: `The savings import for ${String(batch.period).slice(0, 7)} was rejected at "${step.name}".`,
       url: "/savings?view=admin",
     });
+    await logSavings({
+      tenantId: t,
+      actorId: user.id,
+      action: "import.reject",
+      entity: "import_batch",
+      entityId: batchId,
+      summary: `Rejected ${String(batch.period).slice(0, 7)} import at step "${step.name}"`,
+      meta: { step: stepIdx, note: note?.trim() || null },
+    });
     rev();
     return { ok: true };
   }
@@ -619,6 +694,15 @@ export async function decideImportBatch(
       title: "Savings import awaiting approval",
       body: `A monthly savings import for ${String(batch.period).slice(0, 7)} needs your approval (${steps[nextStep].name}).`,
       url: "/savings?view=mine",
+    });
+    await logSavings({
+      tenantId: t,
+      actorId: user.id,
+      action: "import.approve",
+      entity: "import_batch",
+      entityId: batchId,
+      summary: `Approved ${String(batch.period).slice(0, 7)} import at step "${step.name}" (advanced to "${steps[nextStep].name}")`,
+      meta: { step: stepIdx },
     });
     rev();
     return { ok: true };
@@ -649,6 +733,21 @@ export async function decideImportBatch(
     body: `The savings import for ${period} was fully approved and committed to member accounts.`,
     url: "/savings?view=admin",
   });
+  await logSavings({
+    tenantId: t,
+    actorId: user.id,
+    action: "import.commit",
+    entity: "import_batch",
+    entityId: batchId,
+    summary: `Final approval — committed ${period} import (${results.filter((r) => r.status === "applied").length} credited)`,
+    meta: {
+      period,
+      step: stepIdx,
+      applied: results.filter((r) => r.status === "applied").length,
+      skipped: results.filter((r) => r.status === "skipped").length,
+      failed: results.filter((r) => r.status === "failed").length,
+    },
+  });
   rev();
   return { ok: true };
 }
@@ -675,6 +774,14 @@ export async function cancelImportBatch(batchId: string): Promise<ActionResult> 
     .update({ status: "cancelled", decided_at: new Date().toISOString() })
     .eq("id", batchId);
   if (error) return { ok: false, error: error.message };
+  await logSavings({
+    tenantId: t,
+    actorId: user?.id,
+    action: "import.cancel",
+    entity: "import_batch",
+    entityId: batchId,
+    summary: "Cancelled a pending import batch",
+  });
   rev();
   return { ok: true };
 }
@@ -750,6 +857,14 @@ export async function requestWithdrawal(input: {
       url: "/savings?view=admin",
     });
   }
+  await logSavings({
+    tenantId: acct.tenant_id as string,
+    actorId: user.id,
+    action: "withdrawal.request",
+    entity: "withdrawal",
+    summary: `Requested a withdrawal of ${input.amount} XAF`,
+    meta: { amount: input.amount, reason: input.reason?.trim() || null },
+  });
   rev();
   return { ok: true };
 }
@@ -797,6 +912,15 @@ export async function decideWithdrawal(
       ? "Your savings withdrawal has been approved and is pending release of funds."
       : `Your savings withdrawal was declined.${note ? ` Note: ${note.trim()}` : ""}`,
     url: "/savings?view=mine",
+  });
+  await logSavings({
+    tenantId: req.tenant_id as string,
+    actorId: user?.id,
+    action: approve ? "withdrawal.approve" : "withdrawal.reject",
+    entity: "withdrawal",
+    entityId: id,
+    summary: `${approve ? "Approved" : "Declined"} a withdrawal of ${req.amount} XAF`,
+    meta: { amount: req.amount, note: note?.trim() || null },
   });
   rev();
   return { ok: true };
@@ -871,6 +995,15 @@ export async function releaseWithdrawal(id: string): Promise<ActionResult> {
     title: "Savings withdrawal released",
     body: "The approved savings withdrawal has been released and deducted from the account.",
     url: "/savings?view=mine",
+  });
+  await logSavings({
+    tenantId: req.tenant_id as string,
+    actorId: user?.id,
+    action: "withdrawal.release",
+    entity: "withdrawal",
+    entityId: id,
+    summary: `Released a withdrawal of ${req.amount} XAF`,
+    meta: { amount: req.amount, transactionId: txn?.id ?? null },
   });
   rev();
   return { ok: true };
