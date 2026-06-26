@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/permissions-server";
 import { notifyUsers } from "@/lib/notify";
 
@@ -17,6 +18,36 @@ async function requireHr(): Promise<ActionResult | null> {
   // Entitlements are owned by the HR Canteen role (super admins bypass via the
   // module gate). Other roles cannot define who may access the canteen.
   return requireModule("canteen", "manage", (a) => a.isHrCanteen);
+}
+
+async function tenantId(supabase: ReturnType<typeof createClient>) {
+  const { data } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  return data?.id as string | undefined;
+}
+
+/**
+ * Add or remove people from the standing daily canteen-access list by toggling
+ * their lunch eligibility — the gate the booking and serving flows both use.
+ * HR Canteen owns this; the write uses the service role (scoped to the tenant)
+ * so an HR-Canteen user who isn't a tenant admin can still manage the list.
+ */
+export async function setDailyAccess(profileIds: string[], allowed: boolean): Promise<ActionResult> {
+  const gate = await requireHr();
+  if (gate) return gate;
+  const ids = [...new Set((profileIds ?? []).filter(Boolean))];
+  if (ids.length === 0) return { ok: false, error: "No one selected." };
+  const rls = createClient();
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+  const db = createAdminClient() ?? rls;
+  const { error } = await db
+    .from("profiles")
+    .update({ lunch_eligible: allowed })
+    .eq("tenant_id", t)
+    .in("id", ids);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/entitlements");
+  return { ok: true };
 }
 
 /**

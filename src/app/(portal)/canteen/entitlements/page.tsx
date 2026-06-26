@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ShieldX, CalendarCheck } from "lucide-react";
+import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getEntitledToday } from "@/lib/canteen";
 import {
@@ -8,6 +8,7 @@ import {
   getRedemptionHistory,
 } from "@/lib/canteen-entitlements";
 import { EntitlementsManager } from "./_components/entitlements-manager";
+import { DailyAccessPanel } from "./_components/daily-access-panel";
 import { RedemptionHistory } from "./_components/redemption-history";
 
 export default async function EntitlementsPage(
@@ -46,7 +47,6 @@ export default async function EntitlementsPage(
     getRedemptionHistory(from, to),
     getEntitledToday(day),
   ]);
-  const rosterPlates = roster.reduce((s, p) => s + p.plates, 0);
 
   return (
     <div className="space-y-6">
@@ -68,63 +68,18 @@ export default async function EntitlementsPage(
 
       <EntitlementsManager entitlements={entitlements} employees={employees} />
 
-      {/* Daily canteen-access roster: who may eat on a chosen day. */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <CalendarCheck className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">Daily canteen access</h2>
-          </div>
-          <form method="get" className="flex items-end gap-2">
-            <input type="hidden" name="from" value={from} />
-            <input type="hidden" name="to" value={to} />
-            <label className="text-sm">
-              <span className="mr-1 text-muted-foreground">Day</span>
-              <input type="date" name="day" defaultValue={day} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
-            </label>
-            <button type="submit" className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent">
-              View
-            </button>
-          </form>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {roster.length} employee(s) may access the canteen on {day} — {rosterPlates} plate(s) including
-          booked guests. Eligibility comes from active staff marked lunch-eligible plus the entitlement
-          grants above; adjust a grant to change who is in this list.
-        </p>
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium text-right">Plates</th>
-                <th className="px-4 py-3 font-medium">Today&apos;s booking</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {roster.map((p) => (
-                <tr key={p.profileId}>
-                  <td className="px-4 py-2 font-medium">{p.name}</td>
-                  <td className="px-4 py-2 text-muted-foreground">{p.email ?? "—"}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{p.plates}</td>
-                  <td className="px-4 py-2 text-muted-foreground">
-                    {p.dishLabel ?? <span className="text-muted-foreground/60">No booking</span>}
-                    {p.collected && <span className="ml-1 text-green-600">· collected</span>}
-                  </td>
-                </tr>
-              ))}
-              {roster.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
-                    No one is eligible to access the canteen on this day.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <DailyAccessPanel
+        day={day}
+        roster={roster.map((p) => ({
+          profileId: p.profileId,
+          name: p.name,
+          email: p.email,
+          plates: p.plates,
+          dishLabel: p.dishLabel,
+          collected: p.collected,
+        }))}
+        employees={employees.map((e) => ({ id: e.id, name: e.full_name || e.email || "Unknown" }))}
+      />
 
       <RedemptionHistory rows={redemptions} from={from} to={to} />
     </div>
