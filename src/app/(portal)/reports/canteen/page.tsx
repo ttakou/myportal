@@ -30,6 +30,7 @@ export default async function CanteenReportPage({
       access.isAdmin ||
       access.isFinance ||
       access.isCanteenManager ||
+      access.isHrCanteen ||
       access.isOim
     )
   ) {

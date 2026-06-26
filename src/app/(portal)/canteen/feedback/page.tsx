@@ -5,7 +5,8 @@ import { getAllFeedback, getMyFeedback } from "@/lib/canteen-feedback";
 import { FeedbackBoard } from "./_components/feedback-board";
 
 export default async function FeedbackPage() {
-  const isAdmin = (await getAccess()).isCanteenManager;
+  const access = await getAccess();
+  const isAdmin = access.isCanteenManager || access.isHrCanteen;
   const [mine, all] = await Promise.all([
     getMyFeedback(),
     isAdmin ? getAllFeedback() : Promise.resolve([]),

@@ -14,8 +14,9 @@ function clampMeals(n: number): number {
 }
 
 async function requireHr(): Promise<ActionResult | null> {
-  // HR keep managing entitlements; otherwise the canteen "manage" verb is required.
-  return requireModule("canteen", "manage", (a) => a.isHr);
+  // Entitlements are owned by the HR Canteen role (super admins bypass via the
+  // module gate). Other roles cannot define who may access the canteen.
+  return requireModule("canteen", "manage", (a) => a.isHrCanteen);
 }
 
 /**

@@ -21,7 +21,7 @@ export default async function CanteenFeedbackReportPage({
   searchParams: Promise<{ from?: string; to?: string; department?: string }>;
 }) {
   const access = await getAccess();
-  if (!(access.isSystemAdmin || access.isAdmin || access.isHr || access.isCanteenManager)) {
+  if (!(access.isSystemAdmin || access.isAdmin || access.isHr || access.isCanteenManager || access.isHrCanteen)) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />

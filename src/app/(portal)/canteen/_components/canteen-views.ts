@@ -14,10 +14,11 @@ export interface CanteenNavItem {
 /**
  * Ordered, role-aware submenu. Everyone with the module sees the menu, history
  * and feedback; the operational and management areas are added per role:
- *  - canServe   (canteen staff)            → serving point + meal serving
- *  - canManage  (canteen manager)          → manage menu, campboss, forecast
- *  - canEntitle (HR)                       → entitlements
- *  - canReport  (finance / canteen manager)→ reports
+ *  - canServe    (canteen staff)            → serving point + meal serving
+ *  - canManage   (canteen manager)          → manage menu, campboss
+ *  - canEntitle  (HR Canteen)               → entitlements (daily access)
+ *  - canReport   (finance / canteen manager)→ reports
+ *  - isHrCanteen (HR Canteen)               → forecast + all canteen reports
  */
 export function canteenSubmenu(opts: {
   canServe: boolean;
@@ -25,6 +26,7 @@ export function canteenSubmenu(opts: {
   canEntitle: boolean;
   canReport: boolean;
   isOim: boolean;
+  isHrCanteen: boolean;
 }): CanteenNavItem[] {
   const items: CanteenNavItem[] = [
     { key: "menu", label: "Today's menu", icon: "UtensilsCrossed", href: "/canteen" },
@@ -38,19 +40,22 @@ export function canteenSubmenu(opts: {
   if (opts.canManage) {
     items.push({ key: "manage", label: "Manage menu", icon: "Settings", href: "/canteen/manage" });
     items.push({ key: "campboss", label: "Campboss dashboard", icon: "LayoutDashboard", href: "/canteen/campboss" });
+  }
+  // Forecast: canteen management and HR Canteen oversight.
+  if (opts.canManage || opts.isHrCanteen) {
     items.push({ key: "forecast", label: "Forecast", icon: "TrendingUp", href: "/canteen/forecast" });
   }
   if (opts.canEntitle) {
     items.push({ key: "entitlements", label: "Entitlements", icon: "Users", href: "/canteen/entitlements" });
   }
-  if (opts.canReport) {
+  if (opts.canReport || opts.isHrCanteen) {
     items.push({ key: "reports", label: "Reports", icon: "BarChart3", href: "/canteen/reports" });
   }
   // Cross-module canteen reports (previously buttons on the menu page).
-  if (opts.canReport || opts.isOim) {
+  if (opts.canReport || opts.isOim || opts.isHrCanteen) {
     items.push({ key: "consumption", label: "Consumption report", icon: "BarChart3", href: "/reports/canteen" });
   }
-  if (opts.canEntitle || opts.canManage) {
+  if (opts.canEntitle || opts.canManage || opts.isHrCanteen) {
     items.push({ key: "feedback-report", label: "Feedback report", icon: "MessageSquareText", href: "/reports/canteen-feedback" });
   }
   items.push({ key: "my-meals", label: "My meals", icon: "ClipboardList", href: "/reports/my-meals" });

@@ -75,9 +75,10 @@ export async function Sidebar({
         subItems: canteenSubmenu({
           canServe: access.isCanteenStaff,
           canManage: access.isCanteenManager,
-          canEntitle: access.isHr,
+          canEntitle: access.isHrCanteen,
           canReport: access.isFinance || access.isCanteenManager,
           isOim: access.isOim,
+          isHrCanteen: access.isHrCanteen,
         }),
       };
     }
