@@ -1,12 +1,15 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type {
-  AccountSummary,
-  SavingsAccount,
-  SavingsTxn,
-  Statement,
-  StatementHolder,
-  WithdrawalRequest,
+import { getAccess } from "@/lib/auth";
+import {
+  money,
+  type AccountSummary,
+  type SavingsAccount,
+  type SavingsTxn,
+  type Statement,
+  type StatementHolder,
+  type WithdrawalRequest,
 } from "@/types/savings";
 
 const ACCT_SELECT =
@@ -75,6 +78,119 @@ export async function getSavingsAuditLog(limit = 100): Promise<SavingsAuditEntry
       createdAt: r.created_at,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Approver: "My Approvals" history
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the signed-in user is a savings approver — finance/admin, or a
+ * configured import-workflow validator. Drives the "My Approvals" submenu.
+ */
+export const isSavingsApprover = cache(async (): Promise<boolean> => {
+  const access = await getAccess();
+  if (access.isFinance || access.isAdmin || access.isSystemAdmin) return true;
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data } = await supabase.from("tenants").select("settings").limit(1).maybeSingle();
+  const steps = (((data?.settings as Record<string, any>) ?? {}).savings ?? {}).importApproval;
+  if (Array.isArray(steps)) {
+    for (const s of steps) {
+      if (Array.isArray(s?.validators) && s.validators.map(String).includes(user.id)) return true;
+    }
+  }
+  return false;
+});
+
+export interface ApprovalHistoryItem {
+  id: string;
+  date: string;
+  type: "Import" | "Withdrawal";
+  summary: string;
+  decision: "approved" | "rejected" | "released";
+  outcome: string | null;
+}
+
+/**
+ * The signed-in approver's full decision history across savings — import-batch
+ * approvals/rejections and withdrawal approvals/declines/releases. Reads with
+ * the service role since a non-admin approver can't see others' rows under RLS.
+ */
+export async function getMyApprovalHistory(): Promise<ApprovalHistoryItem[]> {
+  const rls = createClient();
+  const {
+    data: { user },
+  } = await rls.auth.getUser();
+  if (!user) return [];
+  const { data: tRow } = await rls.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tRow?.id) return [];
+  const t = tRow.id as string;
+  const db = createAdminClient();
+  if (!db) return [];
+
+  const items: ApprovalHistoryItem[] = [];
+
+  const { data: imp } = await db
+    .from("savings_import_approvals")
+    .select(
+      "id, decision, step_index, created_at," +
+        " batch:savings_import_batches!savings_import_approvals_batch_id_fkey(period, status)",
+    )
+    .eq("tenant_id", t)
+    .eq("decided_by", user.id)
+    .order("created_at", { ascending: false });
+  for (const r of (imp ?? []) as Record<string, any>[]) {
+    const b = Array.isArray(r.batch) ? r.batch[0] : r.batch;
+    items.push({
+      id: `imp-${r.id}`,
+      date: r.created_at,
+      type: "Import",
+      summary: `Monthly import ${String(b?.period ?? "").slice(0, 7)} · step ${Number(r.step_index) + 1}`,
+      decision: r.decision === "approve" ? "approved" : "rejected",
+      outcome: b?.status ?? null,
+    });
+  }
+
+  const { data: wd } = await db
+    .from("savings_withdrawal_requests")
+    .select(
+      "id, amount, status, decided_at, released_at, decided_by, released_by," +
+        " person:profiles!savings_withdrawal_requests_profile_id_fkey(full_name)",
+    )
+    .eq("tenant_id", t)
+    .or(`decided_by.eq.${user.id},released_by.eq.${user.id}`)
+    .order("created_at", { ascending: false });
+  for (const r of (wd ?? []) as Record<string, any>[]) {
+    const p = Array.isArray(r.person) ? r.person[0] : r.person;
+    const who = p?.full_name ?? "a member";
+    if (r.decided_by === user.id && r.decided_at) {
+      items.push({
+        id: `wd-d-${r.id}`,
+        date: r.decided_at,
+        type: "Withdrawal",
+        summary: `${who} · ${money(Number(r.amount))}`,
+        decision: r.status === "rejected" ? "rejected" : "approved",
+        outcome: r.status,
+      });
+    }
+    if (r.released_by === user.id && r.released_at) {
+      items.push({
+        id: `wd-r-${r.id}`,
+        date: r.released_at,
+        type: "Withdrawal",
+        summary: `${who} · ${money(Number(r.amount))}`,
+        decision: "released",
+        outcome: "released",
+      });
+    }
+  }
+
+  items.sort((a, b) => (a.date < b.date ? 1 : -1));
+  return items;
 }
 
 // ---------------------------------------------------------------------------

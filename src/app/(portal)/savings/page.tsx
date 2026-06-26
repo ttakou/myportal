@@ -5,18 +5,21 @@ import {
   getAccounts,
   getImportBatches,
   getMyAccount,
+  getMyApprovalHistory,
   getMyPendingImportApprovals,
   getMyWithdrawalRequests,
   getSavingsAuditLog,
   getSavingsConfig,
   getSavingsImportSteps,
   getWithdrawalRequests,
+  isSavingsApprover,
 } from "@/lib/savings";
 import { getTenantUsers } from "@/lib/admin";
 import { isCredit, money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
 import { SavingsAuditPanel } from "./_components/savings-audit-panel";
+import { SavingsApprovalsView } from "./_components/savings-approvals-view";
 import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
 import { ImportApprovalsInbox } from "./_components/import-approvals-inbox";
 import { resolveSavingsView } from "./_components/savings-views";
@@ -30,8 +33,24 @@ export default async function SavingsPage({
   // Mirror the sidebar/console gate (isOrgAdmin): the system_admin functional
   // role counts as admin, so the Administration nav and the page agree.
   const isAdmin = isAdminRole(role) || access.isSystemAdmin;
-  const view = resolveSavingsView((await searchParams).view, isAdmin);
+  const isApprover = await isSavingsApprover();
+  const view = resolveSavingsView((await searchParams).view, { isAdmin, isApprover });
   const isAdminView = isAdmin && view === "admin";
+  const isApprovalsView = view === "approvals";
+
+  if (isApprovalsView) {
+    const history = await getMyApprovalHistory();
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">My Approvals</h1>
+          <p className="text-muted-foreground">Every savings decision you have made.</p>
+        </div>
+        <SavingsApprovalsView items={history} />
+      </div>
+    );
+  }
+
   const [mine, myWithdrawals, config, pendingApprovals, accounts, users, withdrawals, importSteps, batches, audit] =
     await Promise.all([
       getMyAccount(),

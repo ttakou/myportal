@@ -11,6 +11,7 @@ import { emergencySubmenu } from "@/app/(portal)/emergency/_components/emergency
 import { visitorsSubmenu } from "@/app/(portal)/visitors/_components/visitors-views";
 import { medicalSubmenu } from "@/app/(portal)/medical/_components/medical-views";
 import { savingsSubmenu } from "@/app/(portal)/savings/_components/savings-views";
+import { isSavingsApprover as getIsSavingsApprover } from "@/lib/savings";
 import { adminSubmenu, canSeeAdminConsole, type AdminFlags } from "@/app/(portal)/admin/_components/admin-views";
 import { isTrainingAdmin as getIsTrainingAdmin } from "@/lib/training";
 import { getMyPermissions } from "@/lib/permissions-server";
@@ -32,12 +33,13 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const [services, access, isManager, isTrainingAdmin, perms] = await Promise.all([
+  const [services, access, isManager, isTrainingAdmin, perms, isSavingsApprover] = await Promise.all([
     getActiveServices(),
     getAccess(),
     hasDirectReports(),
     getIsTrainingAdmin(),
     getMyPermissions(),
+    getIsSavingsApprover(),
   ]);
   const canManageOffshore = access.isAdmin || access.isCampboss || access.isOim;
   const isHr = access.isHr || access.isSystemAdmin || access.isAdmin;
@@ -130,7 +132,7 @@ export async function Sidebar({
       return {
         ...base,
         defaultSubKey: "mine",
-        subItems: savingsSubmenu({ isAdmin: isOrgAdmin }),
+        subItems: savingsSubmenu({ isAdmin: isOrgAdmin, isApprover: isSavingsApprover }),
       };
     }
     return base;
