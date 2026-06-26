@@ -182,11 +182,11 @@ export interface TrainingNavItem {
 }
 
 // The four functional groups collapse into three sidebar sections: a user's own
-// training under "User Training", the team functions a manager has for their
+// training under "My Training", the team functions a manager has for their
 // direct reports under "My Team Training", and the admin tools under
 // "Training Admin Console".
 const SECTION: Record<TrainingGroup, string> = {
-  "My Training": "User Training",
+  "My Training": "My Training",
   "Team Training": "My Team Training",
   "HR Administration": "Training Admin Console",
   Reports: "Training Admin Console",
