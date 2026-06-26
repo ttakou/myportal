@@ -45,11 +45,11 @@ export async function submitFeedback(input: {
         .from("profile_roles")
         .select("profile_id")
         .eq("tenant_id", tenant.id)
-        .eq("role", "canteen_manager")
+        .in("role", ["canteen_manager", "hr_canteen"])
     : { data: [] as { profile_id: string }[] };
   await notifyUsers({
     tenantId: tenant.id,
-    profileIds: (managers ?? []).map((m) => m.profile_id),
+    profileIds: [...new Set((managers ?? []).map((m) => m.profile_id))],
     category: "general",
     title: "New canteen feedback",
     body: "An employee submitted feedback about meal service.",
@@ -61,7 +61,7 @@ export async function submitFeedback(input: {
 }
 
 export async function resolveFeedback(id: string, resolved: boolean): Promise<ActionResult> {
-  const gate = await requireModule("canteen", "approve", (a) => a.isCanteenManager);
+  const gate = await requireModule("canteen", "approve", (a) => a.isCanteenManager || a.isHrCanteen);
   if (gate) return gate;
   const supabase = createClient();
   const {

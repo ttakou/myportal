@@ -19,6 +19,7 @@ const ASSIGNABLE_ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
 const ASSIGNABLE_FUNCTIONAL: FunctionalRole[] = [
   "canteen_staff",
   "canteen_manager",
+  "hr_canteen",
   "hr_admin",
   "finance",
   "safety_admin",

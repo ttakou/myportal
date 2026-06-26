@@ -5,13 +5,14 @@ import { getCanteenForecast } from "@/lib/canteen";
 import { KITCHEN_LABEL } from "@/types/canteen";
 
 export default async function CanteenForecastPage() {
-  if (!(await getAccess()).isCanteenManager) {
+  const access = await getAccess();
+  if (!(access.isCanteenManager || access.isHrCanteen)) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
-        <h1 className="text-xl font-semibold">Campboss only</h1>
+        <h1 className="text-xl font-semibold">Canteen management only</h1>
         <p className="text-muted-foreground">
-          The forecast is available to canteen administrators.
+          The forecast is available to canteen administrators and HR Canteen.
         </p>
         <Link href="/canteen" className="text-sm font-medium text-primary hover:underline">
           ← Back to the canteen

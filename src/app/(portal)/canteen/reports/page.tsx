@@ -19,7 +19,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 
 export default async function CanteenReportsPage() {
   const access = await getAccess();
-  if (!access.isFinance && !access.isCanteenManager) {
+  if (!access.isFinance && !access.isCanteenManager && !access.isHrCanteen) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
