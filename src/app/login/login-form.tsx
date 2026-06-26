@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarCheck,
   HeartPulse,
+  Info,
   PiggyBank,
   Plane,
   ShieldCheck,
@@ -14,6 +15,25 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 type OAuthProvider = "google" | "azure";
+
+/**
+ * Heuristic: are we inside an app's embedded browser (webview) rather than a
+ * real browser? Microsoft (PKCE) sign-in frequently fails in these because the
+ * OAuth round-trip drops the code-verifier cookie. Catches the common in-app
+ * browsers plus generic iOS WKWebView (no "Safari") and Android WebView ("wv").
+ */
+function isInAppBrowser(ua: string): boolean {
+  if (!ua) return false;
+  const tokens = [
+    "FBAN", "FBAV", "Instagram", "Line/", "Twitter", "WhatsApp", "WeChat",
+    "MicroMessenger", "Snapchat", "TikTok", "Teams", "Outlook", "GSA/",
+  ];
+  if (tokens.some((t) => ua.includes(t))) return true;
+  const isIOS = /iPhone|iPod|iPad/.test(ua);
+  const iOSWebview = isIOS && /AppleWebKit/.test(ua) && !/Safari|CriOS|FxiOS/.test(ua);
+  const androidWebview = /Android/.test(ua) && /; wv\)/.test(ua);
+  return iOSWebview || androidWebview;
+}
 
 const HERO_IMAGE =
   "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1400&q=80";
@@ -48,6 +68,11 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(searchParams.get("error"));
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState<OAuthProvider | null>(null);
+  // Detected client-side (after mount) to avoid an SSR/hydration mismatch.
+  const [inAppBrowser, setInAppBrowser] = useState(false);
+  useEffect(() => {
+    setInAppBrowser(isInAppBrowser(navigator.userAgent));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -172,6 +197,18 @@ export function LoginForm({
               </span>
             </div>
           </div>
+
+          {inAppBrowser && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                You&apos;re in an in-app browser, where Microsoft sign-in can fail. Open this page
+                in <span className="font-medium">Chrome</span> or{" "}
+                <span className="font-medium">Safari</span> — tap the menu (⋯ or share icon) and
+                choose &ldquo;Open in browser&rdquo;.
+              </span>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Button

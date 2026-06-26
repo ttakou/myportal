@@ -33,7 +33,21 @@ export async function GET(request: Request) {
 
   const supabase = createClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error) return fail(error.message);
+  if (error) {
+    // The PKCE code verifier is written to a cookie when sign-in starts and read
+    // back here. On mobile it can go missing when the link is opened in an
+    // in-app browser (email/chat apps) or a different browser finishes the flow.
+    // Give an actionable message and send them back to retry, rather than a raw
+    // "code verifier not found" error.
+    const verifierLost = /code\s*verifier|pkce|both auth code and code verifier/i.test(
+      error.message,
+    );
+    return fail(
+      verifierLost
+        ? "We couldn't finish signing you in — the link was likely opened in a different browser. Please tap “Sign in with Microsoft” again, and if you opened the portal from an email or chat app, open it directly in your phone's browser (Safari or Chrome)."
+        : error.message,
+    );
+  }
 
   return NextResponse.redirect(`${base}${redirectTo}`);
 }
