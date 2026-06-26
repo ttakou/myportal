@@ -9,6 +9,7 @@ import { money } from "@/types/savings";
 import {
   importMonthlySavings,
   previewMonthlySavings,
+  submitImportForApproval,
   type SavingsImportPreview,
   type SavingsImportRow,
   type SavingsImportRowResult,
@@ -77,7 +78,7 @@ const STATUS_BADGE: Record<SavingsPreviewStatus, { label: string; cls: string }>
   error: { label: "Error", cls: "bg-destructive/10 text-destructive" },
 };
 
-export function SavingsImportPanel() {
+export function SavingsImportPanel({ approvalSteps = 0 }: { approvalSteps?: number }) {
   const [pending, startTransition] = useStatusTransition("Working…");
   const [rows, setRows] = useState<SavingsImportRow[]>([]);
   const [period, setPeriod] = useState(currentMonth());
@@ -85,12 +86,15 @@ export function SavingsImportPanel() {
   const [fileName, setFileName] = useState("");
   const [preview, setPreview] = useState<SavingsImportPreview | null>(null);
   const [results, setResults] = useState<SavingsImportRowResult[] | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const requiresApproval = approvalSteps > 0;
 
   function reset(keepPeriod = true) {
     setRows([]);
     setFileName("");
     setPreview(null);
     setResults(null);
+    setSubmitted(false);
     setError(null);
     if (!keepPeriod) setPeriod(currentMonth());
   }
@@ -123,7 +127,7 @@ export function SavingsImportPanel() {
     });
   }
 
-  // Step 2 → 3: commit the validated import.
+  // Step 2 → 3: commit the validated import (direct, no approval workflow).
   function commit() {
     setError(null);
     startTransition(async () => {
@@ -133,6 +137,22 @@ export function SavingsImportPanel() {
         return;
       }
       setResults(res.results ?? []);
+      setRows([]);
+      setFileName("");
+      setPreview(null);
+    });
+  }
+
+  // Step 2 → submit into the approval workflow instead of committing.
+  function submitForApproval() {
+    setError(null);
+    startTransition(async () => {
+      const res = await submitImportForApproval({ period, rows });
+      if (!res.ok) {
+        setError(res.error ?? "Could not submit for approval.");
+        return;
+      }
+      setSubmitted(true);
       setRows([]);
       setFileName("");
       setPreview(null);
@@ -171,8 +191,8 @@ export function SavingsImportPanel() {
       </p>
 
       <div className="space-y-3 rounded-lg border bg-card p-4">
-        {/* Upload controls — hidden once committed */}
-        {!results && (
+        {/* Upload controls — hidden once committed/submitted */}
+        {!results && !submitted && (
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm font-medium">
               Month{" "}
@@ -242,8 +262,17 @@ export function SavingsImportPanel() {
         {preview?.summary && !results && (
           <div className="space-y-3">
             <div className="rounded-md border bg-amber-50/60 px-3 py-2 text-sm text-amber-900">
-              Review the impact below. Nothing has been saved yet — click{" "}
-              <span className="font-medium">Confirm &amp; commit</span> to apply it to the accounts.
+              Review the impact below. Nothing has been saved yet —{" "}
+              {requiresApproval ? (
+                <>
+                  it goes through <span className="font-medium">{approvalSteps} approval step{approvalSteps > 1 ? "s" : ""}</span>{" "}
+                  before it commits.
+                </>
+              ) : (
+                <>
+                  click <span className="font-medium">Confirm &amp; commit</span> to apply it to the accounts.
+                </>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -304,13 +333,30 @@ export function SavingsImportPanel() {
               <Button variant="outline" size="sm" disabled={pending} onClick={() => setPreview(null)}>
                 Back
               </Button>
-              <Button
-                disabled={pending || preview.summary.willApply === 0}
-                onClick={commit}
-              >
-                {pending ? "Committing…" : `Confirm & commit ${preview.summary.willApply}`}
-              </Button>
+              {requiresApproval ? (
+                <Button disabled={pending || preview.summary.willApply === 0} onClick={submitForApproval}>
+                  {pending ? "Submitting…" : `Submit ${preview.summary.willApply} for approval`}
+                </Button>
+              ) : (
+                <Button disabled={pending || preview.summary.willApply === 0} onClick={commit}>
+                  {pending ? "Committing…" : `Confirm & commit ${preview.summary.willApply}`}
+                </Button>
+              )}
             </div>
+          </div>
+        )}
+
+        {/* Submitted into the approval workflow */}
+        {submitted && (
+          <div className="space-y-2 rounded-md border bg-green-50 px-3 py-3 text-sm text-green-800">
+            <p className="font-medium">Submitted for approval.</p>
+            <p>
+              The import is now pending {approvalSteps} approval step{approvalSteps > 1 ? "s" : ""}. Validators
+              have been notified; it will commit to member accounts once fully approved.
+            </p>
+            <button type="button" onClick={() => reset()} className="font-medium text-green-700 hover:underline">
+              Import another month
+            </button>
           </div>
         )}
 

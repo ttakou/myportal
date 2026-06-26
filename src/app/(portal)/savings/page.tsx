@@ -3,9 +3,12 @@ import { FileText } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import {
   getAccounts,
+  getImportBatches,
   getMyAccount,
+  getMyPendingImportApprovals,
   getMyWithdrawalRequests,
   getSavingsConfig,
+  getSavingsImportSteps,
   getWithdrawalRequests,
 } from "@/lib/savings";
 import { getTenantUsers } from "@/lib/admin";
@@ -13,6 +16,7 @@ import { isCredit, money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
 import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
+import { ImportApprovalsInbox } from "./_components/import-approvals-inbox";
 import { resolveSavingsView } from "./_components/savings-views";
 
 export default async function SavingsPage({
@@ -26,14 +30,18 @@ export default async function SavingsPage({
   const isAdmin = isAdminRole(role) || access.isSystemAdmin;
   const view = resolveSavingsView((await searchParams).view, isAdmin);
   const isAdminView = isAdmin && view === "admin";
-  const [mine, myWithdrawals, config, accounts, users, withdrawals] = await Promise.all([
-    getMyAccount(),
-    getMyWithdrawalRequests(),
-    getSavingsConfig(),
-    isAdminView ? getAccounts() : Promise.resolve([]),
-    isAdminView ? getTenantUsers() : Promise.resolve([]),
-    isAdminView ? getWithdrawalRequests() : Promise.resolve([]),
-  ]);
+  const [mine, myWithdrawals, config, pendingApprovals, accounts, users, withdrawals, importSteps, batches] =
+    await Promise.all([
+      getMyAccount(),
+      getMyWithdrawalRequests(),
+      getSavingsConfig(),
+      getMyPendingImportApprovals(),
+      isAdminView ? getAccounts() : Promise.resolve([]),
+      isAdminView ? getTenantUsers() : Promise.resolve([]),
+      isAdminView ? getWithdrawalRequests() : Promise.resolve([]),
+      isAdminView ? getSavingsImportSteps() : Promise.resolve([]),
+      isAdminView ? getImportBatches() : Promise.resolve([]),
+    ]);
 
   if (view === "admin") {
     return (
@@ -47,6 +55,8 @@ export default async function SavingsPage({
           users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
           withdrawals={withdrawals}
           annualRatePct={config.annualRatePct}
+          importSteps={importSteps}
+          batches={batches}
         />
       </div>
     );
@@ -86,6 +96,8 @@ export default async function SavingsPage({
           <p className="text-xs text-muted-foreground">per year, compounded monthly</p>
         </div>
       </div>
+
+      <ImportApprovalsInbox approvals={pendingApprovals} />
 
       <WithdrawalRequestPanel balance={mine?.balance ?? 0} requests={myWithdrawals} />
 

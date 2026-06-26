@@ -5,21 +5,28 @@ import { useStatusTransition } from "@/components/activity";
 import { PiggyBank } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { money, type AccountSummary, type WithdrawalRequest } from "@/types/savings";
-import { ensureAccount, postTransaction } from "../actions";
+import type { ImportBatchSummary } from "@/lib/savings";
+import { ensureAccount, postTransaction, type SavingsImportStep } from "../actions";
 import { SavingsImportPanel } from "./savings-import-panel";
 import { WithdrawalAdminPanel } from "./withdrawal-admin-panel";
 import { InterestPanel } from "./interest-panel";
+import { ImportApprovalConfigPanel } from "./import-approval-config-panel";
+import { ImportBatchesPanel } from "./import-batches-panel";
 
 export function SavingsAdmin({
   accounts,
   users,
   withdrawals,
   annualRatePct,
+  importSteps,
+  batches,
 }: {
   accounts: AccountSummary[];
   users: { id: string; name: string }[];
   withdrawals: WithdrawalRequest[];
   annualRatePct: number;
+  importSteps: SavingsImportStep[];
+  batches: ImportBatchSummary[];
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +52,11 @@ export function SavingsAdmin({
 
       <InterestPanel annualRatePct={annualRatePct} />
 
-      <SavingsImportPanel />
+      <ImportApprovalConfigPanel users={users} steps={importSteps} />
+
+      <SavingsImportPanel approvalSteps={importSteps.length} />
+
+      {batches.length > 0 && <ImportBatchesPanel batches={batches} />}
 
       <h2 className="text-lg font-semibold">Fund manager</h2>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}

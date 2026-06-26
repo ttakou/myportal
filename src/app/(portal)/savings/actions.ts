@@ -317,30 +317,19 @@ export async function previewMonthlySavings(input: {
  * imported come back as "skipped", so a corrected sheet can be re-run safely.
  * Admins validate the impact via previewMonthlySavings before calling this.
  */
-export async function importMonthlySavings(input: {
-  period: string; // "YYYY-MM"
-  rows: SavingsImportRow[];
-}): Promise<SavingsImportResult> {
-  const gate = await requireModule("savings", "create");
-  if (gate) return { ok: false, error: gate.error };
-
-  if (!/^\d{4}-\d{2}$/.test(input.period)) {
-    return { ok: false, error: "Period must be a month, e.g. 2026-06." };
-  }
-  const periodDate = `${input.period}-01`;
-  if (!input.rows.length) return { ok: false, error: "Nothing to import." };
-
-  const rls = createClient();
-  const t = await tenantId(rls);
-  if (!t) return { ok: false, error: "No tenant in scope." };
-
-  // Trusted bulk write bypasses RLS so finance/admin staff who aren't the
-  // tenant_admin role can still run the monthly import. Fall back to the
-  // RLS client if the service key isn't configured.
-  const db = createAdminClient() ?? rls;
-
-  // Resolve employee numbers to profiles within this tenant.
-  const empNums = [...new Set(input.rows.map((r) => r.empNum.trim()).filter(Boolean))];
+/**
+ * The actual write: resolve each row to a member, ensure an account and post a
+ * period-tagged `contribution`. Shared by the direct import and the final
+ * approval step. `db` should be a service-role client; `period` is "YYYY-MM".
+ */
+async function applyImportRows(
+  db: SupabaseClient,
+  t: string,
+  period: string,
+  rows: SavingsImportRow[],
+): Promise<SavingsImportRowResult[]> {
+  const periodDate = `${period}-01`;
+  const empNums = [...new Set(rows.map((r) => r.empNum.trim()).filter(Boolean))];
   const { data: profs } = await db
     .from("profiles")
     .select("id, full_name, emp_num")
@@ -351,7 +340,6 @@ export async function importMonthlySavings(input: {
     if (p.emp_num) byEmpNum.set(String(p.emp_num), { id: p.id, full_name: p.full_name });
   }
 
-  // Existing accounts for the resolved members.
   const profileIds = [...byEmpNum.values()].map((p) => p.id);
   const acctByProfile = new Map<string, string>();
   if (profileIds.length) {
@@ -366,7 +354,7 @@ export async function importMonthlySavings(input: {
   }
 
   const results: SavingsImportRowResult[] = [];
-  for (const row of input.rows) {
+  for (const row of rows) {
     const empNum = row.empNum.trim();
     const base: SavingsImportRowResult = { empNum, amount: row.amount, status: "failed" };
 
@@ -385,7 +373,6 @@ export async function importMonthlySavings(input: {
     }
     base.name = prof.full_name ?? undefined;
 
-    // Ensure the member has an account.
     let accountId = acctByProfile.get(prof.id);
     if (!accountId) {
       const { data: created, error: cErr } = await db
@@ -407,10 +394,9 @@ export async function importMonthlySavings(input: {
       kind: "contribution",
       amount: row.amount,
       period: periodDate,
-      note: `Monthly savings ${input.period}`,
+      note: `Monthly savings ${period}`,
     });
     if (txErr) {
-      // 23505 = the period is already imported for this account → idempotent skip.
       if (txErr.code === "23505" || txErr.message.includes("duplicate")) {
         results.push({ ...base, status: "skipped", error: "Already imported for this month." });
       } else {
@@ -420,6 +406,31 @@ export async function importMonthlySavings(input: {
     }
     results.push({ ...base, status: "applied" });
   }
+  return results;
+}
+
+export async function importMonthlySavings(input: {
+  period: string; // "YYYY-MM"
+  rows: SavingsImportRow[];
+}): Promise<SavingsImportResult> {
+  const gate = await requireModule("savings", "create");
+  if (gate) return { ok: false, error: gate.error };
+
+  if (!/^\d{4}-\d{2}$/.test(input.period)) {
+    return { ok: false, error: "Period must be a month, e.g. 2026-06." };
+  }
+  if (!input.rows.length) return { ok: false, error: "Nothing to import." };
+
+  const rls = createClient();
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+
+  // Trusted bulk write bypasses RLS so finance/admin staff who aren't the
+  // tenant_admin role can still run the monthly import. Fall back to the
+  // RLS client if the service key isn't configured.
+  const db = createAdminClient() ?? rls;
+
+  const results = await applyImportRows(db, t, input.period, input.rows);
 
   rev();
   return {
@@ -430,6 +441,242 @@ export async function importMonthlySavings(input: {
     failed: results.filter((r) => r.status === "failed").length,
     results,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Configurable multi-step import approval
+// ---------------------------------------------------------------------------
+
+export interface SavingsImportStep {
+  name: string;
+  /** Profile ids who may approve this step (any one advances it). */
+  validators: string[];
+}
+
+/** Read the tenant's configured import-approval steps. */
+async function loadImportSteps(db: SupabaseClient, t: string): Promise<SavingsImportStep[]> {
+  const { data } = await db.from("tenants").select("settings").eq("id", t).maybeSingle();
+  const arr = (((data?.settings as Record<string, any>) ?? {}).savings ?? {}).importApproval;
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((s: any) => ({
+      name: String(s?.name ?? "").trim() || "Approval",
+      validators: Array.isArray(s?.validators) ? s.validators.filter(Boolean).map(String) : [],
+    }))
+    .filter((s: SavingsImportStep) => s.validators.length > 0);
+}
+
+/** Configure the import-approval steps (admin). Empty list = direct commit. */
+export async function setSavingsImportSteps(steps: SavingsImportStep[]): Promise<ActionResult> {
+  const gate = await requireModule("savings", "operate");
+  if (gate) return gate;
+  const rls = createClient();
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  const clean = (steps ?? [])
+    .map((s) => ({
+      name: String(s.name ?? "").trim() || "Approval",
+      validators: [...new Set((s.validators ?? []).filter(Boolean).map(String))],
+    }))
+    .filter((s) => s.validators.length > 0);
+
+  const { data: row } = await admin.from("tenants").select("settings").eq("id", t).maybeSingle();
+  const settings = (row?.settings as Record<string, unknown>) ?? {};
+  const savings = { ...((settings.savings as Record<string, unknown>) ?? {}) };
+  savings.importApproval = clean;
+  const { error } = await admin
+    .from("tenants")
+    .update({ settings: { ...settings, savings } })
+    .eq("id", t);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/savings");
+  return { ok: true };
+}
+
+/**
+ * Submit an import for approval. Snapshots the configured steps on the batch and
+ * notifies the first step's validators. Used when ≥1 approval step is set; with
+ * zero steps the panel commits directly via importMonthlySavings.
+ */
+export async function submitImportForApproval(input: {
+  period: string;
+  rows: SavingsImportRow[];
+}): Promise<ActionResult & { batchId?: string }> {
+  const gate = await requireModule("savings", "create");
+  if (gate) return gate;
+  if (!/^\d{4}-\d{2}$/.test(input.period))
+    return { ok: false, error: "Period must be a month, e.g. 2026-06." };
+  if (!input.rows.length) return { ok: false, error: "Nothing to submit." };
+
+  const rls = createClient();
+  const { data: { user } } = await rls.auth.getUser();
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+  const db = createAdminClient() ?? rls;
+
+  const steps = await loadImportSteps(db, t);
+  if (steps.length === 0)
+    return { ok: false, error: "No approval steps configured. Commit directly instead." };
+
+  const { data: batch, error } = await db
+    .from("savings_import_batches")
+    .insert({
+      tenant_id: t,
+      period: `${input.period}-01`,
+      rows: input.rows,
+      steps,
+      status: "pending",
+      current_step: 0,
+      created_by: user?.id ?? null,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !batch) return { ok: false, error: error?.message ?? "Could not submit." };
+
+  await notifyUsers({
+    tenantId: t,
+    profileIds: steps[0].validators,
+    category: "approval",
+    title: "Savings import awaiting approval",
+    body: `A monthly savings import for ${input.period} needs your approval (${steps[0].name}).`,
+    url: "/savings?view=mine",
+  });
+  rev();
+  return { ok: true, batchId: batch.id };
+}
+
+/**
+ * Approve or reject the current step of an import batch. Any one validator on the
+ * step advances it; the final approval commits the import to member accounts.
+ */
+export async function decideImportBatch(
+  batchId: string,
+  approve: boolean,
+  note?: string,
+): Promise<ActionResult> {
+  const rls = createClient();
+  const { data: { user } } = await rls.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+  const db = createAdminClient() ?? rls;
+
+  const { data: batch } = await db
+    .from("savings_import_batches")
+    .select("id, tenant_id, period, rows, steps, status, current_step, created_by")
+    .eq("id", batchId)
+    .maybeSingle();
+  if (!batch) return { ok: false, error: "Batch not found." };
+  if (batch.status !== "pending") return { ok: false, error: `This import is already ${batch.status}.` };
+
+  const steps = (batch.steps ?? []) as SavingsImportStep[];
+  const stepIdx = batch.current_step as number;
+  const step = steps[stepIdx];
+  if (!step) return { ok: false, error: "Invalid approval step." };
+
+  // Authorised if a validator for this step, or a savings admin.
+  const adminGate = await requireModule("savings", "create");
+  const isAdmin = !adminGate;
+  if (!isAdmin && !step.validators.includes(user.id))
+    return { ok: false, error: "You are not a validator for this step." };
+
+  await db.from("savings_import_approvals").insert({
+    tenant_id: t,
+    batch_id: batchId,
+    step_index: stepIdx,
+    decision: approve ? "approve" : "reject",
+    decided_by: user.id,
+    note: note?.trim() || null,
+  });
+
+  if (!approve) {
+    await db
+      .from("savings_import_batches")
+      .update({ status: "rejected", decided_at: new Date().toISOString() })
+      .eq("id", batchId);
+    await notifyUsers({
+      tenantId: t,
+      profileIds: [batch.created_by],
+      category: "approval",
+      title: "Savings import rejected",
+      body: `The savings import for ${String(batch.period).slice(0, 7)} was rejected at "${step.name}".`,
+      url: "/savings?view=admin",
+    });
+    rev();
+    return { ok: true };
+  }
+
+  const nextStep = stepIdx + 1;
+  if (nextStep < steps.length) {
+    await db.from("savings_import_batches").update({ current_step: nextStep }).eq("id", batchId);
+    await notifyUsers({
+      tenantId: t,
+      profileIds: steps[nextStep].validators,
+      category: "approval",
+      title: "Savings import awaiting approval",
+      body: `A monthly savings import for ${String(batch.period).slice(0, 7)} needs your approval (${steps[nextStep].name}).`,
+      url: "/savings?view=mine",
+    });
+    rev();
+    return { ok: true };
+  }
+
+  // Final approval → commit.
+  const period = String(batch.period).slice(0, 7);
+  const results = await applyImportRows(db, t, period, batch.rows as SavingsImportRow[]);
+  await db
+    .from("savings_import_batches")
+    .update({
+      status: "committed",
+      current_step: nextStep,
+      decided_at: new Date().toISOString(),
+      committed_at: new Date().toISOString(),
+      commit_result: {
+        applied: results.filter((r) => r.status === "applied").length,
+        skipped: results.filter((r) => r.status === "skipped").length,
+        failed: results.filter((r) => r.status === "failed").length,
+      },
+    })
+    .eq("id", batchId);
+  await notifyUsers({
+    tenantId: t,
+    profileIds: [batch.created_by],
+    category: "approval",
+    title: "Savings import committed",
+    body: `The savings import for ${period} was fully approved and committed to member accounts.`,
+    url: "/savings?view=admin",
+  });
+  rev();
+  return { ok: true };
+}
+
+/** Cancel a pending batch (submitter or admin). */
+export async function cancelImportBatch(batchId: string): Promise<ActionResult> {
+  const rls = createClient();
+  const { data: { user } } = await rls.auth.getUser();
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+  const db = createAdminClient() ?? rls;
+  const { data: batch } = await db
+    .from("savings_import_batches")
+    .select("id, status, created_by")
+    .eq("id", batchId)
+    .maybeSingle();
+  if (!batch) return { ok: false, error: "Batch not found." };
+  if (batch.status !== "pending") return { ok: false, error: `This import is already ${batch.status}.` };
+  const adminGate = await requireModule("savings", "create");
+  if (adminGate && batch.created_by !== user?.id)
+    return { ok: false, error: "Not authorised to cancel this import." };
+  const { error } = await db
+    .from("savings_import_batches")
+    .update({ status: "cancelled", decided_at: new Date().toISOString() })
+    .eq("id", batchId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
