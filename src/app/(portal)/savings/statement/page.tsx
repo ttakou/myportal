@@ -4,9 +4,18 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getStatement } from "@/lib/savings";
 import { getTenantBranding } from "@/lib/branding";
-import { money, type SavingsTxn, type Statement } from "@/types/savings";
+import { type SavingsTxn, type Statement } from "@/types/savings";
 import { MedallionStamp } from "@/components/ui/medallion-stamp";
 import { PrintButton } from "./print-button";
+
+/**
+ * Statement cells show plain grouped numbers (currency lives in the column
+ * headers) so even billion-XAF figures fit the fixed columns. "1 000 000 000",
+ * never "1 000 000 000 FCFA" in every cell.
+ */
+function amt(n: number): string {
+  return n.toLocaleString("fr-FR", { maximumFractionDigits: 0 });
+}
 
 const SOFTWARE_NAME = "MyEnterprisePortal";
 
@@ -59,6 +68,18 @@ export default async function StatementPage({
 
   return (
     <div className="space-y-4">
+      {/* A4 page geometry for printing; the sheet itself is sized to the A4
+          content width so it prints 1:1 and reads balanced on screen. */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+@page { size: A4; margin: 12mm; }
+@media print {
+  html, body { background: #fff !important; }
+  .statement-sheet { width: 100% !important; max-width: none !important; box-shadow: none !important; }
+}`,
+        }}
+      />
       {/* Controls — hidden when printing */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Link
@@ -129,25 +150,25 @@ function StatementDocument({
 
   return (
     <article
-      className="mx-auto max-w-4xl bg-white px-10 py-8 text-[13px] text-neutral-900 shadow-sm ring-1 ring-neutral-200 print:max-w-none print:px-6 print:shadow-none print:ring-0"
+      className="statement-sheet mx-auto w-full max-w-[210mm] bg-white px-5 py-6 text-[12px] text-neutral-900 shadow-sm ring-1 ring-neutral-200 sm:px-8 sm:py-8 sm:text-[13px] print:max-w-none print:px-0 print:py-0 print:shadow-none print:ring-0"
       style={exact}
     >
       {/* ── Masthead ─────────────────────────────────────────────── */}
-      <header className="flex items-start justify-between gap-6 border-b-2 pb-4" style={{ borderColor: primary }}>
-        <div className="flex items-start gap-4">
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-b-2 pb-4" style={{ borderColor: primary }}>
+        <div className="flex min-w-0 items-start gap-3 sm:gap-4">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoUrl} alt={brandName} className="h-16 w-16 shrink-0 object-contain" />
+            <img src={logoUrl} alt={brandName} className="h-14 w-14 shrink-0 object-contain sm:h-16 sm:w-16" />
           ) : (
             <div
-              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-bold text-white"
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-2xl font-bold text-white sm:h-16 sm:w-16"
               style={{ backgroundColor: primary, ...exact }}
             >
               {brandName.slice(0, 1)}
             </div>
           )}
-          <div>
-            <h1 className="text-2xl font-extrabold uppercase leading-tight tracking-tight" style={{ color: primary }}>
+          <div className="min-w-0">
+            <h1 className="text-xl font-extrabold uppercase leading-tight tracking-tight sm:text-2xl" style={{ color: primary }}>
               {brandName}
             </h1>
             <div className="mt-0.5 text-[11px] leading-snug text-neutral-600">
@@ -162,7 +183,7 @@ function StatementDocument({
           </div>
         </div>
         <div className="text-right">
-          <p className="text-lg font-semibold uppercase tracking-tight text-neutral-700">
+          <p className="text-base font-semibold uppercase tracking-tight text-neutral-700 sm:text-lg">
             Savings Account Statement
           </p>
           <p className="text-xs text-neutral-500">Page : 1 of 1</p>
@@ -201,26 +222,34 @@ function StatementDocument({
       </div>
 
       {/* ── Transactions ─────────────────────────────────────────── */}
-      <table className="mt-6 w-full border-collapse text-[12.5px]" style={exact}>
+      <table className="mt-6 w-full table-fixed border-collapse text-[11px] sm:text-[12px]" style={exact}>
+        <colgroup>
+          <col style={{ width: "13%" }} />
+          <col style={{ width: "27%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "17%" }} />
+          <col style={{ width: "17%" }} />
+          <col style={{ width: "17%" }} />
+        </colgroup>
         <thead>
           <tr>
-            <th className="border px-3 py-2 text-left font-semibold" style={headerCell}>Date</th>
-            <th className="border px-3 py-2 text-left font-semibold" style={headerCell}>Description</th>
-            <th className="border px-3 py-2 text-left font-semibold" style={headerCell}>Ref.</th>
-            <th className="border px-3 py-2 text-right font-semibold" style={headerCell}>Withdrawals</th>
-            <th className="border px-3 py-2 text-right font-semibold" style={headerCell}>Deposits</th>
-            <th className="border px-3 py-2 text-right font-semibold" style={headerCell}>Balance</th>
+            <th className="border px-2 py-2 text-left font-semibold sm:px-3" style={headerCell}>Date</th>
+            <th className="border px-2 py-2 text-left font-semibold sm:px-3" style={headerCell}>Description</th>
+            <th className="border px-2 py-2 text-left font-semibold sm:px-3" style={headerCell}>Ref.</th>
+            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Withdrawals<span className="font-normal opacity-80"> (XAF)</span></th>
+            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Deposits<span className="font-normal opacity-80"> (XAF)</span></th>
+            <th className="border px-2 py-2 text-right font-semibold sm:px-3" style={headerCell}>Balance<span className="font-normal opacity-80"> (XAF)</span></th>
           </tr>
         </thead>
         <tbody>
           {/* Opening balance */}
           <tr style={zebra}>
-            <td className="border px-3 py-1.5 tabular-nums text-neutral-600">{fmtDate(statement.from)}</td>
-            <td className="border px-3 py-1.5">Previous balance</td>
-            <td className="border px-3 py-1.5" />
-            <td className="border px-3 py-1.5" />
-            <td className="border px-3 py-1.5" />
-            <td className="border px-3 py-1.5 text-right tabular-nums">{money(statement.openingBalance)}</td>
+            <td className="whitespace-nowrap border px-2 py-1.5 tabular-nums text-neutral-600 sm:px-3">{fmtDate(statement.from)}</td>
+            <td className="border px-2 py-1.5 sm:px-3">Previous balance</td>
+            <td className="border px-2 py-1.5 sm:px-3" />
+            <td className="border px-2 py-1.5 sm:px-3" />
+            <td className="border px-2 py-1.5 sm:px-3" />
+            <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums sm:px-3">{amt(statement.openingBalance)}</td>
           </tr>
 
           {statement.transactions.length === 0 ? (
@@ -235,21 +264,21 @@ function StatementDocument({
 
           {/* Totals */}
           <tr className="font-semibold" style={exact}>
-            <td className="border px-3 py-2" />
-            <td className="border px-3 py-2 text-center tracking-wide text-neutral-600">*** Totals ***</td>
-            <td className="border px-3 py-2" />
-            <td className="border px-3 py-2 text-right tabular-nums">{money(statement.totalOut)}</td>
-            <td className="border px-3 py-2 text-right tabular-nums">{money(statement.totalIn)}</td>
-            <td className="border px-3 py-2 text-right tabular-nums" />
+            <td className="border px-2 py-2 sm:px-3" />
+            <td className="border px-2 py-2 text-center tracking-wide text-neutral-600 sm:px-3">*** Totals ***</td>
+            <td className="border px-2 py-2 sm:px-3" />
+            <td className="whitespace-nowrap border px-2 py-2 text-right tabular-nums sm:px-3">{amt(statement.totalOut)}</td>
+            <td className="whitespace-nowrap border px-2 py-2 text-right tabular-nums sm:px-3">{amt(statement.totalIn)}</td>
+            <td className="border px-2 py-2 text-right tabular-nums sm:px-3" />
           </tr>
           {/* Closing balance */}
           <tr className="font-bold" style={{ ...zebra }}>
-            <td className="border px-3 py-2" />
-            <td className="border px-3 py-2" colSpan={4}>
+            <td className="border px-2 py-2 sm:px-3" />
+            <td className="border px-2 py-2 sm:px-3" colSpan={4}>
               Closing balance
             </td>
-            <td className="border px-3 py-2 text-right tabular-nums" style={{ color: primary }}>
-              {money(statement.closingBalance)}
+            <td className="whitespace-nowrap border px-2 py-2 text-right tabular-nums sm:px-3" style={{ color: primary }}>
+              {amt(statement.closingBalance)}
             </td>
           </tr>
         </tbody>
@@ -299,12 +328,12 @@ function renderRows(statement: Statement, zebra: React.CSSProperties) {
     const striped = i % 2 === 1;
     return (
       <tr key={t.id} style={striped ? zebra : undefined}>
-        <td className="border px-3 py-1.5 tabular-nums text-neutral-600">{date}</td>
-        <td className="border px-3 py-1.5">{t.note ?? fallbackDesc}</td>
-        <td className="border px-3 py-1.5 tabular-nums text-neutral-500">{ref}</td>
-        <td className="border px-3 py-1.5 text-right tabular-nums text-red-700">{isIn ? "" : money(t.amount)}</td>
-        <td className="border px-3 py-1.5 text-right tabular-nums text-green-700">{isIn ? money(t.amount) : ""}</td>
-        <td className="border px-3 py-1.5 text-right tabular-nums font-medium">{money(running)}</td>
+        <td className="whitespace-nowrap border px-2 py-1.5 tabular-nums text-neutral-600 sm:px-3">{date}</td>
+        <td className="border px-2 py-1.5 sm:px-3">{t.note ?? fallbackDesc}</td>
+        <td className="truncate border px-2 py-1.5 tabular-nums text-neutral-500 sm:px-3">{ref}</td>
+        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums text-red-700 sm:px-3">{isIn ? "" : amt(t.amount)}</td>
+        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums text-green-700 sm:px-3">{isIn ? amt(t.amount) : ""}</td>
+        <td className="whitespace-nowrap border px-2 py-1.5 text-right tabular-nums font-medium sm:px-3">{amt(running)}</td>
       </tr>
     );
   });
