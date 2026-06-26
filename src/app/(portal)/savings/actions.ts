@@ -181,6 +181,133 @@ export interface SavingsImportResult {
   results?: SavingsImportRowResult[];
 }
 
+export type SavingsPreviewStatus = "apply" | "new-account" | "skip" | "error";
+
+export interface SavingsPreviewRow {
+  empNum: string;
+  name: string | null;
+  department: string | null;
+  amount: number;
+  currentBalance: number | null;
+  newBalance: number | null;
+  status: SavingsPreviewStatus;
+  note?: string;
+}
+
+export interface SavingsImportPreview {
+  ok: boolean;
+  error?: string;
+  period?: string;
+  rows?: SavingsPreviewRow[];
+  summary?: {
+    willApply: number;
+    newAccounts: number;
+    alreadyImported: number;
+    errors: number;
+    totalContribution: number;
+    totalCurrent: number;
+    totalNew: number;
+  };
+}
+
+/**
+ * Dry-run the monthly import: resolve each row, compute the new balance it would
+ * produce and flag issues — WITHOUT writing anything. Drives the preview/impact
+ * report the admin validates before committing with importMonthlySavings.
+ */
+export async function previewMonthlySavings(input: {
+  period: string;
+  rows: SavingsImportRow[];
+}): Promise<SavingsImportPreview> {
+  const gate = await requireModule("savings", "create");
+  if (gate) return { ok: false, error: gate.error };
+  if (!/^\d{4}-\d{2}$/.test(input.period))
+    return { ok: false, error: "Period must be a month, e.g. 2026-06." };
+  if (!input.rows.length) return { ok: false, error: "Nothing to preview." };
+  const periodDate = `${input.period}-01`;
+
+  const rls = createClient();
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+  const db = createAdminClient() ?? rls;
+
+  const empNums = [...new Set(input.rows.map((r) => r.empNum.trim()).filter(Boolean))];
+  const { data: profs } = await db
+    .from("profiles")
+    .select("id, full_name, emp_num, department")
+    .eq("tenant_id", t)
+    .in("emp_num", empNums);
+  const byEmpNum = new Map<string, { id: string; full_name: string | null; department: string | null }>();
+  for (const p of (profs ?? []) as Record<string, any>[]) {
+    if (p.emp_num) byEmpNum.set(String(p.emp_num), { id: p.id, full_name: p.full_name, department: p.department });
+  }
+
+  // Current accounts (balance) + which already have this period's contribution.
+  const profileIds = [...byEmpNum.values()].map((p) => p.id);
+  const acctByProfile = new Map<string, { id: string; balance: number }>();
+  const importedAccts = new Set<string>();
+  if (profileIds.length) {
+    const { data: accts } = await db
+      .from("savings_accounts")
+      .select("id, profile_id, balance")
+      .eq("tenant_id", t)
+      .in("profile_id", profileIds);
+    for (const a of (accts ?? []) as Record<string, any>[]) {
+      acctByProfile.set(a.profile_id, { id: a.id, balance: Number(a.balance) });
+    }
+    const acctIds = [...acctByProfile.values()].map((a) => a.id);
+    if (acctIds.length) {
+      const { data: existing } = await db
+        .from("savings_transactions")
+        .select("account_id")
+        .eq("kind", "contribution")
+        .eq("period", periodDate)
+        .in("account_id", acctIds);
+      for (const r of (existing ?? []) as Record<string, any>[]) importedAccts.add(r.account_id);
+    }
+  }
+
+  const rows: SavingsPreviewRow[] = input.rows.map((row) => {
+    const empNum = row.empNum.trim();
+    if (!empNum) return { empNum, name: null, department: null, amount: row.amount, currentBalance: null, newBalance: null, status: "error", note: "Missing employee number." };
+    if (!(row.amount > 0)) return { empNum, name: null, department: null, amount: row.amount, currentBalance: null, newBalance: null, status: "error", note: "Amount must be a positive number." };
+    const prof = byEmpNum.get(empNum);
+    if (!prof) return { empNum, name: null, department: null, amount: row.amount, currentBalance: null, newBalance: null, status: "error", note: `No employee with number ${empNum}.` };
+
+    const acct = acctByProfile.get(prof.id);
+    const currentBalance = acct?.balance ?? 0;
+    if (acct && importedAccts.has(acct.id)) {
+      return { empNum, name: prof.full_name, department: prof.department, amount: row.amount, currentBalance, newBalance: currentBalance, status: "skip", note: "Already imported for this month." };
+    }
+    return {
+      empNum,
+      name: prof.full_name,
+      department: prof.department,
+      amount: row.amount,
+      currentBalance,
+      newBalance: currentBalance + row.amount,
+      status: acct ? "apply" : "new-account",
+      note: acct ? undefined : "A new savings account will be opened.",
+    };
+  });
+
+  const willApplyRows = rows.filter((r) => r.status === "apply" || r.status === "new-account");
+  return {
+    ok: true,
+    period: input.period,
+    rows,
+    summary: {
+      willApply: willApplyRows.length,
+      newAccounts: rows.filter((r) => r.status === "new-account").length,
+      alreadyImported: rows.filter((r) => r.status === "skip").length,
+      errors: rows.filter((r) => r.status === "error").length,
+      totalContribution: willApplyRows.reduce((s, r) => s + r.amount, 0),
+      totalCurrent: willApplyRows.reduce((s, r) => s + (r.currentBalance ?? 0), 0),
+      totalNew: willApplyRows.reduce((s, r) => s + (r.newBalance ?? 0), 0),
+    },
+  };
+}
+
 /**
  * Credit a monthly savings sheet into member accounts. Each row carries an
  * employee number and the amount saved that month; we match the number to a
@@ -188,6 +315,7 @@ export interface SavingsImportResult {
  * transaction tagged with the period. The partial unique index on
  * (account_id, period) makes re-uploading the same month a no-op — rows already
  * imported come back as "skipped", so a corrected sheet can be re-run safely.
+ * Admins validate the impact via previewMonthlySavings before calling this.
  */
 export async function importMonthlySavings(input: {
   period: string; // "YYYY-MM"
