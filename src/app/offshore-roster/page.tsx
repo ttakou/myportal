@@ -1,7 +1,7 @@
 import { getAccess } from "@/lib/auth";
-import { getTenantBranding } from "@/lib/branding";
 import { getRoster } from "@/lib/offshore";
 import type { RosterEntry } from "@/types/offshore";
+import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
 /** Standalone, print-friendly offshore-staff roster with default room allocation. */
@@ -17,7 +17,7 @@ export default async function RosterReportPage({
   }
 
   const date = sp.date || new Date().toISOString().slice(0, 10);
-  const [roster, branding] = await Promise.all([getRoster(), getTenantBranding()]);
+  const roster = await getRoster();
   const fmt = (d: string) => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
   // Group by crew, then name.
@@ -49,19 +49,10 @@ export default async function RosterReportPage({
       </div>
 
       <div className="roster-report mx-auto max-w-[1100px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">
-        <div className="flex items-start justify-between border-b-2 border-gray-900 pb-3">
-          <div className="flex items-center gap-3">
-            {branding.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={branding.logoUrl} alt={branding.name} className="h-12 w-auto object-contain" />
-            ) : null}
-            <div className="text-lg font-bold text-gray-900">{branding.name}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-xl font-bold tracking-tight text-gray-900">OFFSHORE STAFF · DEFAULT ROOM ALLOCATION</div>
-            <div className="text-xs text-gray-500">As of {fmt(date)} · {roster.length} staff</div>
-          </div>
-        </div>
+        <ReportHeader
+          title="Offshore staff · default room allocation"
+          subtitle={`As of ${fmt(date)} · ${roster.length} staff`}
+        />
 
         {crews.map(([crew, members]) => (
           <div key={crew} className="mt-4" style={{ breakInside: "avoid" }}>
@@ -102,9 +93,7 @@ export default async function RosterReportPage({
         ))}
         {roster.length === 0 && <p className="mt-4 text-sm text-gray-400">No offshore staff on the roster.</p>}
 
-        <div className="mt-6 border-t border-gray-200 pt-2 text-[9px] text-gray-400">
-          {branding.name} · Offshore staff default room allocation · Generated {new Date().toLocaleString("en-GB", { timeZone: "UTC" })} UTC
-        </div>
+        <ReportStampFooter label="Default room allocation" />
       </div>
     </div>
   );

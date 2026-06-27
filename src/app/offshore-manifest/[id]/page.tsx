@@ -1,7 +1,7 @@
 import { getAccess } from "@/lib/auth";
-import { getTenantBranding } from "@/lib/branding";
 import { getManifestById } from "@/lib/offshore";
 import { TRIP_TYPE_LABEL } from "@/types/offshore";
+import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "./print-button";
 
 /** Standalone, print-friendly passenger manifest report with tenant branding. */
@@ -16,7 +16,7 @@ export default async function ManifestReportPage({
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 
-  const [m, branding] = await Promise.all([getManifestById(id), getTenantBranding()]);
+  const m = await getManifestById(id);
   if (!m) {
     return <p className="p-8 text-sm text-muted-foreground">Manifest not found.</p>;
   }
@@ -25,7 +25,6 @@ export default async function ManifestReportPage({
   const noShow = m.pax.filter((p) => p.no_show);
   const directionLabel = m.direction === "out" ? "Inbound — joining installation" : "Outbound — leaving installation";
   const mode = (m.transport_mode ?? "—").replace(/^\w/, (c) => c.toUpperCase());
-  const generated = new Date().toLocaleString("en-GB", { timeZone: "UTC" }) + " UTC";
 
   const Cell = ({ label, value }: { label: string; value: string }) => (
     <div>
@@ -48,25 +47,11 @@ export default async function ManifestReportPage({
 
       <div className="mx-auto max-w-[800px] bg-white p-8 shadow-sm print:max-w-none print:shadow-none">
         {/* Header */}
-        <div className="flex items-start justify-between border-b-2 border-gray-900 pb-4">
-          <div className="flex items-center gap-3">
-            {branding.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={branding.logoUrl} alt={branding.name} className="h-14 w-auto object-contain" />
-            ) : null}
-            <div>
-              <div className="text-lg font-bold text-gray-900">{branding.name}</div>
-              <div className="text-xs text-gray-500">Offshore logistics</div>
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-xl font-bold tracking-tight text-gray-900">PASSENGER MANIFEST</div>
-            <div className="text-xs text-gray-500">{TRIP_TYPE_LABEL[m.trip_type] ?? m.trip_type}</div>
-            <div className="mt-1 inline-block rounded bg-gray-900 px-2 py-0.5 text-[11px] font-medium uppercase text-white">
-              {m.status}
-            </div>
-          </div>
-        </div>
+        <ReportHeader
+          title="Passenger manifest"
+          subtitle="Offshore logistics"
+          meta={[TRIP_TYPE_LABEL[m.trip_type] ?? m.trip_type, m.status.toUpperCase()]}
+        />
 
         {/* Meta */}
         <div className="grid grid-cols-2 gap-x-8 gap-y-3 py-4 sm:grid-cols-3">
@@ -129,9 +114,7 @@ export default async function ManifestReportPage({
           ))}
         </div>
 
-        <div className="mt-8 border-t border-gray-200 pt-2 text-[10px] text-gray-400">
-          {branding.name} · Passenger manifest · Generated {generated}
-        </div>
+        <ReportStampFooter label="Passenger manifest" />
       </div>
     </div>
   );
