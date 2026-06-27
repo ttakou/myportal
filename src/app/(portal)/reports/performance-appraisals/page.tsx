@@ -15,6 +15,7 @@ import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 const statusLabel = (s: string) => STATUS_LABEL[s as AppraisalStatus] ?? s;
 const stageLabel = (s: string) => STAGE_LABEL[s as AppraisalStage] ?? s;
@@ -178,6 +179,7 @@ export default async function PerformanceCompletionReportPage({
           </div>
         </>
       )}
+      <ReportStampFooter />
     </div>
   );
 }

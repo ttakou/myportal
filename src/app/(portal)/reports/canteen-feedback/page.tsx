@@ -9,6 +9,7 @@ import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 function iso(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -145,6 +146,7 @@ export default async function CanteenFeedbackReportPage({
           </ProgressiveTableBody>
         </table>
       </div>
+      <ReportStampFooter />
     </div>
   );
 }

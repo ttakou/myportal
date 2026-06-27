@@ -14,6 +14,7 @@ import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 const FN_LABEL: Record<string, string> = {
   canteen_staff: "Canteen staff",
@@ -179,6 +180,7 @@ export default async function AccessReviewReportPage({
           </ProgressiveTableBody>
         </table>
       </div>
+      <ReportStampFooter />
     </div>
   );
 }
