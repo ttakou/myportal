@@ -76,11 +76,13 @@ export async function getOrCreateStatementCode(input: {
     .maybeSingle();
   if (existing?.code) return existing.code as string;
 
-  // Short, human-readable code, e.g. "ADX-7F3A-2B91".
-  const hex = (n: number) =>
-    Array.from({ length: n }, () => "0123456789ABCDEF"[Math.floor(Math.random() * 16)]).join("");
+  // Short, human-readable code, e.g. "ADX-7F3A-2B91". Crypto-strong so codes
+  // can't be guessed/enumerated (the code is the bearer secret for /verify).
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0").toUpperCase()).join("");
   const prefix = (input.tenantName ?? "STMT").replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "STM";
-  const code = `${prefix}-${hex(4)}-${hex(4)}`;
+  const code = `${prefix}-${hex.slice(0, 4)}-${hex.slice(4, 8)}`;
   const { error } = await db.from("savings_statement_verifications").insert({
     code,
     tenant_id: input.tenantId,
