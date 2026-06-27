@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ShieldX, BarChart3, icons, LayoutDashboard, ArrowRight } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { getTenantUsers, getTenantModules, getImpersonationLog } from "@/lib/admin";
+import { getTenantUsers, getTenantModules, getImpersonationLog, getPendingUsers } from "@/lib/admin";
 import { getAccessRoles } from "@/lib/access-roles";
 import { getTenantBranding } from "@/lib/branding";
 import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
@@ -15,6 +15,7 @@ import { ModulesPanel } from "./_components/modules-panel";
 import { ModuleParamsPanel } from "./_components/module-params-panel";
 import { RolesPanel } from "./_components/roles-panel";
 import { RegisterStaffPanel } from "./_components/register-staff-panel";
+import { PendingUsersPanel } from "./_components/pending-users-panel";
 import { BulkImportPanel } from "./_components/bulk-import-panel";
 import { BrandingPanel } from "./_components/branding-panel";
 import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
@@ -178,16 +179,20 @@ async function Overview({ flags }: { flags: AdminFlags }) {
 // --- People -----------------------------------------------------------------
 
 async function PeopleView({ flags, canImpersonate }: { flags: AdminFlags; canImpersonate: boolean }) {
-  const [users, accessRoles, me, impersonationLog] = await Promise.all([
+  const [users, accessRoles, me, impersonationLog, pendingUsers] = await Promise.all([
     getTenantUsers(),
     getAccessRoles(),
     createClient().auth.getUser().then((r) => r.data.user),
     canImpersonate ? getImpersonationLog() : Promise.resolve([]),
+    flags.isHr ? getPendingUsers() : Promise.resolve([]),
   ]);
   const selfId = me?.id ?? "";
 
   return (
     <div className="space-y-8">
+      {flags.isHr && (
+        <PendingUsersPanel pending={pendingUsers} users={users} accessRoles={accessRoles} />
+      )}
       {flags.isHr && (
         <RegisterStaffPanel managers={users.filter((u) => u.is_active)} accessRoles={accessRoles} />
       )}
