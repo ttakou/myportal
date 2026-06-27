@@ -490,6 +490,54 @@ export async function importMonthlySavings(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Savings goals (member sets a target amount by a date)
+// ---------------------------------------------------------------------------
+
+/** Create or update the signed-in member's savings goal. */
+export async function setSavingsGoal(input: {
+  targetAmount: number;
+  targetDate: string;
+}): Promise<ActionResult> {
+  if (!(input.targetAmount > 0)) return { ok: false, error: "Target must be positive." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.targetDate))
+    return { ok: false, error: "Pick a target date." };
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const t = await tenantId(supabase);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+
+  const { error } = await supabase.from("savings_goals").upsert(
+    {
+      tenant_id: t,
+      profile_id: user.id,
+      target_amount: input.targetAmount,
+      target_date: input.targetDate,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "tenant_id,profile_id" },
+  );
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Clear the signed-in member's savings goal. */
+export async function clearSavingsGoal(): Promise<ActionResult> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const { error } = await supabase.from("savings_goals").delete().eq("profile_id", user.id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // Configurable multi-step import approval
 // ---------------------------------------------------------------------------
 
@@ -854,7 +902,7 @@ export async function requestWithdrawal(input: {
       category: "approval",
       title: "Savings withdrawal request",
       body: "A member has requested a savings withdrawal awaiting your approval.",
-      url: "/savings?view=admin",
+      url: "/savings?view=approvals",
     });
   }
   await logSavings({

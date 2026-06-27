@@ -5,19 +5,27 @@ import {
   getAccounts,
   getImportBatches,
   getMyAccount,
+  getMyApprovalHistory,
+  getMyGoal,
   getMyPendingImportApprovals,
   getMyWithdrawalRequests,
+  getFundReconciliation,
   getSavingsAuditLog,
   getSavingsConfig,
   getSavingsImportSteps,
   getWithdrawalRequests,
+  isSavingsApprover,
 } from "@/lib/savings";
 import { getTenantUsers } from "@/lib/admin";
 import { isCredit, money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
 import { SavingsAuditPanel } from "./_components/savings-audit-panel";
+import { FundReconciliationPanel } from "./_components/fund-reconciliation-panel";
+import { SavingsApprovalsView } from "./_components/savings-approvals-view";
+import { SavingsForecast } from "./_components/savings-forecast";
 import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
+import { WithdrawalAdminPanel } from "./_components/withdrawal-admin-panel";
 import { ImportApprovalsInbox } from "./_components/import-approvals-inbox";
 import { resolveSavingsView } from "./_components/savings-views";
 
@@ -30,8 +38,62 @@ export default async function SavingsPage({
   // Mirror the sidebar/console gate (isOrgAdmin): the system_admin functional
   // role counts as admin, so the Administration nav and the page agree.
   const isAdmin = isAdminRole(role) || access.isSystemAdmin;
-  const view = resolveSavingsView((await searchParams).view, isAdmin);
+  const isApprover = await isSavingsApprover();
+  const view = resolveSavingsView((await searchParams).view, { isAdmin, isApprover });
   const isAdminView = isAdmin && view === "admin";
+  const isApprovalsView = view === "approvals";
+
+  if (view === "forecast") {
+    const [acct, config, goal] = await Promise.all([getMyAccount(), getSavingsConfig(), getMyGoal()]);
+    const contribs = (acct?.transactions ?? []).filter((t) => t.kind === "contribution");
+    const ym = (t: (typeof contribs)[number]) => (t.period ?? t.created_at).slice(0, 7);
+    const now = new Date();
+    const thisYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString().slice(0, 7);
+    const monthlyThisMonth = contribs.filter((t) => ym(t) === thisYm).reduce((s, t) => s + t.amount, 0);
+    const last12 = contribs.filter((t) => ym(t) >= cutoff).reduce((s, t) => s + t.amount, 0);
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Savings Forecast</h1>
+          <p className="text-muted-foreground">
+            Project your savings, plan a goal, or see when you&apos;ll reach a target.
+          </p>
+        </div>
+        <SavingsForecast
+          balance={acct?.balance ?? 0}
+          monthlyThisMonth={monthlyThisMonth}
+          monthlyAvg12={Math.round(last12 / 12)}
+          annualRatePct={config.annualRatePct}
+          goal={goal}
+        />
+      </div>
+    );
+  }
+
+  if (isApprovalsView) {
+    // Finance/admins action withdrawals here (they can't reach the admin view);
+    // import-workflow validators see their pending import batches; everyone
+    // sees their decision history.
+    const canFinance = access.isFinance || isAdmin;
+    const [history, pendingImports, pendingWithdrawals] = await Promise.all([
+      getMyApprovalHistory(),
+      getMyPendingImportApprovals(),
+      canFinance ? getWithdrawalRequests() : Promise.resolve([]),
+    ]);
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">My Approvals</h1>
+          <p className="text-muted-foreground">Approve what&apos;s pending and review your decisions.</p>
+        </div>
+        {canFinance && <WithdrawalAdminPanel requests={pendingWithdrawals} />}
+        <ImportApprovalsInbox approvals={pendingImports} />
+        <SavingsApprovalsView items={history} />
+      </div>
+    );
+  }
+
   const [mine, myWithdrawals, config, pendingApprovals, accounts, users, withdrawals, importSteps, batches, audit] =
     await Promise.all([
       getMyAccount(),
@@ -45,6 +107,7 @@ export default async function SavingsPage({
       isAdminView ? getImportBatches() : Promise.resolve([]),
       isAdminView ? getSavingsAuditLog() : Promise.resolve([]),
     ]);
+  const reconciliation = isAdminView ? await getFundReconciliation() : null;
 
   if (view === "admin") {
     return (
@@ -61,6 +124,7 @@ export default async function SavingsPage({
           importSteps={importSteps}
           batches={batches}
         />
+        {reconciliation && <FundReconciliationPanel data={reconciliation} />}
         <SavingsAuditPanel entries={audit} />
       </div>
     );

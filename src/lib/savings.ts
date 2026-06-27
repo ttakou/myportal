@@ -1,12 +1,15 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type {
-  AccountSummary,
-  SavingsAccount,
-  SavingsTxn,
-  Statement,
-  StatementHolder,
-  WithdrawalRequest,
+import { getAccess } from "@/lib/auth";
+import {
+  money,
+  type AccountSummary,
+  type SavingsAccount,
+  type SavingsTxn,
+  type Statement,
+  type StatementHolder,
+  type WithdrawalRequest,
 } from "@/types/savings";
 
 const ACCT_SELECT =
@@ -32,6 +35,122 @@ function mapAccount(row: Record<string, any>): SavingsAccount {
       }))
       .sort((a: any, b: any) => (a.created_at < b.created_at ? 1 : -1)),
   };
+}
+
+export interface StatementVerification {
+  code: string;
+  tenantName: string | null;
+  holderName: string | null;
+  from: string;
+  to: string;
+  opening: number;
+  closing: number;
+  generatedAt: string;
+}
+
+/**
+ * Snapshot a statement under a short public code (idempotent per identical
+ * snapshot), so a printed copy can be checked at /verify/statement. Uses the
+ * service role. Returns the code, or null if the service key isn't configured.
+ */
+export async function getOrCreateStatementCode(input: {
+  tenantId: string;
+  tenantName: string | null;
+  profileId: string;
+  holderName: string | null;
+  from: string;
+  to: string;
+  opening: number;
+  closing: number;
+}): Promise<string | null> {
+  const db = createAdminClient();
+  if (!db) return null;
+  const { data: existing } = await db
+    .from("savings_statement_verifications")
+    .select("code")
+    .eq("profile_id", input.profileId)
+    .eq("from_date", input.from)
+    .eq("to_date", input.to)
+    .eq("opening", input.opening)
+    .eq("closing", input.closing)
+    .maybeSingle();
+  if (existing?.code) return existing.code as string;
+
+  // Short, human-readable code, e.g. "ADX-7F3A-2B91". Crypto-strong so codes
+  // can't be guessed/enumerated (the code is the bearer secret for /verify).
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0").toUpperCase()).join("");
+  const prefix = (input.tenantName ?? "STMT").replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "STM";
+  const code = `${prefix}-${hex.slice(0, 4)}-${hex.slice(4, 8)}`;
+  const { error } = await db.from("savings_statement_verifications").insert({
+    code,
+    tenant_id: input.tenantId,
+    profile_id: input.profileId,
+    tenant_name: input.tenantName,
+    holder_name: input.holderName,
+    from_date: input.from,
+    to_date: input.to,
+    opening: input.opening,
+    closing: input.closing,
+  });
+  if (error) {
+    // Lost a race on the unique snapshot — fetch the winner's code.
+    const { data } = await db
+      .from("savings_statement_verifications")
+      .select("code")
+      .eq("profile_id", input.profileId)
+      .eq("from_date", input.from)
+      .eq("to_date", input.to)
+      .eq("opening", input.opening)
+      .eq("closing", input.closing)
+      .maybeSingle();
+    return (data?.code as string) ?? null;
+  }
+  return code;
+}
+
+/** Look up a statement verification by its public code (service role). */
+export async function getStatementByCode(code: string): Promise<StatementVerification | null> {
+  const db = createAdminClient();
+  if (!db || !code) return null;
+  const { data } = await db
+    .from("savings_statement_verifications")
+    .select("code, tenant_name, holder_name, from_date, to_date, opening, closing, generated_at")
+    .eq("code", code.trim().toUpperCase())
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    code: data.code as string,
+    tenantName: data.tenant_name ?? null,
+    holderName: data.holder_name ?? null,
+    from: data.from_date as string,
+    to: data.to_date as string,
+    opening: Number(data.opening),
+    closing: Number(data.closing),
+    generatedAt: data.generated_at as string,
+  };
+}
+
+export interface SavingsGoal {
+  targetAmount: number;
+  targetDate: string;
+}
+
+/** The signed-in member's savings goal, if set. */
+export async function getMyGoal(): Promise<SavingsGoal | null> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from("savings_goals")
+    .select("target_amount, target_date")
+    .eq("profile_id", user.id)
+    .maybeSingle();
+  if (!data) return null;
+  return { targetAmount: Number(data.target_amount), targetDate: data.target_date as string };
 }
 
 /** The tenant's configurable annual savings interest rate (percent). Default 7%. */
@@ -75,6 +194,119 @@ export async function getSavingsAuditLog(limit = 100): Promise<SavingsAuditEntry
       createdAt: r.created_at,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Approver: "My Approvals" history
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the signed-in user is a savings approver — finance/admin, or a
+ * configured import-workflow validator. Drives the "My Approvals" submenu.
+ */
+export const isSavingsApprover = cache(async (): Promise<boolean> => {
+  const access = await getAccess();
+  if (access.isFinance || access.isAdmin || access.isSystemAdmin) return true;
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data } = await supabase.from("tenants").select("settings").limit(1).maybeSingle();
+  const steps = (((data?.settings as Record<string, any>) ?? {}).savings ?? {}).importApproval;
+  if (Array.isArray(steps)) {
+    for (const s of steps) {
+      if (Array.isArray(s?.validators) && s.validators.map(String).includes(user.id)) return true;
+    }
+  }
+  return false;
+});
+
+export interface ApprovalHistoryItem {
+  id: string;
+  date: string;
+  type: "Import" | "Withdrawal";
+  summary: string;
+  decision: "approved" | "rejected" | "released";
+  outcome: string | null;
+}
+
+/**
+ * The signed-in approver's full decision history across savings — import-batch
+ * approvals/rejections and withdrawal approvals/declines/releases. Reads with
+ * the service role since a non-admin approver can't see others' rows under RLS.
+ */
+export async function getMyApprovalHistory(): Promise<ApprovalHistoryItem[]> {
+  const rls = createClient();
+  const {
+    data: { user },
+  } = await rls.auth.getUser();
+  if (!user) return [];
+  const { data: tRow } = await rls.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tRow?.id) return [];
+  const t = tRow.id as string;
+  const db = createAdminClient();
+  if (!db) return [];
+
+  const items: ApprovalHistoryItem[] = [];
+
+  const { data: imp } = await db
+    .from("savings_import_approvals")
+    .select(
+      "id, decision, step_index, created_at," +
+        " batch:savings_import_batches!savings_import_approvals_batch_id_fkey(period, status)",
+    )
+    .eq("tenant_id", t)
+    .eq("decided_by", user.id)
+    .order("created_at", { ascending: false });
+  for (const r of (imp ?? []) as Record<string, any>[]) {
+    const b = Array.isArray(r.batch) ? r.batch[0] : r.batch;
+    items.push({
+      id: `imp-${r.id}`,
+      date: r.created_at,
+      type: "Import",
+      summary: `Monthly import ${String(b?.period ?? "").slice(0, 7)} · step ${Number(r.step_index) + 1}`,
+      decision: r.decision === "approve" ? "approved" : "rejected",
+      outcome: b?.status ?? null,
+    });
+  }
+
+  const { data: wd } = await db
+    .from("savings_withdrawal_requests")
+    .select(
+      "id, amount, status, decided_at, released_at, decided_by, released_by," +
+        " person:profiles!savings_withdrawal_requests_profile_id_fkey(full_name)",
+    )
+    .eq("tenant_id", t)
+    .or(`decided_by.eq.${user.id},released_by.eq.${user.id}`)
+    .order("created_at", { ascending: false });
+  for (const r of (wd ?? []) as Record<string, any>[]) {
+    const p = Array.isArray(r.person) ? r.person[0] : r.person;
+    const who = p?.full_name ?? "a member";
+    if (r.decided_by === user.id && r.decided_at) {
+      items.push({
+        id: `wd-d-${r.id}`,
+        date: r.decided_at,
+        type: "Withdrawal",
+        summary: `${who} · ${money(Number(r.amount))}`,
+        decision: r.status === "rejected" ? "rejected" : "approved",
+        outcome: r.status,
+      });
+    }
+    if (r.released_by === user.id && r.released_at) {
+      items.push({
+        id: `wd-r-${r.id}`,
+        date: r.released_at,
+        type: "Withdrawal",
+        summary: `${who} · ${money(Number(r.amount))}`,
+        decision: "released",
+        outcome: "released",
+      });
+    }
+  }
+
+  items.sort((a, b) => (a.date < b.date ? 1 : -1));
+  return items;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +496,8 @@ function mapWithdrawal(row: Record<string, any>): WithdrawalRequest {
     id: row.id,
     profile_id: row.profile_id,
     person_name: person?.full_name ?? null,
+    emp_num: person?.emp_num ?? null,
+    department: person?.department ?? null,
     amount: Number(row.amount),
     reason: row.reason ?? null,
     status: row.status,
@@ -273,6 +507,74 @@ function mapWithdrawal(row: Record<string, any>): WithdrawalRequest {
     created_at: row.created_at,
     account_balance: acct ? Number(acct.balance) : undefined,
   };
+}
+
+export interface FundReconciliation {
+  accountCount: number;
+  totalBalance: number;
+  totalContributions: number;
+  totalInterest: number;
+  totalWithdrawals: number;
+  computedTotal: number;
+  drift: number;
+  driftRows: { name: string | null; empNum: string | null; stored: number; computed: number; drift: number }[];
+}
+
+/**
+ * Fund reconciliation: the stored fund total (sum of account balances) vs an
+ * independent recompute from the transaction ledger (contributions + interest −
+ * withdrawals) per account, flagging any account whose balance has drifted from
+ * its ledger. Service-role read for an exact, tenant-wide view (admin-gated by
+ * the page).
+ */
+export async function getFundReconciliation(): Promise<FundReconciliation> {
+  const empty: FundReconciliation = {
+    accountCount: 0, totalBalance: 0, totalContributions: 0, totalInterest: 0,
+    totalWithdrawals: 0, computedTotal: 0, drift: 0, driftRows: [],
+  };
+  const rls = createClient();
+  const { data: tRow } = await rls.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tRow?.id) return empty;
+  const t = tRow.id as string;
+  const db = createAdminClient() ?? rls;
+
+  const [{ data: accts }, { data: txns }] = await Promise.all([
+    db.from("savings_accounts")
+      .select("id, balance, person:profiles!savings_accounts_profile_id_fkey(full_name, emp_num)")
+      .eq("tenant_id", t),
+    db.from("savings_transactions").select("account_id, kind, amount").eq("tenant_id", t),
+  ]);
+
+  const ledger = new Map<string, { c: number; i: number; w: number }>();
+  for (const x of (txns ?? []) as Record<string, any>[]) {
+    const e = ledger.get(x.account_id) ?? { c: 0, i: 0, w: 0 };
+    const a = Number(x.amount);
+    if (x.kind === "withdrawal") e.w += a;
+    else if (x.kind === "interest") e.i += a;
+    else e.c += a;
+    ledger.set(x.account_id, e);
+  }
+
+  const out = { ...empty, driftRows: [] as FundReconciliation["driftRows"] };
+  for (const a of (accts ?? []) as Record<string, any>[]) {
+    const person = Array.isArray(a.person) ? a.person[0] : a.person;
+    const e = ledger.get(a.id) ?? { c: 0, i: 0, w: 0 };
+    const stored = Number(a.balance);
+    const computed = e.c + e.i - e.w;
+    const d = Math.round((stored - computed) * 100) / 100;
+    out.accountCount += 1;
+    out.totalBalance += stored;
+    out.totalContributions += e.c;
+    out.totalInterest += e.i;
+    out.totalWithdrawals += e.w;
+    out.computedTotal += computed;
+    if (Math.abs(d) >= 0.01) {
+      out.driftRows.push({ name: person?.full_name ?? null, empNum: person?.emp_num ?? null, stored, computed, drift: d });
+    }
+  }
+  out.drift = Math.round((out.totalBalance - out.computedTotal) * 100) / 100;
+  out.driftRows.sort((x, y) => Math.abs(y.drift) - Math.abs(x.drift));
+  return out;
 }
 
 /** The signed-in member's own withdrawal requests, newest first. */
@@ -304,7 +606,7 @@ export async function getWithdrawalRequests(): Promise<WithdrawalRequest[]> {
     .from("savings_withdrawal_requests")
     .select(
       "id, profile_id, amount, reason, status, decision_note, decided_at, released_at, created_at," +
-        " person:profiles!savings_withdrawal_requests_profile_id_fkey(full_name)," +
+        " person:profiles!savings_withdrawal_requests_profile_id_fkey(full_name, emp_num, department)," +
         " account:savings_accounts!savings_withdrawal_requests_account_id_fkey(balance)",
     )
     .eq("tenant_id", t.id)

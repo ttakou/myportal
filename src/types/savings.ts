@@ -8,6 +8,8 @@ export interface WithdrawalRequest {
   id: string;
   profile_id: string;
   person_name: string | null;
+  emp_num: string | null;
+  department: string | null;
   amount: number;
   reason: string | null;
   status: WithdrawalStatus;
