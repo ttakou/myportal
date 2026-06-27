@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Check, X, Banknote } from "lucide-react";
+import { Check, X, Banknote, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { money, type WithdrawalRequest, type WithdrawalStatus } from "@/types/savings";
 import { decideWithdrawal, releaseWithdrawal } from "../actions";
+
+function csvCell(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
 
 const STATUS_STYLE: Record<WithdrawalStatus, string> = {
   requested: "bg-amber-100 text-amber-800",
@@ -31,12 +35,43 @@ export function WithdrawalAdminPanel({ requests }: { requests: WithdrawalRequest
 
   const open = requests.filter((r) => r.status === "requested" || r.status === "approved");
   const closed = requests.filter((r) => r.status === "rejected" || r.status === "released");
+  const released = requests.filter((r) => r.status === "released");
+
+  // Bank disbursement file: every released withdrawal, ready to pay out.
+  function exportPayout() {
+    const header = ["Employee #", "Member", "Department", "Amount (XAF)", "Released", "Reference"];
+    const rows = released.map((r) => [
+      r.emp_num ?? "",
+      r.person_name ?? "",
+      r.department ?? "",
+      String(Math.round(r.amount)),
+      r.released_at ? r.released_at.slice(0, 10) : "",
+      r.id.slice(0, 8).toUpperCase(),
+    ]);
+    const total = released.reduce((s, r) => s + r.amount, 0);
+    rows.push(["", "", "TOTAL", String(Math.round(total)), "", ""]);
+    const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `savings-payout-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Banknote className="h-5 w-5 text-primary" />
-        <h2 className="text-lg font-semibold">Withdrawal requests</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Banknote className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">Withdrawal requests</h2>
+        </div>
+        {released.length > 0 && (
+          <Button size="sm" variant="outline" onClick={exportPayout}>
+            <Download className="h-4 w-4" /> Export payout file ({released.length})
+          </Button>
+        )}
       </div>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 

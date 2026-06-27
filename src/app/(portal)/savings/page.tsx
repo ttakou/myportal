@@ -9,6 +9,7 @@ import {
   getMyGoal,
   getMyPendingImportApprovals,
   getMyWithdrawalRequests,
+  getFundReconciliation,
   getSavingsAuditLog,
   getSavingsConfig,
   getSavingsImportSteps,
@@ -20,6 +21,7 @@ import { isCredit, money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
 import { SavingsAuditPanel } from "./_components/savings-audit-panel";
+import { FundReconciliationPanel } from "./_components/fund-reconciliation-panel";
 import { SavingsApprovalsView } from "./_components/savings-approvals-view";
 import { SavingsForecast } from "./_components/savings-forecast";
 import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
@@ -105,6 +107,7 @@ export default async function SavingsPage({
       isAdminView ? getImportBatches() : Promise.resolve([]),
       isAdminView ? getSavingsAuditLog() : Promise.resolve([]),
     ]);
+  const reconciliation = isAdminView ? await getFundReconciliation() : null;
 
   if (view === "admin") {
     return (
@@ -121,6 +124,7 @@ export default async function SavingsPage({
           importSteps={importSteps}
           batches={batches}
         />
+        {reconciliation && <FundReconciliationPanel data={reconciliation} />}
         <SavingsAuditPanel entries={audit} />
       </div>
     );

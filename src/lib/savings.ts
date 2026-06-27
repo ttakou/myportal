@@ -496,6 +496,8 @@ function mapWithdrawal(row: Record<string, any>): WithdrawalRequest {
     id: row.id,
     profile_id: row.profile_id,
     person_name: person?.full_name ?? null,
+    emp_num: person?.emp_num ?? null,
+    department: person?.department ?? null,
     amount: Number(row.amount),
     reason: row.reason ?? null,
     status: row.status,
@@ -505,6 +507,74 @@ function mapWithdrawal(row: Record<string, any>): WithdrawalRequest {
     created_at: row.created_at,
     account_balance: acct ? Number(acct.balance) : undefined,
   };
+}
+
+export interface FundReconciliation {
+  accountCount: number;
+  totalBalance: number;
+  totalContributions: number;
+  totalInterest: number;
+  totalWithdrawals: number;
+  computedTotal: number;
+  drift: number;
+  driftRows: { name: string | null; empNum: string | null; stored: number; computed: number; drift: number }[];
+}
+
+/**
+ * Fund reconciliation: the stored fund total (sum of account balances) vs an
+ * independent recompute from the transaction ledger (contributions + interest −
+ * withdrawals) per account, flagging any account whose balance has drifted from
+ * its ledger. Service-role read for an exact, tenant-wide view (admin-gated by
+ * the page).
+ */
+export async function getFundReconciliation(): Promise<FundReconciliation> {
+  const empty: FundReconciliation = {
+    accountCount: 0, totalBalance: 0, totalContributions: 0, totalInterest: 0,
+    totalWithdrawals: 0, computedTotal: 0, drift: 0, driftRows: [],
+  };
+  const rls = createClient();
+  const { data: tRow } = await rls.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tRow?.id) return empty;
+  const t = tRow.id as string;
+  const db = createAdminClient() ?? rls;
+
+  const [{ data: accts }, { data: txns }] = await Promise.all([
+    db.from("savings_accounts")
+      .select("id, balance, person:profiles!savings_accounts_profile_id_fkey(full_name, emp_num)")
+      .eq("tenant_id", t),
+    db.from("savings_transactions").select("account_id, kind, amount").eq("tenant_id", t),
+  ]);
+
+  const ledger = new Map<string, { c: number; i: number; w: number }>();
+  for (const x of (txns ?? []) as Record<string, any>[]) {
+    const e = ledger.get(x.account_id) ?? { c: 0, i: 0, w: 0 };
+    const a = Number(x.amount);
+    if (x.kind === "withdrawal") e.w += a;
+    else if (x.kind === "interest") e.i += a;
+    else e.c += a;
+    ledger.set(x.account_id, e);
+  }
+
+  const out = { ...empty, driftRows: [] as FundReconciliation["driftRows"] };
+  for (const a of (accts ?? []) as Record<string, any>[]) {
+    const person = Array.isArray(a.person) ? a.person[0] : a.person;
+    const e = ledger.get(a.id) ?? { c: 0, i: 0, w: 0 };
+    const stored = Number(a.balance);
+    const computed = e.c + e.i - e.w;
+    const d = Math.round((stored - computed) * 100) / 100;
+    out.accountCount += 1;
+    out.totalBalance += stored;
+    out.totalContributions += e.c;
+    out.totalInterest += e.i;
+    out.totalWithdrawals += e.w;
+    out.computedTotal += computed;
+    if (Math.abs(d) >= 0.01) {
+      out.driftRows.push({ name: person?.full_name ?? null, empNum: person?.emp_num ?? null, stored, computed, drift: d });
+    }
+  }
+  out.drift = Math.round((out.totalBalance - out.computedTotal) * 100) / 100;
+  out.driftRows.sort((x, y) => Math.abs(y.drift) - Math.abs(x.drift));
+  return out;
 }
 
 /** The signed-in member's own withdrawal requests, newest first. */
@@ -536,7 +606,7 @@ export async function getWithdrawalRequests(): Promise<WithdrawalRequest[]> {
     .from("savings_withdrawal_requests")
     .select(
       "id, profile_id, amount, reason, status, decision_note, decided_at, released_at, created_at," +
-        " person:profiles!savings_withdrawal_requests_profile_id_fkey(full_name)," +
+        " person:profiles!savings_withdrawal_requests_profile_id_fkey(full_name, emp_num, department)," +
         " account:savings_accounts!savings_withdrawal_requests_account_id_fkey(balance)",
     )
     .eq("tenant_id", t.id)
