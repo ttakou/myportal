@@ -1,9 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { TrendingUp, Target, CalendarClock, LineChart } from "lucide-react";
+import { TrendingUp, Target, CalendarClock, LineChart, Flag, Trash2 } from "lucide-react";
+import { useStatusTransition } from "@/components/activity";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { money } from "@/types/savings";
+import type { SavingsGoal } from "@/lib/savings";
+import { clearSavingsGoal, setSavingsGoal } from "../actions";
 
 // --- Time-value-of-money engine -------------------------------------------
 // Monthly compounding at rate r, level monthly contribution P, opening balance B.
@@ -58,26 +62,33 @@ export function SavingsForecast({
   monthlyThisMonth,
   monthlyAvg12,
   annualRatePct,
+  goal,
 }: {
   balance: number;
   monthlyThisMonth: number;
   monthlyAvg12: number;
   annualRatePct: number;
+  goal: SavingsGoal | null;
 }) {
   const r = annualRatePct / 100 / 12;
   const [mode, setMode] = useState<Mode>("project");
   const [basis, setBasis] = useState<Basis>(monthlyThisMonth > 0 ? "current" : "avg12");
   const [custom, setCustom] = useState("");
+  const [lump, setLump] = useState("");
 
   // Default target date: one year out.
   const now = new Date();
   const defaultDate = new Date(now.getFullYear() + 1, now.getMonth(), 1).toISOString().slice(0, 10);
   const [date, setDate] = useState(defaultDate);
-  const [goal, setGoal] = useState("");
+  const [goalInput, setGoalInput] = useState("");
   const [timeTarget, setTimeTarget] = useState("");
 
   const P =
     basis === "current" ? monthlyThisMonth : basis === "avg12" ? monthlyAvg12 : Math.max(0, Number(custom) || 0);
+
+  // One-off lump sum added now lifts the starting balance for every scenario.
+  const lumpAmt = Math.max(0, Number(lump) || 0);
+  const B = balance + lumpAmt;
 
   const nMonths = monthsBetween(now.getFullYear(), now.getMonth() + 1, date);
 
@@ -86,37 +97,39 @@ export function SavingsForecast({
     const cap = Math.min(Math.max(nMonths, 12), 600);
     const pts: { m: number; bal: number; contrib: number }[] = [];
     for (let m = 0; m <= cap; m++) {
-      pts.push({ m, bal: futureValue(balance, P, r, m), contrib: balance + P * m });
+      pts.push({ m, bal: futureValue(B, P, r, m), contrib: B + P * m });
     }
     return pts;
-  }, [balance, P, r, nMonths]);
+  }, [B, P, r, nMonths]);
 
-  const projected = futureValue(balance, P, r, nMonths);
-  const contributed = balance + P * nMonths;
+  const projected = futureValue(B, P, r, nMonths);
+  const contributed = B + P * nMonths;
   const interestEarned = Math.max(0, projected - contributed);
 
   // Goal mode
-  const goalAmt = Math.max(0, Number(goal) || 0);
-  const neededP = goalAmt > 0 ? requiredContribution(balance, goalAmt, r, nMonths) : 0;
+  const goalAmt = Math.max(0, Number(goalInput) || 0);
+  const neededP = goalAmt > 0 ? requiredContribution(B, goalAmt, r, nMonths) : 0;
   const increase = neededP - P;
 
   // Time mode
   const tAmt = Math.max(0, Number(timeTarget) || 0);
-  const tMonths = tAmt > 0 ? monthsToTarget(balance, tAmt, r, P) : 0;
+  const tMonths = tAmt > 0 ? monthsToTarget(B, tAmt, r, P) : 0;
 
   const basisLabel =
     basis === "current" ? "this month" : basis === "avg12" ? "avg of last 12 months" : "custom amount";
 
   return (
     <div className="space-y-5">
+      <GoalPanel goal={goal} B={B} P={P} r={r} />
+
       {/* Snapshot */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Current balance" value={money(balance)} />
+        <Stat label="Current balance" value={money(balance)} sub={lumpAmt > 0 ? `+ ${money(lumpAmt)} lump = ${money(B)}` : undefined} />
         <Stat label="Monthly contribution" value={money(P)} sub={`Using ${basisLabel}`} />
         <Stat label="Interest rate" value={`${annualRatePct}%`} sub="per year, compounded monthly" />
       </div>
 
-      {/* Contribution basis */}
+      {/* Contribution basis + lump sum */}
       <div className="rounded-lg border bg-card p-4">
         <p className="mb-2 text-sm font-medium">Assume I contribute…</p>
         <div className="flex flex-wrap items-center gap-2">
@@ -139,6 +152,17 @@ export function SavingsForecast({
               className="w-44 rounded-md border bg-background px-3 py-1.5 text-sm"
             />
           )}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+          <span className="text-sm text-muted-foreground">Add a one-off lump sum now</span>
+          <input
+            type="number"
+            min={0}
+            value={lump}
+            onChange={(e) => setLump(e.target.value)}
+            placeholder="Lump sum (XAF)"
+            className="w-44 rounded-md border bg-background px-3 py-1.5 text-sm"
+          />
         </div>
       </div>
 
@@ -169,7 +193,7 @@ export function SavingsForecast({
             <Stat label="Of which interest earned" value={money(interestEarned)} tone="green" />
           </div>
           <ProjectionChart series={series} highlight={nMonths} />
-          <Milestones balance={balance} P={P} r={r} />
+          <Milestones balance={B} P={P} r={r} />
         </div>
       )}
 
@@ -178,7 +202,7 @@ export function SavingsForecast({
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm">
               <span className="mr-2 text-muted-foreground">I want a total of</span>
-              <input type="number" min={0} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Target (XAF)" className="w-44 rounded-md border bg-background px-3 py-1.5 text-sm" />
+              <input type="number" min={0} value={goalInput} onChange={(e) => setGoalInput(e.target.value)} placeholder="Target (XAF)" className="w-44 rounded-md border bg-background px-3 py-1.5 text-sm" />
             </label>
             <label className="text-sm">
               <span className="mr-2 text-muted-foreground">by</span>
@@ -215,8 +239,8 @@ export function SavingsForecast({
             <input type="number" min={0} value={timeTarget} onChange={(e) => setTimeTarget(e.target.value)} placeholder="Amount (XAF)" className="w-44 rounded-md border bg-background px-3 py-1.5 text-sm" />
           </label>
           {tAmt > 0 ? (
-            tAmt <= balance ? (
-              <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">You&apos;re already there — your balance is {money(balance)}.</p>
+            tAmt <= B ? (
+              <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">You&apos;re already there — your balance is {money(B)}.</p>
             ) : tMonths === Infinity ? (
               <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 With a {money(P)}/month contribution and {annualRatePct}% interest, this target isn&apos;t reached —
@@ -240,6 +264,104 @@ export function SavingsForecast({
         (compounded monthly) and no withdrawals. Actual results will vary.
       </p>
     </div>
+  );
+}
+
+function GoalPanel({ goal, B, P, r }: { goal: SavingsGoal | null; B: number; P: number; r: number }) {
+  const [pending, startTransition] = useStatusTransition("Saving…");
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(!goal);
+  const now = new Date();
+  const [amount, setAmount] = useState(goal ? String(goal.targetAmount) : "");
+  const [date, setDate] = useState(
+    goal?.targetDate ?? new Date(now.getFullYear() + 1, now.getMonth(), 1).toISOString().slice(0, 10),
+  );
+
+  function save() {
+    setError(null);
+    startTransition(async () => {
+      const res = await setSavingsGoal({ targetAmount: Math.max(0, Number(amount) || 0), targetDate: date });
+      if (!res.ok) setError(res.error ?? "Could not save goal.");
+      else setEditing(false);
+    });
+  }
+  function clear() {
+    setError(null);
+    startTransition(async () => {
+      await clearSavingsGoal();
+    });
+  }
+
+  // Progress against a saved goal, projected at the chosen contribution pace.
+  let body: React.ReactNode = null;
+  if (goal && !editing) {
+    const n = monthsBetween(now.getFullYear(), now.getMonth() + 1, goal.targetDate);
+    const projected = futureValue(B, P, r, n);
+    const onTrack = projected >= goal.targetAmount;
+    const pct = Math.min(100, Math.round((B / goal.targetAmount) * 100));
+    const requiredP = requiredContribution(B, goal.targetAmount, r, n);
+    const shortfall = Math.max(0, goal.targetAmount - projected);
+    body = (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm">
+            Target <span className="font-semibold">{money(goal.targetAmount)}</span> by{" "}
+            <span className="font-semibold">{goal.targetDate}</span> ({n} month{n === 1 ? "" : "s"})
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => setEditing(true)}>Edit</Button>
+            <Button size="sm" variant="outline" disabled={pending} onClick={clear}>
+              <Trash2 className="h-3.5 w-3.5" /> Clear
+            </Button>
+          </div>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="text-xs text-muted-foreground">{pct}% of target saved ({money(B)}).</p>
+        {onTrack ? (
+          <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
+            On track — at {money(P)}/month you reach {money(Math.round(projected))} by {goal.targetDate}.
+          </p>
+        ) : (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Behind by {money(Math.round(shortfall))}. Increase to{" "}
+            <span className="font-semibold">{money(Math.ceil(requiredP))}/month</span> (
+            {money(Math.round(Math.max(0, requiredP - P)))} more) to stay on track.
+          </p>
+        )}
+      </div>
+    );
+  } else {
+    body = (
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm">
+          <span className="mr-1 text-muted-foreground">I want</span>
+          <input type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Target (XAF)" className="w-40 rounded-md border bg-background px-3 py-1.5 text-sm" />
+        </label>
+        <label className="text-sm">
+          <span className="mr-1 text-muted-foreground">by</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
+        </label>
+        <Button size="sm" disabled={pending || !(Number(amount) > 0)} onClick={save}>
+          {pending ? "Saving…" : "Save goal"}
+        </Button>
+        {goal && (
+          <Button size="sm" variant="outline" disabled={pending} onClick={() => setEditing(false)}>Cancel</Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-2 rounded-lg border bg-card p-4">
+      <div className="flex items-center gap-2">
+        <Flag className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">My savings goal</h2>
+      </div>
+      {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+      {body}
+    </section>
   );
 }
 

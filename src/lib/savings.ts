@@ -37,6 +37,27 @@ function mapAccount(row: Record<string, any>): SavingsAccount {
   };
 }
 
+export interface SavingsGoal {
+  targetAmount: number;
+  targetDate: string;
+}
+
+/** The signed-in member's savings goal, if set. */
+export async function getMyGoal(): Promise<SavingsGoal | null> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from("savings_goals")
+    .select("target_amount, target_date")
+    .eq("profile_id", user.id)
+    .maybeSingle();
+  if (!data) return null;
+  return { targetAmount: Number(data.target_amount), targetDate: data.target_date as string };
+}
+
 /** The tenant's configurable annual savings interest rate (percent). Default 7%. */
 export async function getSavingsConfig(): Promise<{ annualRatePct: number }> {
   const supabase = createClient();

@@ -6,6 +6,7 @@ import {
   getImportBatches,
   getMyAccount,
   getMyApprovalHistory,
+  getMyGoal,
   getMyPendingImportApprovals,
   getMyWithdrawalRequests,
   getSavingsAuditLog,
@@ -40,7 +41,7 @@ export default async function SavingsPage({
   const isApprovalsView = view === "approvals";
 
   if (view === "forecast") {
-    const [acct, config] = await Promise.all([getMyAccount(), getSavingsConfig()]);
+    const [acct, config, goal] = await Promise.all([getMyAccount(), getSavingsConfig(), getMyGoal()]);
     const contribs = (acct?.transactions ?? []).filter((t) => t.kind === "contribution");
     const ym = (t: (typeof contribs)[number]) => (t.period ?? t.created_at).slice(0, 7);
     const now = new Date();
@@ -61,6 +62,7 @@ export default async function SavingsPage({
           monthlyThisMonth={monthlyThisMonth}
           monthlyAvg12={Math.round(last12 / 12)}
           annualRatePct={config.annualRatePct}
+          goal={goal}
         />
       </div>
     );
