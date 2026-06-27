@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { adoptOrFlagSsoUser } from "@/lib/sso-link";
 
 /**
  * OAuth / SSO redirect target. The provider (Google, Azure) sends the user back
@@ -32,8 +33,21 @@ export async function GET(request: Request) {
   if (!code) return fail("Sign-in was cancelled or no authorization code was returned.");
 
   const supabase = createClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) return fail(error.message);
+
+  // First SSO sign-in for an already-registered employee can land as a fresh
+  // tenant-less account. Reconcile it against any existing org account with the
+  // same email so they don't show up as a duplicate "new user". Best-effort —
+  // never block sign-in on this.
+  const user = data?.user;
+  if (user) {
+    try {
+      await adoptOrFlagSsoUser(user.id, user.email ?? null);
+    } catch (e) {
+      console.error("sso-link:", e instanceof Error ? e.message : e);
+    }
+  }
 
   return NextResponse.redirect(`${base}${redirectTo}`);
 }
