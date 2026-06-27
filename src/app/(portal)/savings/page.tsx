@@ -23,6 +23,7 @@ import { SavingsAuditPanel } from "./_components/savings-audit-panel";
 import { SavingsApprovalsView } from "./_components/savings-approvals-view";
 import { SavingsForecast } from "./_components/savings-forecast";
 import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
+import { WithdrawalAdminPanel } from "./_components/withdrawal-admin-panel";
 import { ImportApprovalsInbox } from "./_components/import-approvals-inbox";
 import { resolveSavingsView } from "./_components/savings-views";
 
@@ -69,13 +70,23 @@ export default async function SavingsPage({
   }
 
   if (isApprovalsView) {
-    const history = await getMyApprovalHistory();
+    // Finance/admins action withdrawals here (they can't reach the admin view);
+    // import-workflow validators see their pending import batches; everyone
+    // sees their decision history.
+    const canFinance = access.isFinance || isAdmin;
+    const [history, pendingImports, pendingWithdrawals] = await Promise.all([
+      getMyApprovalHistory(),
+      getMyPendingImportApprovals(),
+      canFinance ? getWithdrawalRequests() : Promise.resolve([]),
+    ]);
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">My Approvals</h1>
-          <p className="text-muted-foreground">Every savings decision you have made.</p>
+          <p className="text-muted-foreground">Approve what&apos;s pending and review your decisions.</p>
         </div>
+        {canFinance && <WithdrawalAdminPanel requests={pendingWithdrawals} />}
+        <ImportApprovalsInbox approvals={pendingImports} />
         <SavingsApprovalsView items={history} />
       </div>
     );

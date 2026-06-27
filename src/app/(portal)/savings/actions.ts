@@ -902,7 +902,7 @@ export async function requestWithdrawal(input: {
       category: "approval",
       title: "Savings withdrawal request",
       body: "A member has requested a savings withdrawal awaiting your approval.",
-      url: "/savings?view=admin",
+      url: "/savings?view=approvals",
     });
   }
   await logSavings({

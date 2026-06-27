@@ -7,45 +7,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { money } from "@/types/savings";
 import type { SavingsGoal } from "@/lib/savings";
+import { futureValue, requiredContribution, monthsToTarget, monthsBetween } from "@/lib/savings-forecast";
 import { clearSavingsGoal, setSavingsGoal } from "../actions";
-
-// --- Time-value-of-money engine -------------------------------------------
-// Monthly compounding at rate r, level monthly contribution P, opening balance B.
-
-/** Future value after n whole months. */
-function futureValue(B: number, P: number, r: number, n: number): number {
-  if (n <= 0) return B;
-  if (r === 0) return B + P * n;
-  const g = Math.pow(1 + r, n);
-  return B * g + P * ((g - 1) / r);
-}
-
-/** Monthly contribution needed to reach target T in n months. */
-function requiredContribution(B: number, T: number, r: number, n: number): number {
-  if (n <= 0) return Infinity;
-  if (r === 0) return (T - B) / n;
-  const g = Math.pow(1 + r, n);
-  return (T - B * g) / ((g - 1) / r);
-}
-
-/** Whole months to grow from B to T given contribution P (Infinity if never). */
-function monthsToTarget(B: number, T: number, r: number, P: number): number {
-  if (T <= B) return 0;
-  if (r === 0) return P > 0 ? Math.ceil((T - B) / P) : Infinity;
-  const denom = B * r + P;
-  const numer = T * r + P;
-  if (denom <= 0 || numer <= 0) return Infinity;
-  const n = Math.log(numer / denom) / Math.log(1 + r);
-  return n > 0 && Number.isFinite(n) ? Math.ceil(n) : Infinity;
-}
-
-function monthsBetween(fromYear: number, fromMonth: number, toIso: string): number {
-  const m = /^(\d{4})-(\d{2})/.exec(toIso);
-  if (!m) return 0;
-  const ty = Number(m[1]);
-  const tm = Number(m[2]);
-  return Math.max(0, (ty - fromYear) * 12 + (tm - fromMonth));
-}
 
 function addMonthsLabel(months: number): string {
   const d = new Date();
