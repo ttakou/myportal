@@ -271,6 +271,11 @@ export function OffshoreBoard({
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Badge status={t.status} />
+                          {t.mode === "manual" && (
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" title="Crew change set up manually">
+                              manual
+                            </span>
+                          )}
                           {t.status === "manifested" && <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setOffshoreStatus(t.id, "onboard"))}>Board</Button>}
                           {t.status === "onboard" && <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setOffshoreStatus(t.id, "demobilised"))}>Demob</Button>}
                         </div>

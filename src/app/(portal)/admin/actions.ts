@@ -545,6 +545,128 @@ export async function registerStaff(input: {
   return { ok: true, tempPassword };
 }
 
+// --- Pending (tenant-less) account review ------------------------------------
+
+/**
+ * Adopt a tenant-less sign-up (e.g. an SSO first login) into the caller's
+ * organisation: set its tenant, account role, manager and access roles. Only
+ * acts on accounts that have no tenant yet, so an already-onboarded user can't
+ * be silently moved. HR/system admin only.
+ */
+export async function assignPendingUser(input: {
+  userId: string;
+  role?: UserRole;
+  managerId?: string;
+  accessRoleIds?: string[];
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+
+  const access = await getAccess();
+  const role: UserRole =
+    input.role && ASSIGNABLE_ROLES.includes(input.role) ? input.role : "employee";
+  if (!canAssignAccountRole(access, role)) {
+    return { ok: false, error: "You are not authorized to assign that account role." };
+  }
+
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  // Only adopt genuinely-pending accounts.
+  const { data: target } = await admin
+    .from("profiles")
+    .select("id, tenant_id")
+    .eq("id", input.userId)
+    .maybeSingle();
+  if (!target) return { ok: false, error: "User not found." };
+  if (target.tenant_id) return { ok: false, error: "That account already belongs to an organisation." };
+
+  // Validate the manager and access roles belong to the caller's tenant.
+  if (input.managerId) {
+    const { data: mgr } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", input.managerId)
+      .maybeSingle();
+    if (!mgr) return { ok: false, error: "Manager not found in your organisation." };
+  }
+  let accessRoleIds: string[] = [];
+  if (input.accessRoleIds?.length) {
+    const { data: roles } = await supabase
+      .from("tenant_roles")
+      .select("id")
+      .in("id", input.accessRoleIds);
+    accessRoleIds = (roles ?? []).map((r) => r.id as string);
+  }
+
+  const { error } = await admin
+    .from("profiles")
+    .update({
+      tenant_id: tenant.id,
+      role,
+      manager_id: input.managerId || null,
+      is_active: true,
+      access_requested_at: null,
+    })
+    .eq("id", input.userId)
+    .is("tenant_id", null);
+  if (error) return { ok: false, error: error.message };
+
+  if (accessRoleIds.length > 0) {
+    await admin.from("profile_access_roles").insert(
+      accessRoleIds.map((rid) => ({ profile_id: input.userId, role_id: rid, tenant_id: tenant.id })),
+    );
+  }
+
+  // Let the newcomer know they're in.
+  await admin.from("notifications").insert({
+    tenant_id: tenant.id,
+    profile_id: input.userId,
+    category: "general",
+    title: "Access granted",
+    body: "Your account has been activated. Welcome aboard.",
+    url: "/dashboard",
+  });
+
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+/**
+ * Dismiss a tenant-less sign-up that shouldn't be onboarded (spam, a duplicate
+ * of an existing account, etc.) by deactivating it so it drops off the queue.
+ * Only acts on accounts with no tenant. HR/system admin only.
+ */
+export async function dismissPendingUser(userId: string): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  const { data: target } = await admin
+    .from("profiles")
+    .select("id, tenant_id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!target) return { ok: false, error: "User not found." };
+  if (target.tenant_id) return { ok: false, error: "That account already belongs to an organisation." };
+
+  const { error } = await admin
+    .from("profiles")
+    .update({ is_active: false })
+    .eq("id", userId)
+    .is("tenant_id", null);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
 // --- Bulk staff import --------------------------------------------------------
 
 export interface BulkRow {

@@ -57,6 +57,44 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // ---- 1b. Pending (tenant-less) gate -----------------------------------------
+  // A first sign-in (incl. SSO) creates a profile with no tenant. Such a user
+  // can't use any module, so route them to a clear "awaiting access" screen
+  // instead of bouncing through access-denied pages. Skip on public/asset/API
+  // paths so the pending page itself can load its CSS/JS and APIs don't get an
+  // HTML redirect.
+  const onPending = pathname === "/pending";
+  if (!isPublic(pathname) && !pathname.startsWith("/api/") && pathname !== "/api") {
+    // The access-token hook stamps tenant_id into the JWT for onboarded users;
+    // when it's present we can skip the DB read entirely.
+    const claimTenant = (user.app_metadata as { tenant_id?: string } | undefined)?.tenant_id;
+    let tenantless = false;
+    if (!claimTenant) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("tenant_id, role")
+        .eq("id", user.id)
+        .maybeSingle();
+      tenantless = !!prof && prof.tenant_id == null && prof.role !== "super_admin";
+    }
+    if (tenantless && !onPending) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/pending";
+      url.search = "";
+      const redirect = NextResponse.redirect(url);
+      supabaseResponse.cookies.getAll().forEach((c) => redirect.cookies.set(c.name, c.value));
+      return redirect;
+    }
+    if (!tenantless && onPending) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      const redirect = NextResponse.redirect(url);
+      supabaseResponse.cookies.getAll().forEach((c) => redirect.cookies.set(c.name, c.value));
+      return redirect;
+    }
+  }
+
   // Authenticated users hitting public/neutral paths pass straight through.
   if (
     isPublic(pathname) ||
