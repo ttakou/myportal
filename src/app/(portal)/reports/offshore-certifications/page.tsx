@@ -8,6 +8,7 @@ import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 const STATUS_STYLE: Record<CertStatus, string> = {
   expired: "bg-destructive/10 text-destructive",
@@ -148,6 +149,7 @@ export default async function OffshoreCertReportPage({
           </ProgressiveTableBody>
         </table>
       </div>
+      <ReportStampFooter />
     </div>
   );
 }
