@@ -5,7 +5,7 @@ import {
   matchModuleRoute,
 } from "@/lib/navigation";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/_next", "/favicon.ico"];
+const PUBLIC_PATHS = ["/login", "/auth", "/_next", "/favicon.ico", "/verify"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(

@@ -37,6 +37,99 @@ function mapAccount(row: Record<string, any>): SavingsAccount {
   };
 }
 
+export interface StatementVerification {
+  code: string;
+  tenantName: string | null;
+  holderName: string | null;
+  from: string;
+  to: string;
+  opening: number;
+  closing: number;
+  generatedAt: string;
+}
+
+/**
+ * Snapshot a statement under a short public code (idempotent per identical
+ * snapshot), so a printed copy can be checked at /verify/statement. Uses the
+ * service role. Returns the code, or null if the service key isn't configured.
+ */
+export async function getOrCreateStatementCode(input: {
+  tenantId: string;
+  tenantName: string | null;
+  profileId: string;
+  holderName: string | null;
+  from: string;
+  to: string;
+  opening: number;
+  closing: number;
+}): Promise<string | null> {
+  const db = createAdminClient();
+  if (!db) return null;
+  const { data: existing } = await db
+    .from("savings_statement_verifications")
+    .select("code")
+    .eq("profile_id", input.profileId)
+    .eq("from_date", input.from)
+    .eq("to_date", input.to)
+    .eq("opening", input.opening)
+    .eq("closing", input.closing)
+    .maybeSingle();
+  if (existing?.code) return existing.code as string;
+
+  // Short, human-readable code, e.g. "ADX-7F3A-2B91".
+  const hex = (n: number) =>
+    Array.from({ length: n }, () => "0123456789ABCDEF"[Math.floor(Math.random() * 16)]).join("");
+  const prefix = (input.tenantName ?? "STMT").replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "STM";
+  const code = `${prefix}-${hex(4)}-${hex(4)}`;
+  const { error } = await db.from("savings_statement_verifications").insert({
+    code,
+    tenant_id: input.tenantId,
+    profile_id: input.profileId,
+    tenant_name: input.tenantName,
+    holder_name: input.holderName,
+    from_date: input.from,
+    to_date: input.to,
+    opening: input.opening,
+    closing: input.closing,
+  });
+  if (error) {
+    // Lost a race on the unique snapshot — fetch the winner's code.
+    const { data } = await db
+      .from("savings_statement_verifications")
+      .select("code")
+      .eq("profile_id", input.profileId)
+      .eq("from_date", input.from)
+      .eq("to_date", input.to)
+      .eq("opening", input.opening)
+      .eq("closing", input.closing)
+      .maybeSingle();
+    return (data?.code as string) ?? null;
+  }
+  return code;
+}
+
+/** Look up a statement verification by its public code (service role). */
+export async function getStatementByCode(code: string): Promise<StatementVerification | null> {
+  const db = createAdminClient();
+  if (!db || !code) return null;
+  const { data } = await db
+    .from("savings_statement_verifications")
+    .select("code, tenant_name, holder_name, from_date, to_date, opening, closing, generated_at")
+    .eq("code", code.trim().toUpperCase())
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    code: data.code as string,
+    tenantName: data.tenant_name ?? null,
+    holderName: data.holder_name ?? null,
+    from: data.from_date as string,
+    to: data.to_date as string,
+    opening: Number(data.opening),
+    closing: Number(data.closing),
+    generatedAt: data.generated_at as string,
+  };
+}
+
 export interface SavingsGoal {
   targetAmount: number;
   targetDate: string;

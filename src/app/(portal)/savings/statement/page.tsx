@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
-import { getStatement } from "@/lib/savings";
+import { getStatement, getOrCreateStatementCode } from "@/lib/savings";
 import { getTenantBranding } from "@/lib/branding";
 import { type SavingsTxn, type Statement } from "@/types/savings";
 import { MedallionStamp } from "@/components/ui/medallion-stamp";
@@ -66,6 +66,25 @@ export default async function StatementPage({
 
   const statement = await getStatement(profileId, from, to);
 
+  // Snapshot the statement under a verification code so a printed copy can be
+  // checked at /verify/statement.
+  let verifyCode: string | null = null;
+  if (statement) {
+    const { data: tRow } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+    if (tRow?.id) {
+      verifyCode = await getOrCreateStatementCode({
+        tenantId: tRow.id as string,
+        tenantName: branding.name,
+        profileId,
+        holderName: statement.holder.full_name,
+        from,
+        to,
+        opening: statement.openingBalance,
+        closing: statement.closingBalance,
+      });
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* A4 page geometry for printing; the sheet itself is sized to the A4
@@ -114,6 +133,7 @@ export default async function StatementPage({
           addressLines={branding.addressLines ?? null}
           contact={branding.contact ?? null}
           generatedAt={now}
+          verifyCode={verifyCode}
         />
       ) : (
         <p className="rounded-md border bg-card p-8 text-center text-muted-foreground">
@@ -132,6 +152,7 @@ function StatementDocument({
   addressLines,
   contact,
   generatedAt,
+  verifyCode,
 }: {
   statement: Statement;
   brandName: string;
@@ -140,6 +161,7 @@ function StatementDocument({
   addressLines: string[] | null;
   contact: string | null;
   generatedAt: Date;
+  verifyCode: string | null;
 }) {
   const { holder } = statement;
   const exact = { WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" } as React.CSSProperties;
@@ -286,10 +308,21 @@ function StatementDocument({
 
       {/* ── Stamp + footer ───────────────────────────────────────── */}
       <div className="mt-4 flex items-end justify-between gap-4">
-        <p className="max-w-md text-[10.5px] leading-snug text-neutral-500">
-          All amounts shown in XAF (Central African CFA franc). Withdrawals are debits; deposits are
-          credits. This is a system-generated statement and is valid without a handwritten signature.
-        </p>
+        <div className="max-w-md space-y-2">
+          <p className="text-[10.5px] leading-snug text-neutral-500">
+            All amounts shown in XAF (Central African CFA franc). Withdrawals are debits; deposits are
+            credits. This is a system-generated statement and is valid without a handwritten signature.
+          </p>
+          {verifyCode && (
+            <div className="rounded-md border border-dashed px-3 py-2 text-[10.5px] leading-snug">
+              <p className="font-semibold text-neutral-700">Verification code</p>
+              <p className="font-mono text-[12px] tracking-wider text-neutral-900">{verifyCode}</p>
+              <p className="text-neutral-500">
+                Confirm this statement is genuine at {SOFTWARE_NAME.toLowerCase()} → /verify/statement
+              </p>
+            </div>
+          )}
+        </div>
         <MedallionStamp
           color={primary}
           topText={brandName}
