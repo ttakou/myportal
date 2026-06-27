@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
 import { SavingsAuditPanel } from "./_components/savings-audit-panel";
 import { SavingsApprovalsView } from "./_components/savings-approvals-view";
+import { SavingsForecast } from "./_components/savings-forecast";
 import { WithdrawalRequestPanel } from "./_components/withdrawal-request-panel";
 import { ImportApprovalsInbox } from "./_components/import-approvals-inbox";
 import { resolveSavingsView } from "./_components/savings-views";
@@ -37,6 +38,33 @@ export default async function SavingsPage({
   const view = resolveSavingsView((await searchParams).view, { isAdmin, isApprover });
   const isAdminView = isAdmin && view === "admin";
   const isApprovalsView = view === "approvals";
+
+  if (view === "forecast") {
+    const [acct, config] = await Promise.all([getMyAccount(), getSavingsConfig()]);
+    const contribs = (acct?.transactions ?? []).filter((t) => t.kind === "contribution");
+    const ym = (t: (typeof contribs)[number]) => (t.period ?? t.created_at).slice(0, 7);
+    const now = new Date();
+    const thisYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString().slice(0, 7);
+    const monthlyThisMonth = contribs.filter((t) => ym(t) === thisYm).reduce((s, t) => s + t.amount, 0);
+    const last12 = contribs.filter((t) => ym(t) >= cutoff).reduce((s, t) => s + t.amount, 0);
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Savings Forecast</h1>
+          <p className="text-muted-foreground">
+            Project your savings, plan a goal, or see when you&apos;ll reach a target.
+          </p>
+        </div>
+        <SavingsForecast
+          balance={acct?.balance ?? 0}
+          monthlyThisMonth={monthlyThisMonth}
+          monthlyAvg12={Math.round(last12 / 12)}
+          annualRatePct={config.annualRatePct}
+        />
+      </div>
+    );
+  }
 
   if (isApprovalsView) {
     const history = await getMyApprovalHistory();
