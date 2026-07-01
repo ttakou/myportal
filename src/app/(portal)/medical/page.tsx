@@ -9,6 +9,7 @@ import { getTenantUsers } from "@/lib/admin";
 import { FITNESS_LABEL, daysToExpiry, type FitnessStatus, type MedicalSchedule } from "@/types/medical";
 import { MedicalAdmin } from "./_components/medical-admin";
 import { resolveMedicalView } from "./_components/medical-views";
+import { VisitCompleteButton } from "./_components/visit-complete-button";
 import { cn } from "@/lib/utils";
 
 function fmtDate(d: string | null): string {
@@ -43,8 +44,14 @@ function ScheduleRoster({ rows }: { rows: MedicalSchedule[] }) {
               <tr key={r.id} className="border-t">
                 <td className="px-3 py-2 font-medium">{r.person_name ?? "—"}</td>
                 <td className="px-3 py-2">{r.work_location ?? "—"}</td>
-                <td className="px-3 py-2">{fmtDate(r.visit1_date)}{r.visit1_time ? ` · ${r.visit1_time}` : ""}</td>
-                <td className="px-3 py-2">{fmtDate(r.visit2_date)}{r.visit2_time ? ` · ${r.visit2_time}` : ""}</td>
+                <td className="px-3 py-2">
+                  <div>{fmtDate(r.visit1_date)}{r.visit1_time ? ` · ${r.visit1_time}` : ""}</div>
+                  <div className="mt-1"><VisitCompleteButton scheduleId={r.id} visit={1} completedAt={r.visit1_completed_at} /></div>
+                </td>
+                <td className="px-3 py-2">
+                  <div>{fmtDate(r.visit2_date)}{r.visit2_time ? ` · ${r.visit2_time}` : ""}</div>
+                  <div className="mt-1"><VisitCompleteButton scheduleId={r.id} visit={2} completedAt={r.visit2_completed_at} /></div>
+                </td>
                 <td className="px-3 py-2 text-muted-foreground">{r.exam_indicators ?? "—"}</td>
               </tr>
             ))}
@@ -65,11 +72,17 @@ function MyScheduleCard({ s }: { s: MedicalSchedule }) {
           <p className="text-xs uppercase text-muted-foreground">1st visit — medical exams</p>
           <p className="font-medium">{fmtDate(s.visit1_date)}</p>
           {s.visit1_time && <p className="text-sm text-muted-foreground">{s.visit1_time}</p>}
+          <div className="mt-2">
+            <VisitCompleteButton scheduleId={s.id} visit={1} completedAt={s.visit1_completed_at} />
+          </div>
         </div>
         <div className="rounded-md border p-3">
           <p className="text-xs uppercase text-muted-foreground">2nd visit — consultation & screening</p>
           <p className="font-medium">{fmtDate(s.visit2_date)}</p>
           {s.visit2_time && <p className="text-sm text-muted-foreground">{s.visit2_time}</p>}
+          <div className="mt-2">
+            <VisitCompleteButton scheduleId={s.id} visit={2} completedAt={s.visit2_completed_at} />
+          </div>
         </div>
       </div>
       {s.exam_indicators && (

@@ -37,6 +37,8 @@ export interface MedicalSchedule {
   visit2_time: string | null;
   exam_indicators: string | null;
   work_location: string | null;
+  visit1_completed_at: string | null;
+  visit2_completed_at: string | null;
   /** Joined for the admin roster view. */
   person_name?: string | null;
 }

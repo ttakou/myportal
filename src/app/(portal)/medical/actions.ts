@@ -48,3 +48,26 @@ export async function recordMedical(input: {
   revalidatePath("/medical");
   return { ok: true };
 }
+
+/**
+ * Mark a scheduled medical visit (1 or 2) complete or not. Allowed for the
+ * employee on their own schedule, or a tenant/system admin — enforced inside the
+ * `mark_medical_visit` SECURITY DEFINER function (which only touches the
+ * completion columns).
+ */
+export async function setMedicalVisitComplete(
+  scheduleId: string,
+  visit: 1 | 2,
+  completed: boolean,
+): Promise<ActionResult> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc("mark_medical_visit", {
+    p_schedule_id: scheduleId,
+    p_visit: visit,
+    p_completed: completed,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/medical");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}

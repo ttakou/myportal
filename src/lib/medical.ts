@@ -9,7 +9,7 @@ const SELECT =
   "id, profile_id, fitness_status, exam_date, expiry_date, restrictions, notes, person_name, person_email";
 
 const SCHED_SELECT =
-  "id, profile_id, year, visit1_date, visit1_time, visit2_date, visit2_time, exam_indicators, work_location";
+  "id, profile_id, year, visit1_date, visit1_time, visit2_date, visit2_time, exam_indicators, work_location, visit1_completed_at, visit2_completed_at";
 
 /** The current user's own latest medical record (confidential). */
 export async function getMyMedical(): Promise<MedicalRecord | null> {
@@ -83,6 +83,9 @@ export async function getMyMedicalVisitToday(): Promise<
   if (!sched) return null;
   const which = visitOnDate(sched, today());
   if (!which) return null;
+  // Already marked done → no reminder needed.
+  if (which === 1 && sched.visit1_completed_at) return null;
+  if (which === 2 && sched.visit2_completed_at) return null;
   return {
     schedule: sched,
     which,
