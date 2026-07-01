@@ -71,3 +71,56 @@ export async function setMedicalVisitComplete(
   revalidatePath("/dashboard");
   return { ok: true };
 }
+
+/**
+ * Record the fitness-to-work result straight from a scheduled exam: writes the
+ * medical_records outcome for the schedule's employee AND marks the exam cycle
+ * (both visits) complete, in one step. Admin / medical-officer only.
+ */
+export async function recordMedicalResult(input: {
+  scheduleId: string;
+  fitnessStatus: FitnessStatus;
+  examDate: string;
+  expiryDate?: string;
+  restrictions?: string;
+  notes?: string;
+}): Promise<ActionResult> {
+  const gate = await requireModule("medical", "create");
+  if (gate) return gate;
+
+  const supabase = createClient();
+  const { data: sched } = await supabase
+    .from("medical_schedules")
+    .select("profile_id, tenant_id")
+    .eq("id", input.scheduleId)
+    .maybeSingle();
+  if (!sched) return { ok: false, error: "Schedule not found." };
+
+  const { error } = await supabase.from("medical_records").insert({
+    tenant_id: sched.tenant_id,
+    profile_id: sched.profile_id,
+    fitness_status: input.fitnessStatus,
+    exam_date: input.examDate || new Date().toISOString().slice(0, 10),
+    expiry_date: input.expiryDate || null,
+    restrictions: input.restrictions?.trim() || null,
+    notes: input.notes?.trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  // The exam cycle produced a result, so mark both scheduled visits complete.
+  await supabase.rpc("mark_medical_visit", { p_schedule_id: input.scheduleId, p_visit: 1, p_completed: true });
+  await supabase.rpc("mark_medical_visit", { p_schedule_id: input.scheduleId, p_visit: 2, p_completed: true });
+
+  await notifyUsers({
+    tenantId: sched.tenant_id as string,
+    profileIds: [sched.profile_id as string],
+    category: "approval",
+    title: "Fitness-to-work result recorded",
+    body: "Your medical assessment result has been recorded.",
+    url: "/medical",
+  });
+
+  revalidatePath("/medical");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}

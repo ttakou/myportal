@@ -10,6 +10,7 @@ import { FITNESS_LABEL, daysToExpiry, type FitnessStatus, type MedicalSchedule }
 import { MedicalAdmin } from "./_components/medical-admin";
 import { resolveMedicalView } from "./_components/medical-views";
 import { VisitCompleteButton } from "./_components/visit-complete-button";
+import { RecordResultButton } from "./_components/record-result-dialog";
 import { cn } from "@/lib/utils";
 
 function fmtDate(d: string | null): string {
@@ -37,6 +38,7 @@ function ScheduleRoster({ rows }: { rows: MedicalSchedule[] }) {
               <th className="px-3 py-2">1st visit (exams)</th>
               <th className="px-3 py-2">2nd visit (screening)</th>
               <th className="px-3 py-2">Exams</th>
+              <th className="px-3 py-2">Result</th>
             </tr>
           </thead>
           <tbody>
@@ -53,6 +55,14 @@ function ScheduleRoster({ rows }: { rows: MedicalSchedule[] }) {
                   <div className="mt-1"><VisitCompleteButton scheduleId={r.id} visit={2} completedAt={r.visit2_completed_at} /></div>
                 </td>
                 <td className="px-3 py-2 text-muted-foreground">{r.exam_indicators ?? "—"}</td>
+                <td className="px-3 py-2">
+                  <RecordResultButton
+                    scheduleId={r.id}
+                    personName={r.person_name ?? null}
+                    defaultExamDate={r.visit2_date ?? r.visit1_date}
+                    alreadyRecorded={Boolean(r.visit2_completed_at)}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
