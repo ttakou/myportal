@@ -39,6 +39,9 @@ export function canSeeAdminConsole(f: AdminFlags): boolean {
 
 export function resolveAdminView(raw: string | null | undefined, f: AdminFlags): AdminView {
   if (raw === "people" && (f.isSystemAdmin || f.isHr)) return "people";
+  // Offshore managers (Campboss / OIM) reach the Modules view too, but the page
+  // narrows it to the Offshore module alone.
+  if (raw === "modules" && (f.isSystemAdmin || f.canManageOffshore)) return "modules";
   if (raw && (CORE_VIEWS as string[]).includes(raw) && f.isSystemAdmin) return raw as AdminView;
   return "overview";
 }
@@ -62,6 +65,9 @@ export function adminSubmenu(f: AdminFlags): AdminNavItem[] {
     items.push({ key: "modules", label: "Modules", icon: "Boxes", href: "/admin?view=modules" });
     items.push({ key: "settings", label: "Settings & Branding", icon: "Settings", href: "/admin?view=settings" });
     items.push({ key: "audit", label: "Audit Log", icon: "ScrollText", href: "/admin?view=audit" });
+  } else if (f.canManageOffshore) {
+    // Offshore manager: just the module switch, narrowed to Offshore by the page.
+    items.push({ key: "modules", label: "Modules", icon: "Boxes", href: "/admin?view=modules" });
   }
   return items;
 }

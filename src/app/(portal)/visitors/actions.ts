@@ -112,7 +112,14 @@ export async function preRegisterVisitor(input: {
 
 export async function checkInVisitor(
   id: string,
-  opts?: { badgeNo?: string; vehicleType?: string; vehiclePlate?: string },
+  opts?: {
+    badgeNo?: string;
+    vehicleType?: string;
+    vehiclePlate?: string;
+    infants?: number;
+    children?: number;
+    adolescents?: number;
+  },
 ): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
@@ -133,6 +140,14 @@ export async function checkInVisitor(
   };
   if (opts?.vehicleType?.trim()) patch.vehicle_type = opts.vehicleType.trim();
   if (opts?.vehiclePlate?.trim()) patch.vehicle_plate = opts.vehiclePlate.trim();
+
+  // Accompanying minors are frequently unknown until arrival, so reception can
+  // set/adjust the headcount at check-in. Only overwrite a band when a value is
+  // supplied, so a pre-registered count is never wiped by an omitted field.
+  const minors = (n: number) => Math.max(0, Math.min(50, Math.round(Number(n) || 0)));
+  if (opts?.infants !== undefined) patch.accompanying_infants = minors(opts.infants);
+  if (opts?.children !== undefined) patch.accompanying_children = minors(opts.children);
+  if (opts?.adolescents !== undefined) patch.accompanying_adolescents = minors(opts.adolescents);
 
   const { error } = await supabase.from("visitors").update(patch).eq("id", id);
   if (error) return { ok: false, error: error.message };
