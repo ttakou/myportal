@@ -5,7 +5,7 @@ import { useStatusTransition } from "@/components/activity";
 import { CalendarClock, Pencil, Zap, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import type { CrewChangePrefill, CrewChangeSuggestion } from "@/types/offshore";
+import type { CrewChangePrefill, CrewChangeSuggestion, TripMode } from "@/types/offshore";
 import {
   demobiliseCrew,
   demobiliseSelected,
@@ -14,8 +14,15 @@ import {
   mobiliseCrewManual,
 } from "../actions";
 
-/** Schedule-driven prompts shown to offshore managers on the dashboard. */
-export function CrewChangeSuggestions({ items }: { items: CrewChangeSuggestion[] }) {
+/** Schedule-driven prompts shown to offshore managers on the dashboard. Each
+ *  row opens in the tenant's default mode ('auto' | 'manual'). */
+export function CrewChangeSuggestions({
+  items,
+  defaultMode = "auto",
+}: {
+  items: CrewChangeSuggestion[];
+  defaultMode?: TripMode;
+}) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const visible = items.filter((s) => !dismissed.has(s.crew_id + s.action));
   if (visible.length === 0) return null;
@@ -29,6 +36,7 @@ export function CrewChangeSuggestions({ items }: { items: CrewChangeSuggestion[]
         <SuggestionRow
           key={s.crew_id + s.action}
           s={s}
+          defaultMode={defaultMode}
           onDismiss={() => setDismissed((d) => new Set(d).add(s.crew_id + s.action))}
         />
       ))}
@@ -36,11 +44,35 @@ export function CrewChangeSuggestions({ items }: { items: CrewChangeSuggestion[]
   );
 }
 
-function SuggestionRow({ s, onDismiss }: { s: CrewChangeSuggestion; onDismiss: () => void }) {
+function SuggestionRow({
+  s,
+  defaultMode,
+  onDismiss,
+}: {
+  s: CrewChangeSuggestion;
+  defaultMode: TripMode;
+  onDismiss: () => void;
+}) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"auto" | "manual">("auto");
+  const [mode, setMode] = useState<TripMode>(defaultMode);
   const [prefill, setPrefill] = useState<CrewChangePrefill | null>(null);
+
+  function loadPrefill() {
+    if (prefill) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await getCrewChangePrefill(s.crew_id, s.action);
+      if (res.ok) setPrefill(res.data);
+      else setError(res.error ?? "Could not load the crew.");
+    });
+  }
+
+  // When the tenant default is 'manual', open the editor straight away.
+  useEffect(() => {
+    if (defaultMode === "manual") loadPrefill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function runAuto() {
     setError(null);
@@ -53,13 +85,7 @@ function SuggestionRow({ s, onDismiss }: { s: CrewChangeSuggestion; onDismiss: (
 
   function openManual() {
     setMode("manual");
-    if (prefill) return;
-    setError(null);
-    startTransition(async () => {
-      const res = await getCrewChangePrefill(s.crew_id, s.action);
-      if (res.ok) setPrefill(res.data);
-      else setError(res.error ?? "Could not load the crew.");
-    });
+    loadPrefill();
   }
 
   return (

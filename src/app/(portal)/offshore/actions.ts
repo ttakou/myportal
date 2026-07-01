@@ -15,3 +15,4 @@ export * from "./_actions/register";
 export * from "./_actions/muster";
 export * from "./_actions/emergency";
 export * from "./_actions/mobilise";
+export * from "./_actions/settings";
