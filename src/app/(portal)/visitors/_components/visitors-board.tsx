@@ -459,11 +459,29 @@ function CheckInDialog({
   visitor: Visitor;
   pending: boolean;
   onCancel: () => void;
-  onSubmit: (opts: { badgeNo?: string; vehicleType?: string; vehiclePlate?: string }) => void;
+  onSubmit: (opts: {
+    badgeNo?: string;
+    vehicleType?: string;
+    vehiclePlate?: string;
+    infants?: number;
+    children?: number;
+    adolescents?: number;
+  }) => void;
 }) {
   const [badgeNo, setBadgeNo] = useState(visitor.badge_no ?? "");
   const [vehicleType, setVehicleType] = useState(visitor.vehicle_type ?? "");
   const [vehiclePlate, setVehiclePlate] = useState(visitor.vehicle_plate ?? "");
+  // Pre-filled from the pre-registration; editable because minors are often only
+  // known on arrival.
+  const [infants, setInfants] = useState(
+    visitor.accompanying_infants ? String(visitor.accompanying_infants) : "",
+  );
+  const [children, setChildren] = useState(
+    visitor.accompanying_children ? String(visitor.accompanying_children) : "",
+  );
+  const [adolescents, setAdolescents] = useState(
+    visitor.accompanying_adolescents ? String(visitor.accompanying_adolescents) : "",
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
@@ -506,6 +524,14 @@ function CheckInDialog({
               className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
             />
           </label>
+          <div>
+            <span className="text-sm text-muted-foreground">Accompanying minors on arrival</span>
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              <MinorCount label="Infants" value={infants} onChange={setInfants} />
+              <MinorCount label="Children" value={children} onChange={setChildren} />
+              <MinorCount label="Adolescents" value={adolescents} onChange={setAdolescents} />
+            </div>
+          </div>
         </div>
         <div className="mt-5 flex gap-2">
           <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
@@ -514,7 +540,16 @@ function CheckInDialog({
           <Button
             className="flex-1"
             disabled={pending}
-            onClick={() => onSubmit({ badgeNo, vehicleType, vehiclePlate })}
+            onClick={() =>
+              onSubmit({
+                badgeNo,
+                vehicleType,
+                vehiclePlate,
+                infants: Number(infants) || 0,
+                children: Number(children) || 0,
+                adolescents: Number(adolescents) || 0,
+              })
+            }
           >
             {pending ? "Checking in…" : "Check in"}
           </Button>
