@@ -1,4 +1,6 @@
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import {
   getMyMedical,
   getMedicalRoster,
@@ -114,10 +116,15 @@ export default async function MedicalPage({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) {
-  const [role, access] = await Promise.all([getCurrentRole(), getAccess()]);
-  // Mirror the sidebar/console gate (isOrgAdmin) so the Administration nav item
-  // and the page agree — the system_admin functional role counts as admin.
-  const isAdmin = isAdminRole(role) || access.isSystemAdmin;
+  const [role, access, perms] = await Promise.all([
+    getCurrentRole(),
+    getAccess(),
+    getMyPermissions(),
+  ]);
+  // Admins, or a Medical Officer access role (medical:create) — the latter
+  // manages records/schedules without full tenant-admin rights.
+  const isAdmin =
+    isAdminRole(role) || access.isSystemAdmin || hasPermission(perms, "medical", "create");
   const view = resolveMedicalView((await searchParams).view, isAdmin);
   const [mine, roster, users, mySchedule, scheduleRoster] = await Promise.all([
     getMyMedical(),

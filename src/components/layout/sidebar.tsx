@@ -122,9 +122,11 @@ export async function Sidebar({
     if (s.route_path === "/visitors") {
       return { ...base, subItems: visitorsSubmenu({ canMuster }) };
     }
-    // Medical: the employee's own status, plus an Administration view for admins.
+    // Medical: the employee's own status, plus an Administration view for admins
+    // and Medical Officers (medical:create access role).
     if (s.route_path === "/medical") {
-      return { ...base, defaultSubKey: "mine", subItems: medicalSubmenu({ isAdmin: isOrgAdmin }) };
+      const medicalAdmin = isOrgAdmin || hasPermission(perms, "medical", "create");
+      return { ...base, defaultSubKey: "mine", subItems: medicalSubmenu({ isAdmin: medicalAdmin }) };
     }
     // Savings: my savings (balance/loans/ledger), Administration for admins, and
     // the arrears report for finance/admin.
