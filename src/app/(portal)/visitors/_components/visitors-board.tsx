@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Car, UserCheck, UserPlus, Users } from "lucide-react";
+import { CalendarRange, Car, UserCheck, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -10,6 +10,8 @@ import { usePermissions } from "@/components/permissions-provider";
 import {
   accompanyingSummary,
   accompanyingTotal,
+  isPass,
+  visitRangeLabel,
   VEHICLE_TYPES,
   VISITOR_STATUS_LABEL,
   type Visitor,
@@ -85,6 +87,9 @@ export function VisitorsBoard({
   const [purpose, setPurpose] = useState("");
   const [vehicleType, setVehicleType] = useState("");
   const [vehiclePlate, setVehiclePlate] = useState("");
+  // Optional end date turns the pre-registration into a multi-day pass the
+  // visitor can check in and out of throughout [visitDate, visitUntil].
+  const [visitUntil, setVisitUntil] = useState("");
   // Accompanying minors, by age band — captured for security/muster headcount.
   const [infants, setInfants] = useState("");
   const [children, setChildren] = useState("");
@@ -124,6 +129,7 @@ export function VisitorsBoard({
     setPurpose("");
     setVehicleType("");
     setVehiclePlate("");
+    setVisitUntil("");
     setInfants("");
     setChildren("");
     setAdolescents("");
@@ -159,6 +165,7 @@ export function VisitorsBoard({
           company,
           purpose,
           visitDate,
+          visitUntil: visitUntil || null,
           vehicleType,
           vehiclePlate,
           infants: Number(infants) || 0,
@@ -227,6 +234,18 @@ export function VisitorsBoard({
           placeholder="Vehicle plate (optional)"
           className="rounded-md border bg-background px-3 py-2 text-sm"
         />
+        {/* Optional end date → multi-day pass (repeated check-in/out over the range). */}
+        <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+          Long-stay end date (optional)
+          <input
+            type="date"
+            value={visitUntil}
+            min={visitDate}
+            onChange={(e) => setVisitUntil(e.target.value)}
+            title={`Leave blank for a single-day visit on ${visitDate}. Set a later date for a pass valid until then.`}
+            className="rounded-md border bg-background px-3 py-1.5 text-sm text-foreground"
+          />
+        </label>
         {/* Assign to an individual host (employee directory typeahead). */}
         <div className="relative">
           {hostId ? (
@@ -346,6 +365,11 @@ export function VisitorsBoard({
                     {[v.company, v.purpose].filter(Boolean).join(" · ") || "—"}
                     {v.badge_no && ` · Badge ${v.badge_no}`}
                   </div>
+                  {isPass(v) && (
+                    <div className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-800">
+                      <CalendarRange className="h-3 w-3" /> Pass · {visitRangeLabel(v)}
+                    </div>
+                  )}
                   {accompanyingTotal(v) > 0 && (
                     <div className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
                       <Users className="h-3 w-3" /> +{accompanyingTotal(v)} minor
@@ -385,7 +409,10 @@ export function VisitorsBoard({
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-2">
-                    {v.status === "pre_registered" && (
+                    {/* Off site but actionable: pre-registered, or a still-valid
+                        pass that has checked out and may re-enter. */}
+                    {(v.status === "pre_registered" ||
+                      (isPass(v) && v.status === "checked_out")) && (
                       <>
                         {canOperate && (
                           <Button
