@@ -27,50 +27,83 @@ function fmtDate(d: string | null): string {
 }
 
 /** Read-only schedule roster for admins. */
+function ScheduleRosterRow({ r }: { r: MedicalSchedule }) {
+  return (
+    <tr className="border-t">
+      <td className="px-3 py-2 font-medium">{r.person_name ?? "—"}</td>
+      <td className="px-3 py-2">{r.work_location ?? "—"}</td>
+      <td className="px-3 py-2">
+        <VisitCompleteButton scheduleId={r.id} visit={1} completedAt={r.visit1_completed_at} />
+      </td>
+      <td className="px-3 py-2">
+        <VisitCompleteButton scheduleId={r.id} visit={2} completedAt={r.visit2_completed_at} />
+      </td>
+      <td className="px-3 py-2 text-muted-foreground">{r.exam_indicators ?? "—"}</td>
+      <td className="px-3 py-2">
+        <RecordResultButton
+          scheduleId={r.id}
+          personName={r.person_name ?? null}
+          defaultExamDate={r.visit2_date ?? r.visit1_date}
+          alreadyRecorded={Boolean(r.visit2_completed_at)}
+        />
+      </td>
+    </tr>
+  );
+}
+
 function ScheduleRoster({ rows }: { rows: MedicalSchedule[] }) {
   if (rows.length === 0) return null;
+
+  // Group by visit-date pair so each day's batch is viewed as a block.
+  const map = new Map<string, { visit1: string; visit2: string | null; v1t: string | null; v2t: string | null; rows: MedicalSchedule[] }>();
+  for (const r of rows) {
+    const key = `${r.visit1_date}||${r.visit2_date ?? ""}`;
+    const g = map.get(key) ?? { visit1: r.visit1_date, visit2: r.visit2_date, v1t: r.visit1_time, v2t: r.visit2_time, rows: [] };
+    g.rows.push(r);
+    map.set(key, g);
+  }
+  const groups = [...map.values()].sort((a, b) =>
+    a.visit1 !== b.visit1 ? (a.visit1 < b.visit1 ? -1 : 1) : (a.visit2 ?? "") < (b.visit2 ?? "") ? -1 : 1,
+  );
+
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <h2 className="text-lg font-semibold">Medical schedule ({rows[0].year})</h2>
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2">Employee</th>
-              <th className="px-3 py-2">Location</th>
-              <th className="px-3 py-2">1st visit (exams)</th>
-              <th className="px-3 py-2">2nd visit (screening)</th>
-              <th className="px-3 py-2">Exams</th>
-              <th className="px-3 py-2">Result</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t">
-                <td className="px-3 py-2 font-medium">{r.person_name ?? "—"}</td>
-                <td className="px-3 py-2">{r.work_location ?? "—"}</td>
-                <td className="px-3 py-2">
-                  <div>{fmtDate(r.visit1_date)}{r.visit1_time ? ` · ${r.visit1_time}` : ""}</div>
-                  <div className="mt-1"><VisitCompleteButton scheduleId={r.id} visit={1} completedAt={r.visit1_completed_at} /></div>
-                </td>
-                <td className="px-3 py-2">
-                  <div>{fmtDate(r.visit2_date)}{r.visit2_time ? ` · ${r.visit2_time}` : ""}</div>
-                  <div className="mt-1"><VisitCompleteButton scheduleId={r.id} visit={2} completedAt={r.visit2_completed_at} /></div>
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">{r.exam_indicators ?? "—"}</td>
-                <td className="px-3 py-2">
-                  <RecordResultButton
-                    scheduleId={r.id}
-                    personName={r.person_name ?? null}
-                    defaultExamDate={r.visit2_date ?? r.visit1_date}
-                    alreadyRecorded={Boolean(r.visit2_completed_at)}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {groups.map((g, gi) => {
+        const done = g.rows.filter((r) => r.visit2_completed_at).length;
+        return (
+          <div key={`${g.visit1}-${g.visit2}`} className="overflow-hidden rounded-lg border">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 bg-muted/50 px-3 py-2 text-sm">
+              <span className="font-semibold">Batch {gi + 1}</span>
+              <span className="text-muted-foreground">1st visit: <span className="font-medium text-foreground">{fmtDate(g.visit1)}{g.v1t ? ` · ${g.v1t}` : ""}</span></span>
+              <span className="text-muted-foreground">2nd visit: <span className="font-medium text-foreground">{fmtDate(g.visit2)}{g.v2t ? ` · ${g.v2t}` : ""}</span></span>
+              <span className="ml-auto flex items-center gap-2">
+                {done > 0 && <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">{done} done</span>}
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">{g.rows.length} {g.rows.length === 1 ? "person" : "people"}</span>
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-1.5">Employee</th>
+                    <th className="px-3 py-1.5">Location</th>
+                    <th className="px-3 py-1.5">1st visit</th>
+                    <th className="px-3 py-1.5">2nd visit</th>
+                    <th className="px-3 py-1.5">Exams</th>
+                    <th className="px-3 py-1.5">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {g.rows.map((r) => (
+                    <ScheduleRosterRow key={r.id} r={r} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }
