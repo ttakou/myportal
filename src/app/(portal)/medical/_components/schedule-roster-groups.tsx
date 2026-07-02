@@ -114,46 +114,67 @@ export function ScheduleRosterGroups({
 
   if (groups.length === 0) return null;
 
+  const latestKey = groups[0]?.key;
+  // Two-level: year → its batches (both already newest-first from the query).
+  const years: { year: number; batches: ScheduleGroup[] }[] = [];
+  for (const g of groups) {
+    const last = years[years.length - 1];
+    if (last && last.year === g.year) last.batches.push(g);
+    else years.push({ year: g.year, batches: [g] });
+  }
+
   return (
-    <section className="space-y-3">
+    <section className="space-y-5">
       <h2 className="text-lg font-semibold">Medical schedule — history</h2>
-      {groups.map((g, gi) => {
-        const isOpen = open.has(g.key);
-        return (
-          <div key={g.key} className="overflow-hidden rounded-lg border">
-            <button
-              type="button"
-              onClick={() => toggle(g)}
-              className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 bg-muted/50 px-3 py-2 text-left text-sm hover:bg-muted"
-            >
-              {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-              <span className="font-semibold">{g.year}{gi === 0 ? " · latest" : ""}</span>
-              <span className="text-muted-foreground">
-                1st: <span className="font-medium text-foreground">{fmtD(g.visit1_date)}{g.visit1_time ? ` · ${g.visit1_time}` : ""}</span>
-              </span>
-              <span className="text-muted-foreground">
-                2nd: <span className="font-medium text-foreground">{fmtD(g.visit2_date)}{g.visit2_time ? ` · ${g.visit2_time}` : ""}</span>
-              </span>
-              <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                {g.count} {g.count === 1 ? "person" : "people"}
-              </span>
-            </button>
-            {isOpen && (
-              <div>
-                {loading.has(g.key) ? (
-                  <p className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-                  </p>
-                ) : error[g.key] ? (
-                  <p className="px-3 py-3 text-sm text-destructive">{error[g.key]}</p>
-                ) : members[g.key] ? (
-                  <MembersTable rows={members[g.key]} />
-                ) : null}
+      {years.map(({ year, batches }) => (
+        <div key={year} className="space-y-2">
+          <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            {year}
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium normal-case text-muted-foreground">
+              {batches.length} batch{batches.length === 1 ? "" : "es"}
+            </span>
+          </h3>
+          {batches.map((g) => {
+            const isOpen = open.has(g.key);
+            return (
+              <div key={g.key} className="overflow-hidden rounded-lg border">
+                <button
+                  type="button"
+                  onClick={() => toggle(g)}
+                  className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 bg-muted/50 px-3 py-2 text-left text-sm hover:bg-muted"
+                >
+                  {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                  {g.key === latestKey && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">latest</span>
+                  )}
+                  <span className="text-muted-foreground">
+                    1st: <span className="font-medium text-foreground">{fmtD(g.visit1_date)}{g.visit1_time ? ` · ${g.visit1_time}` : ""}</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    2nd: <span className="font-medium text-foreground">{fmtD(g.visit2_date)}{g.visit2_time ? ` · ${g.visit2_time}` : ""}</span>
+                  </span>
+                  <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                    {g.count} {g.count === 1 ? "person" : "people"}
+                  </span>
+                </button>
+                {isOpen && (
+                  <div>
+                    {loading.has(g.key) ? (
+                      <p className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                      </p>
+                    ) : error[g.key] ? (
+                      <p className="px-3 py-3 text-sm text-destructive">{error[g.key]}</p>
+                    ) : members[g.key] ? (
+                      <MembersTable rows={members[g.key]} />
+                    ) : null}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      ))}
     </section>
   );
 }
