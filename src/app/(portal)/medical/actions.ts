@@ -12,6 +12,8 @@ import {
   type PlannedRow,
 } from "@/lib/medical-planner";
 import { getCampaignCandidates, getCandidateInfo } from "@/lib/medical-planner-data";
+import { getMedicalScheduleGroupMembers } from "@/lib/medical";
+import type { MedicalSchedule } from "@/types/medical";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -215,4 +217,15 @@ export async function commitMedicalCampaign(input: {
   revalidatePath("/medical");
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+/** Pull the member rows for one schedule batch — used to lazily expand a batch. */
+export async function getScheduleBatch(
+  visit1: string,
+  visit2: string | null,
+): Promise<{ ok: true; members: MedicalSchedule[] } | { ok: false; error: string }> {
+  const gate = await requireModule("medical", "view");
+  if (gate) return { ok: false, error: gate.error ?? "Not authorized." };
+  const members = await getMedicalScheduleGroupMembers(visit1, visit2);
+  return { ok: true, members };
 }

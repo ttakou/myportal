@@ -74,6 +74,75 @@ export async function getMedicalScheduleRoster(): Promise<MedicalSchedule[]> {
   });
 }
 
+export interface MedicalScheduleGroup {
+  key: string;
+  year: number;
+  visit1_date: string;
+  visit2_date: string | null;
+  visit1_time: string | null;
+  visit2_time: string | null;
+  count: number;
+}
+
+/**
+ * Lightweight summary of every schedule batch across all years (dates + count,
+ * no member rows) — most recent first. Powers the collapsible history; member
+ * details are pulled per batch on expand via getMedicalScheduleGroupMembers.
+ */
+export async function getMedicalScheduleGroups(): Promise<MedicalScheduleGroup[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("medical_schedules")
+    .select("year, visit1_date, visit2_date, visit1_time, visit2_time")
+    .order("visit1_date", { ascending: false });
+  if (error) {
+    console.error("getMedicalScheduleGroups:", error.message);
+    return [];
+  }
+  const map = new Map<string, MedicalScheduleGroup>();
+  for (const r of (data ?? []) as Record<string, any>[]) {
+    const key = `${r.visit1_date}||${r.visit2_date ?? ""}`;
+    const g =
+      map.get(key) ??
+      {
+        key,
+        year: r.year as number,
+        visit1_date: r.visit1_date as string,
+        visit2_date: (r.visit2_date as string | null) ?? null,
+        visit1_time: (r.visit1_time as string | null) ?? null,
+        visit2_time: (r.visit2_time as string | null) ?? null,
+        count: 0,
+      };
+    g.count += 1;
+    map.set(key, g);
+  }
+  return [...map.values()].sort((a, b) => (a.visit1_date < b.visit1_date ? 1 : a.visit1_date > b.visit1_date ? -1 : 0));
+}
+
+/** Member rows for a single schedule batch (pulled on expand). RLS-scoped. */
+export async function getMedicalScheduleGroupMembers(
+  visit1: string,
+  visit2: string | null,
+): Promise<MedicalSchedule[]> {
+  const supabase = createClient();
+  let q = supabase
+    .from("medical_schedules")
+    .select(`${SCHED_SELECT}, profiles(full_name)`)
+    .eq("visit1_date", visit1);
+  q = visit2 ? q.eq("visit2_date", visit2) : q.is("visit2_date", null);
+  const { data, error } = await q;
+  if (error) {
+    console.error("getMedicalScheduleGroupMembers:", error.message);
+    return [];
+  }
+  return (data ?? [])
+    .map((r: Record<string, unknown>) => {
+      const prof = r.profiles as { full_name?: string | null } | null;
+      return { ...(r as unknown as MedicalSchedule), person_name: prof?.full_name ?? null };
+    })
+    .sort((a, b) => (a.person_name ?? "").localeCompare(b.person_name ?? ""));
+}
+
 /** The visit (if any) the current user has *today*, for the dashboard reminder. */
 export async function getMyMedicalVisitToday(): Promise<
   | { schedule: MedicalSchedule; which: 1 | 2; date: string; time: string | null }
