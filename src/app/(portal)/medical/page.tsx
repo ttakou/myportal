@@ -13,6 +13,7 @@ import { MedicalAdmin } from "./_components/medical-admin";
 import { resolveMedicalView } from "./_components/medical-views";
 import { VisitCompleteButton } from "./_components/visit-complete-button";
 import { RecordResultButton } from "./_components/record-result-dialog";
+import { CampaignPlanner } from "./_components/campaign-planner";
 import { cn } from "@/lib/utils";
 
 function fmtDate(d: string | null): string {
@@ -129,7 +130,7 @@ export default async function MedicalPage({
   const [mine, roster, users, mySchedule, scheduleRoster] = await Promise.all([
     getMyMedical(),
     isAdmin && view === "admin" ? getMedicalRoster() : Promise.resolve([]),
-    isAdmin && view === "admin" ? getTenantUsers() : Promise.resolve([]),
+    isAdmin && (view === "admin" || view === "planner") ? getTenantUsers() : Promise.resolve([]),
     getMyMedicalSchedule(),
     isAdmin && view === "admin" ? getMedicalScheduleRoster() : Promise.resolve([]),
   ]);
@@ -141,11 +142,21 @@ export default async function MedicalPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Fitness to Work &amp; Medical</h1>
         <p className="text-muted-foreground">
-          {view === "admin" ? "Roster and record management." : "Your confidential medical status."}
+          {view === "admin"
+            ? "Roster and record management."
+            : view === "planner"
+              ? "Plan the annual medical campaign."
+              : "Your confidential medical status."}
         </p>
       </div>
 
-      {view === "admin" ? (
+      {view === "planner" ? (
+        <CampaignPlanner
+          addableStaff={users
+            .filter((u) => u.is_active)
+            .map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))}
+        />
+      ) : view === "admin" ? (
         <>
           <MedicalAdmin roster={roster} users={users.map((u) => ({ id: u.id, name: u.full_name || u.email || "Unknown" }))} />
           <ScheduleRoster rows={scheduleRoster} />
