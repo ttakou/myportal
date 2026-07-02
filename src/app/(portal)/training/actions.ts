@@ -14,6 +14,8 @@ import {
   notifyTrainingAssigned,
 } from "@/lib/training-notify";
 import type { ActionResult } from "@/types/actions";
+import { planTraining, type TrainingPlan } from "@/lib/training-planner";
+import { getTrainingCandidates } from "@/lib/training-planner-data";
 
 function rev() {
   revalidatePath("/training");
@@ -1242,6 +1244,100 @@ export async function recordTrainingForEmployee(input: {
     await supabase.from("training_employee_competencies").upsert(rows, { onConflict: "profile_id,competency_id" });
   }
 
+  rev();
+  return { ok: true };
+}
+
+/* --- Training scheduler (pool → capacity-sized sessions) ------------------ */
+
+/**
+ * Propose a schedule for a pool: split into capacity-sized sessions of the given
+ * duration from the start date, only booking a person into a session they can
+ * attend end-to-end (onshore per rotation, no training/medical clash).
+ */
+export async function generateTrainingSchedule(input: {
+  courseId: string;
+  profileIds: string[];
+  startDate: string;
+  sessionDays: number;
+  capacity: number;
+  gapDays?: number;
+}): Promise<{ ok: true; plan: TrainingPlan } | { ok: false; error: string }> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return { ok: false, error: gate.error ?? "Not authorized." };
+  if (!input.courseId) return { ok: false, error: "Pick a course." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)) return { ok: false, error: "Invalid start date." };
+  if (!(input.capacity >= 1)) return { ok: false, error: "Capacity must be at least 1." };
+  if (!(input.sessionDays >= 1)) return { ok: false, error: "Duration must be at least 1 day." };
+  if (!input.profileIds?.length) return { ok: false, error: "Select at least one employee." };
+
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+
+  const candidates = await getTrainingCandidates(who.tenant_id, [...new Set(input.profileIds)]);
+  const plan = planTraining(
+    {
+      startDate: input.startDate,
+      sessionDays: input.sessionDays,
+      capacity: input.capacity,
+      gapDays: input.gapDays,
+    },
+    candidates,
+  );
+  return { ok: true, plan };
+}
+
+/** Commit the proposed sessions: create planned sessions and enrol members. */
+export async function commitTrainingSchedule(input: {
+  courseId: string;
+  sessions: { startDate: string; endDate: string; memberIds: string[] }[];
+}): Promise<ActionResult> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return gate;
+  const who = await me();
+  if (!who) return { ok: false, error: "No tenant in scope." };
+
+  const supabase = createClient();
+  const { data: course } = await supabase
+    .from("training_courses")
+    .select("title, delivery")
+    .eq("id", input.courseId)
+    .maybeSingle();
+  if (!course) return { ok: false, error: "Course not found." };
+
+  let created = 0;
+  for (const s of input.sessions) {
+    const members = [...new Set(s.memberIds)].filter(Boolean);
+    if (members.length === 0) continue;
+    const { data: session, error } = await supabase
+      .from("training_sessions")
+      .insert({
+        tenant_id: who.tenant_id,
+        course_id: input.courseId,
+        title: (course.title as string) ?? null,
+        delivery: course.delivery,
+        starts_at: `${s.startDate}T08:00:00Z`,
+        ends_at: `${s.endDate}T17:00:00Z`,
+        capacity: members.length,
+        status: "planned",
+      })
+      .select("id")
+      .single();
+    if (error || !session) return { ok: false, error: error?.message ?? "Could not create session." };
+
+    const { error: pErr } = await supabase.from("training_participants").insert(
+      members.map((pid) => ({
+        tenant_id: who.tenant_id,
+        session_id: session.id as string,
+        profile_id: pid,
+        status: "enrolled",
+      })),
+    );
+    if (pErr) return { ok: false, error: pErr.message };
+    created += 1;
+  }
+
+  if (created === 0) return { ok: false, error: "Nothing to schedule." };
   rev();
   return { ok: true };
 }
