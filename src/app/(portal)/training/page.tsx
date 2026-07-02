@@ -63,6 +63,7 @@ import {
 } from "./_components/read-panels";
 import { AssignPanel } from "./_components/assign-panel";
 import { TrainingScheduler } from "./_components/training-scheduler";
+import { getSchedulerPool } from "@/lib/training-planner-data";
 import { RecordTrainingPanel } from "./_components/record-training-panel";
 import { CompetenciesPanel } from "./_components/competencies-panel";
 import { CompetencyMatrixPanel } from "./_components/competency-matrix-panel";
@@ -225,7 +226,7 @@ export default async function TrainingPage({
         );
       }
       case "scheduler": {
-        const [courses, employees] = await Promise.all([getCourses(), getEmployeesLite()]);
+        const [courses, employees] = await Promise.all([getCourses(), getSchedulerPool()]);
         return (
           <TrainingScheduler
             courses={courses.filter((c) => c.is_active).map((c) => ({ id: c.id, title: c.title }))}

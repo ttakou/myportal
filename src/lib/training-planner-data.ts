@@ -1,6 +1,40 @@
 import "server-only";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { TrainingCandidate } from "@/lib/training-planner";
+
+export interface SchedulerEmployee {
+  id: string;
+  name: string;
+  department: string | null;
+  offshore: boolean;
+}
+
+/**
+ * The pool the scheduler picks from: active tenant employees with their
+ * department and whether they're offshore-roster staff — so the UI can filter
+ * by department / work location. Service role, tenant-scoped (admin-gated page).
+ */
+export async function getSchedulerPool(): Promise<SchedulerEmployee[]> {
+  const supa = createClient();
+  const { data: tenant } = await supa.from("tenants").select("id").limit(1).maybeSingle();
+  const admin = createAdminClient();
+  if (!tenant || !admin) return [];
+  const tid = tenant.id as string;
+
+  const [{ data: profs }, { data: staff }] = await Promise.all([
+    admin.from("profiles").select("id, full_name, email, department").eq("tenant_id", tid).eq("is_active", true).order("full_name"),
+    admin.from("offshore_staff").select("profile_id").eq("tenant_id", tid),
+  ]);
+  const offshore = new Set((staff ?? []).map((s: Record<string, any>) => s.profile_id as string));
+
+  return (profs ?? []).map((p: Record<string, any>) => ({
+    id: p.id as string,
+    name: (p.full_name as string | null) ?? (p.email as string | null) ?? "—",
+    department: (p.department as string | null) ?? null,
+    offshore: offshore.has(p.id as string),
+  }));
+}
 
 const DAY_MS = 86_400_000;
 const ACTIVE_SESSION_STATES = ["planned", "open", "in_progress"];

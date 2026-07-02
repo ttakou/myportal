@@ -7,7 +7,7 @@ import { useStatusTransition } from "@/components/activity";
 import type { TrainingPlan } from "@/lib/training-planner";
 import { generateTrainingSchedule, commitTrainingSchedule } from "../actions";
 
-type Emp = { id: string; name: string };
+type Emp = { id: string; name: string; department?: string | null; offshore?: boolean };
 type Course = { id: string; title: string };
 
 function fmt(d: string): string {
@@ -27,6 +27,8 @@ export function TrainingScheduler({ courses, employees }: { courses: Course[]; e
 
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const [dept, setDept] = useState("");
+  const [loc, setLoc] = useState<"" | "offshore" | "onshore">("");
 
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,10 +37,21 @@ export function TrainingScheduler({ courses, employees }: { courses: Course[]; e
   const [genPending, startGen] = useStatusTransition("Generating…");
   const [commitPending, startCommit] = useStatusTransition("Saving…");
 
+  const departments = useMemo(
+    () => [...new Set(employees.map((e) => e.department).filter((d): d is string => Boolean(d)))].sort(),
+    [employees],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? employees.filter((e) => e.name.toLowerCase().includes(q)) : employees;
-  }, [employees, search]);
+    return employees.filter((e) => {
+      if (q && !e.name.toLowerCase().includes(q)) return false;
+      if (dept && (e.department ?? "") !== dept) return false;
+      if (loc === "offshore" && !e.offshore) return false;
+      if (loc === "onshore" && e.offshore) return false;
+      return true;
+    });
+  }, [employees, search, dept, loc]);
 
   function toggle(id: string) {
     setPicked((s) => {
@@ -146,14 +159,31 @@ export function TrainingScheduler({ courses, employees }: { courses: Course[]; e
       <div className="rounded-lg border bg-card p-4">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">Pool</span>
-          <span className="text-xs text-muted-foreground">{picked.size} selected</span>
-          <span className="relative ml-auto">
+          <span className="text-xs text-muted-foreground">{picked.size} selected · {filtered.length} shown</span>
+          {/* Filters */}
+          <select value={loc} onChange={(e) => setLoc(e.target.value as "" | "offshore" | "onshore")} className={cn(field, "ml-auto")}>
+            <option value="">All locations</option>
+            <option value="offshore">Offshore staff</option>
+            <option value="onshore">Onshore staff</option>
+          </select>
+          <select value={dept} onChange={(e) => setDept(e.target.value)} className={field}>
+            <option value="">All departments</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <span className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className={cn(field, "pl-7")} />
           </span>
           <button type="button" onClick={selectFiltered} className="rounded-md border px-2 py-1.5 text-xs hover:bg-accent">
             Select shown
           </button>
+          {(dept || loc || search) && (
+            <button type="button" onClick={() => { setDept(""); setLoc(""); setSearch(""); }} className="rounded-md border px-2 py-1.5 text-xs hover:bg-accent">
+              Reset filters
+            </button>
+          )}
           {picked.size > 0 && (
             <button type="button" onClick={() => setPicked(new Set())} className="rounded-md border px-2 py-1.5 text-xs hover:bg-accent">
               Clear
@@ -164,7 +194,9 @@ export function TrainingScheduler({ courses, employees }: { courses: Course[]; e
           {filtered.map((e) => (
             <label key={e.id} className="flex cursor-pointer items-center gap-2 border-b px-3 py-1.5 text-sm last:border-b-0 hover:bg-accent/40">
               <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggle(e.id)} />
-              {e.name}
+              <span className="min-w-0 flex-1 truncate">{e.name}</span>
+              {e.offshore && <span className="rounded bg-sky-100 px-1 text-[10px] text-sky-700">offshore</span>}
+              {e.department && <span className="hidden text-xs text-muted-foreground sm:inline">{e.department}</span>}
             </label>
           ))}
           {filtered.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">No matches.</p>}
