@@ -21,6 +21,7 @@ import {
   checkOutVisitor,
   preRegisterVisitor,
   searchHosts,
+  updateVisitorMinors,
   type HostOption,
 } from "../actions";
 
@@ -134,6 +135,8 @@ export function VisitorsBoard({
 
   // Reception check-in dialog (captures badge + vehicle type/plate on arrival).
   const [checkIn, setCheckIn] = useState<Visitor | null>(null);
+  // Correct accompanying-minor counts on an existing (e.g. pre-registered) visitor.
+  const [editMinors, setEditMinors] = useState<Visitor | null>(null);
 
   const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
     visitors.length,
@@ -393,6 +396,16 @@ export function VisitorsBoard({
                             Check in
                           </Button>
                         )}
+                        {canOperate && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={pending}
+                            onClick={() => setEditMinors(v)}
+                          >
+                            Edit minors
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
@@ -446,6 +459,73 @@ export function VisitorsBoard({
           }
         />
       )}
+
+      {editMinors && (
+        <EditMinorsDialog
+          visitor={editMinors}
+          pending={pending}
+          onCancel={() => setEditMinors(null)}
+          onSubmit={(counts) =>
+            run(() => updateVisitorMinors(editMinors.id, counts), () => setEditMinors(null))
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function EditMinorsDialog({
+  visitor,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  visitor: Visitor;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (counts: { infants: number; children: number; adolescents: number }) => void;
+}) {
+  const [infants, setInfants] = useState(
+    visitor.accompanying_infants ? String(visitor.accompanying_infants) : "",
+  );
+  const [children, setChildren] = useState(
+    visitor.accompanying_children ? String(visitor.accompanying_children) : "",
+  );
+  const [adolescents, setAdolescents] = useState(
+    visitor.accompanying_adolescents ? String(visitor.accompanying_adolescents) : "",
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
+        <h3 className="text-lg font-semibold">Accompanying minors — {visitor.full_name}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Correct the headcount recorded at pre-registration.
+        </p>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <MinorCount label="Infants" value={infants} onChange={setInfants} />
+          <MinorCount label="Children" value={children} onChange={setChildren} />
+          <MinorCount label="Adolescents" value={adolescents} onChange={setAdolescents} />
+        </div>
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            className="flex-1"
+            disabled={pending}
+            onClick={() =>
+              onSubmit({
+                infants: Number(infants) || 0,
+                children: Number(children) || 0,
+                adolescents: Number(adolescents) || 0,
+              })
+            }
+          >
+            {pending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -166,6 +166,32 @@ export async function checkInVisitor(
   return { ok: true };
 }
 
+/**
+ * Correct the accompanying-minor headcount on an existing visitor record — e.g.
+ * fixing an infant count on a pre-registration before arrival. Reception / host
+ * with edit rights (admins bypass).
+ */
+export async function updateVisitorMinors(
+  id: string,
+  counts: { infants?: number; children?: number; adolescents?: number },
+): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const clamp = (n: number | undefined) => Math.max(0, Math.min(50, Math.round(Number(n) || 0)));
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("visitors")
+    .update({
+      accompanying_infants: clamp(counts.infants),
+      accompanying_children: clamp(counts.children),
+      accompanying_adolescents: clamp(counts.adolescents),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}
+
 export async function checkOutVisitor(id: string): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
