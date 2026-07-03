@@ -5,9 +5,27 @@ import type {
   RotationCalendar,
   RotationDay,
   RotationReport,
+  TripMode,
 } from "@/types/offshore";
 import { DAY_MS, one, todayIso } from "./_shared";
 import { getRoster } from "./roster";
+
+/**
+ * The tenant's default crew-change mode ('auto' | 'manual'), stored on the
+ * offshore module's tenant_services.settings. Drives which way the "Crew
+ * changes due" prompts open. Defaults to 'auto' when unset. RLS-scoped.
+ */
+export async function getOffshoreDefaultMode(): Promise<TripMode> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("tenant_services")
+    .select("settings, services_catalog!inner(slug)")
+    .eq("services_catalog.slug", "offshore")
+    .maybeSingle();
+  const mode = (data?.settings as { default_crew_change_mode?: string } | null)
+    ?.default_crew_change_mode;
+  return mode === "manual" ? "manual" : "auto";
+}
 
 /** Next date a crew starts an offshore period, on/after today, from its cycle. */
 function nextChangeDate(

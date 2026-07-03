@@ -6,9 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { accompanyingSummary, accompanyingTotal, type Visitor } from "@/types/visitors";
 import type { StaffOnSite } from "@/types/staff-attendance";
+import { getMusterVisitors } from "../actions";
 
-const VISITOR_SELECT =
-  "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, accompanying_infants, accompanying_children, accompanying_adolescents, host:profiles!visitors_host_id_fkey(full_name)";
 const STAFF_SELECT =
   "profile_id, check_in_at, profiles!staff_attendance_profile_id_fkey(full_name, department, job_title)";
 
@@ -32,24 +31,11 @@ export function MusterList({
   const supabaseRef = useRef(createClient());
 
   const refetchVisitors = useCallback(async () => {
-    const { data } = await supabaseRef.current
-      .from("visitors")
-      .select(VISITOR_SELECT)
-      .eq("status", "checked_in")
-      .eq("visit_date", date)
-      .order("check_in_at", { ascending: true });
-    if (data) {
-      setOnSite(
-        data.map((row: Record<string, unknown>) => {
-          const host = Array.isArray(row.host) ? row.host[0] : row.host;
-          return {
-            ...(row as unknown as Visitor),
-            host_name: (host as { full_name?: string })?.full_name ?? null,
-          };
-        }),
-      );
-      setUpdatedAt(new Date());
-    }
+    // The on-site set is a union (single-day check-ins + open long-stay passes)
+    // that a single PostgREST query cannot express, so it is computed server-side.
+    const data = await getMusterVisitors(date);
+    setOnSite(data);
+    setUpdatedAt(new Date());
   }, [date]);
 
   const refetchStaff = useCallback(async () => {
@@ -87,6 +73,11 @@ export function MusterList({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "visitors" },
+        () => refetchVisitors(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "visitor_checkins" },
         () => refetchVisitors(),
       )
       .on(

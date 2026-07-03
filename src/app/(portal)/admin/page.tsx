@@ -87,7 +87,7 @@ export default async function AdminPage({
       {view === "overview" && <Overview flags={flags} />}
       {view === "people" && <PeopleView flags={flags} canImpersonate={access.isAdmin} />}
       {view === "roles" && <RolesView />}
-      {view === "modules" && <ModulesView />}
+      {view === "modules" && <ModulesView flags={flags} />}
       {view === "settings" && <SettingsView flags={flags} />}
       {view === "audit" && <AuditLogPanel />}
     </div>
@@ -271,8 +271,16 @@ async function RolesView() {
 
 // --- Modules ----------------------------------------------------------------
 
-async function ModulesView() {
+async function ModulesView({ flags }: { flags: AdminFlags }) {
   const modules = await getTenantModules();
+
+  // Offshore managers (Campboss / OIM) who aren't system admins get only the
+  // Offshore module's on/off switch — no other modules, no parameters panel.
+  if (!flags.isSystemAdmin) {
+    const offshore = modules.filter((m) => m.slug === "offshore");
+    return <ModulesPanel modules={offshore} />;
+  }
+
   return (
     <div className="space-y-8">
       <ModulesPanel modules={modules} />

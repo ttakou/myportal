@@ -14,6 +14,7 @@ import {
   getActiveMusterDrill,
   getMusterDrills,
   getCrewChangeSuggestions,
+  getOffshoreDefaultMode,
   getCrews,
   getEmergencyRoles,
   getEmergencyTeams,
@@ -32,6 +33,7 @@ import {
 import { OffshoreBoard } from "./_components/offshore-board";
 import { OffshoreManagement } from "./_components/offshore-management";
 import { CrewChangeSuggestions } from "./_components/crew-change-suggestions";
+import { DefaultModeToggle } from "./_components/default-mode-toggle";
 import { VisitorRequestForm } from "./_components/visitor-request-form";
 
 export default async function OffshorePage({
@@ -63,6 +65,9 @@ export default async function OffshorePage({
     ]);
   const meId = me?.id ?? "";
   const people = boardPeople.map((p) => ({ id: p.id, name: p.name }));
+
+  // Tenant default for how crew changes open (auto vs manual).
+  const defaultMode = showManagement ? await getOffshoreDefaultMode() : "auto";
 
   const [
     crews,
@@ -125,8 +130,13 @@ export default async function OffshorePage({
         )}
       </div>
 
-      {showManagement && activeView === "dashboard" && suggestions.length > 0 && (
-        <CrewChangeSuggestions items={suggestions} />
+      {showManagement && activeView === "dashboard" && (
+        <div className="space-y-4">
+          <DefaultModeToggle mode={defaultMode} />
+          {suggestions.length > 0 && (
+            <CrewChangeSuggestions items={suggestions} defaultMode={defaultMode} />
+          )}
+        </div>
       )}
 
       {showManagement && pobBreakdown && accommodation && (

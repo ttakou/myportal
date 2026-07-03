@@ -4,9 +4,22 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
 import { notifyUsers } from "@/lib/notify";
+import { getOnSite } from "@/lib/visitors";
+import type { Visitor } from "@/types/visitors";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
+
+/**
+ * Everyone currently on site for the muster list — single-day visitors checked
+ * in today plus long-stay passes with an open gate entry. Called by the live
+ * muster on each realtime tick (a plain query cannot express that union).
+ */
+export async function getMusterVisitors(date: string): Promise<Visitor[]> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return [];
+  return getOnSite(date);
+}
 
 function revalidate() {
   revalidatePath("/visitors");
@@ -43,6 +56,11 @@ export async function preRegisterVisitor(input: {
   company?: string;
   purpose?: string;
   visitDate: string;
+  /**
+   * Optional end date for a multi-day pass. When set (and after visitDate), the
+   * visitor may check in and out repeatedly across [visitDate, visitUntil].
+   */
+  visitUntil?: string | null;
   vehicleType?: string;
   vehiclePlate?: string;
   infants?: number;
@@ -63,6 +81,20 @@ export async function preRegisterVisitor(input: {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.visitDate)) {
     return { ok: false, error: "Invalid visit date." };
   }
+  // A pass end date is optional. When supplied it must be a valid date on/after
+  // the start; equal to the start collapses back to a single-day visit (null).
+  let visitUntil: string | null = null;
+  const rawUntil = input.visitUntil?.trim();
+  if (rawUntil) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rawUntil)) {
+      return { ok: false, error: "Invalid end date." };
+    }
+    if (rawUntil < input.visitDate) {
+      return { ok: false, error: "The end date must be on or after the start date." };
+    }
+    if (rawUntil > input.visitDate) visitUntil = rawUntil;
+  }
+  const isPass = visitUntil !== null;
   const minors = (n: number | undefined) => Math.max(0, Math.min(50, Math.round(Number(n) || 0)));
   const supabase = createClient();
   const { data: tenant } = await supabase
@@ -78,6 +110,7 @@ export async function preRegisterVisitor(input: {
     company: input.company?.trim() || null,
     purpose: input.purpose?.trim() || null,
     visit_date: input.visitDate,
+    visit_until: visitUntil,
     vehicle_type: input.vehicleType?.trim() || null,
     vehicle_plate: input.vehiclePlate?.trim() || null,
     service: input.service?.trim() || null,
@@ -89,13 +122,27 @@ export async function preRegisterVisitor(input: {
   // sets the registering user). RLS still applies: a non-admin may only host
   // their own visitors.
   if (input.hostId) row.host_id = input.hostId;
-  // Walk-in: create already on site.
-  if (input.checkInNow) {
+  // Walk-in: create already on site. A single-day visit records arrival on the
+  // row itself; a pass records it as its first gate entry (below).
+  if (input.checkInNow && !isPass) {
     row.status = "checked_in";
     row.check_in_at = new Date().toISOString();
   }
-  const { error } = await supabase.from("visitors").insert(row);
+  const { data: inserted, error } = await supabase
+    .from("visitors")
+    .insert(row)
+    .select("id")
+    .maybeSingle();
   if (error) return { ok: false, error: error.message };
+  // A pass walk-in opens its first entry in the log rather than flipping a status.
+  if (input.checkInNow && isPass && inserted?.id) {
+    const { error: entryErr } = await supabase.from("visitor_checkins").insert({
+      tenant_id: tenant.id,
+      visitor_id: inserted.id,
+      check_in_at: new Date().toISOString(),
+    });
+    if (entryErr) return { ok: false, error: entryErr.message };
+  }
   if (input.hostId) {
     await notifyUsers({
       tenantId: tenant.id as string,
@@ -112,7 +159,14 @@ export async function preRegisterVisitor(input: {
 
 export async function checkInVisitor(
   id: string,
-  opts?: { badgeNo?: string; vehicleType?: string; vehiclePlate?: string },
+  opts?: {
+    badgeNo?: string;
+    vehicleType?: string;
+    vehiclePlate?: string;
+    infants?: number;
+    children?: number;
+    adolescents?: number;
+  },
 ): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
@@ -120,22 +174,57 @@ export async function checkInVisitor(
 
   const { data: visitor } = await supabase
     .from("visitors")
-    .select("tenant_id, host_id, full_name")
+    .select("tenant_id, host_id, full_name, visit_until")
     .eq("id", id)
     .maybeSingle();
+  if (!visitor) return { ok: false, error: "Visitor not found." };
+  const isPass = visitor.visit_until != null;
+  const now = new Date().toISOString();
+  const minors = (n: number) => Math.max(0, Math.min(50, Math.round(Number(n) || 0)));
 
-  // Records the arrival time. Vehicle type/plate are only overwritten when
-  // provided at check-in, so a pre-registered plate is never wiped by a blank.
-  const patch: Record<string, unknown> = {
-    status: "checked_in",
-    check_in_at: new Date().toISOString(),
-    badge_no: opts?.badgeNo?.trim() || null,
-  };
+  // Vehicle / badge / minors live on the visitor row for both kinds; only
+  // overwrite a field when a value is supplied so nothing is wiped by a blank.
+  const patch: Record<string, unknown> = { badge_no: opts?.badgeNo?.trim() || null };
   if (opts?.vehicleType?.trim()) patch.vehicle_type = opts.vehicleType.trim();
   if (opts?.vehiclePlate?.trim()) patch.vehicle_plate = opts.vehiclePlate.trim();
+  if (opts?.infants !== undefined) patch.accompanying_infants = minors(opts.infants);
+  if (opts?.children !== undefined) patch.accompanying_children = minors(opts.children);
+  if (opts?.adolescents !== undefined) patch.accompanying_adolescents = minors(opts.adolescents);
 
-  const { error } = await supabase.from("visitors").update(patch).eq("id", id);
-  if (error) return { ok: false, error: error.message };
+  if (isPass) {
+    // A long-stay pass records each entry as its own row. Refuse if one is open
+    // (already on site) — they must check out first.
+    const { data: open } = await supabase
+      .from("visitor_checkins")
+      .select("id")
+      .eq("visitor_id", id)
+      .is("check_out_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (open) return { ok: false, error: "Visitor is already on site." };
+    const { error: entryErr } = await supabase.from("visitor_checkins").insert({
+      tenant_id: visitor.tenant_id,
+      visitor_id: id,
+      check_in_at: now,
+      badge_no: opts?.badgeNo?.trim() || null,
+    });
+    if (entryErr) return { ok: false, error: entryErr.message };
+    // Mirror the latest entry onto the row (vehicle/badge/minors + a coarse
+    // status/arrival) so reports and status views degrade gracefully. The board
+    // and muster derive true presence from the entry log, not this status.
+    const { error: rowErr } = await supabase
+      .from("visitors")
+      .update({ ...patch, status: "checked_in", check_in_at: now, check_out_at: null })
+      .eq("id", id);
+    if (rowErr) return { ok: false, error: rowErr.message };
+  } else {
+    // Single-day visit: arrival is recorded on the row itself.
+    const { error } = await supabase
+      .from("visitors")
+      .update({ ...patch, status: "checked_in", check_in_at: now })
+      .eq("id", id);
+    if (error) return { ok: false, error: error.message };
+  }
   if (visitor?.host_id) {
     const name = (visitor.full_name as string | null)?.trim();
     await notifyUsers({
@@ -151,20 +240,73 @@ export async function checkInVisitor(
   return { ok: true };
 }
 
+/**
+ * Correct the accompanying-minor headcount on an existing visitor record — e.g.
+ * fixing an infant count on a pre-registration before arrival. Reception / host
+ * with edit rights (admins bypass).
+ */
+export async function updateVisitorMinors(
+  id: string,
+  counts: { infants?: number; children?: number; adolescents?: number },
+): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const clamp = (n: number | undefined) => Math.max(0, Math.min(50, Math.round(Number(n) || 0)));
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("visitors")
+    .update({
+      accompanying_infants: clamp(counts.infants),
+      accompanying_children: clamp(counts.children),
+      accompanying_adolescents: clamp(counts.adolescents),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}
+
 export async function checkOutVisitor(id: string): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
   const supabase = createClient();
   const { data: visitor } = await supabase
     .from("visitors")
-    .select("tenant_id, host_id, full_name")
+    .select("tenant_id, host_id, full_name, visit_until")
     .eq("id", id)
     .maybeSingle();
-  const { error } = await supabase
-    .from("visitors")
-    .update({ status: "checked_out", check_out_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) return { ok: false, error: error.message };
+  if (!visitor) return { ok: false, error: "Visitor not found." };
+  const now = new Date().toISOString();
+
+  if (visitor.visit_until != null) {
+    // A long-stay pass: close its currently-open entry. The pass itself stays
+    // valid, so they can check in again later in the period.
+    const { data: open } = await supabase
+      .from("visitor_checkins")
+      .select("id")
+      .eq("visitor_id", id)
+      .is("check_out_at", null)
+      .order("check_in_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!open) return { ok: false, error: "Visitor is not currently on site." };
+    const { error } = await supabase
+      .from("visitor_checkins")
+      .update({ check_out_at: now })
+      .eq("id", open.id);
+    if (error) return { ok: false, error: error.message };
+    // Mirror the departure onto the row for reports/status views (see check-in).
+    await supabase
+      .from("visitors")
+      .update({ status: "checked_out", check_out_at: now })
+      .eq("id", id);
+  } else {
+    const { error } = await supabase
+      .from("visitors")
+      .update({ status: "checked_out", check_out_at: now })
+      .eq("id", id);
+    if (error) return { ok: false, error: error.message };
+  }
   if (visitor?.host_id) {
     const name = (visitor.full_name as string | null)?.trim();
     await notifyUsers({

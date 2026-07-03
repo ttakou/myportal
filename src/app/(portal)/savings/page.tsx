@@ -12,11 +12,11 @@ import {
   getFundReconciliation,
   getSavingsAuditLog,
   getSavingsConfig,
+  getSavingsEligibleUsers,
   getSavingsImportSteps,
   getWithdrawalRequests,
   isSavingsApprover,
 } from "@/lib/savings";
-import { getTenantUsers } from "@/lib/admin";
 import { isCredit, money, type SavingsTxn } from "@/types/savings";
 import { cn } from "@/lib/utils";
 import { SavingsAdmin } from "./_components/savings-admin";
@@ -101,7 +101,7 @@ export default async function SavingsPage({
       getSavingsConfig(),
       getMyPendingImportApprovals(),
       isAdminView ? getAccounts() : Promise.resolve([]),
-      isAdminView ? getTenantUsers() : Promise.resolve([]),
+      isAdminView ? getSavingsEligibleUsers() : Promise.resolve([]),
       isAdminView ? getWithdrawalRequests() : Promise.resolve([]),
       isAdminView ? getSavingsImportSteps() : Promise.resolve([]),
       isAdminView ? getImportBatches() : Promise.resolve([]),

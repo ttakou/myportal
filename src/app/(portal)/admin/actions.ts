@@ -1121,10 +1121,26 @@ export async function setModuleActive(
   serviceId: string,
   isActive: boolean,
 ): Promise<ActionResult> {
-  const denied = await requireAdmin();
-  if (denied) return denied;
-
   const supabase = createClient();
+
+  // System admins may toggle any module. Offshore managers (Campboss / OIM) may
+  // toggle only the Offshore module — matching the tightly-scoped RLS policy
+  // `tenant_services_offshore_manager_write` (migration 0145).
+  const access = await getAccess();
+  if (!access.isSystemAdmin) {
+    if (!(access.isCampboss || access.isOim)) {
+      return { ok: false, error: "Not authorized." };
+    }
+    const { data: svc } = await supabase
+      .from("services_catalog")
+      .select("slug")
+      .eq("id", serviceId)
+      .maybeSingle();
+    if (svc?.slug !== "offshore") {
+      return { ok: false, error: "You can only change the Offshore module." };
+    }
+  }
+
   // Resolve the caller's tenant (RLS returns only their tenant).
   const { data: tenant } = await supabase
     .from("tenants")
