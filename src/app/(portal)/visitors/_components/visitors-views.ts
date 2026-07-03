@@ -16,6 +16,8 @@ export function visitorsSubmenu(opts: { canMuster: boolean }): VisitorsNavItem[]
   ];
   if (opts.canMuster) {
     items.push({ key: "muster", label: "Muster Roll", icon: "ClipboardList", href: "/visitors/muster" });
+    // Same audience as the muster: security/reception/admins (visitors:operate).
+    items.push({ key: "register", label: "Access Register", icon: "BookOpenCheck", href: "/visitors/register" });
   }
   return items;
 }
