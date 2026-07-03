@@ -201,7 +201,13 @@ export function OffshoreManagement(props: {
           roster={props.roster}
         />
       )}
-      {tab === "drill" && <MusterDrillPanel drill={props.musterDrill} history={props.musterDrillHistory} />}
+      {tab === "drill" && (
+        <MusterDrillPanel
+          drill={props.musterDrill}
+          history={props.musterDrillHistory}
+          emergencyTeams={props.emergencyTeams}
+        />
+      )}
       {tab === "history" && <HistoryPanel />}
     </div>
   );
@@ -699,9 +705,45 @@ function MusterArchive({ history }: { history: MusterDrillSummary[] }) {
 }
 
 /** Live emergency muster roll-call: tick off who's accounted per muster group. */
-function MusterDrillPanel({ drill, history }: { drill: MusterDrill | null; history: MusterDrillSummary[] }) {
+function MusterDrillPanel({
+  drill,
+  history,
+  emergencyTeams,
+}: {
+  drill: MusterDrill | null;
+  history: MusterDrillSummary[];
+  emergencyTeams: EmergencyTeamMember[];
+}) {
   const { pending, error, run } = useRun();
   const [elapsed, setElapsed] = useState("00:00");
+
+  // HLO / fire-team members among this roll-call's POB snapshot, with their live
+  // accounted state — during an emergency the OIM needs to see at a glance
+  // whether the response teams themselves are mustered.
+  const teamStatus = useMemo(() => {
+    if (!drill) return [];
+    const today = new Date().toISOString().slice(0, 10);
+    const windows = [...new Map(
+      emergencyTeams.map((m) => [`${m.from_date}|${m.to_date}`, { from: m.from_date, to: m.to_date }]),
+    ).values()].sort((a, b) => b.from.localeCompare(a.from));
+    const active = windows.find((w) => w.from <= today && w.to >= today) ?? windows[0] ?? null;
+    if (!active) return [];
+    const byProfile = new Map(
+      drill.checkins.filter((c) => c.profile_id).map((c) => [c.profile_id as string, c]),
+    );
+    return EMERGENCY_TEAMS.map((team) => {
+      const members = emergencyTeams.filter(
+        (m) => m.team === team && m.from_date === active.from && m.to_date === active.to,
+      );
+      const onboard = members
+        .flatMap((m) => {
+          const c = byProfile.get(m.profile_id);
+          return c ? [{ name: m.person_name ?? c.name, accounted: c.accounted, checkinId: c.id }] : [];
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+      return { team, onboard, ashore: members.length - onboard.length };
+    }).filter((t) => t.onboard.length > 0 || t.ashore > 0);
+  }, [drill, emergencyTeams]);
 
   useEffect(() => {
     if (!drill) return;
@@ -790,6 +832,65 @@ function MusterDrillPanel({ drill, history }: { drill: MusterDrill | null; histo
           End roll-call
         </Button>
       </div>
+
+      {/* Emergency response teams on board — checked off from the same roll-call. */}
+      {teamStatus.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {teamStatus.map(({ team, onboard, ashore }) => {
+            const acc = onboard.filter((m) => m.accounted).length;
+            return (
+              <div
+                key={team}
+                className={cn(
+                  "rounded-lg border p-3",
+                  team === "fire_team" ? "border-red-200 bg-red-50/50" : "border-sky-200 bg-sky-50/50",
+                )}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold",
+                      team === "fire_team" ? "bg-red-100 text-red-800" : "bg-sky-100 text-sky-800",
+                    )}
+                  >
+                    <Siren className="h-3 w-3" />
+                    {EMERGENCY_TEAM_LABEL[team]} on board
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {acc}/{onboard.length} accounted{ashore > 0 ? ` · ${ashore} ashore` : ""}
+                  </span>
+                </div>
+                {onboard.length === 0 ? (
+                  <p className="text-sm font-medium text-destructive">
+                    Nobody from this team is on board.
+                  </p>
+                ) : (
+                  <ul className="flex flex-wrap gap-1.5">
+                    {onboard.map((m) => (
+                      <li key={m.checkinId}>
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => run(() => setMusterCheckin(m.checkinId, !m.accounted))}
+                          title={m.accounted ? "Accounted — click to undo" : "Unaccounted — click to check off"}
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-xs font-medium",
+                            m.accounted
+                              ? "border-green-200 bg-green-100 text-green-900 line-through"
+                              : "bg-background hover:bg-accent",
+                          )}
+                        >
+                          {m.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-2">
         {[...groups.entries()]
