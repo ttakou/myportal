@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ArrowLeft, ShieldX } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
-import { getAccessRegister, type AccessEntry } from "@/lib/access-register";
+import { getAccessRegister, type AccessAnomaly, type AccessEntry } from "@/lib/access-register";
 import { getDepartments } from "@/lib/visitors";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ import { PrintButton } from "../../reports/_components/print-button";
 import { ReportHeader } from "../../reports/_components/report-header";
 import { ReportStampFooter } from "../../reports/_components/report-stamp-footer";
 import { PopulationFilter } from "./_components/population-filter";
+import { DailyTrafficChart } from "./_components/daily-traffic-chart";
 
 function iso(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -30,12 +31,40 @@ function duration(e: AccessEntry): string {
   return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${mins}m`;
 }
 
-function RegisterRow({ e }: { e: AccessEntry }) {
+const KIND_LABEL = { staff: "Staff", contractor: "Contractor", visitor: "Visitor" } as const;
+const KIND_STYLE = {
+  staff: "bg-primary/10 text-primary",
+  contractor: "bg-amber-100 text-amber-800",
+  visitor: "bg-sky-100 text-sky-800",
+} as const;
+const ANOMALY_LABEL: Record<AccessAnomaly["type"], string> = {
+  after_hours: "After hours",
+  no_exit: "No exit logged",
+  overstay: "Pass overstay",
+};
+const POPULATIONS = new Set(["all", "staff", "contractor", "visitor"]);
+
+function RegisterRow({
+  e,
+  drillFrom,
+  drillTo,
+}: {
+  e: AccessEntry;
+  /** One-year window the name drill-down links open with. */
+  drillFrom: string;
+  drillTo: string;
+}) {
+  // Click a name → that person's full access history (last 12 months).
+  const drillHref = e.personId
+    ? `/visitors/register?user=${e.personId}&from=${drillFrom}&to=${drillTo}`
+    : `/visitors/register?visitorName=${encodeURIComponent(e.name)}&from=${drillFrom}&to=${drillTo}`;
   return (
     <tr className="border-t">
       <td className="px-3 py-2 tabular-nums text-muted-foreground">{e.date}</td>
       <td className="px-3 py-2 font-medium">
-        {e.name}
+        <Link href={drillHref} className="hover:underline print:no-underline">
+          {e.name}
+        </Link>
         {e.badge && (
           <span className="block text-xs font-normal text-muted-foreground">Badge {e.badge}</span>
         )}
@@ -66,14 +95,6 @@ function RegisterRow({ e }: { e: AccessEntry }) {
   );
 }
 
-const KIND_LABEL = { staff: "Staff", contractor: "Contractor", visitor: "Visitor" } as const;
-const KIND_STYLE = {
-  staff: "bg-primary/10 text-primary",
-  contractor: "bg-amber-100 text-amber-800",
-  visitor: "bg-sky-100 text-sky-800",
-} as const;
-const POPULATIONS = new Set(["all", "staff", "contractor", "visitor"]);
-
 export default async function AccessRegisterPage({
   searchParams,
 }: {
@@ -83,6 +104,7 @@ export default async function AccessRegisterPage({
     population?: string;
     department?: string;
     user?: string;
+    visitorName?: string;
   }>;
 }) {
   // Same audience as the muster / throughput report: admins, security /
@@ -115,15 +137,19 @@ export default async function AccessRegisterPage({
     | "staff"
     | "contractor"
     | "visitor";
+  const visitorName = sp.visitorName?.trim() || null;
+  const drillFrom = iso(new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()));
+  const drillTo = iso(now);
 
   const supabase = createClient();
-  const [{ entries, summary }, departments, { data: people }] = await Promise.all([
+  const [register, departments, { data: people }] = await Promise.all([
     getAccessRegister({
       from,
       to,
       population,
       department: sp.department || null,
       personId: sp.user || null,
+      visitorName,
     }),
     getDepartments(),
     supabase
@@ -132,6 +158,7 @@ export default async function AccessRegisterPage({
       .eq("is_active", true)
       .order("full_name"),
   ]);
+  const { entries, summary, dailyCounts, anomalies, truncated } = register;
   const users = ((people ?? []) as { id: string; full_name: string | null }[]).map((p) => ({
     id: p.id,
     name: p.full_name ?? "—",
@@ -142,6 +169,7 @@ export default async function AccessRegisterPage({
     population !== "all" ? KIND_LABEL[population] : null,
     sp.department || null,
     sp.user ? users.find((u) => u.id === sp.user)?.name ?? null : null,
+    visitorName ? `Visitor: ${visitorName}` : null,
   ].filter((x): x is string => Boolean(x));
 
   const csv: string[][] = [
@@ -182,7 +210,8 @@ export default async function AccessRegisterPage({
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Access register</h1>
             <p className="text-muted-foreground">
-              Historical entry &amp; exit log — staff, contractors and visitors.
+              Historical entry &amp; exit log — staff, contractors and visitors. Click a name for
+              that person&apos;s history.
             </p>
           </div>
           <div className="flex gap-2">
@@ -191,6 +220,15 @@ export default async function AccessRegisterPage({
           </div>
         </div>
       </div>
+
+      {visitorName && (
+        <p className="rounded-lg border bg-card px-4 py-2 text-sm print:hidden">
+          Showing history for visitor <strong>{visitorName}</strong>.{" "}
+          <Link href="/visitors/register" className="font-medium text-primary hover:underline">
+            Clear
+          </Link>
+        </p>
+      )}
 
       <div className="print:hidden">
         <ReportFilters
@@ -203,6 +241,13 @@ export default async function AccessRegisterPage({
           <PopulationFilter />
         </ReportFilters>
       </div>
+
+      {truncated && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          This period has more entries than can be shown at once — displaying the most recent
+          5,000 per source. Narrow the date range for a complete view.
+        </p>
+      )}
 
       {/* Printed output opens with the shared branded letterhead. */}
       <div className="hidden print:block">
@@ -217,6 +262,51 @@ export default async function AccessRegisterPage({
           </div>
         ))}
       </div>
+
+      <DailyTrafficChart days={dailyCounts} />
+
+      {anomalies.length > 0 && (
+        <section className="space-y-2 break-inside-avoid">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            Anomalies ({anomalies.length})
+          </h2>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Date</th>
+                  <th className="px-3 py-2 font-medium">Type</th>
+                  <th className="px-3 py-2 font-medium">Name</th>
+                  <th className="px-3 py-2 font-medium">Detail</th>
+                </tr>
+              </thead>
+              <ProgressiveTableBody colSpan={4} label="Show more anomalies">
+                {anomalies.map((a, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-3 py-2 tabular-nums text-muted-foreground">{a.date}</td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+                          a.type === "overstay"
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-amber-100 text-amber-800",
+                        )}
+                      >
+                        <AlertTriangle className="h-3 w-3" />
+                        {ANOMALY_LABEL[a.type]}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-medium">{a.name}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{a.detail}</td>
+                  </tr>
+                ))}
+              </ProgressiveTableBody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
@@ -236,7 +326,7 @@ export default async function AccessRegisterPage({
           {/* Screen: progressive reveal for large periods. */}
           <ProgressiveTableBody colSpan={9} className="print:hidden" label="Show more entries">
             {entries.map((e, i) => (
-              <RegisterRow key={i} e={e} />
+              <RegisterRow key={i} e={e} drillFrom={drillFrom} drillTo={drillTo} />
             ))}
             {entries.length === 0 && (
               <tr>
@@ -249,7 +339,7 @@ export default async function AccessRegisterPage({
           {/* Print/PDF: always the complete register, never truncated. */}
           <tbody className="hidden print:table-row-group">
             {entries.map((e, i) => (
-              <RegisterRow key={i} e={e} />
+              <RegisterRow key={i} e={e} drillFrom={drillFrom} drillTo={drillTo} />
             ))}
           </tbody>
         </table>

@@ -14,6 +14,8 @@ export async function sendEmail(input: {
   subject: string;
   html: string;
   text?: string;
+  /** Optional file attachments (content base64-encoded, per the Resend API). */
+  attachments?: { filename: string; content: string }[];
 }): Promise<boolean> {
   if (!isEmailConfigured()) return false;
   try {
@@ -29,6 +31,7 @@ export async function sendEmail(input: {
         subject: input.subject,
         html: input.html,
         text: input.text,
+        attachments: input.attachments,
       }),
     });
     return res.ok;
