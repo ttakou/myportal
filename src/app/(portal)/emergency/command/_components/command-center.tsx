@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { NavigateLink } from "@/components/ui/navigate-link";
 import {
   INCIDENT_LABEL,
   SEVERITY_LABEL,
@@ -235,7 +236,16 @@ function IncidentStream({
                     </p>
                   )}
                   <IncidentFollowups updates={updatesByIncident[i.id] ?? []} />
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {/* One tap starts turn-by-turn from the responder's current
+                        position; the freshest reporter location update wins
+                        over the original report's coordinates. */}
+                    <NavigateLink
+                      lat={latestLocation(updatesByIncident[i.id])?.lat ?? i.lat}
+                      lng={latestLocation(updatesByIncident[i.id])?.lng ?? i.lng}
+                      text={i.location_text}
+                      label="Navigate to incident"
+                    />
                     {i.status === "open" && (
                       <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => setIncidentStatus(i.id, "acknowledged"))}>
                         Acknowledge
@@ -260,6 +270,13 @@ function IncidentStream({
       </div>
     </section>
   );
+}
+
+/** The freshest reporter-shared coordinates for an incident, if any. */
+function latestLocation(updates: IncidentUpdate[] | undefined) {
+  const locs = (updates ?? []).filter((u) => u.lat != null && u.lng != null);
+  if (locs.length === 0) return null;
+  return [...locs].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
 }
 
 // Follow-up timeline for one incident — reporter updates, location refreshes and
@@ -288,9 +305,12 @@ function IncidentFollowups({ updates }: { updates: IncidentUpdate[] }) {
           </span>
           {u.body && <p className="text-muted-foreground">{u.body}</p>}
           {u.lat != null && u.lng != null && (
-            <span className="inline-flex items-center gap-1 text-muted-foreground">
-              <MapPin className="h-3 w-3" />
-              {u.lat.toFixed(4)}, {u.lng.toFixed(4)}
+            <span className="inline-flex items-center gap-2 text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-3 w-3" />
+                {u.lat.toFixed(4)}, {u.lng.toFixed(4)}
+              </span>
+              <NavigateLink lat={u.lat} lng={u.lng} label="Navigate" className="px-1.5 py-0.5" />
             </span>
           )}
         </li>
@@ -419,9 +439,12 @@ function GeoMap({
               {h.department && <span className="text-red-700"> · {h.department}</span>}
               {h.note && <p className="text-xs text-red-700">{h.note}</p>}
               {h.lat != null && (
-                <span className="inline-flex items-center gap-1 text-xs text-red-600">
-                  <MapPin className="h-3 w-3" />
-                  {h.lat.toFixed(4)}, {h.lng?.toFixed(4)}
+                <span className="inline-flex items-center gap-2 text-xs text-red-600">
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {h.lat.toFixed(4)}, {h.lng?.toFixed(4)}
+                  </span>
+                  <NavigateLink lat={h.lat} lng={h.lng} label="Navigate" className="px-1.5 py-0.5" />
                 </span>
               )}
             </li>
