@@ -12,6 +12,42 @@ import {
   type WithdrawalRequest,
 } from "@/types/savings";
 
+/**
+ * People eligible for the savings scheme — the candidate pool for both account
+ * assignment and import-approval validators. Scoped to holders of any access
+ * role that grants the savings module (APCC staff + the savings-admin roles),
+ * i.e. exactly the users who can actually reach the module. Active profiles
+ * only. Replaces the full tenant directory so non-members never appear here.
+ */
+export async function getSavingsEligibleUsers(): Promise<
+  { id: string; full_name: string | null; email: string | null }[]
+> {
+  const supabase = createClient();
+  const { data: roles } = await supabase
+    .from("tenant_roles")
+    .select("id")
+    .contains("module_slugs", ["savings"]);
+  const roleIds = (roles ?? []).map((r) => r.id as string);
+  if (roleIds.length === 0) return [];
+  const { data: links } = await supabase
+    .from("profile_access_roles")
+    .select("profile_id")
+    .in("role_id", roleIds);
+  const ids = [...new Set((links ?? []).map((r) => r.profile_id as string))];
+  if (ids.length === 0) return [];
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, full_name, email")
+    .in("id", ids)
+    .eq("is_active", true)
+    .order("full_name");
+  return (data ?? []).map((u) => ({
+    id: u.id as string,
+    full_name: (u.full_name as string) ?? null,
+    email: (u.email as string) ?? null,
+  }));
+}
+
 const ACCT_SELECT =
   "id, profile_id, balance," +
   " person:profiles!savings_accounts_profile_id_fkey(full_name)," +
