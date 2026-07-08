@@ -3,7 +3,7 @@ import { today } from "@/lib/canteen";
 import type { Visitor, VisitorStatus } from "@/types/visitors";
 
 const SELECT =
-  "id, full_name, company, purpose, visit_date, visit_until, status, badge_no, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, accompanying_infants, accompanying_children, accompanying_adolescents, host:profiles!visitors_host_id_fkey(full_name)";
+  "id, full_name, company, purpose, visit_date, visit_until, status, badge_no, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, check_in_comment, check_out_comment, accompanying_infants, accompanying_children, accompanying_adolescents, host:profiles!visitors_host_id_fkey(full_name)";
 
 function mapRow(row: Record<string, unknown>): Visitor {
   const host = Array.isArray(row.host) ? row.host[0] : row.host;
@@ -22,6 +22,8 @@ function mapRow(row: Record<string, unknown>): Visitor {
     service: (row.service as string) ?? null,
     check_in_at: (row.check_in_at as string) ?? null,
     check_out_at: (row.check_out_at as string) ?? null,
+    check_in_comment: (row.check_in_comment as string) ?? null,
+    check_out_comment: (row.check_out_comment as string) ?? null,
     accompanying_infants: Number(row.accompanying_infants ?? 0),
     accompanying_children: Number(row.accompanying_children ?? 0),
     accompanying_adolescents: Number(row.accompanying_adolescents ?? 0),

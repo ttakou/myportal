@@ -32,6 +32,9 @@ export interface Visitor {
   service: string | null;
   check_in_at: string | null;
   check_out_at: string | null;
+  /** Optional free-text notes security added at check-in / check-out. */
+  check_in_comment: string | null;
+  check_out_comment: string | null;
   /** Accompanying minors, by age band — captured for security/muster headcount. */
   accompanying_infants: number;
   accompanying_children: number;
