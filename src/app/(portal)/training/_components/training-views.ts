@@ -36,6 +36,7 @@ export type TrainingViewKey =
   | "matrix"
   | "catalogue"
   | "sessions"
+  | "course-history"
   | "participants"
   | "providers"
   | "trainers"
@@ -88,6 +89,7 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "matrix", label: "Statutory Training Matrix", icon: "Grid3x3", group: "HR Administration" },
   { key: "catalogue", label: "Training Catalogue", icon: "BookOpen", group: "HR Administration" },
   { key: "sessions", label: "Training Sessions", icon: "CalendarClock", group: "HR Administration" },
+  { key: "course-history", label: "Course History", icon: "History", group: "HR Administration" },
   { key: "participants", label: "Participants", icon: "Users", group: "HR Administration" },
   { key: "providers", label: "Training Providers", icon: "Building2", group: "HR Administration" },
   { key: "trainers", label: "Trainers", icon: "GraduationCap", group: "HR Administration" },
@@ -122,6 +124,7 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "catalogue",
   "matrix",
   "sessions",
+  "course-history",
   "participants",
   "providers",
   "trainers",
