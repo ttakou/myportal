@@ -16,6 +16,8 @@ export interface NavSubItem {
   section?: string;
   /** Extra `?view=` values that also mark this item active (e.g. a hub's tabs). */
   matchViews?: string[];
+  /** Extra pathnames that also mark this item active (route-based hubs). */
+  matchPaths?: string[];
 }
 
 export interface NavLink {
@@ -92,18 +94,19 @@ function SubMenu({ items, defaultKey }: { items: NavSubItem[]; defaultKey?: stri
   const searchParams = useSearchParams();
   const currentView = searchParams.get("view");
 
-  const isActive = (href: string, matchViews?: string[]) => {
-    const [path, qs] = href.split("?");
+  const isActive = (si: NavSubItem) => {
+    if ((si.matchPaths ?? []).includes(pathname)) return true;
+    const [path, qs] = si.href.split("?");
     const itemView = qs ? new URLSearchParams(qs).get("view") : null;
     if (pathname !== path) return false;
     if (!itemView) return true;
     const view = currentView ?? defaultKey;
-    return view === itemView || (view != null && (matchViews ?? []).includes(view));
+    return view === itemView || (view != null && (si.matchViews ?? []).includes(view));
   };
 
   const renderLink = (si: NavSubItem) => {
     const SubIcon = resolveIcon(si.icon);
-    const isCurrent = isActive(si.href, si.matchViews);
+    const isCurrent = isActive(si);
     return (
       <Link
         key={si.key}
@@ -135,7 +138,7 @@ function SubMenu({ items, defaultKey }: { items: NavSubItem[]; defaultKey?: stri
   // (so you always see where you are). Falls back to opening the first section.
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
     if (!sectioned) return {};
-    const activeSection = groups.find((g) => g.section && g.items.some((si) => isActive(si.href, si.matchViews)))?.section;
+    const activeSection = groups.find((g) => g.section && g.items.some((si) => isActive(si)))?.section;
     const firstSection = groups.find((g) => g.section)?.section;
     const target = activeSection ?? firstSection;
     return target ? { [target]: true } : {};

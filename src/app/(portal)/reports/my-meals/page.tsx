@@ -8,6 +8,7 @@ import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
 import { ReportStampFooter } from "../_components/report-stamp-footer";
+import { CanteenTabs } from "../../canteen/_components/canteen-tabs";
 
 function iso(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -37,6 +38,7 @@ export default async function MyMealsReportPage({
 
   return (
     <div className="space-y-5">
+      <CanteenTabs access={{ canServe: false, canManage: false, canEntitle: false, canReport: false, isOim: false, isHrCanteen: false }} />
       <div className="flex items-center justify-between gap-3 print:hidden">
         <Link
           href="/reports"
