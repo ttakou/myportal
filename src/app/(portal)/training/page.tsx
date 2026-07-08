@@ -4,6 +4,8 @@ import {
   getCourses,
   getCourseHistory,
   getExecutiveSummary,
+  getGlobalTrainingMatrix,
+  getPeriodTrainingStats,
   getEmployeesLite,
   getMyCertificates,
   getMyMandatory,
@@ -100,14 +102,17 @@ import { TrainersPanel } from "./_components/trainers-panel";
 import { SessionsPanel } from "./_components/sessions-panel";
 import { CourseHistoryPanel } from "./_components/course-history-panel";
 import { ExecSummaryPanel } from "./_components/exec-summary-panel";
+import { PeriodReportPanel } from "./_components/period-report-panel";
+import { ComparativeReportPanel } from "./_components/comparative-report-panel";
+import { GlobalMatrixPanel } from "./_components/global-matrix-panel";
 import { ParticipantsPanel } from "./_components/participants-panel";
 
 export default async function TrainingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string; competency?: string; course?: string; year?: string }>;
+  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string; competency?: string; course?: string; year?: string; from?: string; to?: string; fromB?: string; toB?: string }>;
 }) {
-  const { view, session, person, dept, competency, course, year } = await searchParams;
+  const { view, session, person, dept, competency, course, year, from, to, fromB, toB } = await searchParams;
   const key = resolveTrainingView(view);
   const [admin, manager] = await Promise.all([isTrainingAdmin(), hasDirectReports()]);
   const access: TrainingAccess = { isManager: manager, isTrainingAdmin: admin };
@@ -233,6 +238,33 @@ export default async function TrainingPage({
             departments={departments}
           />
         );
+      }
+      case "rpt-period": {
+        const iso = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+        const today = new Date().toISOString().slice(0, 10);
+        const f = iso(from) ?? `${today.slice(0, 4)}-01-01`;
+        const t = iso(to) ?? today;
+        const [stats, budgets] = await Promise.all([getPeriodTrainingStats(f, t), getBudgets()]);
+        return <PeriodReportPanel data={stats} currency={budgets[0]?.currency ?? "USD"} />;
+      }
+      case "rpt-compare": {
+        const iso = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+        const yNow = new Date().getUTCFullYear();
+        const fA = iso(from) ?? `${yNow}-01-01`;
+        const tA = iso(to) ?? `${yNow}-12-31`;
+        const fB = iso(fromB) ?? `${yNow - 1}-01-01`;
+        const tB = iso(toB) ?? `${yNow - 1}-12-31`;
+        const [a, b, budgets] = await Promise.all([
+          getPeriodTrainingStats(fA, tA),
+          getPeriodTrainingStats(fB, tB),
+          getBudgets(),
+        ]);
+        return <ComparativeReportPanel a={a} b={b} currency={budgets[0]?.currency ?? "USD"} />;
+      }
+      case "matrix-global": {
+        const data = await getGlobalTrainingMatrix();
+        const selectedDept = dept && data.departments.includes(dept) ? dept : null;
+        return <GlobalMatrixPanel data={data} dept={selectedDept} />;
       }
       case "exec-summary": {
         const y = year && /^\d{4}$/.test(year) ? Number(year) : new Date().getUTCFullYear();

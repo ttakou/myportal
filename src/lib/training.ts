@@ -1564,3 +1564,224 @@ export async function getExecutiveSummary(year: number): Promise<ExecutiveSummar
     peopleTrained: trained.size,
   };
 }
+
+// --- Period activity report + comparative report + global matrix -------------
+
+export interface PeriodTrainingStats {
+  from: string;
+  to: string;
+  sessions: number;
+  completedSessions: number;
+  peopleTrained: number;
+  hours: number;
+  cost: number;
+  completions: number;
+  byCourse: {
+    title: string;
+    sessions: number;
+    people: number;
+    hours: number;
+    cost: number;
+  }[];
+  byDepartment: { department: string; people: number; completions: number }[];
+}
+
+/**
+ * Training activity between two dates (inclusive): sessions that started in
+ * the window plus completion records dated in it (which also captures manual /
+ * external training). Powers the period report and both halves of the
+ * comparative report.
+ */
+export async function getPeriodTrainingStats(
+  from: string,
+  to: string,
+): Promise<PeriodTrainingStats> {
+  const supabase = createClient();
+  const [{ data: sessions }, { data: records }] = await Promise.all([
+    supabase
+      .from("training_sessions")
+      .select(
+        "id, cost, status, starts_at, ends_at, course:training_courses(title, duration_hours)," +
+          " training_participants(status, profile_id, person:profiles!training_participants_profile_id_fkey(department))",
+      )
+      .neq("status", "cancelled")
+      .gte("starts_at", `${from}T00:00:00Z`)
+      .lte("starts_at", `${to}T23:59:59Z`),
+    supabase
+      .from("training_records")
+      .select("profile_id, completed_on, person:profiles!training_records_profile_id_fkey(department)")
+      .gte("completed_on", from)
+      .lte("completed_on", to),
+  ]);
+
+  const byCourse = new Map<string, { sessions: number; people: Set<string>; hours: number; cost: number }>();
+  const people = new Set<string>();
+  const deptPeople = new Map<string, Set<string>>();
+  let cost = 0;
+  let hours = 0;
+  let completedSessions = 0;
+
+  for (const s of (sessions ?? []) as Record<string, any>[]) {
+    const course = Array.isArray(s.course) ? s.course[0] : s.course;
+    const title = course?.title ?? "—";
+    const sessionCost = Number(s.cost) || 0;
+    // Hours: course duration, else the session's wall-clock span capped at 8h/day.
+    let h = Number(course?.duration_hours) || 0;
+    if (!h && s.starts_at && s.ends_at) {
+      const days = Math.max(1, Math.round((+new Date(s.ends_at) - +new Date(s.starts_at)) / 86400000));
+      h = days * 8;
+    }
+    cost += sessionCost;
+    if (s.status === "completed") completedSessions += 1;
+
+    const entry = byCourse.get(title) ?? { sessions: 0, people: new Set<string>(), hours: 0, cost: 0 };
+    entry.sessions += 1;
+    entry.cost += sessionCost;
+
+    const parts = ((s.training_participants ?? []) as Record<string, any>[]).filter(
+      (p) => p.status !== "cancelled",
+    );
+    for (const p of parts) {
+      if (p.profile_id) {
+        people.add(p.profile_id as string);
+        entry.people.add(p.profile_id as string);
+        const person = Array.isArray(p.person) ? p.person[0] : p.person;
+        const dept = (person?.department as string) || "No department";
+        const set = deptPeople.get(dept) ?? new Set<string>();
+        set.add(p.profile_id as string);
+        deptPeople.set(dept, set);
+      }
+    }
+    entry.hours += h * parts.length; // person-hours delivered
+    hours += h * parts.length;
+    byCourse.set(title, entry);
+  }
+
+  const deptCompletions = new Map<string, number>();
+  for (const r of (records ?? []) as Record<string, any>[]) {
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    const dept = (person?.department as string) || "No department";
+    deptCompletions.set(dept, (deptCompletions.get(dept) ?? 0) + 1);
+  }
+
+  const departments = new Set([...deptPeople.keys(), ...deptCompletions.keys()]);
+  return {
+    from,
+    to,
+    sessions: (sessions ?? []).length,
+    completedSessions,
+    peopleTrained: people.size,
+    hours: Math.round(hours),
+    cost,
+    completions: (records ?? []).length,
+    byCourse: [...byCourse.entries()]
+      .map(([title, v]) => ({
+        title,
+        sessions: v.sessions,
+        people: v.people.size,
+        hours: Math.round(v.hours),
+        cost: v.cost,
+      }))
+      .sort((a, b) => b.people - a.people || b.cost - a.cost),
+    byDepartment: [...departments]
+      .map((department) => ({
+        department,
+        people: deptPeople.get(department)?.size ?? 0,
+        completions: deptCompletions.get(department) ?? 0,
+      }))
+      .sort((a, b) => b.people - a.people || b.completions - a.completions),
+  };
+}
+
+export type MatrixStatus = "valid" | "expiring" | "expired";
+
+export interface GlobalMatrix {
+  courses: { id: string; title: string; code: string | null; statutory: boolean }[];
+  rows: {
+    profile_id: string;
+    name: string;
+    department: string | null;
+    /** courseId → latest record status + expiry (missing = no record). */
+    cells: Record<string, { status: MatrixStatus; expires_on: string | null }>;
+  }[];
+  departments: string[];
+}
+
+/**
+ * The global training matrix: every active employee × every course that is
+ * statutory or has at least one completion record, each cell derived from the
+ * person's latest record for that course (valid / expiring ≤90 days / expired;
+ * absent = never trained). Records are fetched in 1000-row pages.
+ */
+export async function getGlobalTrainingMatrix(): Promise<GlobalMatrix> {
+  const supabase = createClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const soon = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+
+  const [{ data: courses }, { data: profiles }] = await Promise.all([
+    supabase
+      .from("training_courses")
+      .select("id, title, code, is_statutory")
+      .eq("is_active", true)
+      .order("title"),
+    supabase
+      .from("profiles")
+      .select("id, full_name, department, employee_type")
+      .eq("is_active", true)
+      .eq("employee_type", "employee")
+      .order("full_name"),
+  ]);
+
+  const records: Record<string, any>[] = [];
+  for (let page = 0; page < 10; page++) {
+    const { data } = await supabase
+      .from("training_records")
+      .select("profile_id, course_id, completed_on, expires_on")
+      .order("id", { ascending: true })
+      .range(page * 1000, (page + 1) * 1000 - 1);
+    const chunk = (data ?? []) as Record<string, any>[];
+    records.push(...chunk);
+    if (chunk.length < 1000) break;
+  }
+
+  // Latest record per (person, course).
+  const latest = new Map<string, { completed_on: string; expires_on: string | null }>();
+  const coursesWithRecords = new Set<string>();
+  for (const r of records) {
+    coursesWithRecords.add(r.course_id as string);
+    const k = `${r.profile_id}|${r.course_id}`;
+    const prev = latest.get(k);
+    if (!prev || (r.completed_on as string) > prev.completed_on) {
+      latest.set(k, { completed_on: r.completed_on as string, expires_on: (r.expires_on as string) ?? null });
+    }
+  }
+
+  const cols = ((courses ?? []) as Record<string, any>[])
+    .filter((c) => c.is_statutory || coursesWithRecords.has(c.id as string))
+    .map((c) => ({
+      id: c.id as string,
+      title: c.title as string,
+      code: (c.code as string) ?? null,
+      statutory: Boolean(c.is_statutory),
+    }));
+
+  const rows = ((profiles ?? []) as Record<string, any>[]).map((p) => {
+    const cells: GlobalMatrix["rows"][number]["cells"] = {};
+    for (const c of cols) {
+      const rec = latest.get(`${p.id}|${c.id}`);
+      if (!rec) continue;
+      const exp = rec.expires_on;
+      const status: MatrixStatus = !exp ? "valid" : exp < today ? "expired" : exp <= soon ? "expiring" : "valid";
+      cells[c.id] = { status, expires_on: exp };
+    }
+    return {
+      profile_id: p.id as string,
+      name: (p.full_name as string) ?? "—",
+      department: (p.department as string) ?? null,
+      cells,
+    };
+  });
+
+  const departments = [...new Set(rows.map((r) => r.department).filter((d): d is string => Boolean(d)))].sort();
+  return { courses: cols, rows, departments };
+}

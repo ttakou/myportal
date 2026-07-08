@@ -31,6 +31,9 @@ export type TrainingViewKey =
   // HR Administration
   | "assign"
   | "exec-summary"
+  | "rpt-period"
+  | "rpt-compare"
+  | "matrix-global"
   | "scheduler"
   | "record-training"
   | "annual-plan"
@@ -84,6 +87,9 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "team-plan", label: "Team Training Plan", icon: "ClipboardList", group: "Team Training" },
   // HR Administration (HR)
   { key: "exec-summary", label: "Executive Summary", icon: "PieChart", group: "HR Administration" },
+  { key: "rpt-period", label: "Period Report", icon: "FileBarChart", group: "HR Administration" },
+  { key: "rpt-compare", label: "Comparative Report", icon: "GitCompareArrows", group: "HR Administration" },
+  { key: "matrix-global", label: "Global Training Matrix", icon: "Table2", group: "HR Administration" },
   { key: "assign", label: "Assign / Request Training", icon: "ClipboardPlus", group: "HR Administration" },
   { key: "scheduler", label: "Training Scheduler", icon: "CalendarClock", group: "HR Administration" },
   { key: "record-training", label: "Record Training", icon: "FileCheck2", group: "HR Administration" },
@@ -139,6 +145,9 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "team-plan",
   "assign",
   "exec-summary",
+  "rpt-period",
+  "rpt-compare",
+  "matrix-global",
   "scheduler",
   "record-training",
   "rpt-compliance",
@@ -294,6 +303,14 @@ export const TRAINING_HUBS: TrainingHub[] = [
   },
   // Training Admin Console (22 views → 10 entries + executive summary)
   { key: "exec-summary", label: "Executive Summary", icon: "PieChart", group: "HR Administration" },
+  {
+    key: "rpt-period", label: "Activity Reports", icon: "FileBarChart", group: "HR Administration",
+    tabs: [
+      { key: "rpt-period", label: "Period Report" },
+      { key: "rpt-compare", label: "Comparative Report" },
+    ],
+  },
+  { key: "matrix-global", label: "Global Training Matrix", icon: "Table2", group: "HR Administration" },
   {
     key: "assign", label: "Requests & Assignment", icon: "ClipboardPlus", group: "HR Administration",
     tabs: [
