@@ -47,9 +47,11 @@ import {
   IMPLEMENTED_VIEWS,
   TRAINING_VIEWS,
   canSeeTrainingView,
+  hubForView,
   resolveTrainingView,
   type TrainingAccess,
 } from "./_components/training-views";
+import { ViewTabs } from "./_components/view-tabs";
 import {
   CalendarPanel,
   DashboardPanel,
@@ -108,6 +110,9 @@ export default async function TrainingPage({
   const [admin, manager] = await Promise.all([isTrainingAdmin(), hasDirectReports()]);
   const access: TrainingAccess = { isManager: manager, isTrainingAdmin: admin };
   const meta = TRAINING_VIEWS.find((v) => v.key === key);
+  // Consolidated navigation: the hub this view lives in (if any) renders its
+  // sibling views as a tab bar; access to every tab matches the hub's group.
+  const hub = canSeeTrainingView(key, access) ? hubForView(key) : null;
 
   async function body() {
     if (!canSeeTrainingView(key, access)) return <NoAccessPanel />;
@@ -364,9 +369,14 @@ export default async function TrainingPage({
           <GraduationCap className="h-6 w-6 text-primary" /> Training &amp; Competence
         </h1>
         <p className="text-muted-foreground">
-          {meta?.group ? `${meta.group} · ${meta.label}` : "Courses, compliance, certificates and competencies."}
+          {hub && hub.label !== meta?.label
+            ? `${hub.group} · ${hub.label} · ${meta?.label ?? ""}`
+            : meta?.group
+              ? `${meta.group} · ${meta.label}`
+              : "Courses, compliance, certificates and competencies."}
         </p>
       </div>
+      {hub?.tabs && hub.tabs.length > 1 && <ViewTabs tabs={hub.tabs} current={key} />}
       {await body()}
     </div>
   );

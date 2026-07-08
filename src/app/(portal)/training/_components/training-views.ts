@@ -185,6 +185,8 @@ export interface TrainingNavItem {
   href: string;
   /** Macro-section the item is grouped under in the sidebar. */
   section: string;
+  /** All `?view=` values that keep this entry highlighted (the hub's tabs). */
+  matchViews?: string[];
 }
 
 // The four functional groups collapse into three sidebar sections: a user's own
@@ -198,13 +200,163 @@ const SECTION: Record<TrainingGroup, string> = {
   Reports: "Training Admin Console",
 };
 
-/** Submenu for the sidebar, gated by role and grouped into two sections. */
+/**
+ * Submenu for the sidebar: one entry per hub (consolidated), gated by role and
+ * grouped into sections. An entry stays highlighted while any of its tabs is
+ * the active view.
+ */
 export function trainingSubmenu(opts: TrainingAccess): TrainingNavItem[] {
-  return TRAINING_VIEWS.filter((v) => GROUP_ACCESS[v.group](opts)).map((v) => ({
-    key: v.key,
-    label: v.label,
-    icon: v.icon,
-    href: `/training?view=${v.key}`,
-    section: SECTION[v.group],
+  return TRAINING_HUBS.filter((h) => GROUP_ACCESS[h.group](opts)).map((h) => ({
+    key: h.key,
+    label: h.label,
+    icon: h.icon,
+    href: `/training?view=${h.key}`,
+    section: SECTION[h.group],
+    matchViews: h.tabs?.map((t) => t.key),
   }));
+}
+
+// =============================================================================
+// Consolidated sidebar: the 39 flat views collapse into ~19 "hubs". A hub is a
+// sidebar entry whose sub-views render as a tab bar on the page; each tab links
+// straight to the original `?view=` key, so every legacy deep-link still works
+// and each tab keeps its own lazy data fetch. Access is unchanged — a hub only
+// groups views that share the same GROUP_ACCESS gate.
+// =============================================================================
+
+export interface TrainingHubTab {
+  key: TrainingViewKey;
+  label: string;
+}
+
+export interface TrainingHub {
+  /** Landing view — the tab shown when the sidebar entry is clicked. */
+  key: TrainingViewKey;
+  label: string;
+  icon: string;
+  group: TrainingGroup;
+  /** All views the hub contains (first = landing). Absent = single view. */
+  tabs?: TrainingHubTab[];
+}
+
+export const TRAINING_HUBS: TrainingHub[] = [
+  // My Training (13 views → 6 entries)
+  { key: "dashboard", label: "My Training Dashboard", icon: "LayoutDashboard", group: "My Training" },
+  {
+    key: "mandatory", label: "My Compliance", icon: "ShieldAlert", group: "My Training",
+    tabs: [
+      { key: "mandatory", label: "Mandatory Training" },
+      { key: "gaps", label: "Competency Gaps" },
+    ],
+  },
+  {
+    key: "idp", label: "My Development", icon: "Compass", group: "My Training",
+    tabs: [
+      { key: "idp", label: "Development Plan" },
+      { key: "my-competencies", label: "My Competencies" },
+    ],
+  },
+  {
+    key: "browse", label: "Find Training", icon: "BookOpen", group: "My Training",
+    tabs: [
+      { key: "browse", label: "Browse Courses" },
+      { key: "open-sessions", label: "Open Sessions" },
+      { key: "requests", label: "My Requests" },
+    ],
+  },
+  {
+    key: "my-plan", label: "My Plan & Calendar", icon: "ListChecks", group: "My Training",
+    tabs: [
+      { key: "my-plan", label: "My Plan" },
+      { key: "calendar", label: "Calendar" },
+    ],
+  },
+  {
+    key: "history", label: "My Records", icon: "History", group: "My Training",
+    tabs: [
+      { key: "history", label: "Training History" },
+      { key: "certificates", label: "Certificates" },
+      { key: "my-evaluations", label: "Evaluations" },
+    ],
+  },
+  // Team Training (4 views → 3 entries)
+  { key: "team-compliance", label: "Team Compliance", icon: "ShieldCheck", group: "Team Training" },
+  { key: "team-requests", label: "Training Requests", icon: "Inbox", group: "Team Training" },
+  {
+    key: "team-plan", label: "Team Plan & Needs", icon: "ClipboardList", group: "Team Training",
+    tabs: [
+      { key: "team-plan", label: "Team Plan" },
+      { key: "dept-needs", label: "Department Needs" },
+    ],
+  },
+  // Training Admin Console (22 views → 10 entries)
+  {
+    key: "assign", label: "Requests & Assignment", icon: "ClipboardPlus", group: "HR Administration",
+    tabs: [
+      { key: "assign", label: "Assign / Requests" },
+      { key: "rpt-origins", label: "Requests by Origin" },
+    ],
+  },
+  { key: "scheduler", label: "Training Scheduler", icon: "CalendarClock", group: "HR Administration" },
+  {
+    key: "sessions", label: "Sessions & History", icon: "CalendarClock", group: "HR Administration",
+    tabs: [
+      { key: "sessions", label: "Sessions" },
+      { key: "participants", label: "Participants" },
+      { key: "course-history", label: "Course History" },
+      { key: "record-training", label: "Record Training" },
+    ],
+  },
+  {
+    key: "annual-plan", label: "Annual Plan", icon: "CalendarRange", group: "HR Administration",
+    tabs: [
+      { key: "annual-plan", label: "Plan" },
+      { key: "rpt-plan-progress", label: "Progress" },
+    ],
+  },
+  {
+    key: "matrix", label: "Statutory Training", icon: "Grid3x3", group: "HR Administration",
+    tabs: [
+      { key: "matrix", label: "Requirements Matrix" },
+      { key: "rpt-compliance", label: "Compliance" },
+      { key: "rpt-expiring", label: "Expiring Certifications" },
+    ],
+  },
+  { key: "catalogue", label: "Training Catalogue", icon: "BookOpen", group: "HR Administration" },
+  {
+    key: "providers", label: "Providers & Trainers", icon: "Building2", group: "HR Administration",
+    tabs: [
+      { key: "providers", label: "Providers" },
+      { key: "trainers", label: "Trainers" },
+    ],
+  },
+  {
+    key: "budgets", label: "Budget & Costs", icon: "Wallet", group: "HR Administration",
+    tabs: [
+      { key: "budgets", label: "Budgets" },
+      { key: "rpt-costs", label: "Costs Report" },
+    ],
+  },
+  {
+    key: "competencies", label: "Competencies", icon: "Layers", group: "HR Administration",
+    tabs: [
+      { key: "competencies", label: "Catalogue" },
+      { key: "competency-matrix", label: "Employee Matrix" },
+      { key: "competency-holders", label: "Holders" },
+    ],
+  },
+  {
+    key: "evaluations", label: "Evaluations", icon: "Star", group: "HR Administration",
+    tabs: [
+      { key: "evaluations", label: "Sessions & Responses" },
+      { key: "rpt-effectiveness", label: "Effectiveness" },
+    ],
+  },
+];
+
+/** The hub a view belongs to (as landing view or tab), if any. */
+export function hubForView(key: TrainingViewKey): TrainingHub | null {
+  return (
+    TRAINING_HUBS.find((h) => h.key === key || h.tabs?.some((t) => t.key === key)) ?? null
+  );
 }
