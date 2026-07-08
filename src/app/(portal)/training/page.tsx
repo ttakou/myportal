@@ -3,6 +3,7 @@ import { hasDirectReports } from "@/lib/appraisals";
 import {
   getCourses,
   getCourseHistory,
+  getExecutiveSummary,
   getEmployeesLite,
   getMyCertificates,
   getMyMandatory,
@@ -98,14 +99,15 @@ import { ProvidersPanel } from "./_components/providers-panel";
 import { TrainersPanel } from "./_components/trainers-panel";
 import { SessionsPanel } from "./_components/sessions-panel";
 import { CourseHistoryPanel } from "./_components/course-history-panel";
+import { ExecSummaryPanel } from "./_components/exec-summary-panel";
 import { ParticipantsPanel } from "./_components/participants-panel";
 
 export default async function TrainingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string; competency?: string; course?: string }>;
+  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string; competency?: string; course?: string; year?: string }>;
 }) {
-  const { view, session, person, dept, competency, course } = await searchParams;
+  const { view, session, person, dept, competency, course, year } = await searchParams;
   const key = resolveTrainingView(view);
   const [admin, manager] = await Promise.all([isTrainingAdmin(), hasDirectReports()]);
   const access: TrainingAccess = { isManager: manager, isTrainingAdmin: admin };
@@ -231,6 +233,10 @@ export default async function TrainingPage({
             departments={departments}
           />
         );
+      }
+      case "exec-summary": {
+        const y = year && /^\d{4}$/.test(year) ? Number(year) : new Date().getUTCFullYear();
+        return <ExecSummaryPanel data={await getExecutiveSummary(y)} />;
       }
       case "scheduler": {
         const [courses, employees] = await Promise.all([getCourses(), getSchedulerPool()]);

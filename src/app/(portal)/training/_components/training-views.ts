@@ -30,6 +30,7 @@ export type TrainingViewKey =
   | "team-plan"
   // HR Administration
   | "assign"
+  | "exec-summary"
   | "scheduler"
   | "record-training"
   | "annual-plan"
@@ -82,6 +83,7 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "dept-needs", label: "Department Training Needs", icon: "Target", group: "Team Training" },
   { key: "team-plan", label: "Team Training Plan", icon: "ClipboardList", group: "Team Training" },
   // HR Administration (HR)
+  { key: "exec-summary", label: "Executive Summary", icon: "PieChart", group: "HR Administration" },
   { key: "assign", label: "Assign / Request Training", icon: "ClipboardPlus", group: "HR Administration" },
   { key: "scheduler", label: "Training Scheduler", icon: "CalendarClock", group: "HR Administration" },
   { key: "record-training", label: "Record Training", icon: "FileCheck2", group: "HR Administration" },
@@ -136,6 +138,7 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "dept-needs",
   "team-plan",
   "assign",
+  "exec-summary",
   "scheduler",
   "record-training",
   "rpt-compliance",
@@ -289,7 +292,8 @@ export const TRAINING_HUBS: TrainingHub[] = [
       { key: "dept-needs", label: "Department Needs" },
     ],
   },
-  // Training Admin Console (22 views → 10 entries)
+  // Training Admin Console (22 views → 10 entries + executive summary)
+  { key: "exec-summary", label: "Executive Summary", icon: "PieChart", group: "HR Administration" },
   {
     key: "assign", label: "Requests & Assignment", icon: "ClipboardPlus", group: "HR Administration",
     tabs: [

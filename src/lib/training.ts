@@ -1412,3 +1412,155 @@ export async function getCourseHistory(courseId: string): Promise<CourseHistory>
     },
   };
 }
+
+// --- Executive summary (annual plan + budget, spend by department/course) ----
+
+export interface ExecutiveSummary {
+  year: number;
+  /** Years that have any budget, session or plan data (for the picker). */
+  years: number[];
+  currency: string;
+  budget: { total: number; byDepartment: { department: string; amount: number }[] };
+  spend: {
+    /** All non-cancelled session cost in the year (committed). */
+    committed: number;
+    /** Cost of completed sessions only (delivered). */
+    delivered: number;
+    byDepartment: { department: string; committed: number }[];
+    byCourse: { title: string; sessions: number; cost: number }[];
+    byMonth: { month: string; cost: number }[];
+  };
+  plan: {
+    total: number;
+    byStatus: { status: string; count: number }[];
+    bySource: { source: string; count: number }[];
+  };
+  peopleTrained: number;
+}
+
+/**
+ * One-page executive view of a training year: budget vs money committed and
+ * delivered, where it goes (department, course, month) and how the annual plan
+ * is progressing. Department attribution pro-rates each session's cost across
+ * its participants' departments (a 30-seat HERTM week paid 3M splits by who
+ * sat in it); sessions with no participants yet fall under "Unallocated".
+ */
+export async function getExecutiveSummary(year: number): Promise<ExecutiveSummary> {
+  const supabase = createClient();
+  const from = `${year}-01-01T00:00:00Z`;
+  const to = `${year}-12-31T23:59:59Z`;
+
+  const [{ data: budgets }, { data: sessions }, { data: plans }, { data: planYears }] =
+    await Promise.all([
+      supabase.from("training_budgets").select("budget_year, department, amount, currency"),
+      supabase
+        .from("training_sessions")
+        .select(
+          "id, cost, status, starts_at, course:training_courses(title)," +
+            " training_participants(status, profile_id, person:profiles!training_participants_profile_id_fkey(department))",
+        )
+        .neq("status", "cancelled")
+        .gte("starts_at", from)
+        .lte("starts_at", to),
+      supabase.from("training_plan_items").select("status, source").eq("plan_year", year),
+      supabase.from("training_plan_items").select("plan_year"),
+    ]);
+
+  const rows = (budgets ?? []) as Record<string, any>[];
+  const yearBudgets = rows.filter((b) => b.budget_year === year);
+  const currency = yearBudgets[0]?.currency ?? rows[0]?.currency ?? "USD";
+  const budgetByDept = yearBudgets
+    .map((b) => ({ department: (b.department as string) ?? "Whole organisation", amount: Number(b.amount) || 0 }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const byDept = new Map<string, number>();
+  const byCourse = new Map<string, { sessions: number; cost: number }>();
+  const byMonth = new Map<string, number>();
+  let committed = 0;
+  let delivered = 0;
+  const trained = new Set<string>();
+
+  for (const s of (sessions ?? []) as Record<string, any>[]) {
+    const cost = Number(s.cost) || 0;
+    committed += cost;
+    if (s.status === "completed") delivered += cost;
+
+    const course = Array.isArray(s.course) ? s.course[0] : s.course;
+    const title = course?.title ?? "—";
+    const c = byCourse.get(title) ?? { sessions: 0, cost: 0 };
+    c.sessions += 1;
+    c.cost += cost;
+    byCourse.set(title, c);
+
+    const month = ((s.starts_at as string) ?? from).slice(0, 7);
+    byMonth.set(month, (byMonth.get(month) ?? 0) + cost);
+
+    const parts = (s.training_participants ?? []) as Record<string, any>[];
+    const active = parts.filter((p) => p.status !== "cancelled");
+    if (active.length === 0) {
+      byDept.set("Unallocated", (byDept.get("Unallocated") ?? 0) + cost);
+    } else {
+      const share = cost / active.length;
+      for (const p of active) {
+        const person = Array.isArray(p.person) ? p.person[0] : p.person;
+        const dept = (person?.department as string) || "No department";
+        byDept.set(dept, (byDept.get(dept) ?? 0) + share);
+      }
+    }
+  }
+  // Distinct people who actually attended/passed a session this year.
+  for (const s of (sessions ?? []) as Record<string, any>[]) {
+    for (const p of (s.training_participants ?? []) as Record<string, any>[]) {
+      if ((p.status === "attended" || p.status === "passed") && p.profile_id) {
+        trained.add(p.profile_id as string);
+      }
+    }
+  }
+
+  const planRows = (plans ?? []) as Record<string, any>[];
+  const statusCounts = new Map<string, number>();
+  const sourceCounts = new Map<string, number>();
+  for (const r of planRows) {
+    statusCounts.set(r.status, (statusCounts.get(r.status) ?? 0) + 1);
+    sourceCounts.set(r.source, (sourceCounts.get(r.source) ?? 0) + 1);
+  }
+
+  const years = [
+    ...new Set<number>([
+      ...rows.map((b) => Number(b.budget_year)),
+      ...((planYears ?? []) as { plan_year: number }[]).map((p) => Number(p.plan_year)),
+      new Date().getUTCFullYear(),
+      year,
+    ]),
+  ].sort((a, b) => b - a);
+
+  return {
+    year,
+    years,
+    currency,
+    budget: {
+      total: budgetByDept.reduce((s, b) => s + b.amount, 0),
+      byDepartment: budgetByDept,
+    },
+    spend: {
+      committed,
+      delivered,
+      byDepartment: [...byDept.entries()]
+        .map(([department, c]) => ({ department, committed: Math.round(c) }))
+        .sort((a, b) => b.committed - a.committed),
+      byCourse: [...byCourse.entries()]
+        .map(([title, v]) => ({ title, ...v }))
+        .sort((a, b) => b.cost - a.cost),
+      byMonth: Array.from({ length: 12 }, (_, i) => {
+        const m = `${year}-${String(i + 1).padStart(2, "0")}`;
+        return { month: m, cost: Math.round(byMonth.get(m) ?? 0) };
+      }),
+    },
+    plan: {
+      total: planRows.length,
+      byStatus: [...statusCounts.entries()].map(([status, count]) => ({ status, count })),
+      bySource: [...sourceCounts.entries()].map(([source, count]) => ({ source, count })),
+    },
+    peopleTrained: trained.size,
+  };
+}
