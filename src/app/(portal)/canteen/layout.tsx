@@ -1,5 +1,6 @@
 import { getAccess } from "@/lib/auth";
-import { CanteenTabs, canteenAccessOf } from "./_components/canteen-tabs";
+import { CanteenTabs } from "./_components/canteen-tabs";
+import { canteenAccessOf } from "./_components/canteen-views";
 
 /**
  * Every /canteen/* page gets the consolidated hub tab bar at the top. The bar

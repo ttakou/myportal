@@ -39,20 +39,3 @@ export function CanteenTabs({ access }: { access: CanteenAccess }) {
   );
 }
 
-/** Access flags → CanteenAccess, mirroring the sidebar/page gating in one place. */
-export function canteenAccessOf(a: {
-  isCanteenStaff: boolean;
-  isCanteenManager: boolean;
-  isHrCanteen: boolean;
-  isFinance: boolean;
-  isOim: boolean;
-}): CanteenAccess {
-  return {
-    canServe: a.isCanteenStaff,
-    canManage: a.isCanteenManager,
-    canEntitle: a.isHrCanteen,
-    canReport: a.isFinance || a.isCanteenManager,
-    isOim: a.isOim,
-    isHrCanteen: a.isHrCanteen,
-  };
-}
