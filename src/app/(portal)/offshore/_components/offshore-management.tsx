@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useStatusTransition } from "@/components/activity";
@@ -98,7 +99,7 @@ import { BulkRosterImport } from "./bulk-roster-import";
 import { CateringPanel } from "./catering-panel";
 import { HistoryPanel } from "./history-panel";
 import { CrewAssign } from "./crew-assign";
-import { resolveManagementView } from "./offshore-views";
+import { resolveManagementView, hubForOffshoreView } from "./offshore-views";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
@@ -144,9 +145,30 @@ export function OffshoreManagement(props: {
   // the dashboard (the page renders the self-service area for "mytrips").
   const searchParams = useSearchParams();
   const tab = resolveManagementView(searchParams.get("view")) as Tab;
+  // Consolidated navigation: sibling views of this view's hub render as tabs.
+  const hub = hubForOffshoreView(tab);
 
   return (
     <div className="space-y-4">
+      {hub?.tabs && hub.tabs.length > 1 && (
+        <nav className="flex flex-wrap gap-1 border-b" aria-label="Sub-views">
+          {hub.tabs.map((t) => (
+            <Link
+              key={t.key}
+              href={`/offshore?view=${t.key}`}
+              aria-current={t.key === tab ? "page" : undefined}
+              className={cn(
+                "-mb-px rounded-t-md border-b-2 px-3 py-1.5 text-sm font-medium transition-colors",
+                t.key === tab
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground",
+              )}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+      )}
       {tab === "dashboard" && (
         <Dashboard
           pob={props.pob}
