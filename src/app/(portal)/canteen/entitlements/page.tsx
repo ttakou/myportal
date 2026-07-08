@@ -1,27 +1,30 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { getEntitledToday } from "@/lib/canteen";
 import {
   getActiveEmployees,
   getEntitlements,
   getRedemptionHistory,
 } from "@/lib/canteen-entitlements";
 import { EntitlementsManager } from "./_components/entitlements-manager";
+import { DailyAccessPanel } from "./_components/daily-access-panel";
 import { RedemptionHistory } from "./_components/redemption-history";
 
 export default async function EntitlementsPage(
   props: {
-    searchParams: Promise<{ from?: string; to?: string }>;
+    searchParams: Promise<{ from?: string; to?: string; day?: string }>;
   }
 ) {
   const searchParams = await props.searchParams;
-  if (!(await getAccess()).isHr) {
+  const access = await getAccess();
+  if (!(access.isHrCanteen || access.isAdmin)) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
-        <h1 className="text-xl font-semibold">HR only</h1>
+        <h1 className="text-xl font-semibold">HR Canteen only</h1>
         <p className="text-sm text-muted-foreground">
-          Meal entitlements are managed by HR.
+          Meal entitlements are managed by HR Canteen (and super admins).
         </p>
         <Link href="/canteen" className="text-sm font-medium text-primary hover:underline">
           ← Back to the canteen
@@ -36,11 +39,13 @@ export default async function EntitlementsPage(
     .slice(0, 10);
   const from = searchParams.from || defaultFrom;
   const to = searchParams.to || today;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.day ?? "") ? searchParams.day! : today;
 
-  const [entitlements, employees, redemptions] = await Promise.all([
+  const [entitlements, employees, redemptions, roster] = await Promise.all([
     getEntitlements(),
     getActiveEmployees(),
     getRedemptionHistory(from, to),
+    getEntitledToday(day),
   ]);
 
   return (
@@ -62,6 +67,19 @@ export default async function EntitlementsPage(
       </div>
 
       <EntitlementsManager entitlements={entitlements} employees={employees} />
+
+      <DailyAccessPanel
+        day={day}
+        roster={roster.map((p) => ({
+          profileId: p.profileId,
+          name: p.name,
+          email: p.email,
+          plates: p.plates,
+          dishLabel: p.dishLabel,
+          collected: p.collected,
+        }))}
+        employees={employees.map((e) => ({ id: e.id, name: e.full_name || e.email || "Unknown" }))}
+      />
 
       <RedemptionHistory rows={redemptions} from={from} to={to} />
     </div>

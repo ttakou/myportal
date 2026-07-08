@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { FileBarChart } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
@@ -13,15 +14,16 @@ import {
   getActiveMusterDrill,
   getMusterDrills,
   getCrewChangeSuggestions,
+  getOffshoreDefaultMode,
   getCrews,
   getEmergencyRoles,
+  getEmergencyTeams,
   getMusterGroups,
   getFlights,
   getInstallations,
   getManifests,
   getMyOffshoreTrips,
   getMyVisitRequests,
-  getPob,
   getPobBreakdown,
   getRooms,
   getRoster,
@@ -31,20 +33,31 @@ import {
 import { OffshoreBoard } from "./_components/offshore-board";
 import { OffshoreManagement } from "./_components/offshore-management";
 import { CrewChangeSuggestions } from "./_components/crew-change-suggestions";
+import { DefaultModeToggle } from "./_components/default-mode-toggle";
 import { VisitorRequestForm } from "./_components/visitor-request-form";
 
-export default async function OffshorePage() {
+export default async function OffshorePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const { view } = await searchParams;
   const access = await getAccess();
   const isAdmin = isAdminRole(await getCurrentRole());
-  const canManage = access.isAdmin || access.isSafetyAdmin || access.isOim;
+  const canManage = access.isAdmin || access.isCampboss || access.isOim;
 
-  const [mine, all, installations, flights, pob, myVisits, suggestionLists, boardPeople, me] =
+  // One view at a time, driven by the sidebar submenu. Everyone lands on
+  // "My trips" (the self-service area); managers can switch to a management view.
+  const activeView = view ?? "mytrips";
+  const showManagement = canManage && activeView !== "mytrips";
+  const showMyTrips = !showManagement;
+
+  const [mine, all, installations, flights, myVisits, suggestionLists, boardPeople, me] =
     await Promise.all([
       getMyOffshoreTrips(),
       isAdmin ? getAllOffshoreTrips() : Promise.resolve([]),
       getInstallations(),
       isAdmin ? getFlights() : Promise.resolve([]),
-      isAdmin ? getPob() : Promise.resolve([]),
       getMyVisitRequests(),
       getVisitorSuggestions(),
       getAssignableEmployees(),
@@ -52,6 +65,9 @@ export default async function OffshorePage() {
     ]);
   const meId = me?.id ?? "";
   const people = boardPeople.map((p) => ({ id: p.id, name: p.name }));
+
+  // Tenant default for how crew changes open (auto vs manual).
+  const defaultMode = showManagement ? await getOffshoreDefaultMode() : "auto";
 
   const [
     crews,
@@ -68,10 +84,11 @@ export default async function OffshorePage() {
     employees,
     suggestions,
     emergencyRoles,
+    emergencyTeams,
     musterGroups,
     musterDrill,
     musterDrillHistory,
-  ] = canManage
+  ] = showManagement
     ? await Promise.all([
         getCrews(),
         getRooms(),
@@ -87,11 +104,12 @@ export default async function OffshorePage() {
         getAssignableEmployees(),
         getCrewChangeSuggestions(),
         getEmergencyRoles(),
+        getEmergencyTeams(),
         getMusterGroups(),
         getActiveMusterDrill(),
         getMusterDrills(),
       ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], null, []];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], [], null, []];
 
   return (
     <div className="space-y-8">
@@ -112,9 +130,17 @@ export default async function OffshorePage() {
         )}
       </div>
 
-      {canManage && suggestions.length > 0 && <CrewChangeSuggestions items={suggestions} />}
+      {showManagement && activeView === "dashboard" && (
+        <div className="space-y-4">
+          <DefaultModeToggle mode={defaultMode} />
+          {suggestions.length > 0 && (
+            <CrewChangeSuggestions items={suggestions} defaultMode={defaultMode} />
+          )}
+        </div>
+      )}
 
-      {canManage && pobBreakdown && accommodation && (
+      {showManagement && pobBreakdown && accommodation && (
+        <Suspense fallback={null}>
         <OffshoreManagement
           crews={crews}
           rooms={rooms}
@@ -131,29 +157,35 @@ export default async function OffshorePage() {
           employees={employees}
           suggestions={suggestions}
           emergencyRoles={emergencyRoles}
+          emergencyTeams={emergencyTeams}
           musterGroups={musterGroups}
           musterDrill={musterDrill}
           musterDrillHistory={musterDrillHistory}
         />
+        </Suspense>
       )}
 
-      <VisitorRequestForm
-        installations={installations}
-        mine={myVisits}
-        nameSuggestions={suggestionLists.names}
-        companySuggestions={suggestionLists.companies}
-      />
+      {/* "My trips" lands on top — the user's own trips first, then the request forms. */}
+      {showMyTrips && (
+        <>
+          <OffshoreBoard
+            mine={mine}
+            all={all}
+            installations={installations}
+            flights={flights}
+            isAdmin={isAdmin}
+            people={people}
+            meId={meId}
+          />
 
-      <OffshoreBoard
-        mine={mine}
-        all={all}
-        installations={installations}
-        flights={flights}
-        pob={pob}
-        isAdmin={isAdmin}
-        people={people}
-        meId={meId}
-      />
+          <VisitorRequestForm
+            installations={installations}
+            mine={myVisits}
+            nameSuggestions={suggestionLists.names}
+            companySuggestions={suggestionLists.companies}
+          />
+        </>
+      )}
     </div>
   );
 }

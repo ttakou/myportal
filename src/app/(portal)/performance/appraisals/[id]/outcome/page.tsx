@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileText } from "lucide-react";
 import { getAppraisal } from "@/lib/appraisals";
+import { getCachedUser } from "@/lib/auth";
+import { getAppraisalCapabilities } from "@/lib/perf-permissions";
 import { STATUS_LABEL } from "@/types/appraisal";
 import { PrintButton } from "./print-button";
+import { ReopenControl } from "./reopen-control";
 
 function fmtDate(value: string | null): string {
   if (!value) return "—";
@@ -25,11 +28,31 @@ export default async function AppraisalOutcomePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const appraisal = await getAppraisal(id);
+  const [appraisal, user] = await Promise.all([getAppraisal(id), getCachedUser()]);
   if (!appraisal) notFound();
+
+  // Effective capabilities come from the configurable permission matrix, given
+  // how this viewer relates to the appraisal.
+  const isSelf = !!user && user.id === appraisal.employee_id;
+  const { can } = await getAppraisalCapabilities({
+    isSelf,
+    isDirectManager: !!user && user.id === appraisal.manager_id,
+    isSecondLevel: !!user && user.id === appraisal.second_level_id,
+  });
+
+  const canReopen = appraisal.status === "closed" && can("reopen");
+  const canExport = can("reports_export") || isSelf;
+  // A rating is only final once the calibration panel + PGM have signed off.
+  // Until then the figures shown are the line manager's provisional scores.
+  const ratingFinal = appraisal.calibration_gate === "final";
+  // A score shows to roles entitled to view scores; everyone else (e.g. the
+  // employee) only once HR has released the final rating.
+  const showScore = can("scores_view") || appraisal.rating_released_at != null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      {/* A4 with sensible margins when saved as PDF / printed. */}
+      <style>{"@media print { @page { size: A4; margin: 16mm; } body { -webkit-print-color-adjust: exact; } }"}</style>
       <div className="flex items-center justify-between gap-3 print:hidden">
         <Link
           href="/performance/appraisals"
@@ -37,7 +60,18 @@ export default async function AppraisalOutcomePage({
         >
           <ArrowLeft className="h-4 w-4" /> Appraisals
         </Link>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          {canReopen && <ReopenControl id={id} />}
+          {canExport && (
+            <a
+              href={`/performance/appraisals/${id}/outcome/docx`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-accent"
+            >
+              <FileText className="h-4 w-4" /> Download Word
+            </a>
+          )}
+          <PrintButton />
+        </div>
       </div>
 
       <header className="space-y-1 border-b pb-4">
@@ -45,16 +79,37 @@ export default async function AppraisalOutcomePage({
         <p className="text-muted-foreground">
           {appraisal.cycle_name ?? "Appraisal"} · {STATUS_LABEL[appraisal.status]}
         </p>
+        {!showScore ? (
+          <p className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground print:bg-transparent print:px-0">
+            Final rating pending release by HR
+          </p>
+        ) : (
+          !ratingFinal && (
+            <p className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 print:bg-transparent print:px-0">
+              Preliminary — pending calibration &amp; PGM sign-off
+            </p>
+          )
+        )}
       </header>
 
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Field label="Employee">{appraisal.employee_name ?? "—"}</Field>
         <Field label="Manager">{appraisal.manager_name ?? "—"}</Field>
-        <Field label="Final score">{appraisal.final_score ?? "—"}</Field>
-        <Field label="Rating">{appraisal.rating_label ?? "—"}</Field>
+        {showScore ? (
+          <>
+            <Field label={ratingFinal ? "Final score" : "Preliminary score"}>
+              {appraisal.final_score ?? "—"}
+            </Field>
+            <Field label={ratingFinal ? "Rating" : "Preliminary rating"}>
+              {appraisal.rating_label ?? "—"}
+            </Field>
+          </>
+        ) : (
+          <Field label="Rating">Pending release</Field>
+        )}
       </section>
 
-      {(appraisal.manager_summary || appraisal.employee_summary) && (
+      {can("comments_view") && (appraisal.manager_summary || appraisal.employee_summary) && (
         <section className="space-y-3">
           {appraisal.manager_summary && (
             <Field label="Manager summary">
@@ -143,6 +198,27 @@ export default async function AppraisalOutcomePage({
           </div>
         )}
       </section>
+
+      {/* Signature block for the signed copy. */}
+      <section className="grid grid-cols-2 gap-8 pt-8">
+        <Signature role="Employee" name={appraisal.employee_name} />
+        <Signature role="Manager" name={appraisal.manager_name} />
+      </section>
+      <p className="text-right text-[11px] text-muted-foreground">
+        Generated {new Date().toLocaleString("en-GB", { timeZone: "UTC" })} UTC
+      </p>
+    </div>
+  );
+}
+
+function Signature({ role, name }: { role: string; name: string | null }) {
+  return (
+    <div className="space-y-6">
+      <div className="border-b border-foreground/40" />
+      <div className="text-xs text-muted-foreground">
+        {role}
+        {name ? ` — ${name}` : ""} · Signature &amp; date
+      </div>
     </div>
   );
 }

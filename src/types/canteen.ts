@@ -81,6 +81,8 @@ export interface Reservation {
   service_date: string;
   meal_period: MealPeriod;
   guest_count: number;
+  /** Visitor plates handed over so far (0..guest_count). */
+  collected_guest_count: number;
   prepared_at: string | null;
   finalized_at: string | null;
   collected_at: string | null;
@@ -91,6 +93,62 @@ export interface Reservation {
   kitchen_kind: KitchenKind;
   /** Comma-separated chosen options, e.g. "Meat, Rice". */
   options: string;
+}
+
+/** An employee entitled to eat on a service date, with their plate count. */
+export interface EntitledPerson {
+  profileId: string;
+  name: string;
+  email: string | null;
+  /** Visitors/guests recorded on their booking. */
+  guestCount: number;
+  /** Visitor plates already handed over (0..guestCount). */
+  guestsCollected: number;
+  /** Total plates = themselves + guests. */
+  plates: number;
+  hasBooking: boolean;
+  bookingId: string | null;
+  /** The host's own plate has been collected. */
+  collected: boolean;
+  dishLabel: string | null;
+}
+
+/** Expected covers for one kitchen on a forecast day. */
+export interface ForecastKitchen {
+  kitchenId: string;
+  kitchenName: string;
+  kitchenKind: KitchenKind;
+  /** Booked people (excludes visitors). */
+  headcount: number;
+  /** Visitors booked alongside staff. */
+  guests: number;
+  /** Total plates = headcount + guests. */
+  plates: number;
+}
+
+/** One day of the forward plate forecast. */
+export interface ForecastDay {
+  date: string;
+  isToday: boolean;
+  plates: number;
+  byKitchen: ForecastKitchen[];
+}
+
+/** Trailing no-show stats for one kitchen. */
+export interface NoShowStat {
+  kitchenName: string;
+  collected: number;
+  missed: number;
+  /** missed / (collected + missed), 0–100. */
+  rate: number;
+}
+
+/** Forward plate forecast + trailing no-show tracking for the campboss. */
+export interface CanteenForecast {
+  days: ForecastDay[];
+  noShows: NoShowStat[];
+  /** Trailing window (days) the no-show stats cover. */
+  noShowWindowDays: number;
 }
 
 /** A row of the canteen_dish_demand view — powers the campboss dashboard. */

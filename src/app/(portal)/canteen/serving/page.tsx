@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
-import { getMenu, getReservations, today } from "@/lib/canteen";
+import { getEntitledToday, getMenu, getReservations, today } from "@/lib/canteen";
 import { ServingScreen } from "./serving-screen";
 
 export default async function ServingPage() {
@@ -18,9 +18,10 @@ export default async function ServingPage() {
   }
 
   const date = today();
-  const [reservations, dishes] = await Promise.all([
+  const [reservations, dishes, entitled] = await Promise.all([
     getReservations(date),
     getMenu(date),
+    getEntitledToday(date),
   ]);
 
   return (
@@ -32,7 +33,7 @@ export default async function ServingPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Serving point</h1>
         <p className="text-muted-foreground">Validate and collect meals · {date}</p>
       </div>
-      <ServingScreen reservations={reservations} dishes={dishes} />
+      <ServingScreen reservations={reservations} dishes={dishes} entitled={entitled} />
     </div>
   );
 }

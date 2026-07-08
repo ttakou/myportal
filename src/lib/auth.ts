@@ -20,9 +20,11 @@ export const getCachedUser = cache(async () => {
 export type FunctionalRole =
   | "canteen_staff"
   | "canteen_manager"
+  | "hr_canteen"
   | "hr_admin"
   | "finance"
   | "safety_admin"
+  | "campboss"
   | "oim"
   | "system_admin";
 
@@ -56,9 +58,13 @@ export interface Access {
   isSystemAdmin: boolean;
   isCanteenManager: boolean;
   isCanteenStaff: boolean;
+  /** HR Canteen — owns canteen entitlement + full consumption/feedback oversight. */
+  isHrCanteen: boolean;
   isHr: boolean;
   isFinance: boolean;
   isSafetyAdmin: boolean;
+  /** Offshore Campboss — runs the offshore camp / trip functionality. */
+  isCampboss: boolean;
   /** Offshore Installation Manager — approves offshore visit requests. */
   isOim: boolean;
 }
@@ -86,9 +92,11 @@ export const getAccess = cache(async (): Promise<Access> => {
     isSystemAdmin,
     isCanteenManager,
     isCanteenStaff: isCanteenManager || has("canteen_staff"),
+    isHrCanteen: isSystemAdmin || has("hr_canteen"),
     isHr: isSystemAdmin || has("hr_admin"),
     isFinance: isSystemAdmin || has("finance"),
     isSafetyAdmin: isSystemAdmin || has("safety_admin"),
+    isCampboss: isSystemAdmin || has("campboss"),
     isOim: isSystemAdmin || has("oim"),
   };
 });

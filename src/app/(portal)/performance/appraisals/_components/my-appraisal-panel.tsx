@@ -21,6 +21,7 @@ import {
   deleteDevelopmentItem,
   deleteGoal,
   deleteKeyResult,
+  carryForwardGoals,
   rateCompetencySelf,
   removeGoalRater,
   setDevelopmentStatus,
@@ -45,18 +46,30 @@ const EDITABLE = new Set([
   "pending_manager_review",
 ]);
 
+export type GoalLibraryItem = {
+  id: string;
+  title: string;
+  description: string | null;
+  defaultWeight: number;
+  level: string;
+};
+
 export function MyAppraisalPanel({
   appraisal,
   colleagues = [],
   deptObjectives = [],
+  goalTemplates = [],
 }: {
   appraisal: Appraisal;
   colleagues?: Colleague[];
   deptObjectives?: DepartmentObjective[];
+  goalTemplates?: GoalLibraryItem[];
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
-  const editable = EDITABLE.has(appraisal.status);
+  // In a gate cycle the year's goals are shown read-only — they're set/edited in
+  // the Annual cycle — so never offer goal editing here.
+  const editable = !appraisal.goalsReadOnly && EDITABLE.has(appraisal.status);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -73,12 +86,20 @@ export function MyAppraisalPanel({
         <h2 className="text-lg font-semibold">My appraisal</h2>
         <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
           {STAGE_LABEL[appraisal.stage]} · {STATUS_LABEL[appraisal.status]}
-          {appraisal.final_score != null
+          {/* The employee only sees a score once HR releases the final rating. */}
+          {appraisal.rating_released_at != null && appraisal.final_score != null
             ? ` · ${appraisal.final_score}% · ${appraisal.rating_label ?? ""}`
             : ""}
         </span>
       </div>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+
+      {appraisal.goalsReadOnly && (
+        <p className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+          Showing your goals and development plan for the year{appraisal.goalsSourceName ? ` — set in ${appraisal.goalsSourceName}` : ""}.
+          Edit them in that cycle; here they&apos;re read-only.
+        </p>
+      )}
 
       {appraisal.stage === "goal_setting" && (
         <GoalSetting
@@ -88,6 +109,7 @@ export function MyAppraisalPanel({
           run={run}
           colleagues={colleagues}
           deptObjectives={deptObjectives}
+          goalTemplates={goalTemplates}
         />
       )}
       {appraisal.stage === "goal_review" && (
@@ -127,6 +149,7 @@ function GoalSetting({
   run,
   colleagues,
   deptObjectives,
+  goalTemplates,
 }: {
   appraisal: Appraisal;
   editable: boolean;
@@ -134,6 +157,7 @@ function GoalSetting({
   run: RunFn;
   colleagues: Colleague[];
   deptObjectives: DepartmentObjective[];
+  goalTemplates: GoalLibraryItem[];
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -142,14 +166,20 @@ function GoalSetting({
   const [indicator, setIndicator] = useState("");
   const [alignment, setAlignment] = useState("");
   const [kind, setKind] = useState<"objective" | "development">("objective");
-  const totalWeight = appraisal.goals.reduce((s, g) => s + (g.weight ?? 0), 0);
+  // Objective (OKR) weights must total 100% — development goals are weighted
+  // separately by the cycle, so they're excluded from this total.
+  const objectiveWeight = appraisal.goals
+    .filter((g) => g.kind === "objective")
+    .reduce((s, g) => s + (g.weight ?? 0), 0);
 
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Objectives</h3>
-        <span className={`text-xs ${totalWeight === 100 ? "text-green-600" : "text-muted-foreground"}`}>
-          Total weight: {totalWeight}%
+        <span
+          className={`text-xs font-medium ${objectiveWeight === 100 ? "text-green-600" : "text-amber-600"}`}
+        >
+          Objective weight: {objectiveWeight}%{objectiveWeight === 100 ? "" : " — must total 100%"}
         </span>
       </div>
       {appraisal.goals.length === 0 ? (
@@ -168,6 +198,18 @@ function GoalSetting({
             />
           ))}
         </ul>
+      )}
+      {editable && appraisal.goals.filter((g) => g.kind === "objective").length === 0 && (
+        <div className="mt-3 border-t pt-3">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => run(() => carryForwardGoals(appraisal.id))}
+            className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+          >
+            ↻ Carry forward last appraisal&apos;s objectives
+          </button>
+        </div>
       )}
       {editable && (
         <form
@@ -198,6 +240,32 @@ function GoalSetting({
             );
           }}
         >
+          {goalTemplates.length > 0 && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Start from the goal library (optional)
+              </label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const t = goalTemplates.find((x) => x.id === e.target.value);
+                  if (!t) return;
+                  setTitle(t.title);
+                  if (t.description) setDescription(t.description);
+                  if (t.defaultWeight) setWeight(String(t.defaultWeight));
+                  setKind("objective");
+                }}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Choose a library goal…</option>
+                {goalTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    [{t.level}] {t.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Title</label>
             <input
@@ -452,17 +520,26 @@ function SelfAssessment({
 }
 
 function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
+  // What the employee may see: comments/remarks always; their own self-ratings;
+  // but never the line manager's provisional/intermediate ratings. The final
+  // rating appears only once HR has released it.
+  const released = appraisal.rating_released_at != null;
   return (
     <div className="rounded-lg border bg-card p-4 space-y-2">
-      {appraisal.final_score != null && (
+      {released && appraisal.final_score != null ? (
         <div className="flex items-center justify-between rounded-md bg-primary/5 px-3 py-2">
           <span className="text-sm font-medium">Final outcome</span>
           <span className="text-sm font-semibold text-primary">
             {appraisal.final_score}%{appraisal.rating_label ? ` · ${appraisal.rating_label}` : ""}
           </span>
         </div>
+      ) : (
+        <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Your final rating will be shared once it has been calibrated and released by HR. The notes
+          below are your manager&apos;s comments.
+        </p>
       )}
-      <h3 className="text-sm font-semibold">Objectives &amp; ratings</h3>
+      <h3 className="text-sm font-semibold">Objectives</h3>
       <ul className="divide-y text-sm">
         {appraisal.goals.map((g) => (
           <li key={g.id} className="py-2">
@@ -471,7 +548,6 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
               <span className="text-xs text-muted-foreground">
                 {g.weight}%
                 {g.employee_self_rating != null ? ` · self ${g.employee_self_rating}` : ""}
-                {g.manager_rating != null ? ` · mgr ${g.manager_rating}` : ""}
               </span>
             </div>
             {g.key_results.length > 0 && (
@@ -503,7 +579,6 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
               <span>{c.name}</span>
               <span className="text-xs text-muted-foreground">
                 {c.employee_rating != null ? `self ${c.employee_rating}` : ""}
-                {c.manager_rating != null ? ` · mgr ${c.manager_rating}` : ""}
               </span>
             </li>
           ))}
@@ -590,7 +665,8 @@ function DevelopmentPlan({
   const [area, setArea] = useState("");
   const [action, setAction] = useState("");
   const [targetDate, setTargetDate] = useState("");
-  const editable = appraisal.status !== "closed";
+  // In a gate cycle the IDP (like goals) belongs to the Annual cycle — read-only.
+  const editable = !appraisal.goalsReadOnly && appraisal.status !== "closed";
   const items = appraisal.development_plan;
 
   if (!editable && items.length === 0) return null;

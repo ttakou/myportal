@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/permissions-server";
+import { notifyUsers } from "@/lib/notify";
 import type { IssueType } from "@/types/feedback";
 
 import type { ActionResult } from "@/types/actions";
@@ -33,17 +35,43 @@ export async function submitFeedback(input: {
     comment: input.comment?.trim() || null,
   });
   if (error) return { ok: false, error: error.message };
+
+  // Resolve managers with the service-role client: the submitting employee
+  // cannot read other users' role rows under RLS, which would otherwise leave
+  // the recipient list empty and silently drop the notification.
+  const admin = createAdminClient();
+  const { data: managers } = admin
+    ? await admin
+        .from("profile_roles")
+        .select("profile_id")
+        .eq("tenant_id", tenant.id)
+        .in("role", ["canteen_manager", "hr_canteen"])
+    : { data: [] as { profile_id: string }[] };
+  await notifyUsers({
+    tenantId: tenant.id,
+    profileIds: [...new Set((managers ?? []).map((m) => m.profile_id))],
+    category: "general",
+    title: "New canteen feedback",
+    body: "An employee submitted feedback about meal service.",
+    url: "/canteen/feedback",
+  });
+
   revalidatePath("/canteen/feedback");
   return { ok: true };
 }
 
 export async function resolveFeedback(id: string, resolved: boolean): Promise<ActionResult> {
-  const gate = await requireModule("canteen", "approve", (a) => a.isCanteenManager);
+  const gate = await requireModule("canteen", "approve", (a) => a.isCanteenManager || a.isHrCanteen);
   if (gate) return gate;
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const { data: feedback } = await supabase
+    .from("canteen_feedback")
+    .select("tenant_id, profile_id")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabase
     .from("canteen_feedback")
     .update({
@@ -53,6 +81,18 @@ export async function resolveFeedback(id: string, resolved: boolean): Promise<Ac
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  if (resolved && feedback?.tenant_id) {
+    await notifyUsers({
+      tenantId: feedback.tenant_id,
+      profileIds: [feedback.profile_id],
+      category: "general",
+      title: "Your canteen feedback was resolved",
+      body: "We've reviewed and resolved your feedback. Thank you.",
+      url: "/canteen/feedback",
+    });
+  }
+
   revalidatePath("/canteen/feedback");
   return { ok: true };
 }

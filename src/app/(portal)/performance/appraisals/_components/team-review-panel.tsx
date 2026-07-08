@@ -3,30 +3,104 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Check, ChevronDown, Send, Undo2 } from "lucide-react";
+import { Check, ChevronDown, Send, Undo2, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { STAGE_LABEL, STATUS_LABEL, type Appraisal } from "@/types/appraisal";
+import { LazySelect } from "@/components/ui/lazy-select";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
+import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type Colleague } from "@/types/appraisal";
 import {
   approveGoals,
   completeMidYear,
   rateCompetencyManager,
   recordDiscussion,
   returnGoals,
+  setAppraisalDelegate,
   setManagerRating,
   submitManagerEvaluation,
 } from "../actions";
 
-export function TeamReviewPanel({ appraisals }: { appraisals: Appraisal[] }) {
+export function TeamReviewPanel({
+  appraisals,
+  colleagues = [],
+  currentDelegate = null,
+}: {
+  appraisals: Appraisal[];
+  colleagues?: Colleague[];
+  currentDelegate?: { id: string; name: string | null } | null;
+}) {
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
+    appraisals.length,
+  );
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold">My team&apos;s appraisals</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">My team&apos;s appraisals</h2>
+        <DelegateControl colleagues={colleagues} current={currentDelegate} />
+      </div>
       <div className="space-y-3">
-        {appraisals.map((a) => (
+        {appraisals.slice(0, count).map((a) => (
           <TeamRow key={a.id} appraisal={a} />
         ))}
       </div>
+      <ShowMore
+        ref={sentinelRef}
+        hasMore={hasMore}
+        remaining={remaining}
+        onClick={showMore}
+        label="Show more reports"
+      />
     </section>
+  );
+}
+
+/** Nominate a colleague to cover this manager's appraisals while they're away. */
+function DelegateControl({
+  colleagues,
+  current,
+}: {
+  colleagues: Colleague[];
+  current: { id: string; name: string | null } | null;
+}) {
+  const [pending, startTransition] = useStatusTransition("Saving…");
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  function set(id: string | null) {
+    setError(null);
+    startTransition(async () => {
+      const res = await setAppraisalDelegate(id);
+      if (!res.ok) setError(res.error ?? "Couldn't update delegate.");
+      else setOpen(false);
+    });
+  }
+
+  return (
+    <div className="text-right">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent"
+      >
+        <UserCog className="h-3.5 w-3.5" />
+        {current ? `Delegate: ${current.name ?? "—"}` : "Set a delegate"}
+      </button>
+      {open && (
+        <div className="mt-1 flex items-center gap-2">
+          <LazySelect
+            value={current?.id ?? null}
+            options={colleagues}
+            getOptionValue={(c) => c.id}
+            getOptionLabel={(c) => `${c.full_name ?? "—"}${c.department ? ` · ${c.department}` : ""}`}
+            placeholder="No delegate"
+            disabled={pending}
+            onChange={(v) => set(v)}
+            className="rounded-md border bg-background px-2 py-1 text-xs"
+          />
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+    </div>
   );
 }
 
@@ -102,6 +176,11 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
 
       {open && (
       <>
+      {a.goalsReadOnly && (
+        <p className="mt-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs text-muted-foreground">
+          Goals for the year{a.goalsSourceName ? ` — set in ${a.goalsSourceName}` : ""}. Read-only here; rated in that cycle.
+        </p>
+      )}
       {/* Goals + progress + ratings */}
       {a.goals.length > 0 && (
         <ul className="mt-2 divide-y text-sm">
@@ -117,6 +196,35 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
                   {g.employee_self_rating != null ? ` · self ${g.employee_self_rating}` : ""}
                 </span>
               </div>
+              {g.description && (
+                <p className="mt-0.5 text-xs text-muted-foreground">{g.description}</p>
+              )}
+              {(g.success_indicator || g.alignment) && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {g.success_indicator ? `KPI: ${g.success_indicator}` : ""}
+                  {g.success_indicator && g.alignment ? " · " : ""}
+                  {g.alignment ? `Aligned to: ${g.alignment}` : ""}
+                </p>
+              )}
+              {g.key_results.length > 0 && (
+                <div className="mt-1 pl-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Key results
+                  </p>
+                  <ul className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                    {g.key_results.map((k) => (
+                      <li key={k.id} className="flex justify-between gap-3">
+                        <span>
+                          • {k.title}
+                          {k.target ? ` (→ ${k.target})` : ""}
+                          {k.current_value ? ` · now ${k.current_value}${k.unit ?? ""}` : ""}
+                        </span>
+                        <span className="shrink-0 tabular-nums">{k.progress}%</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {(g.employee_progress || g.employee_comment) && (
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {g.employee_progress || g.employee_comment}
@@ -124,7 +232,7 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
               )}
               {g.raters.length > 0 && (
                 <div className="mt-1 rounded-md bg-muted/50 px-2 py-1 text-xs">
-                  <span className="font-medium">Stakeholder feedback</span>
+                  <span className="font-medium">Witness feedback</span>
                   <span className="text-muted-foreground"> (confidential)</span>
                   <ul className="mt-0.5 space-y-0.5">
                     {g.raters.map((r) => (
@@ -145,7 +253,7 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
                   </ul>
                 </div>
               )}
-              {evaluating && (
+              {evaluating && !a.goalsReadOnly && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <select
                     defaultValue={g.manager_rating ?? ""}

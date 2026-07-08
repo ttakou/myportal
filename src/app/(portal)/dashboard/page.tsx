@@ -10,9 +10,12 @@ import {
   UtensilsCrossed,
   Car,
   UserPlus,
+  HeartPulse,
 } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
 import { getMyDashboard } from "@/lib/dashboard";
+import { getMyMedicalVisitToday, notifyMedicalVisitToday } from "@/lib/medical";
+import { VISIT_LABEL } from "@/types/medical";
 import { getMyAttendance } from "@/lib/staff-attendance";
 import { getMenu, today } from "@/lib/canteen";
 import { SelfCheckIn } from "./_components/self-check-in";
@@ -60,11 +63,15 @@ function focusIcon(slug: string) {
 }
 
 export default async function DashboardPage() {
-  const [services, me, myAttendance] = await Promise.all([
+  const [services, me, myAttendance, medVisitToday] = await Promise.all([
     getActiveServices(),
     getMyDashboard(),
     getMyAttendance(),
+    getMyMedicalVisitToday(),
   ]);
+  // If a medical visit falls today, make sure a bell/push notification exists too
+  // (deduped per visit-day). Best-effort — never blocks the dashboard.
+  if (medVisitToday) await notifyMedicalVisitToday();
 
   const firstName = me?.name?.split(/\s+/)[0] ?? "";
   const offshore = me?.offshore ?? null;
@@ -98,6 +105,17 @@ export default async function DashboardPage() {
     month: "long",
   });
 
+  // The user's canteen entitlement for the period, shown on the menu card so they
+  // know they're entitled (and for how long).
+  const ent = me?.canteenEntitlement ?? null;
+  const fmtDay = (d: string) =>
+    new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const entitlementLabel = ent
+    ? ent.source === "grant"
+      ? `Entitled · ${ent.dailyMeals} meal${ent.dailyMeals === 1 ? "" : "s"}/working day${ent.endsOn ? ` · until ${fmtDay(ent.endsOn)}` : ""}`
+      : "Entitled to the daily meal"
+    : null;
+
   return (
     <div className="space-y-8">
       <div>
@@ -106,6 +124,27 @@ export default async function DashboardPage() {
         </h1>
         <p className="text-muted-foreground">Your day at a glance.</p>
       </div>
+
+      {/* Medical appointment today — shown on the visit date when the user logs in */}
+      {medVisitToday && (
+        <section className="flex flex-wrap items-start gap-3 rounded-lg border border-rose-300 bg-rose-50 p-4 text-rose-900">
+          <HeartPulse className="mt-0.5 h-5 w-5 shrink-0" />
+          <div className="min-w-0">
+            <p className="font-semibold">
+              You have a medical appointment today{medVisitToday.time ? ` at ${medVisitToday.time}` : ""}.
+            </p>
+            <p className="text-sm">
+              {VISIT_LABEL[medVisitToday.which]}
+              {medVisitToday.schedule.exam_indicators
+                ? ` · Exams: ${medVisitToday.schedule.exam_indicators}`
+                : ""}
+            </p>
+            <Link href="/medical" className="mt-1 inline-block text-sm font-medium underline">
+              View my medical schedule
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* Self check-in — geofenced to the base ("I'm in") */}
       <SelfCheckIn initial={myAttendance} />
@@ -184,6 +223,11 @@ export default async function DashboardPage() {
                 <div>
                   <h2 className="text-lg font-semibold leading-tight">Today&apos;s canteen menu</h2>
                   <p className="text-sm text-white/85">{menuDateLabel}</p>
+                  {entitlementLabel && (
+                    <span className="mt-1 inline-flex items-center rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium text-white ring-1 ring-white/25">
+                      {entitlementLabel}
+                    </span>
+                  )}
                 </div>
               </div>
               <Link

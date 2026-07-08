@@ -4,11 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Printer, Radio, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { Visitor } from "@/types/visitors";
+import { accompanyingSummary, accompanyingTotal, type Visitor } from "@/types/visitors";
 import type { StaffOnSite } from "@/types/staff-attendance";
+import { getMusterVisitors } from "../actions";
 
-const VISITOR_SELECT =
-  "id, full_name, company, purpose, visit_date, status, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)";
 const STAFF_SELECT =
   "profile_id, check_in_at, profiles!staff_attendance_profile_id_fkey(full_name, department, job_title)";
 
@@ -32,24 +31,11 @@ export function MusterList({
   const supabaseRef = useRef(createClient());
 
   const refetchVisitors = useCallback(async () => {
-    const { data } = await supabaseRef.current
-      .from("visitors")
-      .select(VISITOR_SELECT)
-      .eq("status", "checked_in")
-      .eq("visit_date", date)
-      .order("check_in_at", { ascending: true });
-    if (data) {
-      setOnSite(
-        data.map((row: Record<string, unknown>) => {
-          const host = Array.isArray(row.host) ? row.host[0] : row.host;
-          return {
-            ...(row as unknown as Visitor),
-            host_name: (host as { full_name?: string })?.full_name ?? null,
-          };
-        }),
-      );
-      setUpdatedAt(new Date());
-    }
+    // The on-site set is a union (single-day check-ins + open long-stay passes)
+    // that a single PostgREST query cannot express, so it is computed server-side.
+    const data = await getMusterVisitors(date);
+    setOnSite(data);
+    setUpdatedAt(new Date());
   }, [date]);
 
   const refetchStaff = useCallback(async () => {
@@ -91,6 +77,11 @@ export function MusterList({
       )
       .on(
         "postgres_changes",
+        { event: "*", schema: "public", table: "visitor_checkins" },
+        () => refetchVisitors(),
+      )
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "staff_attendance" },
         () => refetchStaff(),
       )
@@ -100,7 +91,9 @@ export function MusterList({
     };
   }, [refetchVisitors, refetchStaff]);
 
-  const total = staff.length + onSite.length;
+  // Accompanying minors are physically on site too — count them in the muster.
+  const minors = onSite.reduce((s, v) => s + accompanyingTotal(v), 0);
+  const total = staff.length + onSite.length + minors;
 
   return (
     <div className="space-y-4">
@@ -112,6 +105,7 @@ export function MusterList({
             <p className="text-3xl font-semibold tabular-nums">{total}</p>
             <p className="text-xs text-muted-foreground">
               {staff.length} staff · {onSite.length} visitor{onSite.length === 1 ? "" : "s"}
+              {minors > 0 ? ` · ${minors} accompanying minor${minors === 1 ? "" : "s"}` : ""}
             </p>
           </div>
         </div>
@@ -148,7 +142,8 @@ export function MusterList({
               <tr>
                 <th className="px-4 py-3 font-medium">Visitor</th>
                 <th className="px-4 py-3 font-medium">Company</th>
-                <th className="px-4 py-3 font-medium">Host</th>
+                <th className="px-4 py-3 font-medium">Host / service</th>
+                <th className="px-4 py-3 font-medium">With</th>
                 <th className="px-4 py-3 font-medium">Badge</th>
                 <th className="px-4 py-3 font-medium">Vehicle</th>
                 <th className="px-4 py-3 font-medium">Checked in</th>
@@ -159,7 +154,19 @@ export function MusterList({
                 <tr key={v.id}>
                   <td className="px-4 py-3 font-medium">{v.full_name}</td>
                   <td className="px-4 py-3 text-muted-foreground">{v.company ?? "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{v.host_name ?? "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {v.host_name ?? "—"}
+                    {v.service && <span className="block text-xs">{v.service}</span>}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {accompanyingTotal(v) > 0 ? (
+                      <span className="font-medium text-amber-700" title={accompanyingSummary(v)}>
+                        +{accompanyingTotal(v)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-3 tabular-nums">{v.badge_no ?? "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {[v.vehicle_type, v.vehicle_plate].filter(Boolean).join(" · ") || "—"}
@@ -169,7 +176,7 @@ export function MusterList({
               ))}
               {onSite.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                     No visitors currently on site.
                   </td>
                 </tr>

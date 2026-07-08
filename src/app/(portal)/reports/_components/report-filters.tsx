@@ -52,6 +52,7 @@ export function ReportFilters({
   accessRoles = [],
   from,
   to,
+  children,
 }: {
   show: {
     period?: boolean;
@@ -66,6 +67,8 @@ export function ReportFilters({
   accessRoles?: string[];
   from?: string;
   to?: string;
+  /** Extra report-specific filter controls rendered inside the same bar. */
+  children?: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -197,6 +200,8 @@ export function ReportFilters({
           </div>
         </label>
       )}
+
+      {children}
 
       <button
         type="button"

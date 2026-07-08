@@ -36,6 +36,9 @@ export interface Pob {
   pob: number;
 }
 
+/** How a boarding was created: schedule-derived, or operator-curated. */
+export type TripMode = "auto" | "manual";
+
 export interface OffshoreTrip {
   id: string;
   person_name: string | null;
@@ -48,6 +51,7 @@ export interface OffshoreTrip {
   flight_id: string | null;
   flight_label: string | null;
   bed_no: string | null;
+  mode: TripMode;
 }
 
 // --- Crew change, roster & accommodation (Phase 1) ---------------------------
@@ -85,6 +89,26 @@ export interface CrewChangeSuggestion {
   action: "mobilise" | "demobilise";
   since: string; // window start date the change was due
   count: number; // people to move
+}
+
+/** One person in a manual crew change, pre-filled from the schedule/roster. */
+export interface CrewChangePrefillMember {
+  profileId: string;
+  name: string;
+  roomId: string | null;
+  roomLabel: string | null;
+  bed: string | null;
+  /** Already on board (mobilise) — shown but skipped by default. */
+  aboard: boolean;
+}
+
+/** Pre-fill for a manual crew change: schedule dates + the crew's people. */
+export interface CrewChangePrefill {
+  crewId: string;
+  action: "mobilise" | "demobilise";
+  mobilizeDate: string;
+  demobDate: string | null;
+  members: CrewChangePrefillMember[];
 }
 
 export type RotationDay = "offshore" | "onshore" | "change_out" | "change_in";
@@ -163,7 +187,7 @@ export interface Room {
   lifeboat: string | null;
   fixed_assigned: number;
   /** Default owners — rotators whose fixed room is this room (+ their back-to-back). */
-  owners: { name: string; bed: string | null; back_to_back: string | null }[];
+  owners: { profile_id: string; name: string; bed: string | null; back_to_back: string | null }[];
   /** People currently on board in this room (live). */
   occupied: number;
   occupants: {
@@ -268,6 +292,24 @@ export interface EmergencyRole {
   lifeboat: string;
   role: EmergencyRoleKind;
   profile_id: string | null;
+  person_name: string | null;
+}
+
+/** Emergency response teams with unlimited membership (vs the single-holder roles above). */
+export type EmergencyTeamKind = "hlo" | "fire_team";
+
+export const EMERGENCY_TEAM_LABEL: Record<EmergencyTeamKind, string> = {
+  hlo: "HLO team",
+  fire_team: "Fire team",
+};
+
+/** One member of an emergency team for a rotation window. */
+export interface EmergencyTeamMember {
+  id: string;
+  from_date: string;
+  to_date: string;
+  team: EmergencyTeamKind;
+  profile_id: string;
   person_name: string | null;
 }
 

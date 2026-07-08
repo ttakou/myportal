@@ -10,10 +10,12 @@ import {
 } from "@/lib/reports";
 import { STAGE_LABEL, STATUS_LABEL, type AppraisalStage, type AppraisalStatus } from "@/types/appraisal";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 const statusLabel = (s: string) => STATUS_LABEL[s as AppraisalStatus] ?? s;
 const stageLabel = (s: string) => STAGE_LABEL[s as AppraisalStage] ?? s;
@@ -148,7 +150,7 @@ export default async function PerformanceCompletionReportPage({
                   <th className="px-3 py-2 font-medium">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <ProgressiveTableBody colSpan={5} className="divide-y" label="Show more employees">
                 {report.rows.map((r) => (
                   <tr key={r.appraisal_id} className={cn(r.overdue && "bg-destructive/5")}>
                     <td className="px-3 py-1.5 font-medium">
@@ -172,11 +174,12 @@ export default async function PerformanceCompletionReportPage({
                     </td>
                   </tr>
                 )}
-              </tbody>
+              </ProgressiveTableBody>
             </table>
           </div>
         </>
       )}
+      <ReportStampFooter />
     </div>
   );
 }

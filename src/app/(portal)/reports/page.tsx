@@ -16,7 +16,7 @@ export default async function ReportsPage() {
       description:
         "Medical / BOSIET / HUET expiry status per person, with expired and upcoming certs flagged. Filter by period and department.",
       icon: ShieldCheck,
-      show: access.isSystemAdmin || access.isAdmin || access.isSafetyAdmin || access.isOim,
+      show: access.isSystemAdmin || access.isAdmin || access.isCampboss || access.isOim,
     },
     {
       href: "/reports/travel-expense",
@@ -27,10 +27,10 @@ export default async function ReportsPage() {
       show: access.isSystemAdmin || access.isAdmin || access.isFinance,
     },
     {
-      href: "/reports/loan-arrears",
-      title: "Savings & loan arrears",
+      href: "/reports/savings",
+      title: "Savings & withdrawals",
       description:
-        "Loan portfolio with arrears (scheduled-to-date vs repayments) and savings balances. Filter by period, department and borrower.",
+        "Member savings balances with contributions, interest and withdrawals over a period. Filter by period, department and member.",
       icon: Banknote,
       show: access.isSystemAdmin || access.isAdmin || access.isFinance,
     },
@@ -47,6 +47,14 @@ export default async function ReportsPage() {
       title: "Appraisal completion & SLA",
       description:
         "Per-employee appraisal stage/status for a cycle, with overdue cases flagged and a completion rate. Filter by cycle, department and employee.",
+      icon: ClipboardCheck,
+      show: access.isHr || access.isSystemAdmin || access.isAdmin,
+    },
+    {
+      href: "/reports/performance-insights",
+      title: "Performance insights",
+      description:
+        "Governance analytics for a cycle: rating consistency by manager, competency strengths and gaps, and appeals.",
       icon: ClipboardCheck,
       show: access.isHr || access.isSystemAdmin || access.isAdmin,
     },

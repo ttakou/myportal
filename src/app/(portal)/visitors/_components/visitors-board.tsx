@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Car, UserPlus } from "lucide-react";
+import { CalendarRange, Car, UserCheck, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
+  accompanyingSummary,
+  accompanyingTotal,
+  isPass,
+  visitRangeLabel,
   VEHICLE_TYPES,
   VISITOR_STATUS_LABEL,
   type Visitor,
@@ -17,6 +22,9 @@ import {
   checkInVisitor,
   checkOutVisitor,
   preRegisterVisitor,
+  searchHosts,
+  updateVisitorMinors,
+  type HostOption,
 } from "../actions";
 
 const STATUS_STYLE: Record<VisitorStatus, string> = {
@@ -30,14 +38,43 @@ function vehicleLabel(v: Visitor): string | null {
   return [v.vehicle_type, v.vehicle_plate].filter(Boolean).join(" · ") || null;
 }
 
+/** A small labelled 0–50 counter for an accompanying-minor age band. */
+function MinorCount({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+      {label}
+      <input
+        type="number"
+        min={0}
+        max={50}
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="0"
+        className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
+      />
+    </label>
+  );
+}
+
 export function VisitorsBoard({
   visitDate,
   visitors,
   isAdmin,
+  departments,
 }: {
   visitDate: string;
   visitors: Visitor[];
   isAdmin: boolean;
+  departments: string[];
 }) {
   const { can } = usePermissions();
   // Front-line reception/security: may check visitors in and out.
@@ -50,9 +87,66 @@ export function VisitorsBoard({
   const [purpose, setPurpose] = useState("");
   const [vehicleType, setVehicleType] = useState("");
   const [vehiclePlate, setVehiclePlate] = useState("");
+  // Optional end date turns the pre-registration into a multi-day pass the
+  // visitor can check in and out of throughout [visitDate, visitUntil].
+  const [visitUntil, setVisitUntil] = useState("");
+  // Accompanying minors, by age band — captured for security/muster headcount.
+  const [infants, setInfants] = useState("");
+  const [children, setChildren] = useState("");
+  const [adolescents, setAdolescents] = useState("");
+  // Assign the visit to an individual host and/or a department/service.
+  const [service, setService] = useState("");
+  const [hostId, setHostId] = useState<string | null>(null);
+  const [hostQuery, setHostQuery] = useState("");
+  const [hostOptions, setHostOptions] = useState<HostOption[]>([]);
+  const [showHosts, setShowHosts] = useState(false);
+
+  // Debounced host directory search as the user types a name.
+  useEffect(() => {
+    if (hostId) return; // a host is already chosen
+    const q = hostQuery.trim();
+    if (q.length < 2) {
+      setHostOptions([]);
+      return;
+    }
+    let active = true;
+    const t = setTimeout(async () => {
+      const res = await searchHosts(q);
+      if (active) {
+        setHostOptions(res);
+        setShowHosts(true);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [hostQuery, hostId]);
+
+  function resetForm() {
+    setFullName("");
+    setCompany("");
+    setPurpose("");
+    setVehicleType("");
+    setVehiclePlate("");
+    setVisitUntil("");
+    setInfants("");
+    setChildren("");
+    setAdolescents("");
+    setService("");
+    setHostId(null);
+    setHostQuery("");
+    setHostOptions([]);
+  }
 
   // Reception check-in dialog (captures badge + vehicle type/plate on arrival).
   const [checkIn, setCheckIn] = useState<Visitor | null>(null);
+  // Correct accompanying-minor counts on an existing (e.g. pre-registered) visitor.
+  const [editMinors, setEditMinors] = useState<Visitor | null>(null);
+
+  const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
+    visitors.length,
+  );
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -63,18 +157,31 @@ export function VisitorsBoard({
     });
   }
 
+  function submit(checkInNow: boolean) {
+    run(
+      () =>
+        preRegisterVisitor({
+          fullName,
+          company,
+          purpose,
+          visitDate,
+          visitUntil: visitUntil || null,
+          vehicleType,
+          vehiclePlate,
+          infants: Number(infants) || 0,
+          children: Number(children) || 0,
+          adolescents: Number(adolescents) || 0,
+          hostId,
+          service,
+          checkInNow,
+        }),
+      resetForm,
+    );
+  }
+
   function register(e: React.FormEvent) {
     e.preventDefault();
-    run(
-      () => preRegisterVisitor({ fullName, company, purpose, visitDate, vehicleType, vehiclePlate }),
-      () => {
-        setFullName("");
-        setCompany("");
-        setPurpose("");
-        setVehicleType("");
-        setVehiclePlate("");
-      },
-    );
+    submit(false);
   }
 
   return (
@@ -127,9 +234,110 @@ export function VisitorsBoard({
           placeholder="Vehicle plate (optional)"
           className="rounded-md border bg-background px-3 py-2 text-sm"
         />
-        <Button type="submit" disabled={pending}>
-          <UserPlus className="h-4 w-4" /> Pre-register
-        </Button>
+        {/* Optional end date → multi-day pass (repeated check-in/out over the range). */}
+        <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+          Long-stay end date (optional)
+          <input
+            type="date"
+            value={visitUntil}
+            min={visitDate}
+            onChange={(e) => setVisitUntil(e.target.value)}
+            title={`Leave blank for a single-day visit on ${visitDate}. Set a later date for a pass valid until then.`}
+            className="rounded-md border bg-background px-3 py-1.5 text-sm text-foreground"
+          />
+        </label>
+        {/* Assign to an individual host (employee directory typeahead). */}
+        <div className="relative">
+          {hostId ? (
+            <div className="flex items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 truncate">
+                <UserCheck className="h-4 w-4 shrink-0 text-primary" />
+                <span className="truncate">{hostQuery || "Host"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setHostId(null);
+                  setHostQuery("");
+                }}
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label="Clear host"
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <input
+              value={hostQuery}
+              onChange={(e) => setHostQuery(e.target.value)}
+              onFocus={() => hostOptions.length > 0 && setShowHosts(true)}
+              onBlur={() => setTimeout(() => setShowHosts(false), 150)}
+              placeholder="Assign to host (optional)"
+              autoComplete="off"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          )}
+          {showHosts && !hostId && hostOptions.length > 0 && (
+            <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
+              {hostOptions.map((h) => (
+                <li key={h.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setHostId(h.id);
+                      setHostQuery(h.name);
+                      setShowHosts(false);
+                    }}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-accent"
+                  >
+                    <span className="truncate font-medium">{h.name}</span>
+                    {h.department && (
+                      <span className="shrink-0 text-xs text-muted-foreground">{h.department}</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {/* Assign to a department / service. */}
+        <select
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+          className="rounded-md border bg-background px-3 py-2 text-sm"
+        >
+          <option value="">Assign to service (optional)</option>
+          {departments.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        <fieldset className="grid grid-cols-3 gap-2 sm:col-span-2 lg:col-span-3">
+          <legend className="mb-1 text-xs font-medium text-muted-foreground">
+            Accompanying minors (optional)
+          </legend>
+          <MinorCount label="Infants" value={infants} onChange={setInfants} />
+          <MinorCount label="Children" value={children} onChange={setChildren} />
+          <MinorCount label="Adolescents" value={adolescents} onChange={setAdolescents} />
+        </fieldset>
+        <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-3">
+          <Button type="submit" disabled={pending}>
+            <UserPlus className="h-4 w-4" /> Pre-register
+          </Button>
+          {canOperate && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => submit(true)}
+              title="Register a walk-in who is already here, and check them in now"
+            >
+              <UserCheck className="h-4 w-4" /> Register &amp; check in
+            </Button>
+          )}
+        </div>
       </form>
       )}
 
@@ -147,7 +355,7 @@ export function VisitorsBoard({
             </tr>
           </thead>
           <tbody className="divide-y">
-            {visitors.map((v) => {
+            {visitors.slice(0, count).map((v) => {
               const vehicle = vehicleLabel(v);
               return (
               <tr key={v.id}>
@@ -157,8 +365,22 @@ export function VisitorsBoard({
                     {[v.company, v.purpose].filter(Boolean).join(" · ") || "—"}
                     {v.badge_no && ` · Badge ${v.badge_no}`}
                   </div>
+                  {isPass(v) && (
+                    <div className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-800">
+                      <CalendarRange className="h-3 w-3" /> Pass · {visitRangeLabel(v)}
+                    </div>
+                  )}
+                  {accompanyingTotal(v) > 0 && (
+                    <div className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                      <Users className="h-3 w-3" /> +{accompanyingTotal(v)} minor
+                      {accompanyingTotal(v) === 1 ? "" : "s"} ({accompanyingSummary(v)})
+                    </div>
+                  )}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{v.host_name ?? "—"}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  <span className="block">{v.host_name ?? "—"}</span>
+                  {v.service && <span className="block text-xs">{v.service}</span>}
+                </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {vehicle ? (
                     <span className="inline-flex items-center gap-1.5">
@@ -187,7 +409,10 @@ export function VisitorsBoard({
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-2">
-                    {v.status === "pre_registered" && (
+                    {/* Off site but actionable: pre-registered, or a still-valid
+                        pass that has checked out and may re-enter. */}
+                    {(v.status === "pre_registered" ||
+                      (isPass(v) && v.status === "checked_out")) && (
                       <>
                         {canOperate && (
                           <Button
@@ -196,6 +421,16 @@ export function VisitorsBoard({
                             onClick={() => setCheckIn(v)}
                           >
                             Check in
+                          </Button>
+                        )}
+                        {canOperate && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={pending}
+                            onClick={() => setEditMinors(v)}
+                          >
+                            Edit minors
                           </Button>
                         )}
                         <Button
@@ -233,6 +468,13 @@ export function VisitorsBoard({
           </tbody>
         </table>
       </div>
+      <ShowMore
+        ref={sentinelRef}
+        hasMore={hasMore}
+        remaining={remaining}
+        onClick={showMore}
+        label="Show more visitors"
+      />
 
       {checkIn && (
         <CheckInDialog
@@ -244,6 +486,73 @@ export function VisitorsBoard({
           }
         />
       )}
+
+      {editMinors && (
+        <EditMinorsDialog
+          visitor={editMinors}
+          pending={pending}
+          onCancel={() => setEditMinors(null)}
+          onSubmit={(counts) =>
+            run(() => updateVisitorMinors(editMinors.id, counts), () => setEditMinors(null))
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function EditMinorsDialog({
+  visitor,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  visitor: Visitor;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (counts: { infants: number; children: number; adolescents: number }) => void;
+}) {
+  const [infants, setInfants] = useState(
+    visitor.accompanying_infants ? String(visitor.accompanying_infants) : "",
+  );
+  const [children, setChildren] = useState(
+    visitor.accompanying_children ? String(visitor.accompanying_children) : "",
+  );
+  const [adolescents, setAdolescents] = useState(
+    visitor.accompanying_adolescents ? String(visitor.accompanying_adolescents) : "",
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
+        <h3 className="text-lg font-semibold">Accompanying minors — {visitor.full_name}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Correct the headcount recorded at pre-registration.
+        </p>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <MinorCount label="Infants" value={infants} onChange={setInfants} />
+          <MinorCount label="Children" value={children} onChange={setChildren} />
+          <MinorCount label="Adolescents" value={adolescents} onChange={setAdolescents} />
+        </div>
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            className="flex-1"
+            disabled={pending}
+            onClick={() =>
+              onSubmit({
+                infants: Number(infants) || 0,
+                children: Number(children) || 0,
+                adolescents: Number(adolescents) || 0,
+              })
+            }
+          >
+            {pending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -257,11 +566,29 @@ function CheckInDialog({
   visitor: Visitor;
   pending: boolean;
   onCancel: () => void;
-  onSubmit: (opts: { badgeNo?: string; vehicleType?: string; vehiclePlate?: string }) => void;
+  onSubmit: (opts: {
+    badgeNo?: string;
+    vehicleType?: string;
+    vehiclePlate?: string;
+    infants?: number;
+    children?: number;
+    adolescents?: number;
+  }) => void;
 }) {
   const [badgeNo, setBadgeNo] = useState(visitor.badge_no ?? "");
   const [vehicleType, setVehicleType] = useState(visitor.vehicle_type ?? "");
   const [vehiclePlate, setVehiclePlate] = useState(visitor.vehicle_plate ?? "");
+  // Pre-filled from the pre-registration; editable because minors are often only
+  // known on arrival.
+  const [infants, setInfants] = useState(
+    visitor.accompanying_infants ? String(visitor.accompanying_infants) : "",
+  );
+  const [children, setChildren] = useState(
+    visitor.accompanying_children ? String(visitor.accompanying_children) : "",
+  );
+  const [adolescents, setAdolescents] = useState(
+    visitor.accompanying_adolescents ? String(visitor.accompanying_adolescents) : "",
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
@@ -304,6 +631,14 @@ function CheckInDialog({
               className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
             />
           </label>
+          <div>
+            <span className="text-sm text-muted-foreground">Accompanying minors on arrival</span>
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              <MinorCount label="Infants" value={infants} onChange={setInfants} />
+              <MinorCount label="Children" value={children} onChange={setChildren} />
+              <MinorCount label="Adolescents" value={adolescents} onChange={setAdolescents} />
+            </div>
+          </div>
         </div>
         <div className="mt-5 flex gap-2">
           <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
@@ -312,7 +647,16 @@ function CheckInDialog({
           <Button
             className="flex-1"
             disabled={pending}
-            onClick={() => onSubmit({ badgeNo, vehicleType, vehiclePlate })}
+            onClick={() =>
+              onSubmit({
+                badgeNo,
+                vehicleType,
+                vehiclePlate,
+                infants: Number(infants) || 0,
+                children: Number(children) || 0,
+                adolescents: Number(adolescents) || 0,
+              })
+            }
           >
             {pending ? "Checking in…" : "Check in"}
           </Button>

@@ -1,0 +1,11 @@
+-- Offshore Campboss functional role.
+--
+-- The offshore camp is run by a Campboss. Going forward, only the Campboss and
+-- the OIM (plus tenant/system admins) may reach the offshore-trip functionality
+-- — the broad `safety_admin` grant on the offshore tables is replaced by a
+-- dedicated `campboss`/`oim` gate (see 0101). `safety_admin` keeps its Emergency
+-- / EESS responsibilities untouched.
+--
+-- Note: a new enum value cannot be USED in the same transaction it is added, so
+-- the value is introduced here on its own and consumed in the next migration.
+alter type public.functional_role add value if not exists 'campboss';

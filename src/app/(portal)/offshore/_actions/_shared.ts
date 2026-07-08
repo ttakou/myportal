@@ -14,10 +14,10 @@ export async function admin() {
   return isAdminRole(await getCurrentRole());
 }
 
-/** Offshore setup is managed by tenant admins and safety admins. */
+/** Offshore trip functionality is managed by admins, the Campboss, or the OIM. */
 export async function canManageOffshore(): Promise<boolean> {
   const a = await getAccess();
-  return a.isAdmin || a.isSafetyAdmin;
+  return a.isAdmin || a.isCampboss || a.isOim;
 }
 
 export async function tenantId(): Promise<string | null> {
@@ -26,25 +26,18 @@ export async function tenantId(): Promise<string | null> {
   return data?.id ?? null;
 }
 
-/** OIM (or admin) approves offshore visit requests. */
-export async function canApproveVisits(): Promise<boolean> {
-  const a = await getAccess();
-  return a.isAdmin || a.isOim;
-}
-
 export async function canManageCatering(): Promise<boolean> {
   const a = await getAccess();
-  return a.isAdmin || a.isSafetyAdmin || a.isCanteenManager;
+  return a.isAdmin || a.isCampboss || a.isOim || a.isCanteenManager;
 }
 
 /**
- * Offshore action guard. Existing power roles keep full access (tenant/system
- * admin and safety admin manage everything; the OIM may approve). Everyone else
- * needs the matching offshore verb granted by one of their access roles.
+ * Offshore action guard. The Campboss and OIM (and tenant/system admins) manage
+ * everything. Everyone else needs the matching offshore verb granted by one of
+ * their access roles.
  */
 export async function requireOffshore(verb: Verb): Promise<ActionResult | null> {
-  if (await canManageOffshore()) return null; // admin or safety_admin
-  if (verb === "approve" && (await canApproveVisits())) return null; // OIM
+  if (await canManageOffshore()) return null; // admin, campboss, or oim
   return requirePermission("offshore", verb);
 }
 

@@ -8,6 +8,7 @@ export interface PermissionAccess {
   isAdmin: boolean;
   isSystemAdmin: boolean;
   isSafetyAdmin: boolean;
+  isCampboss: boolean;
   isOim: boolean;
   isCanteenStaff: boolean;
   isCanteenManager: boolean;
@@ -32,8 +33,7 @@ function canDo(perms: PermissionMap, access: PermissionAccess, module: string, v
 
   // Module-specific functional-role bypasses (kept in sync with the server).
   if (module === "offshore") {
-    if (access.isSafetyAdmin) return true;
-    if (verb === "approve" && access.isOim) return true;
+    if (access.isCampboss || access.isOim) return true;
   }
   if (module === "canteen") {
     if (verb === "operate" && access.isCanteenStaff) return true;

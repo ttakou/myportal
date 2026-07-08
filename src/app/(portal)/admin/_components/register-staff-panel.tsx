@@ -16,9 +16,11 @@ const TYPES: EmployeeType[] = ["employee", "contractor", "guest"];
 const FUNCTIONAL: { role: FunctionalRole; label: string }[] = [
   { role: "canteen_staff", label: "Canteen staff" },
   { role: "canteen_manager", label: "Canteen mgr" },
+  { role: "hr_canteen", label: "HR Canteen" },
   { role: "hr_admin", label: "HR" },
   { role: "finance", label: "Finance" },
   { role: "safety_admin", label: "Safety" },
+  { role: "campboss", label: "Campboss" },
   { role: "oim", label: "OIM" },
   { role: "system_admin", label: "Sys admin" },
 ];
@@ -48,6 +50,7 @@ export function RegisterStaffPanel({
   const [role, setRole] = useState<UserRole>("employee");
   const [managerId, setManagerId] = useState("");
   const [department, setDepartment] = useState("");
+  const [empNum, setEmpNum] = useState("");
   const [employeeType, setEmployeeType] = useState<EmployeeType>("employee");
   const [functional, setFunctional] = useState<FunctionalRole[]>([]);
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
@@ -70,6 +73,7 @@ export function RegisterStaffPanel({
         managerId: managerId || undefined,
         department,
         employeeType,
+        empNum,
         functionalRoles: functional,
         accessRoleIds,
       });
@@ -82,6 +86,7 @@ export function RegisterStaffPanel({
       setEmail("");
       setManagerId("");
       setDepartment("");
+      setEmpNum("");
       setRole("employee");
       setEmployeeType("employee");
       setFunctional([]);
@@ -150,6 +155,7 @@ export function RegisterStaffPanel({
             ))}
           </select>
           <input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Department (optional)" className={field} />
+          <input value={empNum} onChange={(e) => setEmpNum(e.target.value)} placeholder="Employee # (optional)" className={field} />
           <select value={employeeType} onChange={(e) => setEmployeeType(e.target.value as EmployeeType)} className={`${field} capitalize`}>
             {TYPES.map((t) => (
               <option key={t} value={t}>{t}</option>

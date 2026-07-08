@@ -9,10 +9,12 @@ import {
   type AccessReviewRow,
 } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 const FN_LABEL: Record<string, string> = {
   canteen_staff: "Canteen staff",
@@ -20,6 +22,7 @@ const FN_LABEL: Record<string, string> = {
   hr_admin: "HR",
   finance: "Finance",
   safety_admin: "Safety",
+  campboss: "Campboss",
   oim: "OIM",
   system_admin: "Sys admin",
 };
@@ -127,7 +130,7 @@ export default async function AccessReviewReportPage({
               <th className="px-3 py-2 font-medium">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={6} className="divide-y" label="Show more users">
             {report.rows.map((r) => (
               <tr key={r.id} className={cn(r.privileged && "bg-amber-50")}>
                 <td className="px-3 py-1.5 font-medium">
@@ -174,9 +177,10 @@ export default async function AccessReviewReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
+      <ReportStampFooter />
     </div>
   );
 }

@@ -3,10 +3,12 @@ import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getDepartments, getOffshoreCertReport, type CertCell, type CertStatus } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 const STATUS_STYLE: Record<CertStatus, string> = {
   expired: "bg-destructive/10 text-destructive",
@@ -33,7 +35,7 @@ export default async function OffshoreCertReportPage({
   searchParams: Promise<{ from?: string; to?: string; department?: string }>;
 }) {
   const access = await getAccess();
-  if (!(access.isSystemAdmin || access.isAdmin || access.isSafetyAdmin || access.isOim)) {
+  if (!(access.isSystemAdmin || access.isAdmin || access.isCampboss || access.isOim)) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
@@ -126,7 +128,7 @@ export default async function OffshoreCertReportPage({
               <th className="px-3 py-2 font-medium">HUET</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={6} className="divide-y" label="Show more staff">
             {report.rows.map((r) => (
               <tr key={r.staff_id}>
                 <td className="px-3 py-1.5 font-medium">{r.name ?? "—"}</td>
@@ -144,9 +146,10 @@ export default async function OffshoreCertReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
+      <ReportStampFooter />
     </div>
   );
 }

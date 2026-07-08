@@ -2,10 +2,12 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getMyMeals } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 function iso(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -74,7 +76,7 @@ export default async function MyMealsReportPage({
               <th className="px-3 py-2 font-medium">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={3} className="divide-y" label="Show more rows">
             {report.rows.map((r, i) => (
               <tr key={`${r.service_date}-${r.meal}-${i}`}>
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{r.service_date}</td>
@@ -89,9 +91,10 @@ export default async function MyMealsReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
+      <ReportStampFooter />
     </div>
   );
 }

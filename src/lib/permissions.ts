@@ -39,6 +39,7 @@ export const MODULE_CAPABILITIES: Record<string, Verb[]> = {
   medical: ["view", "create", "manage"],
   savings: ["view", "create", "approve", "operate"],
   performance: ["view", "create", "edit", "approve"],
+  training: ["view", "create", "edit", "approve", "manage"],
 };
 
 export type PermissionMap = Record<string, Verb[]>;

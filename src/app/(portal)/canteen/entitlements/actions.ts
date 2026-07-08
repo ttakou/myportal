@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/permissions-server";
+import { notifyUsers } from "@/lib/notify";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -13,8 +15,39 @@ function clampMeals(n: number): number {
 }
 
 async function requireHr(): Promise<ActionResult | null> {
-  // HR keep managing entitlements; otherwise the canteen "manage" verb is required.
-  return requireModule("canteen", "manage", (a) => a.isHr);
+  // Entitlements are owned by the HR Canteen role (super admins bypass via the
+  // module gate). Other roles cannot define who may access the canteen.
+  return requireModule("canteen", "manage", (a) => a.isHrCanteen);
+}
+
+async function tenantId(supabase: ReturnType<typeof createClient>) {
+  const { data } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  return data?.id as string | undefined;
+}
+
+/**
+ * Add or remove people from the standing daily canteen-access list by toggling
+ * their lunch eligibility — the gate the booking and serving flows both use.
+ * HR Canteen owns this; the write uses the service role (scoped to the tenant)
+ * so an HR-Canteen user who isn't a tenant admin can still manage the list.
+ */
+export async function setDailyAccess(profileIds: string[], allowed: boolean): Promise<ActionResult> {
+  const gate = await requireHr();
+  if (gate) return gate;
+  const ids = [...new Set((profileIds ?? []).filter(Boolean))];
+  if (ids.length === 0) return { ok: false, error: "No one selected." };
+  const rls = createClient();
+  const t = await tenantId(rls);
+  if (!t) return { ok: false, error: "No tenant in scope." };
+  const db = createAdminClient() ?? rls;
+  const { error } = await db
+    .from("profiles")
+    .update({ lunch_eligible: allowed })
+    .eq("tenant_id", t)
+    .in("id", ids);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/canteen/entitlements");
+  return { ok: true };
 }
 
 /**
@@ -59,6 +92,18 @@ export async function grantEntitlements(input: {
   const { error } = await supabase.from("canteen_meal_entitlements").insert(rows);
   if (error) return { ok: false, error: error.message };
 
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (tenant) {
+    await notifyUsers({
+      tenantId: tenant.id,
+      profileIds: ids,
+      category: "general",
+      title: "Meal entitlement granted",
+      body: "Your canteen meal entitlement has been updated.",
+      url: "/canteen",
+    });
+  }
+
   revalidatePath("/canteen/entitlements");
   return { ok: true };
 }
@@ -69,11 +114,27 @@ export async function removeEntitlement(id: string): Promise<ActionResult> {
   if (denied) return denied;
 
   const supabase = createClient();
+  const { data: entitlement } = await supabase
+    .from("canteen_meal_entitlements")
+    .select("tenant_id, profile_id")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabase
     .from("canteen_meal_entitlements")
     .delete()
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  if (entitlement?.tenant_id) {
+    await notifyUsers({
+      tenantId: entitlement.tenant_id,
+      profileIds: [entitlement.profile_id],
+      category: "general",
+      title: "Meal entitlement removed",
+      body: "Your special meal entitlement has ended.",
+      url: "/canteen",
+    });
+  }
 
   revalidatePath("/canteen/entitlements");
   return { ok: true };

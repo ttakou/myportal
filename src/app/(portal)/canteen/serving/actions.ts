@@ -47,7 +47,7 @@ export async function searchEmployees(query: string): Promise<EmployeeOption[]> 
 export interface WalkinLookup {
   ok: boolean;
   error?: string;
-  person?: { id: string; name: string; email: string };
+  person?: { id: string; name: string; email: string; allowance: number };
 }
 
 /**
@@ -81,7 +81,21 @@ export async function lookupWalkin(identifier: string): Promise<WalkinLookup> {
   if (!data.lunch_eligible)
     return { ok: false, error: `${name} is not entitled to lunch. Contact HR.` };
 
-  return { ok: true, person: { id: data.id, name, email: data.email } };
+  // The person's own meal allowance for today, so the serving point can flag
+  // visitor plates that go beyond it. Mirrors public.canteen_daily_allowance:
+  // sum of grants covering the date, else 1 (active + lunch-eligible, verified
+  // above). Visitors are extra plates and are never part of this allowance.
+  const date = today();
+  const { data: grants } = await supabase
+    .from("canteen_meal_entitlements")
+    .select("daily_meals")
+    .eq("profile_id", data.id)
+    .lte("starts_on", date)
+    .gte("ends_on", date);
+  const granted = (grants ?? []).reduce((s, g) => s + (g.daily_meals as number), 0);
+  const allowance = granted > 0 ? granted : 1;
+
+  return { ok: true, person: { id: data.id, name, email: data.email, allowance } };
 }
 
 export interface ServeResult {
@@ -102,12 +116,14 @@ export interface ServeResult {
 export async function serveWalkin(
   profileId: string,
   dishId: string,
+  guestCount = 0,
 ): Promise<ServeResult> {
   if (!(await getAccess()).isCanteenStaff) return { ok: false, error: "Not authorized." };
 
   const supabase = createClient();
   const date = today();
   const now = new Date().toISOString();
+  const guests = Math.max(0, Math.min(20, Math.round(guestCount)));
 
   // Re-check entitlement server-side (defence in depth — never trust the client).
   const { data: emp } = await supabase
@@ -119,6 +135,25 @@ export async function serveWalkin(
   const name = emp.full_name ?? emp.email;
   if (!emp.is_active || !emp.lunch_eligible)
     return { ok: false, error: `${name} is not entitled to lunch.` };
+
+  // Plates (the person + visitors) may not exceed the person's meal allowance.
+  // Mirror public.canteen_daily_allowance (sum of grants covering the date, else
+  // 1 for an active lunch-eligible person, verified above). Reject over-serves
+  // here too, so a stale client can't push visitor plates past the entitlement.
+  const { data: grants } = await supabase
+    .from("canteen_meal_entitlements")
+    .select("daily_meals")
+    .eq("profile_id", profileId)
+    .lte("starts_on", date)
+    .gte("ends_on", date);
+  const granted = (grants ?? []).reduce((s, g) => s + (g.daily_meals as number), 0);
+  const allowance = granted > 0 ? granted : 1;
+  if (1 + guests > allowance) {
+    return {
+      ok: false,
+      error: `${name} is entitled to ${allowance} meal${allowance === 1 ? "" : "s"}/day — ${guests} visitor${guests === 1 ? "" : "s"} would exceed it. Reduce visitors to ${Math.max(0, allowance - 1)} or fewer.`,
+    };
+  }
 
   // The dish must be on today's active menu (RLS scopes this to the tenant).
   const { data: dish } = await supabase
@@ -143,7 +178,15 @@ export async function serveWalkin(
     if (existing.collected_at) return { ok: false, error: `${name} already collected.` };
     const { error } = await supabase
       .from("canteen_bookings")
-      .update({ status: "served", collected_at: now, prepared_at: now })
+      .update({
+        status: "served",
+        collected_at: now,
+        prepared_at: now,
+        // Visitors present at a walk-in serve are handed their plate now, so
+        // record them as collected too. Guests who come later are checked off
+        // separately via setGuestCollected.
+        ...(guests > 0 ? { guest_count: guests, collected_guest_count: guests } : {}),
+      })
       .eq("id", existing.id);
     if (error) return { ok: false, error: error.message };
   } else {
@@ -154,6 +197,8 @@ export async function serveWalkin(
       kitchen_id: dish.kitchen_id,
       service_date: dish.service_date,
       meal_period: dish.meal_period,
+      guest_count: guests,
+      collected_guest_count: guests,
       status: "served",
       prepared_at: now,
       collected_at: now,

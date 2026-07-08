@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runAppraisalReminders } from "@/lib/appraisal-reminders";
+import { runWorkflowEscalations } from "@/lib/workflow-escalation";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,6 +18,9 @@ export async function GET(request: Request) {
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  const summary = await runAppraisalReminders();
-  return NextResponse.json(summary);
+  const [summary, workflow] = await Promise.all([
+    runAppraisalReminders(),
+    runWorkflowEscalations(),
+  ]);
+  return NextResponse.json({ ...summary, workflow });
 }

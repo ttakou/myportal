@@ -15,6 +15,7 @@ import {
   setUserActive,
   setUserDepartment,
   setUserLunchEligible,
+  setUserEmployeeNumber,
   setUserFullName,
   setUserJobTitle,
   setUserManager,
@@ -30,9 +31,11 @@ const TYPES: EmployeeType[] = ["employee", "contractor", "guest"];
 const FUNCTIONAL: { role: FunctionalRole; label: string }[] = [
   { role: "canteen_staff", label: "Canteen staff" },
   { role: "canteen_manager", label: "Canteen mgr" },
+  { role: "hr_canteen", label: "HR Canteen" },
   { role: "hr_admin", label: "HR" },
   { role: "finance", label: "Finance" },
   { role: "safety_admin", label: "Safety" },
+  { role: "campboss", label: "Campboss" },
   { role: "oim", label: "OIM" },
   { role: "system_admin", label: "Sys admin" },
 ];
@@ -316,6 +319,14 @@ export function UsersPanel({
                             placeholder="Job title"
                             pending={pending}
                             onSave={(v) => run(() => setUserJobTitle(u.id, v))}
+                          />
+                        </Field>
+                        <Field label="Employee #">
+                          <InlineText
+                            value={u.emp_num ?? ""}
+                            placeholder="Employee number"
+                            pending={pending}
+                            onSave={(v) => run(() => setUserEmployeeNumber(u.id, v))}
                           />
                         </Field>
                         <Field label="Email">

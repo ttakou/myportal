@@ -233,6 +233,7 @@ export interface AppraisalCompetency {
   name: string;
   description: string | null;
   is_active: boolean;
+  weight: number;
 }
 
 export interface CompetencyRating {
@@ -275,6 +276,12 @@ export interface Appraisal {
   overall_rating: number | null;
   final_score: number | null;
   rating_label: string | null;
+  /** Calibration progress: 'provisional' (line-manager score) … 'final' (PGM
+   *  signed off). A rating is only truly final once this reaches 'final'. */
+  calibration_gate: "provisional" | "panel" | "pgm" | "final";
+  /** When HR released the final rating to the employee. Null = the employee
+   *  must not be shown any score yet (only comments/remarks). */
+  rating_released_at: string | null;
   employee_summary: string | null;
   manager_summary: string | null;
   discussion_date: string | null;
@@ -287,4 +294,9 @@ export interface Appraisal {
   development_plan: AppraisalDevelopmentItem[];
   goals: AppraisalGoal[];
   events: AppraisalEvent[];
+  /** Set when the goals shown belong to another cycle of the same year (the
+   * year's Annual cycle). In a "gate" cycle (mid-year, final, calibration) the
+   * year's goals are surfaced read-only; they're edited/rated in that cycle. */
+  goalsReadOnly?: boolean;
+  goalsSourceName?: string | null;
 }

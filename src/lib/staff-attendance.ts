@@ -25,6 +25,8 @@ type AttendanceRow = {
   profile_id: string;
   check_in_at: string | null;
   check_out_at: string | null;
+  vehicle_type: string | null;
+  vehicle_plate: string | null;
 };
 
 /**
@@ -42,7 +44,7 @@ export async function getStaffRoster(date: string = today()): Promise<StaffAtten
       .order("full_name", { ascending: true }),
     supabase
       .from("staff_attendance")
-      .select("profile_id, check_in_at, check_out_at")
+      .select("profile_id, check_in_at, check_out_at, vehicle_type, vehicle_plate")
       .eq("attendance_date", date),
   ]);
 
@@ -62,6 +64,8 @@ export async function getStaffRoster(date: string = today()): Promise<StaffAtten
       status: deriveStatus(checkIn, checkOut),
       check_in_at: checkIn,
       check_out_at: checkOut,
+      vehicle_type: a?.vehicle_type ?? null,
+      vehicle_plate: a?.vehicle_plate ?? null,
     };
   });
 }

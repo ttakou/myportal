@@ -1,7 +1,7 @@
 import { getAccess } from "@/lib/auth";
-import { getTenantBranding } from "@/lib/branding";
 import { getEmergencyRoles, getRotationReport } from "@/lib/offshore";
 import { EMERGENCY_ROLE_LABEL, type EmergencyRoleKind, type RotationDay } from "@/types/offshore";
+import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
 const CELL: Record<RotationDay, string> = {
@@ -21,15 +21,14 @@ export default async function RotationReportPage({
 }) {
   const sp = await searchParams;
   const access = await getAccess();
-  if (!access.isAdmin && !access.isSafetyAdmin && !access.isOim) {
+  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 
   const from = sp.from || new Date().toISOString().slice(0, 10);
   const weeks = Math.max(1, Math.min(26, Number(sp.weeks) || 8));
-  const [report, branding, emergencyRoles] = await Promise.all([
+  const [report, emergencyRoles] = await Promise.all([
     getRotationReport(from, weeks),
-    getTenantBranding(),
     getEmergencyRoles(),
   ]);
 
@@ -70,21 +69,10 @@ export default async function RotationReportPage({
 
       <div className="rotation-report mx-auto max-w-[1500px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">
         {/* Header */}
-        <div className="flex items-start justify-between border-b-2 border-gray-900 pb-3">
-          <div className="flex items-center gap-3">
-            {branding.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={branding.logoUrl} alt={branding.name} className="h-12 w-auto object-contain" />
-            ) : null}
-            <div className="text-lg font-bold text-gray-900">{branding.name}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-xl font-bold tracking-tight text-gray-900">CREW ROTATION CALENDAR</div>
-            <div className="text-xs text-gray-500">
-              {fmt(report.from)} → {fmt(report.to)} · {weeks} weeks
-            </div>
-          </div>
-        </div>
+        <ReportHeader
+          title="Crew rotation calendar"
+          subtitle={`${fmt(report.from)} → ${fmt(report.to)} · ${weeks} weeks`}
+        />
 
         {/* Legend */}
         <div className="flex flex-wrap gap-4 py-2 text-[11px] text-gray-600">
@@ -182,9 +170,7 @@ export default async function RotationReportPage({
           </>
         )}
 
-        <div className="mt-6 border-t border-gray-200 pt-2 text-[9px] text-gray-400">
-          {branding.name} · Crew rotation calendar · Generated {new Date().toLocaleString("en-GB", { timeZone: "UTC" })} UTC
-        </div>
+        <ReportStampFooter label="Rotation calendar" />
       </div>
     </div>
   );

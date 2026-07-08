@@ -1,6 +1,6 @@
 import { getAccess } from "@/lib/auth";
-import { getTenantBranding } from "@/lib/branding";
 import { getRoomAllocationAsOf } from "@/lib/offshore";
+import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
 /** Standalone, print-friendly room allocation report as of a date, with branding. */
@@ -11,12 +11,12 @@ export default async function RoomAllocationReportPage({
 }) {
   const sp = await searchParams;
   const access = await getAccess();
-  if (!access.isAdmin && !access.isSafetyAdmin && !access.isOim) {
+  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 
   const date = sp.date || new Date().toISOString().slice(0, 10);
-  const [report, branding] = await Promise.all([getRoomAllocationAsOf(date), getTenantBranding()]);
+  const report = await getRoomAllocationAsOf(date);
   const fmt = (d: string) => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
@@ -38,21 +38,10 @@ export default async function RoomAllocationReportPage({
 
       <div className="room-report mx-auto max-w-[1100px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">
         {/* Header */}
-        <div className="flex items-start justify-between border-b-2 border-gray-900 pb-3">
-          <div className="flex items-center gap-3">
-            {branding.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={branding.logoUrl} alt={branding.name} className="h-12 w-auto object-contain" />
-            ) : null}
-            <div className="text-lg font-bold text-gray-900">{branding.name}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-xl font-bold tracking-tight text-gray-900">ROOM ALLOCATION</div>
-            <div className="text-xs text-gray-500">
-              As of {fmt(report.date)} · {report.roomsInUse} room(s) in use · {report.totalOccupants} occupant(s)
-            </div>
-          </div>
-        </div>
+        <ReportHeader
+          title="Room allocation"
+          subtitle={`As of ${fmt(report.date)} · ${report.roomsInUse} room(s) in use · ${report.totalOccupants} occupant(s)`}
+        />
 
         {/* Room grid */}
         <div className="mt-3 grid grid-cols-3 gap-2" style={{ breakInside: "auto" }}>
@@ -102,9 +91,7 @@ export default async function RoomAllocationReportPage({
           {report.rooms.length === 0 && <p className="text-sm text-gray-400">No rooms.</p>}
         </div>
 
-        <div className="mt-6 border-t border-gray-200 pt-2 text-[9px] text-gray-400">
-          {branding.name} · Room allocation · Generated {new Date().toLocaleString("en-GB", { timeZone: "UTC" })} UTC
-        </div>
+        <ReportStampFooter label="Room allocation" />
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { useStatusTransition } from "@/components/activity";
 import { Ship, ShieldCheck, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
   OFFSHORE_STATUS_LABEL,
@@ -12,7 +13,6 @@ import {
   type Installation,
   type OffshoreStatus,
   type OffshoreTrip,
-  type Pob,
 } from "@/types/offshore";
 import {
   addFlight,
@@ -39,7 +39,6 @@ export function OffshoreBoard({
   all,
   installations,
   flights,
-  pob,
   isAdmin,
   people,
   meId,
@@ -48,7 +47,6 @@ export function OffshoreBoard({
   all: OffshoreTrip[];
   installations: Installation[];
   flights: Flight[];
-  pob: Pob[];
   isAdmin: boolean;
   people: { id: string; name: string }[];
   meId: string;
@@ -84,6 +82,9 @@ export function OffshoreBoard({
   const [fRoute, setFRoute] = useState("");
   const [fSeats, setFSeats] = useState("12");
 
+  const mineReveal = useProgressiveReveal(mine.length);
+  const allReveal = useProgressiveReveal(all.length);
+
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
@@ -97,26 +98,35 @@ export function OffshoreBoard({
     <div className="space-y-8">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
-      {isAdmin && pob.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">POB · persons on board</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {pob.map((p) => {
-              const over = p.pob > p.pob_capacity;
-              return (
-                <div key={p.installation_id} className="rounded-lg border bg-card p-4">
-                  <p className="font-medium">{p.name}</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">
-                    {p.pob}
-                    <span className="text-sm font-normal text-muted-foreground"> / {p.pob_capacity}</span>
-                  </p>
-                  {over && <p className="text-xs text-destructive">Over capacity</p>}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      {/* The user's own trips lead the page (POB lives on the management dashboard). */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">My offshore trips</h2>
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr><th className="px-4 py-3 font-medium">Installation</th><th className="px-4 py-3 font-medium">Dates</th><th className="px-4 py-3 font-medium">Flight / Bed</th><th className="px-4 py-3 font-medium">Status</th></tr>
+            </thead>
+            <tbody className="divide-y">
+              {mine.slice(0, mineReveal.count).map((t) => (
+                <tr key={t.id}>
+                  <td className="px-4 py-3 font-medium">{t.installation_name ?? "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{t.mobilize_date}{t.demob_date ? ` → ${t.demob_date}` : ""}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{[t.flight_label, t.bed_no && `Bed ${t.bed_no}`].filter(Boolean).join(" · ") || "—"}</td>
+                  <td className="px-4 py-3"><Badge status={t.status} /></td>
+                </tr>
+              ))}
+              {mine.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">No trips yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <ShowMore
+          ref={mineReveal.sentinelRef}
+          hasMore={mineReveal.hasMore}
+          remaining={mineReveal.remaining}
+          onClick={mineReveal.showMore}
+          label="Show more trips"
+        />
+      </section>
 
       {can("offshore", "create") && (
       <section className="space-y-3">
@@ -215,28 +225,6 @@ export function OffshoreBoard({
       </section>
       )}
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">My offshore trips</h2>
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr><th className="px-4 py-3 font-medium">Installation</th><th className="px-4 py-3 font-medium">Dates</th><th className="px-4 py-3 font-medium">Flight / Bed</th><th className="px-4 py-3 font-medium">Status</th></tr>
-            </thead>
-            <tbody className="divide-y">
-              {mine.map((t) => (
-                <tr key={t.id}>
-                  <td className="px-4 py-3 font-medium">{t.installation_name ?? "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{t.mobilize_date}{t.demob_date ? ` → ${t.demob_date}` : ""}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{[t.flight_label, t.bed_no && `Bed ${t.bed_no}`].filter(Boolean).join(" · ") || "—"}</td>
-                  <td className="px-4 py-3"><Badge status={t.status} /></td>
-                </tr>
-              ))}
-              {mine.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">No trips yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       {isAdmin && (
         <>
           <section className="space-y-3">
@@ -247,7 +235,7 @@ export function OffshoreBoard({
                   <tr><th className="px-4 py-3 font-medium">Person / Installation</th><th className="px-4 py-3 font-medium">HSE</th><th className="px-4 py-3 font-medium">Manifest</th><th className="px-4 py-3 font-medium">Status</th></tr>
                 </thead>
                 <tbody className="divide-y">
-                  {all.map((t) => (
+                  {all.slice(0, allReveal.count).map((t) => (
                     <tr key={t.id}>
                       <td className="px-4 py-3">
                         <div className="font-medium">{t.person_name ?? "—"}</div>
@@ -283,6 +271,11 @@ export function OffshoreBoard({
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Badge status={t.status} />
+                          {t.mode === "manual" && (
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" title="Crew change set up manually">
+                              manual
+                            </span>
+                          )}
                           {t.status === "manifested" && <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setOffshoreStatus(t.id, "onboard"))}>Board</Button>}
                           {t.status === "onboard" && <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setOffshoreStatus(t.id, "demobilised"))}>Demob</Button>}
                         </div>
@@ -293,6 +286,13 @@ export function OffshoreBoard({
                 </tbody>
               </table>
             </div>
+            <ShowMore
+              ref={allReveal.sentinelRef}
+              hasMore={allReveal.hasMore}
+              remaining={allReveal.remaining}
+              onClick={allReveal.showMore}
+              label="Show more trips"
+            />
           </section>
 
           <form

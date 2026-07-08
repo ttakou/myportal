@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
 import {
@@ -20,7 +21,7 @@ import {
 
 const APPRAISAL_SELECT =
   "id, cycle_id, employee_id, manager_id, second_level_id, stage, status, overall_rating," +
-  " final_score, rating_label," +
+  " final_score, rating_label, calibration_gate, rating_released_at," +
   " employee_summary, manager_summary, discussion_date, discussion_notes," +
   " acknowledged_at, employee_agreed, employee_ack_comment," +
   " cycle:appraisal_cycles(name)," +
@@ -47,6 +48,8 @@ interface RawAppraisalRow {
   overall_rating?: number | null;
   final_score?: number | null;
   rating_label?: string | null;
+  calibration_gate?: Appraisal["calibration_gate"] | null;
+  rating_released_at?: string | null;
   employee_summary?: string | null;
   manager_summary?: string | null;
   discussion_date?: string | null;
@@ -72,6 +75,8 @@ function mapAppraisal(r: RawAppraisalRow): Appraisal {
     overall_rating: r.overall_rating ?? null,
     final_score: r.final_score ?? null,
     rating_label: r.rating_label ?? null,
+    calibration_gate: r.calibration_gate ?? "provisional",
+    rating_released_at: r.rating_released_at ?? null,
     employee_summary: r.employee_summary ?? null,
     manager_summary: r.manager_summary ?? null,
     discussion_date: r.discussion_date ?? null,
@@ -87,15 +92,16 @@ function mapAppraisal(r: RawAppraisalRow): Appraisal {
   };
 }
 
-/** All competencies for the HR framework editor. */
-export async function getCompetencies(): Promise<AppraisalCompetency[]> {
+/** All competencies for the HR framework editor. Request-cached: the framework
+ *  is near-static and several panels read it within one render. */
+export const getCompetencies = cache(async (): Promise<AppraisalCompetency[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_competencies")
-    .select("id, name, description, is_active")
+    .select("id, name, description, is_active, weight")
     .order("name");
   return (data ?? []) as AppraisalCompetency[];
-}
+});
 
 /** The tenant's active cycle (or the most recent one). */
 export async function getActiveCycle(): Promise<AppraisalCycle | null> {
@@ -113,8 +119,9 @@ export async function getActiveCycle(): Promise<AppraisalCycle | null> {
   return rows.find((c) => c.status === "active") ?? rows[0] ?? null;
 }
 
-/** All cycles for the HR console. */
-export async function getCycles(): Promise<AppraisalCycle[]> {
+/** All cycles for the HR console. Request-cached: the cycle list is near-static
+ *  and read by the year switcher, the page and several panels in one render. */
+export const getCycles = cache(async (): Promise<AppraisalCycle[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_cycles")
@@ -125,7 +132,7 @@ export async function getCycles(): Promise<AppraisalCycle[]> {
     .order("year", { ascending: false })
     .order("created_at", { ascending: false });
   return (data ?? []) as unknown as AppraisalCycle[];
-}
+});
 
 export interface AppraisalHistoryEntry {
   cycle_id: string;
@@ -177,11 +184,27 @@ export async function getMyAppraisal(cycleId: string): Promise<Appraisal | null>
     .maybeSingle();
   if (!data) return null;
   const appraisal = mapAppraisal(data as unknown as RawAppraisalRow);
-  await hydrate(appraisal);
+  // In a gate cycle, surface the year's goals (set in the Annual cycle) read-only.
+  const source = await goalSourceCycle(cycleId);
+  let goalsApId: string | undefined;
+  if (source) {
+    const { data: baseAp } = await supabase
+      .from("appraisals")
+      .select("id")
+      .eq("cycle_id", source.id)
+      .eq("employee_id", user.id)
+      .maybeSingle();
+    if (baseAp) {
+      goalsApId = baseAp.id as string;
+      appraisal.goalsReadOnly = true;
+      appraisal.goalsSourceName = source.name;
+    }
+  }
+  await hydrate(appraisal, goalsApId);
   // Employee view: overlay who is reviewing each goal + whether they responded,
   // but never the rating or comment (those are confidential to the manager).
   const { data: er } = await supabase.rpc("goal_raters_for_employee", {
-    p_appraisal: appraisal.id,
+    p_appraisal: goalsApId ?? appraisal.id,
   });
   const byGoal = new Map<string, GoalRater[]>();
   for (const r of (er ?? []) as Record<string, any>[]) {
@@ -207,8 +230,9 @@ export async function getMyRaterAssignments(): Promise<RaterAssignment[]> {
   return (data ?? []) as RaterAssignment[];
 }
 
-/** Active people in the tenant, for the stakeholder-reviewer picker. */
-export async function getTenantColleagues(): Promise<Colleague[]> {
+/** Active people in the tenant, for the stakeholder-reviewer picker.
+ *  Request-cached: shared by the manager and employee panels in one render. */
+export const getTenantColleagues = cache(async (): Promise<Colleague[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("profiles")
@@ -217,7 +241,7 @@ export async function getTenantColleagues(): Promise<Colleague[]> {
     .order("full_name")
     .limit(500);
   return (data ?? []) as Colleague[];
-}
+});
 
 /** Department objectives the signed-in employee can align goals to: their
  *  department (or company-wide), scoped to the cycle (or evergreen), active. */
@@ -255,8 +279,8 @@ export async function getDepartmentObjectivesForMe(
   }));
 }
 
-/** All department objectives for the HR management UI. */
-export async function getDepartmentObjectives(): Promise<DepartmentObjective[]> {
+/** All department objectives for the HR management UI. Request-cached. */
+export const getDepartmentObjectives = cache(async (): Promise<DepartmentObjective[]> => {
   const supabase = createClient();
   const { data } = await supabase
     .from("appraisal_department_objectives")
@@ -272,7 +296,7 @@ export async function getDepartmentObjectives(): Promise<DepartmentObjective[]> 
     cycle_id: r.cycle_id ?? null,
     cycle_name: one<{ name?: string }>(r.cycle)?.name ?? null,
   }));
-}
+});
 
 /**
  * The signed-in manager's direct line — their direct reports (from the
@@ -282,6 +306,22 @@ export async function getDepartmentObjectives(): Promise<DepartmentObjective[]> 
  * the performance dashboard at a glance; the manager acts on the full record
  * over on the appraisals page.
  */
+/** True when the signed-in user is a line manager (has at least one direct
+ *  report via profiles.manager_id). Cached per request — cheap, indexed count. */
+export const hasDirectReports = cache(async (): Promise<boolean> => {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { count } = await supabase
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("manager_id", user.id)
+    .eq("is_active", true);
+  return (count ?? 0) > 0;
+});
+
 export async function getMyDirectLine(cycleId: string | null): Promise<DirectReport[]> {
   const supabase = createClient();
   const {
@@ -335,15 +375,44 @@ export async function getTeamAppraisals(cycleId: string): Promise<Appraisal[]> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
+  // Include appraisals of managers who nominated me as their delegate, so their
+  // team's reviews don't stall while they're unavailable.
+  const { data: delegators } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("appraisal_delegate_id", user.id);
+  const managerIds = [user.id, ...((delegators ?? []) as { id: string }[]).map((d) => d.id)];
   const { data } = await supabase
     .from("appraisals")
     .select(APPRAISAL_SELECT)
     .eq("cycle_id", cycleId)
-    .eq("manager_id", user.id)
+    .in("manager_id", managerIds)
     .order("status");
   const list = (data ?? []).map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
-  await Promise.all(list.map((ap) => hydrate(ap)));
+  await hydrateWithYearGoals(list, cycleId);
   return list;
+}
+
+/** The colleague the signed-in manager has nominated as their appraisal delegate. */
+export async function getMyAppraisalDelegate(): Promise<{ id: string; name: string | null } | null> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from("profiles")
+    .select(
+      "appraisal_delegate_id, delegate:profiles!profiles_appraisal_delegate_id_fkey(full_name)",
+    )
+    .eq("id", user.id)
+    .maybeSingle();
+  const id = (data?.appraisal_delegate_id as string | null) ?? null;
+  if (!id) return null;
+  const raw = (data as { delegate?: { full_name?: string } | { full_name?: string }[] | null })
+    .delegate;
+  const d = one<{ full_name?: string }>(raw ?? null);
+  return { id, name: d?.full_name ?? null };
 }
 
 /** Appraisals awaiting the signed-in second-level approver. */
@@ -360,7 +429,7 @@ export async function getSecondLevelQueue(cycleId: string): Promise<Appraisal[]>
     .eq("second_level_id", user.id)
     .eq("status", "pending_second_level");
   const list = (data ?? []).map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
-  await Promise.all(list.map((ap) => hydrate(ap)));
+  await hydrateWithYearGoals(list, cycleId);
   return list;
 }
 
@@ -380,10 +449,9 @@ export async function getCycleAppraisals(cycleId: string): Promise<Appraisal[]> 
   const list = staff.map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
   // Hydrate the rows HR acts on so the queue shows the appeal reason and the
   // (confidential) stakeholder feedback during validation.
-  await Promise.all(
-    list
-      .filter((a) => a.status === "under_appeal" || a.status === "pending_hr_review")
-      .map((a) => hydrate(a)),
+  await hydrateWithYearGoals(
+    list.filter((a) => a.status === "under_appeal" || a.status === "pending_hr_review"),
+    cycleId,
   );
   return list;
 }
@@ -505,9 +573,78 @@ export async function getAppraisal(id: string): Promise<Appraisal | null> {
   return appraisal;
 }
 
-/** Load goals + events onto an appraisal. */
-async function hydrate(appraisal: Appraisal): Promise<void> {
+/**
+ * For a gate cycle (mid-year / final / calibration — named "… - <gate>"), find
+ * the year's Annual source cycle (same year, name without a gate suffix) whose
+ * goals should be surfaced. Returns null when the cycle is itself the Annual
+ * source, or no distinct Annual cycle exists for the year (so single-cycle
+ * tenants are entirely unaffected).
+ */
+async function goalSourceCycle(
+  cycleId: string,
+): Promise<{ id: string; name: string } | null> {
   const supabase = createClient();
+  const { data: cyc } = await supabase
+    .from("appraisal_cycles")
+    .select("id, name, year")
+    .eq("id", cycleId)
+    .maybeSingle();
+  if (!cyc || !/ - /.test(cyc.name as string)) return null; // not a gate
+  const { data: peers } = await supabase
+    .from("appraisal_cycles")
+    .select("id, name")
+    .eq("year", cyc.year as number);
+  const base = ((peers ?? []) as { id: string; name: string }[]).find(
+    (p) => p.id !== cyc.id && !/ - /.test(p.name),
+  );
+  return base ? { id: base.id, name: base.name } : null;
+}
+
+/**
+ * Hydrate a list of appraisals, surfacing the year's goals (from the Annual
+ * cycle) read-only when `cycleId` is a gate cycle. No-op for non-gate cycles.
+ */
+async function hydrateWithYearGoals(list: Appraisal[], cycleId: string): Promise<void> {
+  const source = list.length ? await goalSourceCycle(cycleId) : null;
+  let baseByEmployee: Map<string, string> | null = null;
+  if (source) {
+    const supabase = createClient();
+    const { data: baseAps } = await supabase
+      .from("appraisals")
+      .select("id, employee_id")
+      .eq("cycle_id", source.id)
+      .in(
+        "employee_id",
+        list.map((a) => a.employee_id),
+      );
+    baseByEmployee = new Map(
+      ((baseAps ?? []) as { id: string; employee_id: string }[]).map((a) => [
+        a.employee_id,
+        a.id,
+      ]),
+    );
+  }
+  await Promise.all(
+    list.map((ap) => {
+      const gid = baseByEmployee?.get(ap.employee_id);
+      if (gid && source) {
+        ap.goalsReadOnly = true;
+        ap.goalsSourceName = source.name;
+      }
+      return hydrate(ap, gid);
+    }),
+  );
+}
+
+/**
+ * Load goals + events onto an appraisal. When `goalsAppraisalId` is given, the
+ * goals/key-results/witnesses are read from THAT appraisal instead (used to
+ * surface a year's goals — set in its Annual cycle — across the year's gate
+ * cycles). Events stay with the appraisal itself.
+ */
+async function hydrate(appraisal: Appraisal, goalsAppraisalId?: string): Promise<void> {
+  const supabase = createClient();
+  const gid = goalsAppraisalId ?? appraisal.id;
   const [{ data: goals }, { data: events }] = await Promise.all([
     supabase
       .from("appraisal_goals")
@@ -515,7 +652,7 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
         "id, title, description, weight, deadline, success_indicator, alignment, evidence_required, kind," +
           " employee_progress, employee_self_rating, employee_comment, manager_rating, manager_comment, at_risk, status",
       )
-      .eq("appraisal_id", appraisal.id)
+      .eq("appraisal_id", gid)
       .order("created_at"),
     supabase
       .from("appraisal_events")
@@ -531,7 +668,7 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
   const { data: krs } = await supabase
     .from("appraisal_key_results")
     .select("id, goal_id, title, target, current_value, unit, progress")
-    .eq("appraisal_id", appraisal.id)
+    .eq("appraisal_id", gid)
     .order("created_at");
   const byGoal = new Map<string, AppraisalKeyResult[]>();
   for (const k of (krs ?? []) as Record<string, any>[]) {
@@ -554,7 +691,7 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
   const { data: raterRows } = await supabase
     .from("appraisal_goal_raters")
     .select("id, goal_id, rater_id, rating, comment, status, rater:profiles!rater_id(full_name)")
-    .eq("appraisal_id", appraisal.id);
+    .eq("appraisal_id", gid);
   const ratersByGoal = new Map<string, GoalRater[]>();
   for (const r of (raterRows ?? []) as Record<string, any>[]) {
     const arr = ratersByGoal.get(r.goal_id) ?? [];
@@ -571,10 +708,12 @@ async function hydrate(appraisal: Appraisal): Promise<void> {
   for (const g of goalsList) g.raters = ratersByGoal.get(g.id) ?? [];
   appraisal.goals = goalsList;
 
+  // The IDP, like goals, belongs to the year — surface the Annual cycle's plan
+  // across the gate cycles (read-only there) by loading it from `gid`.
   const { data: dev } = await supabase
     .from("appraisal_development_plans")
     .select("id, area, action, target_date, status")
-    .eq("appraisal_id", appraisal.id)
+    .eq("appraisal_id", gid)
     .order("created_at");
   appraisal.development_plan = (dev ?? []) as Appraisal["development_plan"];
   const { data: appeal } = await supabase

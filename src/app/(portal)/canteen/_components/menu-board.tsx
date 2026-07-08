@@ -21,6 +21,7 @@ export function MenuBoard({
   mealPeriods,
   bookingClosed = false,
   cutoffHour = null,
+  allowance = 1,
 }: {
   serviceDate: string;
   dishes: CanteenDish[];
@@ -28,7 +29,12 @@ export function MenuBoard({
   mealPeriods: MealPeriod[];
   bookingClosed?: boolean;
   cutoffHour?: number | null;
+  /** The user's daily meal allowance (host + visitors). Caps the guest stepper. */
+  allowance?: number;
 }) {
+  // Visitor plates count against the allowance, so the host keeps one plate and
+  // the rest may be guests.
+  const maxGuests = Math.max(0, allowance - 1);
   const { can } = usePermissions();
   const canBook = can("canteen", "create");
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -202,6 +208,7 @@ export function MenuBoard({
                             <GuestStepper
                               booking={booking!}
                               disabled={pending}
+                              maxGuests={maxGuests}
                               onChange={(n) => run(() => updateGuests(booking!.id, n))}
                             />
                             <Button
@@ -308,17 +315,30 @@ export function MenuBoard({
 function GuestStepper({
   booking,
   disabled,
+  maxGuests,
   onChange,
 }: {
   booking: CanteenBooking;
   disabled: boolean;
+  /** Most visitor plates allowed = allowance − the host's own plate. */
+  maxGuests: number;
   onChange: (n: number) => void;
 }) {
   const count = booking.guest_count;
+  // When the allowance leaves no room for guests, explain why rather than show a
+  // stepper that can only ever sit at zero.
+  if (maxGuests <= 0 && count <= 0) {
+    return (
+      <p className="rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+        Your allowance covers one meal — no guest plates.
+      </p>
+    );
+  }
   return (
     <div className="flex items-center justify-between rounded-md bg-muted px-3 py-1.5 text-sm">
       <span className="inline-flex items-center gap-1.5 text-muted-foreground">
         <Users className="h-3.5 w-3.5" /> Guests
+        <span className="text-xs text-muted-foreground/70">(max {maxGuests})</span>
       </span>
       <div className="flex items-center gap-2">
         <button
@@ -335,7 +355,7 @@ function GuestStepper({
           type="button"
           aria-label="Add guest"
           className="grid h-6 w-6 place-items-center rounded border disabled:opacity-40"
-          disabled={disabled || count >= 10}
+          disabled={disabled || count >= maxGuests}
           onClick={() => onChange(count + 1)}
         >
           <Plus className="h-3 w-3" />

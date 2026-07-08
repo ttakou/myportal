@@ -5,6 +5,7 @@ import { useStatusTransition } from "@/components/activity";
 import { Navigation, Power } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import type { Driver, TransportRequest } from "@/types/transport";
 import { setMyDuty, setTransportStatus } from "../actions";
 import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
@@ -17,6 +18,7 @@ export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: Transpor
 
   const open = tasks.filter((t) => t.status === "assigned" || t.status === "in_progress");
   const done = tasks.filter((t) => t.status === "completed" || t.status === "cancelled");
+  const openReveal = useProgressiveReveal(open.length);
 
   function advance(id: string, status: "in_progress" | "completed") {
     setError(null);
@@ -67,7 +69,7 @@ export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: Transpor
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {open.map((t) => (
+        {open.slice(0, openReveal.count).map((t) => (
           <div key={t.id} className="rounded-lg border bg-card p-3">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={t.status} />
@@ -101,6 +103,13 @@ export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: Transpor
           </div>
         ))}
       </div>
+      <ShowMore
+        ref={openReveal.sentinelRef}
+        hasMore={openReveal.hasMore}
+        remaining={openReveal.remaining}
+        onClick={openReveal.showMore}
+        label="Show more tasks"
+      />
 
       {done.length > 0 && (
         <details>

@@ -9,6 +9,7 @@ import { getTenantBranding, brandingToCssVars } from "@/lib/branding";
 import { getMyNotifications } from "@/lib/notifications";
 import { UserMenu } from "./_components/user-menu";
 import { NotificationBell } from "./_components/notification-bell";
+import { AutoAttendance } from "./_components/auto-attendance";
 import { PortalShell } from "./_components/portal-shell";
 import { ImpersonationBanner } from "./_components/impersonation-banner";
 
@@ -54,6 +55,7 @@ export default async function PortalLayout({
     isAdmin: access.isAdmin,
     isSystemAdmin: access.isSystemAdmin,
     isSafetyAdmin: access.isSafetyAdmin,
+    isCampboss: access.isCampboss,
     isOim: access.isOim,
     isCanteenStaff: access.isCanteenStaff,
     isCanteenManager: access.isCanteenManager,
@@ -66,6 +68,8 @@ export default async function PortalLayout({
       <PermissionsProvider perms={perms} access={permAccess}>
       <PortalShell
         sidebar={<Sidebar brandName={branding.name} logoUrl={branding.logoUrl} />}
+        brandName={branding.name}
+        logoUrl={branding.logoUrl}
         header={
           <div className="flex items-center gap-1">
             <NotificationBell initial={notifications} />
@@ -75,6 +79,7 @@ export default async function PortalLayout({
       >
         {children}
       </PortalShell>
+      <AutoAttendance />
       </PermissionsProvider>
     </div>
   );

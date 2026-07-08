@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
 import { notifyUsers } from "@/lib/notify";
 import { runAppraisalReminders } from "@/lib/appraisal-reminders";
+import { dispatchEvent } from "@/lib/notify-dispatch";
+import { getPerformanceConfig } from "@/lib/performance-config";
+import { getAppraisalCapabilities } from "@/lib/perf-permissions";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -150,7 +153,7 @@ export async function launchCycle(cycleId: string): Promise<ActionResult> {
   const supabase = createClient();
   const { data: cycle } = await supabase
     .from("appraisal_cycles")
-    .select("id, tenant_id")
+    .select("id, tenant_id, name")
     .eq("id", cycleId)
     .maybeSingle();
   if (!cycle) return { ok: false, error: "Cycle not found." };
@@ -183,6 +186,16 @@ export async function launchCycle(cycleId: string): Promise<ActionResult> {
     .update({ status: "active" })
     .eq("id", cycleId);
   if (cErr) return { ok: false, error: cErr.message };
+
+  // Configurable notifications: announce the launch per the tenant's rules.
+  await dispatchEvent("cycle_launch", {
+    tenantId: cycle.tenant_id as string,
+    employeeIds: roster.map((p) => p.id),
+    managerIds: roster.map((p) => p.manager_id).filter((x): x is string => Boolean(x)),
+    placeholders: { cycle: String(cycle.name ?? "appraisal cycle") },
+    url: "/performance/appraisals",
+  });
+
   rev();
   return { ok: true };
 }
@@ -251,7 +264,7 @@ export async function applyCalibration(input: {
 
   const [{ data: ap }, { data: cyc }] = await Promise.all([
     supabase.from("appraisals").select("final_score, rating_label").eq("id", a.id).maybeSingle(),
-    supabase.from("appraisal_cycles").select("rating_bands").eq("id", a.cycle_id).maybeSingle(),
+    supabase.from("appraisal_cycles").select("rating_bands, name").eq("id", a.cycle_id).maybeSingle(),
   ]);
   if (ap?.final_score == null)
     return { ok: false, error: "This appraisal has no score to calibrate yet." };
@@ -288,19 +301,18 @@ export async function applyCalibration(input: {
       input.reason?.trim() ? ` — ${input.reason.trim()}` : ""
     }`,
   );
-  // Tell the evaluators (manager + second-level) the committee adjusted the
-  // score. The reason stays committee-confidential; this is just a heads-up.
-  const recipients = [a.manager_id, a.second_level_id].filter(Boolean) as string[];
-  if (recipients.length) {
-    await notifyUsers({
-      tenantId: a.tenant_id,
-      profileIds: recipients,
-      category: "approval",
-      title: "Appraisal score calibrated",
-      body: `The calibration committee set the final score to ${newScore}% (${newLabel}).`,
-      url: "/performance/appraisals",
-    });
-  }
+  // Tell the configured recipients the committee finished calibrating. The
+  // reason stays committee-confidential; this is just a heads-up.
+  await dispatchEvent("calibration_completed", {
+    tenantId: a.tenant_id,
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    secondLevelIds: a.second_level_id ? [a.second_level_id] : [],
+    placeholders: {
+      cycle: String((cyc as { name?: string } | null)?.name ?? "the cycle"),
+      rating: `${newScore}% (${newLabel})`,
+    },
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
@@ -369,6 +381,44 @@ async function requireEmployeeEditable(id: string): Promise<{ a: AppraisalRow } 
   return { a };
 }
 
+/**
+ * Objective (OKR) weights must total exactly 100% so the weighted score reflects
+ * the full allocation. Development goals are weighted separately by the cycle, so
+ * they're excluded here. Returns an error message, or null when valid.
+ */
+type GoalRuleConfig = {
+  minGoals: number;
+  maxGoals: number;
+  minGoalWeight: number;
+  maxGoalWeight: number;
+  goalWeightsTotal100: boolean;
+};
+
+/** Validate objectives against the tenant's configured goal rules. */
+function objectiveWeightError(
+  goals: { weight: number | null; kind: string }[],
+  config?: GoalRuleConfig,
+): string | null {
+  const objectives = goals.filter((g) => g.kind === "objective");
+  const min = config?.minGoals ?? 1;
+  if (objectives.length < Math.max(1, min))
+    return `Add at least ${Math.max(1, min)} objective${min === 1 ? "" : "s"} (KPI/OKR) before submitting.`;
+  if (config && objectives.length > config.maxGoals)
+    return `You can set at most ${config.maxGoals} objective${config.maxGoals === 1 ? "" : "s"}.`;
+  if (config) {
+    for (const g of objectives) {
+      const w = g.weight ?? 0;
+      if (w < config.minGoalWeight || w > config.maxGoalWeight)
+        return `Each objective's weight must be between ${config.minGoalWeight}% and ${config.maxGoalWeight}%.`;
+    }
+  }
+  if (!config || config.goalWeightsTotal100) {
+    const sum = objectives.reduce((s, g) => s + (g.weight ?? 0), 0);
+    if (sum !== 100) return `Objective weights must total 100% — they currently total ${sum}%.`;
+  }
+  return null;
+}
+
 export async function addGoal(input: {
   appraisalId: string;
   title: string;
@@ -385,6 +435,24 @@ export async function addGoal(input: {
   const a = guard.a;
   if (!input.title.trim()) return { ok: false, error: "Goal title is required." };
   const supabase = createClient();
+  const kind = input.kind === "development" ? "development" : "objective";
+
+  // Enforce the tenant's configured cap on the number of objectives.
+  if (kind === "objective") {
+    const config = await getPerformanceConfig();
+    const { count } = await supabase
+      .from("appraisal_goals")
+      .select("id", { count: "exact", head: true })
+      .eq("appraisal_id", a.id)
+      .eq("kind", "objective");
+    if ((count ?? 0) >= config.maxGoals) {
+      return {
+        ok: false,
+        error: `You can set at most ${config.maxGoals} objective${config.maxGoals === 1 ? "" : "s"}.`,
+      };
+    }
+  }
+
   const { error } = await supabase.from("appraisal_goals").insert({
     tenant_id: a.tenant_id,
     appraisal_id: a.id,
@@ -395,7 +463,7 @@ export async function addGoal(input: {
     success_indicator: input.successIndicator?.trim() || null,
     alignment: input.alignment?.trim() || null,
     evidence_required: input.evidenceRequired?.trim() || null,
-    kind: input.kind === "development" ? "development" : "objective",
+    kind,
   });
   if (error) return { ok: false, error: error.message };
   if (a.status === "not_started")
@@ -440,45 +508,159 @@ export async function deleteGoal(input: { goalId: string; appraisalId: string })
 }
 
 /** Employee submits their goal plan for the line manager to review. */
+/** Copy the employee's objectives from their most recent prior appraisal. */
+export async function carryForwardGoals(appraisalId: string): Promise<ActionResult> {
+  const guard = await requireEmployeeEditable(appraisalId);
+  if ("ok" in guard) return guard;
+  const a = guard.a;
+  const config = await getPerformanceConfig();
+  if (!config.allowCarryForward)
+    return { ok: false, error: "Carry-forward is turned off for your organisation." };
+  const supabase = createClient();
+
+  const { data: prior } = await supabase
+    .from("appraisals")
+    .select("id")
+    .eq("employee_id", a.employee_id)
+    .neq("id", a.id)
+    .neq("cycle_id", a.cycle_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!prior) return { ok: false, error: "No previous appraisal to carry goals from." };
+
+  const { data: priorGoals } = await supabase
+    .from("appraisal_goals")
+    .select("title, description, weight, success_indicator, alignment")
+    .eq("appraisal_id", (prior as { id: string }).id)
+    .eq("kind", "objective");
+  if (!priorGoals?.length) return { ok: false, error: "Your previous appraisal had no objectives." };
+
+  const { data: existing } = await supabase
+    .from("appraisal_goals")
+    .select("title")
+    .eq("appraisal_id", a.id);
+  const have = new Set(((existing ?? []) as { title: string }[]).map((g) => g.title.toLowerCase()));
+  const rows = (priorGoals as Record<string, unknown>[])
+    .filter((g) => !have.has(String(g.title).toLowerCase()))
+    .map((g) => ({
+      tenant_id: a.tenant_id,
+      appraisal_id: a.id,
+      title: g.title,
+      description: g.description,
+      weight: g.weight,
+      success_indicator: g.success_indicator,
+      alignment: g.alignment,
+      kind: "objective",
+    }));
+  if (rows.length === 0) return { ok: false, error: "Those objectives are already on this appraisal." };
+
+  const { error } = await supabase.from("appraisal_goals").insert(rows);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 export async function submitGoals(appraisalId: string): Promise<ActionResult> {
   const guard = await requireEmployeeEditable(appraisalId);
   if ("ok" in guard) return guard;
   const a = guard.a;
   const supabase = createClient();
-  const { count } = await supabase
+  const config = await getPerformanceConfig();
+  const { data: goalRows } = await supabase
     .from("appraisal_goals")
-    .select("id", { count: "exact", head: true })
+    .select("weight, kind, success_indicator, alignment")
     .eq("appraisal_id", a.id);
-  if (!count) return { ok: false, error: "Add at least one goal before submitting." };
+  const goals = (goalRows ?? []) as {
+    weight: number | null;
+    kind: string;
+    success_indicator: string | null;
+    alignment: string | null;
+  }[];
+  if (goals.length === 0) return { ok: false, error: "Add at least one goal before submitting." };
+  const weightError = objectiveWeightError(goals, config);
+  if (weightError) return { ok: false, error: weightError };
+  const objectives = goals.filter((g) => g.kind === "objective");
+  if (config.requireSuccessIndicator && objectives.some((g) => !g.success_indicator?.trim()))
+    return { ok: false, error: "Every objective needs a success indicator." };
+  if (config.requireAlignment && objectives.some((g) => !g.alignment?.trim()))
+    return { ok: false, error: "Every objective must be aligned to a higher-level objective." };
   const { error } = await supabase
     .from("appraisals")
     .update({ status: "pending_manager_review" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent(a, "goals_submitted");
-  if (a.manager_id)
-    await notifyUsers({
-      tenantId: a.tenant_id,
-      profileIds: [a.manager_id],
-      category: "approval",
-      title: "Goals submitted for review",
-      body: "A team member submitted their performance goals for your review.",
-      url: "/performance/appraisals",
-    });
+  const { data: subEmp } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", a.employee_id)
+    .maybeSingle();
+  await dispatchEvent("goal_submission", {
+    tenantId: a.tenant_id,
+    employeeIds: [a.employee_id],
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    placeholders: { employee: (subEmp as { full_name?: string } | null)?.full_name ?? "A team member" },
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
 
 // --- Manager: goal review ---------------------------------------------------
 
+/** Whether `me` is the appraisal delegate the given manager has nominated. */
+async function isDelegateOf(managerId: string | null, me: string | null): Promise<boolean> {
+  if (!managerId || !me || managerId === me) return false;
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("appraisal_delegate_id")
+    .eq("id", managerId)
+    .maybeSingle();
+  return (data?.appraisal_delegate_id ?? null) === me;
+}
+
 async function requireManager(id: string): Promise<{ a: AppraisalRow } | ActionResult> {
   const a = await loadAppraisal(id);
   if (!a) return { ok: false, error: "Appraisal not found." };
   const me = await uid();
   const access = await getAccess();
-  const isReviewer = a.manager_id === me || access.isHr || access.isAdmin || access.isSystemAdmin;
-  if (!isReviewer) return { ok: false, error: "Only the line manager can review this." };
+  const isReviewer =
+    a.manager_id === me ||
+    access.isHr ||
+    access.isAdmin ||
+    access.isSystemAdmin ||
+    (await isDelegateOf(a.manager_id, me));
+  if (!isReviewer) return { ok: false, error: "Only the line manager (or their delegate) can review this." };
   return { a };
+}
+
+/**
+ * A manager nominates (or clears) an appraisal delegate — a colleague who may act
+ * on their team's appraisals while they're unavailable. Pass null to clear.
+ */
+export async function setAppraisalDelegate(delegateId: string | null): Promise<ActionResult> {
+  const me = await uid();
+  if (!me) return { ok: false, error: "You're not signed in." };
+  const supabase = createClient();
+  if (delegateId) {
+    if (delegateId === me) return { ok: false, error: "You can't delegate to yourself." };
+    const { data: d } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", delegateId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!d) return { ok: false, error: "Choose an active colleague to delegate to." };
+  }
+  const { error } = await supabase
+    .from("profiles")
+    .update({ appraisal_delegate_id: delegateId })
+    .eq("id", me);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
 }
 
 export async function returnGoals(input: { appraisalId: string; comment: string }): Promise<ActionResult> {
@@ -494,12 +676,11 @@ export async function returnGoals(input: { appraisalId: string; comment: string 
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent(a, "goals_returned", input.comment);
-  await notifyUsers({
+  await dispatchEvent("goal_rejection", {
     tenantId: a.tenant_id,
-    profileIds: [a.employee_id],
-    category: "approval",
-    title: "Goals returned for correction",
-    body: input.comment?.trim() || "Your manager asked for changes to your goals.",
+    employeeIds: [a.employee_id],
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    placeholders: { reason: input.comment?.trim() || "your manager asked for changes" },
     url: "/performance/appraisals",
   });
   rev();
@@ -517,8 +698,17 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
 
   const { data: goals } = await supabase
     .from("appraisal_goals")
-    .select("id, title, weight, deadline, success_indicator, description")
+    .select("id, title, weight, deadline, success_indicator, description, kind")
     .eq("appraisal_id", a.id);
+
+  const apprConfig = await getPerformanceConfig();
+  const weightError = objectiveWeightError(
+    (goals ?? []) as { weight: number | null; kind: string }[],
+    apprConfig,
+  );
+  if (weightError) {
+    return { ok: false, error: `Can't approve — ${weightError[0].toLowerCase()}${weightError.slice(1)}` };
+  }
 
   await supabase.from("appraisal_goals").update({ status: "approved" }).eq("appraisal_id", a.id);
   // Snapshot the approved plan into history (originals are retained).
@@ -574,6 +764,25 @@ async function requireManagerAt(
   return guard;
 }
 
+/**
+ * Gate rating writes on the configurable permission matrix (`ratings_edit`).
+ * The actor has already passed the relationship guard; this lets HR turn off a
+ * role's ability to modify ratings. A manager's delegate acts as the manager.
+ */
+async function requireRatingsEdit(a: AppraisalRow): Promise<ActionResult | null> {
+  const me = await uid();
+  const actsAsManager = a.manager_id === me || (await isDelegateOf(a.manager_id, me));
+  const { can } = await getAppraisalCapabilities({
+    isSelf: a.employee_id === me,
+    isDirectManager: actsAsManager,
+    isSecondLevel: a.second_level_id === me,
+  });
+  if (!can("ratings_edit")) {
+    return { ok: false, error: "Your role isn't permitted to modify ratings." };
+  }
+  return null;
+}
+
 /** Employee records progress (mid-year) or self-rating (final) on a goal. */
 export async function updateGoalProgress(input: {
   appraisalId: string;
@@ -610,15 +819,14 @@ export async function submitMidYear(appraisalId: string): Promise<ActionResult> 
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent(a, "midyear_submitted");
-  if (a.manager_id)
-    await notifyUsers({
-      tenantId: a.tenant_id,
-      profileIds: [a.manager_id],
-      category: "approval",
-      title: "Mid-year progress submitted",
-      body: "A team member submitted mid-year progress for review.",
-      url: "/performance/appraisals",
-    });
+  const { data: myEmp } = await supabase.from("profiles").select("full_name").eq("id", a.employee_id).maybeSingle();
+  await dispatchEvent("approval_request", {
+    tenantId: a.tenant_id,
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    secondLevelIds: a.second_level_id ? [a.second_level_id] : [],
+    placeholders: { employee: (myEmp as { full_name?: string } | null)?.full_name ?? "A team member" },
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
@@ -667,15 +875,14 @@ export async function submitSelfAssessment(input: {
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "self_assessment" }, "self_assessment_submitted");
-  if (a.manager_id)
-    await notifyUsers({
-      tenantId: a.tenant_id,
-      profileIds: [a.manager_id],
-      category: "approval",
-      title: "Self-assessment submitted",
-      body: "A team member submitted their year-end self-assessment for evaluation.",
-      url: "/performance/appraisals",
-    });
+  const { data: saEmp } = await supabase.from("profiles").select("full_name").eq("id", a.employee_id).maybeSingle();
+  await dispatchEvent("approval_request", {
+    tenantId: a.tenant_id,
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    secondLevelIds: a.second_level_id ? [a.second_level_id] : [],
+    placeholders: { employee: (saEmp as { full_name?: string } | null)?.full_name ?? "A team member" },
+    url: "/performance/appraisals",
+  });
   rev();
   return { ok: true };
 }
@@ -689,6 +896,8 @@ export async function setManagerRating(input: {
 }): Promise<ActionResult> {
   const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
   if ("ok" in guard) return guard;
+  const denied = await requireRatingsEdit(guard.a);
+  if (denied) return denied;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.rating !== undefined) patch.manager_rating = Math.max(0, Math.min(5, input.rating));
@@ -707,20 +916,30 @@ export async function submitManagerEvaluation(input: {
   const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
   if ("ok" in guard) return guard;
   const a = guard.a;
+  const denied = await requireRatingsEdit(a);
+  if (denied) return denied;
   const supabase = createClient();
 
-  const [{ data: goals }, { data: comps }, { data: cycle }] = await Promise.all([
-    supabase.from("appraisal_goals").select("kind, weight, manager_rating").eq("appraisal_id", a.id),
-    supabase
-      .from("appraisal_competency_ratings")
-      .select("manager_rating")
-      .eq("appraisal_id", a.id),
-    supabase
-      .from("appraisal_cycles")
-      .select("weight_okr, weight_competency, weight_development, require_second_level, rating_bands")
-      .eq("id", a.cycle_id)
-      .maybeSingle(),
-  ]);
+  const [{ data: goals }, { data: comps }, { data: compFramework }, { data: cycle }] =
+    await Promise.all([
+      supabase.from("appraisal_goals").select("kind, weight, manager_rating").eq("appraisal_id", a.id),
+      supabase
+        .from("appraisal_competency_ratings")
+        .select("manager_rating, competency_id")
+        .eq("appraisal_id", a.id),
+      supabase.from("appraisal_competencies").select("id, weight"),
+      supabase
+        .from("appraisal_cycles")
+        .select("weight_okr, weight_competency, weight_development, require_second_level, rating_bands")
+        .eq("id", a.cycle_id)
+        .maybeSingle(),
+    ]);
+  const compWeight = new Map(
+    ((compFramework ?? []) as { id: string; weight: number | null }[]).map((c) => [
+      c.id,
+      Math.max(1, c.weight ?? 1),
+    ]),
+  );
 
   // OKR component: weighted (by goal weight) average of objective ratings, 1–5.
   let okrW = 0;
@@ -747,15 +966,20 @@ export async function submitManagerEvaluation(input: {
   if (okrCount === 0) return { ok: false, error: "Rate at least one objective before submitting." };
   const okrAvg = okrW > 0 ? okrAcc / okrW : okrPlain / okrCount; // 1–5
 
-  // Competency component: simple average, 1–5.
+  // Competency component: weight-weighted average of the manager ratings, 1–5
+  // (each competency carries a relative weight; default 1 = equal weighting).
   let compAcc = 0;
+  let compW = 0;
   let compCount = 0;
   for (const c of comps ?? []) {
     const r = c.manager_rating as number | null;
     if (r == null) continue;
-    compAcc += r;
+    const w = compWeight.get(c.competency_id as string) ?? 1;
+    compAcc += w * r;
+    compW += w;
     compCount += 1;
   }
+  const compAvg = compW > 0 ? compAcc / compW : 0;
 
   // Component %s (rating/5 → %), then weight by the cycle's configured weights,
   // normalising over the components that actually have data.
@@ -766,7 +990,7 @@ export async function submitManagerEvaluation(input: {
   let num = pct(okrAvg) * wOkr;
   let den = wOkr;
   if (compCount > 0) {
-    num += pct(compAcc / compCount) * wComp;
+    num += pct(compAvg) * wComp;
     den += wComp;
   }
   if (devCount > 0) {
@@ -920,12 +1144,10 @@ export async function recordDiscussion(input: {
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "final_discussion" }, "discussion_recorded");
-  await notifyUsers({
+  await dispatchEvent("acknowledgement_required", {
     tenantId: a.tenant_id,
-    profileIds: [a.employee_id],
-    category: "approval",
-    title: "Appraisal ready to acknowledge",
-    body: "Your manager recorded the appraisal discussion — please review and acknowledge.",
+    employeeIds: [a.employee_id],
+    managerIds: a.manager_id ? [a.manager_id] : [],
     url: "/performance/appraisals",
   });
   rev();
@@ -994,6 +1216,38 @@ export async function closeAppraisal(appraisalId: string): Promise<ActionResult>
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "acknowledgement" }, "appraisal_closed");
+  await dispatchEvent("review_completed", {
+    tenantId: a.tenant_id,
+    employeeIds: [a.employee_id],
+    managerIds: a.manager_id ? [a.manager_id] : [],
+    url: "/performance/appraisals",
+  });
+  rev();
+  return { ok: true };
+}
+
+/**
+ * HR re-opens a closed appraisal to amend it (fix a score/typo, re-calibrate).
+ * It returns to the acknowledged `completed` state so HR can adjust the outcome
+ * and close it again; the reason is logged for audit.
+ */
+export async function reopenAppraisal(input: {
+  appraisalId: string;
+  reason: string;
+}): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  if (!input.reason?.trim()) return { ok: false, error: "Give a reason for re-opening." };
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (a.status !== "closed") return { ok: false, error: "Only a closed appraisal can be re-opened." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ stage: "acknowledgement", status: "completed" })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+  await logEvent({ ...a, stage: "closed" }, "appraisal_reopened", input.reason.trim());
   rev();
   return { ok: true };
 }
@@ -1045,6 +1299,7 @@ export async function resolveAppeal(input: {
 export async function addCompetency(input: {
   name: string;
   description?: string;
+  weight?: number;
 }): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;
@@ -1056,10 +1311,16 @@ export async function addCompetency(input: {
     tenant_id: tenant.id,
     name: input.name.trim(),
     description: input.description?.trim() || null,
+    weight: clampCompetencyWeight(input.weight),
   });
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
+}
+
+function clampCompetencyWeight(w: number | undefined): number {
+  if (w === undefined || !Number.isFinite(w)) return 1;
+  return Math.max(1, Math.min(100, Math.floor(w)));
 }
 
 export async function setCompetencyActive(id: string, isActive: boolean): Promise<ActionResult> {
@@ -1069,6 +1330,20 @@ export async function setCompetencyActive(id: string, isActive: boolean): Promis
   const { error } = await supabase
     .from("appraisal_competencies")
     .update({ is_active: isActive })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** HR sets a competency's relative weight in the score (1 = default). */
+export async function setCompetencyWeight(id: string, weight: number): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_competencies")
+    .update({ weight: clampCompetencyWeight(weight) })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
   rev();
@@ -1108,6 +1383,8 @@ export async function rateCompetencyManager(input: {
   const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
   if ("ok" in guard) return guard;
   const a = guard.a;
+  const denied = await requireRatingsEdit(a);
+  if (denied) return denied;
   const supabase = createClient();
   const row: Record<string, unknown> = {
     tenant_id: a.tenant_id,

@@ -4,10 +4,12 @@ import { getAccess } from "@/lib/auth";
 import { getCanteenFeedback, getDepartments } from "@/lib/reports";
 import { ISSUE_LABEL, type IssueType } from "@/types/feedback";
 import { cn } from "@/lib/utils";
+import { ProgressiveTableBody } from "@/components/ui/progressive-list";
 import { ReportFilters } from "../_components/report-filters";
 import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
+import { ReportStampFooter } from "../_components/report-stamp-footer";
 
 function iso(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -20,7 +22,7 @@ export default async function CanteenFeedbackReportPage({
   searchParams: Promise<{ from?: string; to?: string; department?: string }>;
 }) {
   const access = await getAccess();
-  if (!(access.isSystemAdmin || access.isAdmin || access.isHr || access.isCanteenManager)) {
+  if (!(access.isSystemAdmin || access.isAdmin || access.isHr || access.isCanteenManager || access.isHrCanteen)) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
         <ShieldX className="mx-auto h-12 w-12 text-destructive" />
@@ -122,7 +124,7 @@ export default async function CanteenFeedbackReportPage({
               <th className="px-3 py-2 font-medium">Comment</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <ProgressiveTableBody colSpan={7} className="divide-y" label="Show more feedback">
             {report.rows.map((r, i) => (
               <tr key={`${r.service_date}-${i}`} className={cn(r.status === "open" && r.issue !== "none" && "bg-amber-50")}>
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{r.service_date}</td>
@@ -141,9 +143,10 @@ export default async function CanteenFeedbackReportPage({
                 </td>
               </tr>
             )}
-          </tbody>
+          </ProgressiveTableBody>
         </table>
       </div>
+      <ReportStampFooter />
     </div>
   );
 }

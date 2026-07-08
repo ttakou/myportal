@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { FileBarChart, Siren } from "lucide-react";
+import { BookOpenCheck, FileBarChart, Siren } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
-import { getVisitors } from "@/lib/visitors";
+import { getVisitors, getDepartments } from "@/lib/visitors";
 import { getStaffRoster } from "@/lib/staff-attendance";
 import { today } from "@/lib/canteen";
 import { VisitorsBoard } from "./_components/visitors-board";
@@ -20,11 +20,12 @@ export default async function VisitorsPage(
       ? searchParams.date
       : today();
 
-  const [visitors, role, access, perms] = await Promise.all([
+  const [visitors, role, access, perms, departments] = await Promise.all([
     getVisitors(visitDate),
     getCurrentRole(),
     getAccess(),
     getMyPermissions(),
+    getDepartments(),
   ]);
   const isAdmin = isAdminRole(role);
   // Security / reception / emergency responders (e.g. ERTL) plus admins get the
@@ -54,6 +55,15 @@ export default async function VisitorsPage(
           )}
           {canOperate && (
             <Link
+              href="/visitors/register"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent"
+            >
+              <BookOpenCheck className="h-4 w-4" />
+              Access register
+            </Link>
+          )}
+          {canOperate && (
+            <Link
               href="/visitors/muster"
               className="inline-flex items-center gap-2 rounded-md border border-destructive/40 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
             >
@@ -64,7 +74,12 @@ export default async function VisitorsPage(
         </div>
       </div>
 
-      <VisitorsBoard visitDate={visitDate} visitors={visitors} isAdmin={isAdmin} />
+      <VisitorsBoard
+        visitDate={visitDate}
+        visitors={visitors}
+        isAdmin={isAdmin}
+        departments={departments}
+      />
 
       {canOperate && <StaffBoard rows={staffRoster} />}
     </div>

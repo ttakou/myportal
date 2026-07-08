@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/types/database";
 
 export type EmployeeType = "employee" | "contractor" | "guest";
@@ -7,6 +8,7 @@ export interface TenantUser {
   id: string;
   full_name: string | null;
   email: string | null;
+  emp_num: string | null;
   role: UserRole;
   job_title: string | null;
   manager_id: string | null;
@@ -33,7 +35,7 @@ export async function getTenantUsers(): Promise<TenantUser[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type, profile_roles(role), profile_access_roles(role_id)")
+    .select("id, full_name, email, emp_num, role, job_title, manager_id, is_active, department, lunch_eligible, employee_type, profile_roles(role), profile_access_roles(role_id)")
     .order("full_name");
   if (error) {
     console.error("getTenantUsers:", error.message);
@@ -44,6 +46,39 @@ export async function getTenantUsers(): Promise<TenantUser[]> {
     functional_roles: (u.profile_roles ?? []).map((r: { role: string }) => r.role),
     access_role_ids: (u.profile_access_roles ?? []).map((r: { role_id: string }) => r.role_id),
   }));
+}
+
+export interface PendingUser {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  created_at: string;
+  /** When the holder asked an admin for access (null if they never did). */
+  access_requested_at: string | null;
+}
+
+/**
+ * Tenant-less sign-ups awaiting access (a fresh sign-up or SSO first login).
+ * These rows are invisible under RLS (no tenant), so we read them with the
+ * service role — callers MUST gate this to administrators. Most-recently
+ * requested first, then newest sign-ups.
+ */
+export async function getPendingUsers(): Promise<PendingUser[]> {
+  const admin = createAdminClient();
+  if (!admin) return [];
+  const { data, error } = await admin
+    .from("profiles")
+    .select("id, full_name, email, created_at, access_requested_at")
+    .is("tenant_id", null)
+    .neq("role", "super_admin")
+    .eq("is_active", true)
+    .order("access_requested_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("getPendingUsers:", error.message);
+    return [];
+  }
+  return (data ?? []) as PendingUser[];
 }
 
 /** Catalog of modules with whether the current tenant has each one active. */
