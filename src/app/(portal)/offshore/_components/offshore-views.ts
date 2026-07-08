@@ -71,3 +71,99 @@ export function resolveManagementView(raw: string | null | undefined): OffshoreV
   }
   return DEFAULT_OFFSHORE_VIEW;
 }
+
+// =============================================================================
+// Consolidated sidebar: the 16 flat views collapse into 9 entries ("hubs").
+// A hub's sub-views render as a tab bar in the management area; each tab links
+// straight to the original `?view=` key, so deep-links, gating and the
+// one-panel-at-a-time switch are untouched.
+// =============================================================================
+
+export interface OffshoreHubTab {
+  key: OffshoreViewKey;
+  label: string;
+}
+
+export interface OffshoreHub {
+  /** Landing view — the tab shown when the sidebar entry is clicked. */
+  key: OffshoreViewKey;
+  label: string;
+  icon: string;
+  /** All views the hub contains (first = landing). Absent = single view. */
+  tabs?: OffshoreHubTab[];
+}
+
+export const OFFSHORE_HUBS: OffshoreHub[] = [
+  { key: "mytrips", label: "My trips & requests", icon: "Ship" },
+  {
+    key: "dashboard", label: "POB & Live Board", icon: "LayoutGrid",
+    tabs: [
+      { key: "dashboard", label: "Overview" },
+      { key: "board", label: "Live board" },
+      { key: "catering", label: "Catering" },
+    ],
+  },
+  {
+    key: "crews", label: "Crew Rotation", icon: "CalendarClock",
+    tabs: [
+      { key: "crews", label: "Crew change" },
+      { key: "calendar", label: "Rotation calendar" },
+    ],
+  },
+  {
+    key: "roster", label: "Offshore Staff", icon: "Users",
+    tabs: [
+      { key: "roster", label: "Staff roster" },
+      { key: "assign", label: "Assign crews" },
+    ],
+  },
+  {
+    key: "rooms", label: "Accommodation", icon: "BedDouble",
+    tabs: [
+      { key: "rooms", label: "Rooms" },
+      { key: "bedboard", label: "Bed board" },
+    ],
+  },
+  {
+    key: "manifests", label: "Travel & Manifests", icon: "ClipboardList",
+    tabs: [
+      { key: "manifests", label: "Manifests" },
+      { key: "visitors", label: "Visitors" },
+    ],
+  },
+  {
+    key: "emergency", label: "Emergency & Muster", icon: "LifeBuoy",
+    tabs: [
+      { key: "emergency", label: "Muster roles" },
+      { key: "drill", label: "Muster drill" },
+    ],
+  },
+  { key: "installations", label: "Installations", icon: "Anchor" },
+  { key: "history", label: "History", icon: "History" },
+];
+
+/** The hub a view belongs to (as landing view or tab), if any. */
+export function hubForOffshoreView(key: OffshoreViewKey): OffshoreHub | null {
+  return OFFSHORE_HUBS.find((h) => h.key === key || h.tabs?.some((t) => t.key === key)) ?? null;
+}
+
+export interface OffshoreNavItem {
+  key: OffshoreViewKey;
+  label: string;
+  icon: string;
+  href: string;
+  /** All `?view=` values that keep this entry highlighted (the hub's tabs). */
+  matchViews?: string[];
+}
+
+/** Consolidated sidebar submenu: one entry per hub, gated like the flat list. */
+export function offshoreHubSubmenu(canManage: boolean): OffshoreNavItem[] {
+  const hubs = canManage ? OFFSHORE_HUBS : OFFSHORE_HUBS.filter((h) => h.key === "mytrips");
+  return hubs.map((h) => ({
+    key: h.key,
+    label: h.label,
+    icon: h.icon,
+    href: `/offshore?view=${h.key}`,
+    matchViews: h.tabs?.map((t) => t.key),
+  }));
+}

@@ -3,7 +3,7 @@ import { LayoutDashboard, FileBarChart } from "lucide-react";
 import { getActiveServices } from "@/lib/services";
 import { getAccess } from "@/lib/auth";
 import { hasDirectReports } from "@/lib/appraisals";
-import { offshoreSubmenu } from "@/app/(portal)/offshore/_components/offshore-views";
+import { offshoreHubSubmenu } from "@/app/(portal)/offshore/_components/offshore-views";
 import { performanceSubmenu } from "@/app/(portal)/performance/_components/performance-views";
 import { canteenSubmenu } from "@/app/(portal)/canteen/_components/canteen-views";
 import { trainingSubmenu } from "@/app/(portal)/training/_components/training-views";
@@ -91,12 +91,7 @@ export async function Sidebar({
       return {
         ...base,
         defaultSubKey: "mytrips",
-        subItems: offshoreSubmenu(canManageOffshore).map((v) => ({
-          key: v.key,
-          label: v.label,
-          icon: v.icon,
-          href: `/offshore?view=${v.key}`,
-        })),
+        subItems: offshoreHubSubmenu(canManageOffshore),
       };
     }
     // Training & Competence: My Training for everyone; Team views for managers;
