@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
-import { CanteenTabs, canteenAccessOf } from "../../canteen/_components/canteen-tabs";
+import { CanteenTabs } from "../../canteen/_components/canteen-tabs";
+import { canteenAccessOf } from "../../canteen/_components/canteen-views";
 import { getCanteenFeedback, getDepartments } from "@/lib/reports";
 import { ISSUE_LABEL, type IssueType } from "@/types/feedback";
 import { cn } from "@/lib/utils";

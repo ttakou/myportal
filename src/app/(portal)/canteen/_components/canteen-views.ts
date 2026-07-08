@@ -112,3 +112,21 @@ export function canteenTabsFor(
   if (permitted.length < 2) return [];
   return permitted.map((t) => ({ label: t.label, href: t.href }));
 }
+
+/** Map the app's access flags to CanteenAccess. Plain (server-safe) helper. */
+export function canteenAccessOf(a: {
+  isCanteenStaff: boolean;
+  isCanteenManager: boolean;
+  isHrCanteen: boolean;
+  isFinance: boolean;
+  isOim: boolean;
+}): CanteenAccess {
+  return {
+    canServe: a.isCanteenStaff,
+    canManage: a.isCanteenManager,
+    canEntitle: a.isHrCanteen,
+    canReport: a.isFinance || a.isCanteenManager,
+    isOim: a.isOim,
+    isHrCanteen: a.isHrCanteen,
+  };
+}
