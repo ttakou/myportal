@@ -206,7 +206,7 @@ export interface TrainingNavItem {
 // direct reports under "My Team Training", and the admin tools under
 // "Training Admin Console".
 const SECTION: Record<TrainingGroup, string> = {
-  "My Training": "My Training",
+  "My Training": "My Personal Training",
   "Team Training": "My Team Training",
   "HR Administration": "Training Admin Console",
   Reports: "Training Admin Console",
