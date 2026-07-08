@@ -1341,3 +1341,29 @@ export async function commitTrainingSchedule(input: {
   rev();
   return { ok: true };
 }
+
+/**
+ * Lazy fetch for the Course History view: participants of one past session,
+ * loaded when the row is expanded. Training admins only (matches the view).
+ */
+export async function getCourseSessionParticipants(
+  sessionId: string,
+): Promise<{ full_name: string; status: string; score: number | null }[]> {
+  const gate = await requireModule("training", "manage");
+  if (gate) return [];
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("training_participants")
+    .select("status, score, person:profiles!training_participants_profile_id_fkey(full_name)")
+    .eq("session_id", sessionId);
+  return ((data ?? []) as Record<string, any>[])
+    .map((p) => {
+      const person = Array.isArray(p.person) ? p.person[0] : p.person;
+      return {
+        full_name: (person?.full_name as string) ?? "—",
+        status: p.status as string,
+        score: (p.score as number | null) ?? null,
+      };
+    })
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+}

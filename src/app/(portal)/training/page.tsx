@@ -2,6 +2,7 @@ import { GraduationCap } from "lucide-react";
 import { hasDirectReports } from "@/lib/appraisals";
 import {
   getCourses,
+  getCourseHistory,
   getEmployeesLite,
   getMyCertificates,
   getMyMandatory,
@@ -94,14 +95,15 @@ import { MatrixPanel } from "./_components/matrix-panel";
 import { ProvidersPanel } from "./_components/providers-panel";
 import { TrainersPanel } from "./_components/trainers-panel";
 import { SessionsPanel } from "./_components/sessions-panel";
+import { CourseHistoryPanel } from "./_components/course-history-panel";
 import { ParticipantsPanel } from "./_components/participants-panel";
 
 export default async function TrainingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string; competency?: string }>;
+  searchParams: Promise<{ view?: string; session?: string; person?: string; dept?: string; competency?: string; course?: string }>;
 }) {
-  const { view, session, person, dept, competency } = await searchParams;
+  const { view, session, person, dept, competency, course } = await searchParams;
   const key = resolveTrainingView(view);
   const [admin, manager] = await Promise.all([isTrainingAdmin(), hasDirectReports()]);
   const access: TrainingAccess = { isManager: manager, isTrainingAdmin: admin };
@@ -256,6 +258,28 @@ export default async function TrainingPage({
           : [[], []];
         return (
           <EvaluationsPanel sessions={sessions} selectedId={selected} participants={participants} evaluations={evaluations} />
+        );
+      }
+      case "course-history": {
+        const courses = await getCourses();
+        const selected = course && courses.some((c) => c.id === course) ? course : null;
+        const history = selected ? await getCourseHistory(selected) : null;
+        // The most recent session opens pre-expanded, so preload its people.
+        const firstId = history?.sessions[0]?.id ?? null;
+        const initialParticipants = firstId
+          ? (await getParticipants(firstId)).map((p) => ({
+              full_name: p.full_name,
+              status: p.status,
+              score: p.score,
+            }))
+          : [];
+        return (
+          <CourseHistoryPanel
+            courses={courses.map((c) => ({ id: c.id, title: c.title, code: c.code ?? null }))}
+            selected={selected}
+            history={history}
+            initialParticipants={initialParticipants}
+          />
         );
       }
       case "providers":

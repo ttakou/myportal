@@ -1314,3 +1314,101 @@ export async function getTrainingDashboard(): Promise<TrainingDashboard> {
     nextSession: upcoming[0] ?? null,
   };
 }
+
+// --- Course history (when was it organised before, and who took it) ----------
+
+export interface CourseHistorySession {
+  id: string;
+  title: string | null;
+  location: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  trainer_name: string | null;
+  enrolled: number;
+}
+
+export interface CourseHistoryRecord {
+  full_name: string;
+  completed_on: string;
+  expires_on: string | null;
+  source: string;
+}
+
+export interface CourseHistory {
+  sessions: CourseHistorySession[];
+  /** Completions recorded outside any session (manual / external imports). */
+  externalRecords: CourseHistoryRecord[];
+  summary: {
+    timesOrganised: number;
+    peopleTrained: number;
+    lastHeld: string | null;
+    totalCompletions: number;
+  };
+}
+
+/**
+ * Everything a course has been through: every session ever organised (newest
+ * first, with headcount) plus completions recorded outside a session, and a
+ * roll-up summary. Feeds the HR "Course History" view.
+ */
+export async function getCourseHistory(courseId: string): Promise<CourseHistory> {
+  const supabase = createClient();
+  const [{ data: sessions }, { data: records }] = await Promise.all([
+    supabase
+      .from("training_sessions")
+      .select(
+        "id, title, location, starts_at, ends_at, status, trainer:training_trainers(full_name), training_participants(count)",
+      )
+      .eq("course_id", courseId)
+      .order("starts_at", { ascending: false, nullsFirst: false }),
+    supabase
+      .from("training_records")
+      .select(
+        "profile_id, session_id, completed_on, expires_on, source, person:profiles!training_records_profile_id_fkey(full_name)",
+      )
+      .eq("course_id", courseId)
+      .order("completed_on", { ascending: false }),
+  ]);
+
+  const sessionRows: CourseHistorySession[] = ((sessions ?? []) as Record<string, any>[]).map(
+    (s) => {
+      const trainer = Array.isArray(s.trainer) ? s.trainer[0] : s.trainer;
+      return {
+        id: s.id,
+        title: s.title ?? null,
+        location: s.location ?? null,
+        starts_at: s.starts_at ?? null,
+        ends_at: s.ends_at ?? null,
+        status: s.status,
+        trainer_name: trainer?.full_name ?? null,
+        enrolled: s.training_participants?.[0]?.count ?? 0,
+      };
+    },
+  );
+
+  const recs = (records ?? []) as Record<string, any>[];
+  const externalRecords: CourseHistoryRecord[] = recs
+    .filter((r) => !r.session_id)
+    .map((r) => {
+      const person = Array.isArray(r.person) ? r.person[0] : r.person;
+      return {
+        full_name: person?.full_name ?? "—",
+        completed_on: r.completed_on as string,
+        expires_on: (r.expires_on as string) ?? null,
+        source: (r.source as string) ?? "manual",
+      };
+    });
+
+  const held = sessionRows.filter((s) => s.status === "completed");
+  return {
+    sessions: sessionRows,
+    externalRecords,
+    summary: {
+      timesOrganised: sessionRows.length,
+      peopleTrained: new Set(recs.map((r) => r.profile_id as string)).size,
+      lastHeld: held[0]?.ends_at ?? held[0]?.starts_at ?? null,
+      totalCompletions: recs.length,
+    },
+  };
+}
