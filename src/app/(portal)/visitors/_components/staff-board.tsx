@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Users } from "lucide-react";
+import { MessageSquare, Search, Users } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -33,23 +33,37 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  // The row whose gate check-in form is open, plus its vehicle entry.
+  // The row whose gate check-in form is open, plus its vehicle + comment entry.
   const [checkInId, setCheckInId] = useState<string | null>(null);
   const [vehicleType, setVehicleType] = useState("");
   const [plate, setPlate] = useState("");
+  const [comment, setComment] = useState("");
+  // The row whose check-out form is open (captures an optional comment).
+  const [checkOutId, setCheckOutId] = useState<string | null>(null);
 
   function openCheckIn(id: string) {
+    setCheckOutId(null);
     setCheckInId(id);
     setVehicleType("");
     setPlate("");
+    setComment("");
   }
   function confirmCheckIn(id: string) {
     const vehicle =
       vehicleType.trim() || plate.trim()
         ? { type: vehicleType.trim() || null, plate: plate.trim() || null }
         : undefined;
-    run(() => staffCheckIn(id, vehicle));
+    run(() => staffCheckIn(id, vehicle, comment.trim() || null));
     setCheckInId(null);
+  }
+  function openCheckOut(id: string) {
+    setCheckInId(null);
+    setCheckOutId(id);
+    setComment("");
+  }
+  function confirmCheckOut(id: string) {
+    run(() => staffCheckOut(id, comment.trim() || null));
+    setCheckOutId(null);
   }
 
   const onSiteCount = rows.filter((r) => r.status === "on_site").length;
@@ -130,6 +144,18 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
                   <div className="text-xs text-muted-foreground">
                     {[s.job_title, s.department].filter(Boolean).join(" · ") || "—"}
                   </div>
+                  {s.check_in_comment && (
+                    <p className="mt-0.5 flex items-start gap-1 text-[11px] text-muted-foreground">
+                      <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>In: {s.check_in_comment}</span>
+                    </p>
+                  )}
+                  {s.check_out_comment && (
+                    <p className="mt-0.5 flex items-start gap-1 text-[11px] text-muted-foreground">
+                      <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>Out: {s.check_out_comment}</span>
+                    </p>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -148,12 +174,32 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap items-center justify-end gap-1.5">
-                    {s.status === "on_site" ? (
+                    {checkOutId === s.profile_id ? (
+                      <>
+                        <input
+                          value={comment}
+                          onChange={(e) => setComment(e.target.value)}
+                          placeholder="Comment (optional)"
+                          aria-label="Check-out comment"
+                          className={cn(field, "w-40")}
+                        />
+                        <Button size="sm" disabled={pending} onClick={() => confirmCheckOut(s.profile_id)}>
+                          Confirm
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => setCheckOutId(null)}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : s.status === "on_site" ? (
                       <Button
                         size="sm"
                         variant="outline"
                         disabled={pending}
-                        onClick={() => run(() => staffCheckOut(s.profile_id))}
+                        onClick={() => openCheckOut(s.profile_id)}
                       >
                         Check out
                       </Button>
@@ -178,6 +224,13 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
                           placeholder="Plate"
                           aria-label="Vehicle plate"
                           className={cn(field, "w-24")}
+                        />
+                        <input
+                          value={comment}
+                          onChange={(e) => setComment(e.target.value)}
+                          placeholder="Comment (optional)"
+                          aria-label="Check-in comment"
+                          className={cn(field, "w-40")}
                         />
                         <Button size="sm" disabled={pending} onClick={() => confirmCheckIn(s.profile_id)}>
                           Confirm

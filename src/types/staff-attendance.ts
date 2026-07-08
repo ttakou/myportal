@@ -20,6 +20,9 @@ export type StaffAttendance = {
   /** Vehicle the guard recorded at the gate on check-in (optional). */
   vehicle_type: string | null;
   vehicle_plate: string | null;
+  /** Optional free-text notes security added at check-in / check-out. */
+  check_in_comment: string | null;
+  check_out_comment: string | null;
 };
 
 /** The signed-in user's own attendance for the day (self check-in card). */

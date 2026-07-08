@@ -79,8 +79,16 @@ function RegisterRow({
           {KIND_LABEL[e.kind]}
         </span>
       </td>
-      <td className="px-3 py-2 text-muted-foreground">{e.org ?? "—"}</td>
-      <td className="px-3 py-2 text-muted-foreground">{e.detail ?? "—"}</td>
+      <td className="px-3 py-2 text-muted-foreground">
+        {e.detail ?? "—"}
+        {(e.check_in_comment || e.check_out_comment) && (
+          <span className="mt-0.5 block text-[11px] italic text-muted-foreground/80">
+            {[e.check_in_comment && `In: ${e.check_in_comment}`, e.check_out_comment && `Out: ${e.check_out_comment}`]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        )}
+      </td>
       <td className="px-3 py-2 text-muted-foreground">{e.vehicle ?? "—"}</td>
       <td className="px-3 py-2 tabular-nums text-muted-foreground">{clock(e.check_in_at)}</td>
       <td className="px-3 py-2 tabular-nums text-muted-foreground">
@@ -173,7 +181,7 @@ export default async function AccessRegisterPage({
   ].filter((x): x is string => Boolean(x));
 
   const csv: string[][] = [
-    ["Date", "Name", "Type", "Department/Company", "Detail", "Badge", "Vehicle", "In (UTC)", "Out (UTC)", "Duration"],
+    ["Date", "Name", "Type", "Department/Company", "Detail", "Badge", "Vehicle", "In (UTC)", "Out (UTC)", "Duration", "Check-in comment", "Check-out comment"],
     ...entries.map((e) => [
       e.date,
       e.name,
@@ -185,6 +193,8 @@ export default async function AccessRegisterPage({
       clock(e.check_in_at),
       clock(e.check_out_at),
       duration(e),
+      e.check_in_comment ?? "",
+      e.check_out_comment ?? "",
     ]),
   ];
 

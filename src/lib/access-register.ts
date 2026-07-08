@@ -26,6 +26,9 @@ export type AccessEntry = {
   vehicle: string | null;
   check_in_at: string | null;
   check_out_at: string | null;
+  /** Security comments captured at check-in / check-out (if any). */
+  check_in_comment: string | null;
+  check_out_comment: string | null;
 };
 
 export type AccessRegisterFilters = {
@@ -123,7 +126,7 @@ export async function getAccessRegister(
         let q = supabase
           .from("staff_attendance")
           .select(
-            "attendance_date, check_in_at, check_out_at, vehicle_type, vehicle_plate, profiles!staff_attendance_profile_id_fkey(id, full_name, department, job_title, employee_type)",
+            "attendance_date, check_in_at, check_out_at, check_in_comment, check_out_comment, vehicle_type, vehicle_plate, profiles!staff_attendance_profile_id_fkey(id, full_name, department, job_title, employee_type)",
           )
           .gte("attendance_date", f.from)
           .lte("attendance_date", f.to)
@@ -143,7 +146,7 @@ export async function getAccessRegister(
         let q = supabase
           .from("visitors")
           .select(
-            "full_name, company, purpose, service, visit_date, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, host:profiles!visitors_host_id_fkey(full_name)",
+            "full_name, company, purpose, service, visit_date, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, check_in_comment, check_out_comment, host:profiles!visitors_host_id_fkey(full_name)",
           )
           .is("visit_until", null)
           .gte("visit_date", f.from)
@@ -164,7 +167,7 @@ export async function getAccessRegister(
         let q = supabase
           .from("visitor_checkins")
           .select(
-            "check_in_at, check_out_at, badge_no, visitors!inner(full_name, company, purpose, service, vehicle_type, vehicle_plate, host:profiles!visitors_host_id_fkey(full_name))",
+            "check_in_at, check_out_at, badge_no, check_in_comment, check_out_comment, visitors!inner(full_name, company, purpose, service, vehicle_type, vehicle_plate, host:profiles!visitors_host_id_fkey(full_name))",
           )
           .gte("check_in_at", fromTs)
           .lte("check_in_at", toTs);
@@ -226,6 +229,8 @@ export async function getAccessRegister(
       ),
       check_in_at: (r.check_in_at as string) ?? null,
       check_out_at: (r.check_out_at as string) ?? null,
+      check_in_comment: (r.check_in_comment as string) ?? null,
+      check_out_comment: (r.check_out_comment as string) ?? null,
     });
   }
 
@@ -236,6 +241,8 @@ export async function getAccessRegister(
       badge: string | null;
       check_in_at: string | null;
       check_out_at: string | null;
+      check_in_comment: string | null;
+      check_out_comment: string | null;
     },
   ): AccessEntry | null => {
     // Visitors carry a service (department they visit); the department filter
@@ -256,6 +263,8 @@ export async function getAccessRegister(
       vehicle: vehicleLabel((v.vehicle_type as string) ?? null, (v.vehicle_plate as string) ?? null),
       check_in_at: entry.check_in_at,
       check_out_at: entry.check_out_at,
+      check_in_comment: entry.check_in_comment,
+      check_out_comment: entry.check_out_comment,
     };
   };
 
@@ -265,6 +274,8 @@ export async function getAccessRegister(
       badge: (v.badge_no as string) ?? null,
       check_in_at: (v.check_in_at as string) ?? null,
       check_out_at: (v.check_out_at as string) ?? null,
+      check_in_comment: (v.check_in_comment as string) ?? null,
+      check_out_comment: (v.check_out_comment as string) ?? null,
     });
     if (row) entries.push(row);
   }
@@ -280,6 +291,8 @@ export async function getAccessRegister(
       badge: (c.badge_no as string) ?? null,
       check_in_at: checkIn,
       check_out_at: (c.check_out_at as string) ?? null,
+      check_in_comment: (c.check_in_comment as string) ?? null,
+      check_out_comment: (c.check_out_comment as string) ?? null,
     });
     if (row) entries.push(row);
   }

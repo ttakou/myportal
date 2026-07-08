@@ -166,6 +166,8 @@ export async function checkInVisitor(
     infants?: number;
     children?: number;
     adolescents?: number;
+    /** Optional free-text note from reception/security. */
+    comment?: string;
   },
 ): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
@@ -181,6 +183,7 @@ export async function checkInVisitor(
   const isPass = visitor.visit_until != null;
   const now = new Date().toISOString();
   const minors = (n: number) => Math.max(0, Math.min(50, Math.round(Number(n) || 0)));
+  const comment = opts?.comment?.trim() ? opts.comment.trim().slice(0, 500) : null;
 
   // Vehicle / badge / minors live on the visitor row for both kinds; only
   // overwrite a field when a value is supplied so nothing is wiped by a blank.
@@ -190,6 +193,7 @@ export async function checkInVisitor(
   if (opts?.infants !== undefined) patch.accompanying_infants = minors(opts.infants);
   if (opts?.children !== undefined) patch.accompanying_children = minors(opts.children);
   if (opts?.adolescents !== undefined) patch.accompanying_adolescents = minors(opts.adolescents);
+  if (comment !== null) patch.check_in_comment = comment;
 
   if (isPass) {
     // A long-stay pass records each entry as its own row. Refuse if one is open
@@ -207,6 +211,7 @@ export async function checkInVisitor(
       visitor_id: id,
       check_in_at: now,
       badge_no: opts?.badgeNo?.trim() || null,
+      check_in_comment: comment,
     });
     if (entryErr) return { ok: false, error: entryErr.message };
     // Mirror the latest entry onto the row (vehicle/badge/minors + a coarse
@@ -266,7 +271,7 @@ export async function updateVisitorMinors(
   return { ok: true };
 }
 
-export async function checkOutVisitor(id: string): Promise<ActionResult> {
+export async function checkOutVisitor(id: string, comment?: string): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
   const supabase = createClient();
@@ -277,6 +282,7 @@ export async function checkOutVisitor(id: string): Promise<ActionResult> {
     .maybeSingle();
   if (!visitor) return { ok: false, error: "Visitor not found." };
   const now = new Date().toISOString();
+  const note = comment?.trim() ? comment.trim().slice(0, 500) : null;
 
   if (visitor.visit_until != null) {
     // A long-stay pass: close its currently-open entry. The pass itself stays
@@ -292,18 +298,18 @@ export async function checkOutVisitor(id: string): Promise<ActionResult> {
     if (!open) return { ok: false, error: "Visitor is not currently on site." };
     const { error } = await supabase
       .from("visitor_checkins")
-      .update({ check_out_at: now })
+      .update({ check_out_at: now, ...(note ? { check_out_comment: note } : {}) })
       .eq("id", open.id);
     if (error) return { ok: false, error: error.message };
     // Mirror the departure onto the row for reports/status views (see check-in).
     await supabase
       .from("visitors")
-      .update({ status: "checked_out", check_out_at: now })
+      .update({ status: "checked_out", check_out_at: now, ...(note ? { check_out_comment: note } : {}) })
       .eq("id", id);
   } else {
     const { error } = await supabase
       .from("visitors")
-      .update({ status: "checked_out", check_out_at: now })
+      .update({ status: "checked_out", check_out_at: now, ...(note ? { check_out_comment: note } : {}) })
       .eq("id", id);
     if (error) return { ok: false, error: error.message };
   }

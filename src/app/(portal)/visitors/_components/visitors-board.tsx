@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { CalendarRange, Car, UserCheck, UserPlus, Users } from "lucide-react";
+import { CalendarRange, Car, MessageSquare, UserCheck, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -141,6 +141,8 @@ export function VisitorsBoard({
 
   // Reception check-in dialog (captures badge + vehicle type/plate on arrival).
   const [checkIn, setCheckIn] = useState<Visitor | null>(null);
+  // Reception check-out dialog (captures an optional security comment).
+  const [checkOut, setCheckOut] = useState<Visitor | null>(null);
   // Correct accompanying-minor counts on an existing (e.g. pre-registered) visitor.
   const [editMinors, setEditMinors] = useState<Visitor | null>(null);
 
@@ -376,6 +378,22 @@ export function VisitorsBoard({
                       {accompanyingTotal(v) === 1 ? "" : "s"} ({accompanyingSummary(v)})
                     </div>
                   )}
+                  {(v.check_in_comment || v.check_out_comment) && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {v.check_in_comment && (
+                        <p className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                          <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span>In: {v.check_in_comment}</span>
+                        </p>
+                      )}
+                      {v.check_out_comment && (
+                        <p className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                          <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span>Out: {v.check_out_comment}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   <span className="block">{v.host_name ?? "—"}</span>
@@ -448,7 +466,7 @@ export function VisitorsBoard({
                         size="sm"
                         variant="outline"
                         disabled={pending}
-                        onClick={() => run(() => checkOutVisitor(v.id))}
+                        onClick={() => setCheckOut(v)}
                       >
                         Check out
                       </Button>
@@ -494,6 +512,17 @@ export function VisitorsBoard({
           onCancel={() => setEditMinors(null)}
           onSubmit={(counts) =>
             run(() => updateVisitorMinors(editMinors.id, counts), () => setEditMinors(null))
+          }
+        />
+      )}
+
+      {checkOut && (
+        <CheckOutDialog
+          visitor={checkOut}
+          pending={pending}
+          onCancel={() => setCheckOut(null)}
+          onSubmit={(comment) =>
+            run(() => checkOutVisitor(checkOut.id, comment), () => setCheckOut(null))
           }
         />
       )}
@@ -573,8 +602,10 @@ function CheckInDialog({
     infants?: number;
     children?: number;
     adolescents?: number;
+    comment?: string;
   }) => void;
 }) {
+  const [comment, setComment] = useState("");
   const [badgeNo, setBadgeNo] = useState(visitor.badge_no ?? "");
   const [vehicleType, setVehicleType] = useState(visitor.vehicle_type ?? "");
   const [vehiclePlate, setVehiclePlate] = useState(visitor.vehicle_plate ?? "");
@@ -639,6 +670,16 @@ function CheckInDialog({
               <MinorCount label="Adolescents" value={adolescents} onChange={setAdolescents} />
             </div>
           </div>
+          <label className="block text-sm">
+            <span className="text-muted-foreground">Comment (optional)</span>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={2}
+              placeholder="Security note — e.g. escorted, ID checked, reason for visit…"
+              className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </label>
         </div>
         <div className="mt-5 flex gap-2">
           <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
@@ -652,6 +693,7 @@ function CheckInDialog({
                 badgeNo,
                 vehicleType,
                 vehiclePlate,
+                comment,
                 infants: Number(infants) || 0,
                 children: Number(children) || 0,
                 adolescents: Number(adolescents) || 0,
@@ -659,6 +701,48 @@ function CheckInDialog({
             }
           >
             {pending ? "Checking in…" : "Check in"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CheckOutDialog({
+  visitor,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  visitor: Visitor;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (comment: string) => void;
+}) {
+  const [comment, setComment] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
+        <h3 className="text-lg font-semibold">Check out {visitor.full_name}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          The departure time is recorded automatically. Add a note if anything needs flagging.
+        </p>
+        <label className="mt-4 block text-sm">
+          <span className="text-muted-foreground">Comment (optional)</span>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            rows={2}
+            placeholder="Security note — e.g. left early, badge returned, incident…"
+            className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+          />
+        </label>
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button className="flex-1" disabled={pending} onClick={() => onSubmit(comment)}>
+            {pending ? "Checking out…" : "Check out"}
           </Button>
         </div>
       </div>

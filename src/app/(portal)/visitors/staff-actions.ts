@@ -61,11 +61,18 @@ function revalidate() {
 }
 
 /** Insert/refresh today's check-in for a staff member (clears any check-out). */
+/** Trim a free-text comment to a sane length, or null when empty. */
+function cleanComment(c?: string | null): string | null {
+  const t = (c ?? "").trim();
+  return t ? t.slice(0, 500) : null;
+}
+
 async function recordCheckIn(
   profileId: string,
   method: "self" | "guard",
   coords: { lat: number; lng: number } | null,
   vehicle?: { type?: string | null; plate?: string | null },
+  comment?: string | null,
 ): Promise<ActionResult> {
   const supabase = createClient();
   const user = await getCachedUser();
@@ -85,6 +92,8 @@ async function recordCheckIn(
       check_in_lng: coords?.lng ?? null,
       vehicle_type: vehicle?.type?.trim() || null,
       vehicle_plate: vehicle?.plate?.trim() || null,
+      check_in_comment: cleanComment(comment),
+      check_out_comment: null,
     },
     { onConflict: "profile_id,attendance_date" },
   );
@@ -93,13 +102,19 @@ async function recordCheckIn(
   return { ok: true };
 }
 
-/** Stamp today's check-out for a staff member. */
-async function recordCheckOut(profileId: string): Promise<ActionResult> {
+/** Stamp today's check-out for a staff member, with an optional comment. */
+async function recordCheckOut(profileId: string, comment?: string | null): Promise<ActionResult> {
   const supabase = createClient();
   const user = await getCachedUser();
+  const patch: Record<string, unknown> = {
+    check_out_at: new Date().toISOString(),
+    checked_out_by: user?.id ?? null,
+  };
+  const c = cleanComment(comment);
+  if (c) patch.check_out_comment = c;
   const { error } = await supabase
     .from("staff_attendance")
-    .update({ check_out_at: new Date().toISOString(), checked_out_by: user?.id ?? null })
+    .update(patch)
     .eq("profile_id", profileId)
     .eq("attendance_date", today());
   if (error) return { ok: false, error: error.message };
@@ -112,16 +127,20 @@ async function recordCheckOut(profileId: string): Promise<ActionResult> {
 export async function staffCheckIn(
   profileId: string,
   vehicle?: { type?: string | null; plate?: string | null },
+  comment?: string | null,
 ): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
-  return recordCheckIn(profileId, "guard", null, vehicle);
+  return recordCheckIn(profileId, "guard", null, vehicle, comment);
 }
 
-export async function staffCheckOut(profileId: string): Promise<ActionResult> {
+export async function staffCheckOut(
+  profileId: string,
+  comment?: string | null,
+): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
-  return recordCheckOut(profileId);
+  return recordCheckOut(profileId, comment);
 }
 
 // ---- Self service ("I'm in", geofenced to the base) -------------------------
