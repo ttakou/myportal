@@ -143,7 +143,8 @@ export async function Sidebar({
   const outOfTown = links.find((l) => l.href === "/out-of-town");
   if (transport && outOfTown) {
     const merged: NavLink = {
-      name: "Transportation",
+      // Inherit the (renamed) module label from the catalog, else a sensible default.
+      name: transport.name ?? "My Transportation",
       href: "/transportation",
       icon: transport.icon ?? "Car",
       matchPaths: ["/transportation", "/out-of-town"],
@@ -162,7 +163,7 @@ export async function Sidebar({
   // can reach their module's administration from one place (tiered access).
   if (!links.some((l) => l.href === "/admin") && canSeeAdminConsole(adminFlags)) {
     links.unshift({
-      name: "Admin Console",
+      name: "My Admin Center",
       href: "/admin",
       icon: "ShieldCheck",
       defaultSubKey: "overview",
