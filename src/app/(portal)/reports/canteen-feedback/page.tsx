@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { CanteenTabs, canteenAccessOf } from "../../canteen/_components/canteen-tabs";
 import { getCanteenFeedback, getDepartments } from "@/lib/reports";
 import { ISSUE_LABEL, type IssueType } from "@/types/feedback";
 import { cn } from "@/lib/utils";
@@ -68,6 +69,7 @@ export default async function CanteenFeedbackReportPage({
 
   return (
     <div className="space-y-5">
+      <CanteenTabs access={canteenAccessOf(access)} />
       <div className="flex items-center justify-between gap-3 print:hidden">
         <Link
           href="/reports"
