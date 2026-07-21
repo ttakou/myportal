@@ -24,6 +24,7 @@ export type TrainingViewKey =
   | "my-evaluations"
   | "my-competencies"
   // Team Training
+  | "kpis"
   | "team-compliance"
   | "team-requests"
   | "dept-needs"
@@ -81,6 +82,7 @@ export const TRAINING_VIEWS: TrainingView[] = [
   { key: "certificates", label: "Certificates", icon: "Award", group: "My Training" },
   { key: "my-evaluations", label: "Training Evaluations", icon: "Star", group: "My Training" },
   // Team Training (managers + HR)
+  { key: "kpis", label: "Training KPIs", icon: "Gauge", group: "Team Training" },
   { key: "team-compliance", label: "Team Compliance", icon: "ShieldCheck", group: "Team Training" },
   { key: "team-requests", label: "Training Requests", icon: "Inbox", group: "Team Training" },
   { key: "dept-needs", label: "Department Training Needs", icon: "Target", group: "Team Training" },
@@ -139,6 +141,7 @@ export const IMPLEMENTED_VIEWS: ReadonlySet<TrainingViewKey> = new Set<TrainingV
   "annual-plan",
   "budgets",
   "evaluations",
+  "kpis",
   "team-compliance",
   "team-requests",
   "dept-needs",
@@ -291,7 +294,8 @@ export const TRAINING_HUBS: TrainingHub[] = [
       { key: "my-evaluations", label: "Evaluations" },
     ],
   },
-  // Team Training (4 views → 3 entries)
+  // Team Training (managers + HR)
+  { key: "kpis", label: "Training KPIs", icon: "Gauge", group: "Team Training" },
   { key: "team-compliance", label: "Team Compliance", icon: "ShieldCheck", group: "Team Training" },
   { key: "team-requests", label: "Training Requests", icon: "Inbox", group: "Team Training" },
   {
