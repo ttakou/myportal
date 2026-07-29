@@ -77,10 +77,11 @@ export default async function VisitorReportPage({
   ]);
 
   const csv: string[][] = [
-    ["Date", "Visitor", "Company", "Host", "Department", "Purpose", "Vehicle type", "Plate", "Status", "Arrival (UTC)", "Checkout (UTC)", "Dwell", "Check-in comment", "Check-out comment"],
+    ["Date", "Visitor", "ID document", "Company", "Host", "Department", "Purpose", "Vehicle type", "Plate", "Status", "Arrival (UTC)", "Checkout (UTC)", "Dwell", "Check-in comment", "Check-out comment"],
     ...report.rows.map((r) => [
       r.visit_date,
       r.name,
+      r.id_document ?? "",
       r.company ?? "",
       r.host ?? "",
       r.department ?? "",
@@ -162,7 +163,12 @@ export default async function VisitorReportPage({
             {report.rows.map((r: VisitorRow, i) => (
               <tr key={`${r.visit_date}-${i}`}>
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{r.visit_date}</td>
-                <td className="px-3 py-1.5 font-medium">{r.name}</td>
+                <td className="px-3 py-1.5 font-medium">
+                  {r.name}
+                  {r.id_document && (
+                    <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">{r.id_document}</span>
+                  )}
+                </td>
                 <td className="px-3 py-1.5 text-muted-foreground">{r.company ?? "—"}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{r.host ?? "—"}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{vehicle(r)}</td>
