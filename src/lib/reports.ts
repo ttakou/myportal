@@ -626,6 +626,8 @@ export interface VisitorRow {
   vehicle_plate: string | null;
   check_in_at: string | null;
   check_out_at: string | null;
+  check_in_comment: string | null;
+  check_out_comment: string | null;
   dwellMins: number | null;
 }
 
@@ -644,7 +646,7 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
   const { data } = await supabase
     .from("visitors")
     .select(
-      "full_name, company, purpose, visit_date, status, vehicle_type, vehicle_plate, check_in_at, check_out_at," +
+      "full_name, company, purpose, visit_date, status, vehicle_type, vehicle_plate, check_in_at, check_out_at, check_in_comment, check_out_comment," +
         " host:profiles!visitors_host_id_fkey(full_name, department)",
     )
     .gte("visit_date", f.from)
@@ -691,6 +693,8 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
       vehicle_plate: v.vehicle_plate ?? null,
       check_in_at: v.check_in_at ?? null,
       check_out_at: v.check_out_at ?? null,
+      check_in_comment: v.check_in_comment ?? null,
+      check_out_comment: v.check_out_comment ?? null,
       dwellMins,
     });
   }

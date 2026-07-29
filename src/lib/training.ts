@@ -1785,3 +1785,162 @@ export async function getGlobalTrainingMatrix(): Promise<GlobalMatrix> {
   const departments = [...new Set(rows.map((r) => r.department).filter((d): d is string => Boolean(d)))].sort();
   return { courses: cols, rows, departments };
 }
+
+// --- Management KPI dashboard ------------------------------------------------
+
+export interface TrainingKpis {
+  from: string;
+  to: string;
+  currency: string;
+  /** People who attended a session in the period (distinct participants). */
+  peopleTrained: number;
+  /** Person-hours delivered in the period. */
+  hours: number;
+  /** Completion records dated in the period (incl. manual/external). */
+  completions: number;
+  sessions: number;
+  completedSessions: number;
+  cost: number;
+  /** cost / person-hours, or null when no hours were delivered. */
+  costPerHour: number | null;
+  /** Statutory compliance snapshot (as of today, not period-bound). */
+  compliance: {
+    required: number;
+    valid: number; // compliant and not expiring soon
+    expiring: number; // compliant but expiring within window
+    expired: number;
+    missing: number; // never trained
+    rate: number; // compliant / required, %
+  };
+  /** Certificates expiring within 90 days / already expired (snapshot). */
+  expiringSoon: number;
+  expiredCerts: number;
+  /** Completions per calendar month across the period (chronological). */
+  monthly: { month: string; completions: number }[];
+  /** Top courses in the period by people trained. */
+  topCourses: { title: string; people: number; hours: number }[];
+  /** People trained by department in the period. */
+  byDepartment: { department: string; people: number; completions: number }[];
+  /** Per-course statutory compliance rate (lowest first) — the meters. */
+  courseCompliance: { title: string; rate: number; required: number; compliant: number }[];
+  /** Annual budget vs cumulative committed spend by month — the burn-down. */
+  budget: { year: number; total: number; points: { month: string; cumulative: number }[] };
+  /** Department × month completion intensity — the heatmap. */
+  heatmap: { departments: string[]; months: string[]; cells: Record<string, Record<string, number>> };
+}
+
+/** Inclusive list of YYYY-MM buckets spanning [from, to]. */
+function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  let y = Number(from.slice(0, 4));
+  let m = Number(from.slice(5, 7));
+  const endY = Number(to.slice(0, 4));
+  const endM = Number(to.slice(5, 7));
+  // Cap at 24 buckets so a stray range can't explode the axis.
+  for (let i = 0; i < 24 && (y < endY || (y === endY && m <= endM)); i++) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * A management at-a-glance KPI feed for the Training module: period activity
+ * (people/hours/cost/completions), a today-snapshot of statutory compliance and
+ * expiring certs, a monthly delivery trend, top courses, per-department and
+ * per-course breakdowns, the annual budget burn-down and a department × month
+ * heatmap. Composes the existing report aggregators plus one monthly query so
+ * the numbers always match the period/exec/compliance reports.
+ */
+export async function getTrainingKpis(from: string, to: string): Promise<TrainingKpis> {
+  const supabase = createClient();
+  const year = Number(to.slice(0, 4)) || new Date().getUTCFullYear();
+
+  const [period, compliance, expiring, exec, { data: records }] = await Promise.all([
+    getPeriodTrainingStats(from, to),
+    getComplianceReport(),
+    getExpiringReport(90),
+    getExecutiveSummary(year),
+    supabase
+      .from("training_records")
+      .select("completed_on, person:profiles!training_records_profile_id_fkey(department)")
+      .gte("completed_on", from)
+      .lte("completed_on", to),
+  ]);
+
+  // Compliance mix → mutually exclusive valid / expiring / expired / missing.
+  const c = compliance.overall;
+  const expiringCompliant = compliance.byCourse.reduce((s, x) => s + x.expiring, 0);
+  const expired = compliance.byCourse.reduce((s, x) => s + x.expired, 0);
+  const missing = compliance.byCourse.reduce((s, x) => s + x.missing, 0);
+
+  // Monthly completions + department × month heatmap from one records pass.
+  const months = monthsBetween(from, to);
+  const monthSet = new Set(months);
+  const monthlyMap = new Map<string, number>(months.map((m) => [m, 0]));
+  const deptMonth = new Map<string, Map<string, number>>();
+  const deptTotals = new Map<string, number>();
+  for (const r of (records ?? []) as Record<string, any>[]) {
+    const month = String(r.completed_on).slice(0, 7);
+    if (!monthSet.has(month)) continue;
+    monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + 1);
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    const dept = (person?.department as string) || "No department";
+    deptTotals.set(dept, (deptTotals.get(dept) ?? 0) + 1);
+    const row = deptMonth.get(dept) ?? new Map<string, number>();
+    row.set(month, (row.get(month) ?? 0) + 1);
+    deptMonth.set(dept, row);
+  }
+  // Heatmap: busiest departments first, capped so the grid stays readable.
+  const heatDepts = [...deptTotals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([d]) => d);
+  const cells: Record<string, Record<string, number>> = {};
+  for (const d of heatDepts) {
+    cells[d] = {};
+    for (const m of months) cells[d][m] = deptMonth.get(d)?.get(m) ?? 0;
+  }
+
+  // Budget burn-down: cumulative committed spend across the exec-summary year.
+  let running = 0;
+  const points = exec.spend.byMonth.map((x) => {
+    running += x.cost;
+    return { month: x.month, cumulative: running };
+  });
+
+  return {
+    from,
+    to,
+    currency: exec.currency,
+    peopleTrained: period.peopleTrained,
+    hours: period.hours,
+    completions: period.completions,
+    sessions: period.sessions,
+    completedSessions: period.completedSessions,
+    cost: period.cost,
+    costPerHour: period.hours > 0 ? Math.round(period.cost / period.hours) : null,
+    compliance: {
+      required: c.required,
+      valid: Math.max(0, c.compliant - expiringCompliant),
+      expiring: expiringCompliant,
+      expired,
+      missing,
+      rate: c.rate,
+    },
+    expiringSoon: expiring.filter((e) => !e.expired).length,
+    expiredCerts: expiring.filter((e) => e.expired).length,
+    monthly: months.map((m) => ({ month: m, completions: monthlyMap.get(m) ?? 0 })),
+    topCourses: period.byCourse.slice(0, 8).map((x) => ({ title: x.title, people: x.people, hours: x.hours })),
+    byDepartment: period.byDepartment.slice(0, 10),
+    courseCompliance: compliance.byCourse
+      .map((x) => ({ title: x.title, rate: x.rate, required: x.required, compliant: x.compliant }))
+      .slice(0, 10),
+    budget: { year, total: exec.budget.total, points },
+    heatmap: { departments: heatDepts, months, cells },
+  };
+}

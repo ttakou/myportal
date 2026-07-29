@@ -6,6 +6,7 @@ import {
   getExecutiveSummary,
   getGlobalTrainingMatrix,
   getPeriodTrainingStats,
+  getTrainingKpis,
   getEmployeesLite,
   getMyCertificates,
   getMyMandatory,
@@ -67,6 +68,7 @@ import {
   TeamCompliancePanel,
   TeamPlanPanel,
 } from "./_components/read-panels";
+import { KpiDashboardPanel } from "./_components/kpi-dashboard-panel";
 import { AssignPanel } from "./_components/assign-panel";
 import { TrainingScheduler } from "./_components/training-scheduler";
 import { getSchedulerPool } from "@/lib/training-planner-data";
@@ -238,6 +240,13 @@ export default async function TrainingPage({
             departments={departments}
           />
         );
+      }
+      case "kpis": {
+        const iso = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+        const today = new Date().toISOString().slice(0, 10);
+        const f = iso(from) ?? `${today.slice(0, 4)}-01-01`;
+        const t = iso(to) ?? today;
+        return <KpiDashboardPanel data={await getTrainingKpis(f, t)} />;
       }
       case "rpt-period": {
         const iso = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);

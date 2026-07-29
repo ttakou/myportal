@@ -9,6 +9,7 @@ import {
   FileText,
   History,
   ChevronDown,
+  Printer,
   Trash2,
   Siren,
   X,
@@ -98,6 +99,7 @@ import { BulkRoomImport } from "./bulk-room-import";
 import { BulkRosterImport } from "./bulk-roster-import";
 import { CateringPanel } from "./catering-panel";
 import { HistoryPanel } from "./history-panel";
+import { StaffRotationPanel } from "./staff-rotation-panel";
 import { CrewAssign } from "./crew-assign";
 import { resolveManagementView, hubForOffshoreView } from "./offshore-views";
 
@@ -117,7 +119,8 @@ type Tab =
   | "catering"
   | "emergency"
   | "drill"
-  | "history";
+  | "history"
+  | "staff-history";
 
 export function OffshoreManagement(props: {
   crews: Crew[];
@@ -231,6 +234,7 @@ export function OffshoreManagement(props: {
         />
       )}
       {tab === "history" && <HistoryPanel />}
+      {tab === "staff-history" && <StaffRotationPanel />}
     </div>
   );
 }
@@ -365,6 +369,14 @@ function LiveBoardPanel({
         <Button size="sm" variant="outline" onClick={() => router.refresh()}>
           Refresh
         </Button>
+        <a
+          href="/offshore-pob"
+          target="_blank"
+          rel="noopener"
+          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
+        >
+          <Printer className="h-3.5 w-3.5" /> Print roster
+        </a>
       </div>
 
       {hasTeams && (

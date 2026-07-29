@@ -77,7 +77,7 @@ export default async function VisitorReportPage({
   ]);
 
   const csv: string[][] = [
-    ["Date", "Visitor", "Company", "Host", "Department", "Purpose", "Vehicle type", "Plate", "Status", "Arrival (UTC)", "Checkout (UTC)", "Dwell"],
+    ["Date", "Visitor", "Company", "Host", "Department", "Purpose", "Vehicle type", "Plate", "Status", "Arrival (UTC)", "Checkout (UTC)", "Dwell", "Check-in comment", "Check-out comment"],
     ...report.rows.map((r) => [
       r.visit_date,
       r.name,
@@ -91,6 +91,8 @@ export default async function VisitorReportPage({
       clock(r.check_in_at),
       clock(r.check_out_at),
       dur(r.dwellMins),
+      r.check_in_comment ?? "",
+      r.check_out_comment ?? "",
     ]),
   ];
 
@@ -153,6 +155,7 @@ export default async function VisitorReportPage({
               <th className="px-3 py-2 text-right font-medium">Arrival</th>
               <th className="px-3 py-2 text-right font-medium">Checkout</th>
               <th className="px-3 py-2 text-right font-medium">Dwell</th>
+              <th className="px-3 py-2 font-medium">Comment</th>
             </tr>
           </thead>
           <ProgressiveTableBody colSpan={9} className="divide-y" label="Show more visitors">
@@ -167,6 +170,14 @@ export default async function VisitorReportPage({
                 <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{clock(r.check_in_at)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{clock(r.check_out_at)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{dur(r.dwellMins)}</td>
+                <td className="px-3 py-1.5 text-muted-foreground">
+                  {[
+                    r.check_in_comment && `In: ${r.check_in_comment}`,
+                    r.check_out_comment && `Out: ${r.check_out_comment}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "—"}
+                </td>
               </tr>
             ))}
             {report.rows.length === 0 && (
