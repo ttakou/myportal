@@ -86,6 +86,8 @@ import {
   setInstallationActive,
   setManifestStatus,
   setRoomStatus,
+  addCasualVisitor,
+  setPersonLifeboat,
   setVisitorMovement,
   togglePaxNoShow,
   updateManifestTransport,
@@ -187,6 +189,8 @@ export function OffshoreManagement(props: {
           people={props.pob.people}
           emergencyRoles={props.emergencyRoles}
           emergencyTeams={props.emergencyTeams}
+          musterGroups={props.musterGroups}
+          installations={props.installations}
         />
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
@@ -267,13 +271,37 @@ function LiveBoardPanel({
   people,
   emergencyRoles,
   emergencyTeams,
+  musterGroups,
+  installations,
 }: {
   people: PobOnboard[];
   emergencyRoles: EmergencyRole[];
   emergencyTeams: EmergencyTeamMember[];
+  musterGroups: string[];
+  installations: Installation[];
 }) {
   const router = useRouter();
   const [auto, setAuto] = useState(true);
+  const [pending, startTransition] = useStatusTransition("Saving…", "save");
+  const [showCasual, setShowCasual] = useState(false);
+  // Lifeboat options: configured stations plus any already in use on board.
+  const lbOptions = useMemo(() => {
+    const set = new Set<string>(musterGroups);
+    for (const p of people) if (p.lifeboat) set.add(p.lifeboat);
+    return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [musterGroups, people]);
+
+  function saveLifeboat(p: PobOnboard, lifeboat: string) {
+    const isVisit = p.trip_id.startsWith("visit-");
+    startTransition(async () => {
+      await setPersonLifeboat({
+        kind: isVisit ? "visit" : "trip",
+        id: isVisit ? p.trip_id.slice("visit-".length) : p.trip_id,
+        lifeboat: lifeboat || null,
+      });
+      router.refresh();
+    });
+  }
 
   useEffect(() => {
     if (!auto) return;
@@ -377,7 +405,27 @@ function LiveBoardPanel({
         >
           <Printer className="h-3.5 w-3.5" /> Print roster
         </a>
+        <Button size="sm" variant="outline" onClick={() => setShowCasual((s) => !s)}>
+          {showCasual ? "Close" : "Add casual visitor"}
+        </Button>
       </div>
+
+      {showCasual && (
+        <CasualVisitorForm
+          lbOptions={lbOptions}
+          installations={installations}
+          pending={pending}
+          onSubmit={(input) =>
+            startTransition(async () => {
+              const res = await addCasualVisitor(input);
+              if (res.ok) {
+                setShowCasual(false);
+                router.refresh();
+              }
+            })
+          }
+        />
+      )}
 
       {hasTeams && (
         <div className="grid gap-3 sm:grid-cols-2">
@@ -413,7 +461,7 @@ function LiveBoardPanel({
         </div>
       )}
 
-      {people.length === 0 && (
+      {people.length === 0 && !showCasual && (
         <p className="rounded-md border border-dashed bg-muted/30 px-3 py-6 text-center text-sm text-muted-foreground">
           Nobody is currently on board.
         </p>
@@ -492,6 +540,19 @@ function LiveBoardPanel({
                     <span className={cn("shrink-0 text-xs", room ? "text-foreground" : "text-destructive")}>
                       {room ?? "no bed"}
                     </span>
+                    {/* Manual lifeboat override — cabin drives it by default. */}
+                    <select
+                      value={p.lifeboat ?? ""}
+                      disabled={pending}
+                      title="Set muster station manually (overrides the cabin)"
+                      onChange={(e) => saveLifeboat(p, e.target.value)}
+                      className="shrink-0 rounded border bg-background px-1 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                      <option value="">LB —</option>
+                      {lbOptions.map((lb) => (
+                        <option key={lb} value={lb}>{lb}</option>
+                      ))}
+                    </select>
                   </li>
                 );
               })}
@@ -499,6 +560,56 @@ function LiveBoardPanel({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Quick-add a casual/day visitor who is on board now, with a lifeboat. */
+function CasualVisitorForm({
+  lbOptions,
+  installations,
+  pending,
+  onSubmit,
+}: {
+  lbOptions: string[];
+  installations: Installation[];
+  pending: boolean;
+  onSubmit: (input: { name: string; company?: string; installationId?: string; lifeboat: string }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [installationId, setInstallationId] = useState("");
+  const [lifeboat, setLifeboat] = useState("");
+  const ready = name.trim() && lifeboat;
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <p className="mb-2 text-sm font-medium">Casual / day visitor — on board now</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Visitor name" className={cn(field, "min-w-40")} />
+        <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company (optional)" className={cn(field, "min-w-36")} />
+        <select value={installationId} onChange={(e) => setInstallationId(e.target.value)} className={field}>
+          <option value="">Installation (optional)</option>
+          {installations.map((i) => (
+            <option key={i.id} value={i.id}>{i.name}</option>
+          ))}
+        </select>
+        <select value={lifeboat} onChange={(e) => setLifeboat(e.target.value)} className={field} aria-label="Lifeboat station">
+          <option value="">Lifeboat…</option>
+          {lbOptions.map((lb) => (
+            <option key={lb} value={lb}>{lb}</option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          disabled={pending || !ready}
+          onClick={() => onSubmit({ name, company: company || undefined, installationId: installationId || undefined, lifeboat })}
+        >
+          Add to POB
+        </Button>
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        Counts in POB and appears in the muster roll-call at the chosen lifeboat.
+      </p>
     </div>
   );
 }
