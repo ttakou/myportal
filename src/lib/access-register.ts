@@ -1,5 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { idDocLabel } from "@/types/visitors";
+
+/** Format a visitor's identity document as "Passport: A123", or null. */
+function idDocument(type: unknown, number: unknown): string | null {
+  const num = (number as string | null)?.trim();
+  if (!num) return null;
+  const label = idDocLabel((type as string | null) ?? null) ?? "ID";
+  return `${label}: ${num}`;
+}
 
 /**
  * The Access Register — a unified entry/exit history of everyone who passed
@@ -23,6 +32,8 @@ export type AccessEntry = {
   /** Job title (staff) or host · purpose (visitor). */
   detail: string | null;
   badge: string | null;
+  /** Visitor identity document, e.g. "Passport: A123" (visitors only). */
+  id_document: string | null;
   vehicle: string | null;
   check_in_at: string | null;
   check_out_at: string | null;
@@ -146,7 +157,7 @@ export async function getAccessRegister(
         let q = supabase
           .from("visitors")
           .select(
-            "full_name, company, purpose, service, visit_date, badge_no, vehicle_type, vehicle_plate, check_in_at, check_out_at, check_in_comment, check_out_comment, host:profiles!visitors_host_id_fkey(full_name)",
+            "full_name, company, purpose, service, visit_date, badge_no, id_document_type, id_document_number, vehicle_type, vehicle_plate, check_in_at, check_out_at, check_in_comment, check_out_comment, host:profiles!visitors_host_id_fkey(full_name)",
           )
           .is("visit_until", null)
           .gte("visit_date", f.from)
@@ -167,7 +178,7 @@ export async function getAccessRegister(
         let q = supabase
           .from("visitor_checkins")
           .select(
-            "check_in_at, check_out_at, badge_no, check_in_comment, check_out_comment, visitors!inner(full_name, company, purpose, service, vehicle_type, vehicle_plate, host:profiles!visitors_host_id_fkey(full_name))",
+            "check_in_at, check_out_at, badge_no, check_in_comment, check_out_comment, visitors!inner(full_name, company, purpose, service, id_document_type, id_document_number, vehicle_type, vehicle_plate, host:profiles!visitors_host_id_fkey(full_name))",
           )
           .gte("check_in_at", fromTs)
           .lte("check_in_at", toTs);
@@ -223,6 +234,7 @@ export async function getAccessRegister(
       org: p.department ?? null,
       detail: p.job_title ?? null,
       badge: null,
+      id_document: null,
       vehicle: vehicleLabel(
         (r.vehicle_type as string) ?? null,
         (r.vehicle_plate as string) ?? null,
@@ -260,6 +272,7 @@ export async function getAccessRegister(
         [hostName && `Host: ${hostName}`, v.purpose as string].filter(Boolean).join(" · ") ||
         null,
       badge: entry.badge,
+      id_document: idDocument(v.id_document_type, v.id_document_number),
       vehicle: vehicleLabel((v.vehicle_type as string) ?? null, (v.vehicle_plate as string) ?? null),
       check_in_at: entry.check_in_at,
       check_out_at: entry.check_out_at,

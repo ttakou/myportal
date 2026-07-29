@@ -81,6 +81,9 @@ function RegisterRow({
       </td>
       <td className="px-3 py-2 text-muted-foreground">
         {e.detail ?? "—"}
+        {e.id_document && (
+          <span className="mt-0.5 block text-[11px] text-muted-foreground/80">{e.id_document}</span>
+        )}
         {(e.check_in_comment || e.check_out_comment) && (
           <span className="mt-0.5 block text-[11px] italic text-muted-foreground/80">
             {[e.check_in_comment && `In: ${e.check_in_comment}`, e.check_out_comment && `Out: ${e.check_out_comment}`]
@@ -181,7 +184,7 @@ export default async function AccessRegisterPage({
   ].filter((x): x is string => Boolean(x));
 
   const csv: string[][] = [
-    ["Date", "Name", "Type", "Department/Company", "Detail", "Badge", "Vehicle", "In (UTC)", "Out (UTC)", "Duration", "Check-in comment", "Check-out comment"],
+    ["Date", "Name", "Type", "Department/Company", "Detail", "Badge", "ID document", "Vehicle", "In (UTC)", "Out (UTC)", "Duration", "Check-in comment", "Check-out comment"],
     ...entries.map((e) => [
       e.date,
       e.name,
@@ -189,6 +192,7 @@ export default async function AccessRegisterPage({
       e.org ?? "",
       e.detail ?? "",
       e.badge ?? "",
+      e.id_document ?? "",
       e.vehicle ?? "",
       clock(e.check_in_at),
       clock(e.check_out_at),

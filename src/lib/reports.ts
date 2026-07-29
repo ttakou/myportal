@@ -1,5 +1,6 @@
 import "server-only";
 import { cache } from "react";
+import { idDocLabel } from "@/types/visitors";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
 
@@ -628,6 +629,7 @@ export interface VisitorRow {
   check_out_at: string | null;
   check_in_comment: string | null;
   check_out_comment: string | null;
+  id_document: string | null;
   dwellMins: number | null;
 }
 
@@ -646,7 +648,7 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
   const { data } = await supabase
     .from("visitors")
     .select(
-      "full_name, company, purpose, visit_date, status, vehicle_type, vehicle_plate, check_in_at, check_out_at, check_in_comment, check_out_comment," +
+      "full_name, company, purpose, visit_date, status, vehicle_type, vehicle_plate, check_in_at, check_out_at, check_in_comment, check_out_comment, id_document_type, id_document_number," +
         " host:profiles!visitors_host_id_fkey(full_name, department)",
     )
     .gte("visit_date", f.from)
@@ -695,6 +697,9 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
       check_out_at: v.check_out_at ?? null,
       check_in_comment: v.check_in_comment ?? null,
       check_out_comment: v.check_out_comment ?? null,
+      id_document: v.id_document_number
+        ? `${idDocLabel(v.id_document_type ?? null) ?? "ID"}: ${v.id_document_number}`
+        : null,
       dwellMins,
     });
   }
