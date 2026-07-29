@@ -12,7 +12,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       supabase
         .from("offshore_trips")
         .select(
-          "id, profile_id, crew_id, room_id, bed_no, category, mobilize_date, demob_date, lifeboat," +
+          "id, profile_id, crew_id, room_id, bed_no, category, mobilize_date, demob_date, lifeboat, lifeboat_override," +
             " installation:offshore_installations(name), crew:offshore_crews(name)," +
             " room:offshore_rooms(room_number, block, lifeboat)," +
             " person:profiles!offshore_trips_profile_id_fkey(full_name)",
@@ -26,7 +26,11 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
         .in("status", ["manifested", "hse_cleared"]),
       supabase
         .from("offshore_visit_requests")
-        .select("visitor_name, return_date, depart_date, installation:offshore_installations(name)")
+        .select(
+          "id, visitor_name, visitor_company, is_casual, lifeboat, return_date, depart_date," +
+            " installation:offshore_installations(name)," +
+            " offshore_bed_allocations(status, room:offshore_rooms(room_number, block, lifeboat))",
+        )
         .eq("status", "onboard"),
       supabase.from("offshore_staff").select("profile_id, company"),
     ]);
@@ -54,8 +58,13 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     const crew = crewName ?? "Unassigned";
     byCrewMap.set(crew, (byCrewMap.get(crew) ?? 0) + 1);
     const room = one<{ room_number?: string; block?: string; lifeboat?: string }>(r.room);
-    // Muster follows the room; fall back to the trip's stored value.
-    const muster = (room?.lifeboat as string | null) ?? (r.lifeboat as string | null) ?? null;
+    // Muster follows the room; a manual per-trip override wins, and the trip's
+    // legacy stored value is the last fallback.
+    const muster =
+      (r.lifeboat_override as string | null) ||
+      (room?.lifeboat as string | null) ||
+      (r.lifeboat as string | null) ||
+      null;
     const lb = muster || "Unassigned";
     byLifeboatMap.set(lb, (byLifeboatMap.get(lb) ?? 0) + 1);
     people.push({
@@ -86,10 +95,33 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
   }
 
   // Onboard visitors count toward POB too (they aren't offshore_trips rows).
+  // Include casual/day visitors, and surface them per-lifeboat + in the
+  // drill-down so they show on the live board and get mustered.
   for (const v of (visitors ?? []) as Record<string, any>[]) {
     visitor++;
     const instName = one<{ name?: string }>(v.installation)?.name ?? null;
     if (instName) byInstMap.set(instName, (byInstMap.get(instName) ?? 0) + 1);
+    // Lifeboat: a manual/direct value wins, else the allocated cabin's station.
+    const alloc = ((v.offshore_bed_allocations as any[]) ?? []).find((a) => a.status !== "checked_out");
+    const vroom = alloc && one<{ room_number?: string; block?: string; lifeboat?: string }>(alloc.room);
+    const vmuster = (v.lifeboat as string | null) || (vroom?.lifeboat as string | null) || null;
+    const lb = vmuster || "Unassigned";
+    byLifeboatMap.set(lb, (byLifeboatMap.get(lb) ?? 0) + 1);
+    people.push({
+      trip_id: `visit-${v.id}`,
+      profile_id: null,
+      name: v.is_casual ? `${v.visitor_name} (casual)` : v.visitor_name,
+      category: "visitor",
+      crew_id: null,
+      crew_name: null,
+      lifeboat: vmuster,
+      room_id: null,
+      room_label: vroom ? [vroom.block, vroom.room_number].filter(Boolean).join(" ") : null,
+      bed_no: null,
+      company: (v.visitor_company as string | null) ?? null,
+      mobilize_date: (v.depart_date as string) ?? today,
+      demob_date: (v.return_date as string | null) ?? null,
+    });
     if (v.return_date) {
       if (v.return_date === today) departuresToday++;
       if (v.return_date < today) {

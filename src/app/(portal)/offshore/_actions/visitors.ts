@@ -285,3 +285,64 @@ export async function setVisitorMovement(
   rev();
   return { ok: true };
 }
+
+/**
+ * Add a casual / day visitor who is on board now — a lightweight onboard visit
+ * request (no bed, no approval workflow) that counts in POB and the muster
+ * roll-call and carries a lifeboat station directly.
+ */
+export async function addCasualVisitor(input: {
+  name: string;
+  company?: string;
+  installationId?: string;
+  lifeboat: string;
+}): Promise<ActionResult> {
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
+  const name = input.name.trim();
+  const lifeboat = input.lifeboat.trim();
+  if (!name) return { ok: false, error: "Enter the visitor's name." };
+  if (!lifeboat) return { ok: false, error: "Pick a lifeboat station for the muster roll-call." };
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const supabase = createClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const { error } = await supabase.from("offshore_visit_requests").insert({
+    tenant_id: tenant,
+    visitor_name: name,
+    visitor_company: input.company?.trim() || null,
+    installation_id: input.installationId || null,
+    depart_date: today,
+    overnight: false,
+    accommodation_required: false,
+    status: "onboard",
+    is_casual: true,
+    lifeboat,
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Manually set (or clear) one person's lifeboat station, overriding the
+ * cabin-derived value. `kind` is "trip" for staff on a rotation or "visit" for
+ * a visitor; `id` is the raw row id (the live board's `visit-…` prefix removed).
+ */
+export async function setPersonLifeboat(input: {
+  kind: "trip" | "visit";
+  id: string;
+  lifeboat: string | null;
+}): Promise<ActionResult> {
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const value = input.lifeboat?.trim() || null;
+  const { error } =
+    input.kind === "trip"
+      ? await supabase.from("offshore_trips").update({ lifeboat_override: value }).eq("id", input.id)
+      : await supabase.from("offshore_visit_requests").update({ lifeboat: value }).eq("id", input.id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}

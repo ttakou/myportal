@@ -31,7 +31,7 @@ export async function startMusterDrill(kind: "drill" | "real" = "drill"): Promis
 
   const { data: onboard } = await supabase
     .from("offshore_trips")
-    .select("profile_id, person:profiles!offshore_trips_profile_id_fkey(full_name), room:offshore_rooms(lifeboat)")
+    .select("profile_id, lifeboat, lifeboat_override, person:profiles!offshore_trips_profile_id_fkey(full_name), room:offshore_rooms(lifeboat)")
     .eq("status", "onboard")
     .eq("tenant_id", tenant);
   const rows = ((onboard ?? []) as Record<string, any>[]).map((t) => {
@@ -42,14 +42,15 @@ export async function startMusterDrill(kind: "drill" | "real" = "drill"): Promis
       drill_id: drill.id,
       profile_id: t.profile_id,
       name: p?.full_name ?? "Crew",
-      lifeboat: r?.lifeboat ?? null,
+      // Manual override wins, else the cabin's station, else legacy stored value.
+      lifeboat: t.lifeboat_override ?? r?.lifeboat ?? t.lifeboat ?? null,
     };
   });
 
   // On-board visitors (tracked via visit requests + bed allocations) muster too.
   const { data: visits } = await supabase
     .from("offshore_visit_requests")
-    .select("id, visitor_name, offshore_bed_allocations(status, room:offshore_rooms(lifeboat))")
+    .select("id, visitor_name, is_casual, lifeboat, offshore_bed_allocations(status, room:offshore_rooms(lifeboat))")
     .eq("status", "onboard")
     .eq("tenant_id", tenant);
   for (const v of (visits ?? []) as Record<string, any>[]) {
@@ -59,8 +60,9 @@ export async function startMusterDrill(kind: "drill" | "real" = "drill"): Promis
       tenant_id: tenant,
       drill_id: drill.id,
       profile_id: null,
-      name: `${v.visitor_name} (visitor)`,
-      lifeboat: (room?.lifeboat as string | null) ?? null,
+      name: `${v.visitor_name} (${v.is_casual ? "casual" : "visitor"})`,
+      // A direct/manual value wins, else the allocated cabin's station.
+      lifeboat: (v.lifeboat as string | null) ?? (room?.lifeboat as string | null) ?? null,
     });
   }
 
