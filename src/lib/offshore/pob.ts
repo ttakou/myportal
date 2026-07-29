@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { PobAsOf, PobBreakdown, PobPerson } from "@/types/offshore";
 import { one } from "./_shared";
+import { tripLifeboat, visitorLifeboat } from "./lifeboat";
 
 /** POB dashboard: counts by installation, crew, category + today's movements. */
 export async function getPobBreakdown(): Promise<PobBreakdown> {
@@ -58,13 +59,11 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     const crew = crewName ?? "Unassigned";
     byCrewMap.set(crew, (byCrewMap.get(crew) ?? 0) + 1);
     const room = one<{ room_number?: string; block?: string; lifeboat?: string }>(r.room);
-    // Muster follows the room; a manual per-trip override wins, and the trip's
-    // legacy stored value is the last fallback.
-    const muster =
-      (r.lifeboat_override as string | null) ||
-      (room?.lifeboat as string | null) ||
-      (r.lifeboat as string | null) ||
-      null;
+    const muster = tripLifeboat({
+      lifeboat_override: r.lifeboat_override as string | null,
+      room_lifeboat: (room?.lifeboat as string | null) ?? null,
+      lifeboat: r.lifeboat as string | null,
+    });
     const lb = muster || "Unassigned";
     byLifeboatMap.set(lb, (byLifeboatMap.get(lb) ?? 0) + 1);
     people.push({
@@ -104,7 +103,10 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     // Lifeboat: a manual/direct value wins, else the allocated cabin's station.
     const alloc = ((v.offshore_bed_allocations as any[]) ?? []).find((a) => a.status !== "checked_out");
     const vroom = alloc && one<{ room_number?: string; block?: string; lifeboat?: string }>(alloc.room);
-    const vmuster = (v.lifeboat as string | null) || (vroom?.lifeboat as string | null) || null;
+    const vmuster = visitorLifeboat({
+      lifeboat: v.lifeboat as string | null,
+      room_lifeboat: (vroom?.lifeboat as string | null) ?? null,
+    });
     const lb = vmuster || "Unassigned";
     byLifeboatMap.set(lb, (byLifeboatMap.get(lb) ?? 0) + 1);
     people.push({
