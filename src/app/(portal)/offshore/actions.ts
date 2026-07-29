@@ -10,6 +10,7 @@ export * from "./_actions/installations";
 export * from "./_actions/bulk-import";
 export * from "./_actions/catering";
 export * from "./_actions/history";
+export * from "./_actions/flags";
 export * from "./_actions/crew-assign";
 export * from "./_actions/register";
 export * from "./_actions/muster";
