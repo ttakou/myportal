@@ -19,6 +19,7 @@ export type OffshoreViewKey =
   | "drill"
   | "installations"
   | "history"
+  | "staff-history"
   | "mytrips";
 
 export interface OffshoreView {
@@ -49,6 +50,7 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "drill", label: "Muster drill", icon: "Siren" },
   { key: "installations", label: "Installations", icon: "Anchor" },
   { key: "history", label: "History", icon: "History" },
+  { key: "staff-history", label: "Staff rotations", icon: "CalendarClock" },
 ];
 
 export const OFFSHORE_VIEW_KEYS = OFFSHORE_VIEWS.map((v) => v.key);
@@ -139,7 +141,13 @@ export const OFFSHORE_HUBS: OffshoreHub[] = [
     ],
   },
   { key: "installations", label: "Installations", icon: "Anchor" },
-  { key: "history", label: "History", icon: "History" },
+  {
+    key: "history", label: "History", icon: "History",
+    tabs: [
+      { key: "history", label: "Snapshots" },
+      { key: "staff-history", label: "Staff rotations" },
+    ],
+  },
 ];
 
 /** The hub a view belongs to (as landing view or tab), if any. */

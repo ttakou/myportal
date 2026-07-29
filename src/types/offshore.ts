@@ -539,3 +539,43 @@ export interface RoomAllocationReport {
     owners: { name: string; bed: string | null; back_to_back: string | null }[];
   }[];
 }
+
+// --- Per-staff rotation history ---------------------------------------------
+
+export interface RotationStaffOption {
+  profile_id: string;
+  name: string;
+  company: string | null;
+  crew: string | null;
+}
+
+export interface RotationHistoryTrip {
+  id: string;
+  installation_name: string | null;
+  mobilize_date: string | null;
+  demob_date: string | null;
+  status: string;
+  mode: "auto" | "manual";
+  /** Whole days offshore (to today while still onboard); null if no start. */
+  days: number | null;
+  onboard: boolean;
+}
+
+export interface StaffRotationHistory {
+  person: {
+    profile_id: string;
+    name: string;
+    company: string | null;
+    crew: string | null;
+    installation: string | null;
+  };
+  trips: RotationHistoryTrip[];
+  summary: {
+    trips: number;
+    totalDaysOffshore: number;
+    avgTripDays: number | null;
+    firstMobilise: string | null;
+    lastDemobilise: string | null;
+    currentlyOnboard: boolean;
+  };
+}
