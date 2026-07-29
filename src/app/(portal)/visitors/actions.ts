@@ -70,6 +70,9 @@ export async function preRegisterVisitor(input: {
   hostId?: string | null;
   /** Assign the visit to a department / service. */
   service?: string | null;
+  /** Identity document (CNI / passport / other) + its number. */
+  idType?: string;
+  idNumber?: string;
   /** Walk-in: create the visitor already checked in (on site). */
   checkInNow?: boolean;
 }): Promise<ActionResult> {
@@ -114,6 +117,8 @@ export async function preRegisterVisitor(input: {
     vehicle_type: input.vehicleType?.trim() || null,
     vehicle_plate: input.vehiclePlate?.trim() || null,
     service: input.service?.trim() || null,
+    id_document_type: input.idType?.trim() || null,
+    id_document_number: input.idNumber?.trim() || null,
     accompanying_infants: minors(input.infants),
     accompanying_children: minors(input.children),
     accompanying_adolescents: minors(input.adolescents),
@@ -166,6 +171,9 @@ export async function checkInVisitor(
     infants?: number;
     children?: number;
     adolescents?: number;
+    /** Identity document (CNI / passport / other) + its number. */
+    idType?: string;
+    idNumber?: string;
     /** Optional free-text note from reception/security. */
     comment?: string;
   },
@@ -193,6 +201,8 @@ export async function checkInVisitor(
   if (opts?.infants !== undefined) patch.accompanying_infants = minors(opts.infants);
   if (opts?.children !== undefined) patch.accompanying_children = minors(opts.children);
   if (opts?.adolescents !== undefined) patch.accompanying_adolescents = minors(opts.adolescents);
+  if (opts?.idType?.trim()) patch.id_document_type = opts.idType.trim();
+  if (opts?.idNumber?.trim()) patch.id_document_number = opts.idNumber.trim();
   if (comment !== null) patch.check_in_comment = comment;
 
   if (isPass) {
