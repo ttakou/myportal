@@ -8,6 +8,7 @@ export * from "./offshore/installations";
 export * from "./offshore/crews";
 export * from "./offshore/rooms";
 export * from "./offshore/roster";
+export * from "./offshore/lifeboat";
 export * from "./offshore/pob";
 export * from "./offshore/visits";
 export * from "./offshore/muster";

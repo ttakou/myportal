@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { tripLifeboat, visitorLifeboat } from "@/lib/offshore";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, rev, tenantId } from "./_shared";
 
@@ -42,8 +43,7 @@ export async function startMusterDrill(kind: "drill" | "real" = "drill"): Promis
       drill_id: drill.id,
       profile_id: t.profile_id,
       name: p?.full_name ?? "Crew",
-      // Manual override wins, else the cabin's station, else legacy stored value.
-      lifeboat: t.lifeboat_override ?? r?.lifeboat ?? t.lifeboat ?? null,
+      lifeboat: tripLifeboat({ lifeboat_override: t.lifeboat_override, room_lifeboat: r?.lifeboat, lifeboat: t.lifeboat }),
     };
   });
 
@@ -61,8 +61,7 @@ export async function startMusterDrill(kind: "drill" | "real" = "drill"): Promis
       drill_id: drill.id,
       profile_id: null,
       name: `${v.visitor_name} (${v.is_casual ? "casual" : "visitor"})`,
-      // A direct/manual value wins, else the allocated cabin's station.
-      lifeboat: (v.lifeboat as string | null) ?? (room?.lifeboat as string | null) ?? null,
+      lifeboat: visitorLifeboat({ lifeboat: v.lifeboat as string | null, room_lifeboat: (room?.lifeboat as string | null) ?? null }),
     });
   }
 
