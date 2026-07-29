@@ -102,6 +102,7 @@ import { BulkRosterImport } from "./bulk-roster-import";
 import { CateringPanel } from "./catering-panel";
 import { HistoryPanel } from "./history-panel";
 import { StaffRotationPanel } from "./staff-rotation-panel";
+import { AttendancePanel } from "./attendance-panel";
 import { CrewAssign } from "./crew-assign";
 import { resolveManagementView, hubForOffshoreView } from "./offshore-views";
 
@@ -112,6 +113,7 @@ type Tab =
   | "installations"
   | "crews"
   | "calendar"
+  | "attendance"
   | "rooms"
   | "bedboard"
   | "roster"
@@ -198,6 +200,7 @@ export function OffshoreManagement(props: {
         <CrewsPanel crews={props.crews} installations={props.installations} suggestions={props.suggestions} />
       )}
       {tab === "calendar" && <RotationCalendarPanel calendar={props.calendar} crews={props.crews} />}
+      {tab === "attendance" && <AttendancePanel installations={props.installations} />}
       {tab === "rooms" && (
         <RoomsPanel rooms={props.rooms} installations={props.installations} roster={props.roster} />
       )}

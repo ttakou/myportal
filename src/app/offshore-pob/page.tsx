@@ -1,6 +1,6 @@
 import { getAccess } from "@/lib/auth";
-import { getPobBreakdown } from "@/lib/offshore";
-import type { PobOnboard } from "@/types/offshore";
+import { getPobBreakdown, getRotationFlags } from "@/lib/offshore";
+import { ROTATION_FLAG_KIND_LABEL, ROTATION_FLAG_REASON_LABEL, type PobOnboard } from "@/types/offshore";
 import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
@@ -12,7 +12,7 @@ export default async function PobRosterPage() {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 
-  const pob = await getPobBreakdown();
+  const [pob, flags] = await Promise.all([getPobBreakdown(), getRotationFlags()]);
   const now = new Date();
   const stamp = now.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 
@@ -94,6 +94,34 @@ export default async function PobRosterPage() {
           </div>
         ))}
         {pob.people.length === 0 && <p className="mt-4 text-sm text-gray-400">Nobody is currently on board.</p>}
+
+        {flags.length > 0 && (
+          <div className="mt-5" style={{ breakInside: "avoid" }}>
+            <h2 className="mb-1 text-sm font-bold text-gray-900">Flagged absences & exceptions · {flags.length}</h2>
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="border-y border-gray-300 bg-gray-50">
+                  <th className={th}>Name</th>
+                  <th className={th}>Flag</th>
+                  <th className={th}>Reason</th>
+                  <th className={th}>Date</th>
+                  <th className={th}>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {flags.map((f) => (
+                  <tr key={f.id} className="border-b border-gray-100">
+                    <td className={`${td} font-semibold text-gray-800`}>{f.name}</td>
+                    <td className={`${td} text-gray-700`}>{ROTATION_FLAG_KIND_LABEL[f.kind]}</td>
+                    <td className={`${td} text-gray-700`}>{ROTATION_FLAG_REASON_LABEL[f.reason]}</td>
+                    <td className={`${td} tabular-nums text-gray-700`}>{f.effective_date}</td>
+                    <td className={`${td} text-gray-600`}>{f.note ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <ReportStampFooter label="POB & muster roster" />
       </div>

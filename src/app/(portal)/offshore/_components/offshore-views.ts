@@ -8,6 +8,7 @@ export type OffshoreViewKey =
   | "board"
   | "crews"
   | "calendar"
+  | "attendance"
   | "manifests"
   | "rooms"
   | "bedboard"
@@ -39,6 +40,7 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "board", label: "Live board", icon: "Radio" },
   { key: "crews", label: "Crew change", icon: "CalendarClock" },
   { key: "calendar", label: "Rotation calendar", icon: "CalendarRange" },
+  { key: "attendance", label: "Attendance flags", icon: "UserX" },
   { key: "manifests", label: "Manifests", icon: "ClipboardList" },
   { key: "rooms", label: "Accommodation", icon: "BedDouble" },
   { key: "bedboard", label: "Bed board", icon: "BedSingle" },
@@ -110,6 +112,7 @@ export const OFFSHORE_HUBS: OffshoreHub[] = [
     tabs: [
       { key: "crews", label: "Crew change" },
       { key: "calendar", label: "Rotation calendar" },
+      { key: "attendance", label: "Attendance" },
     ],
   },
   {

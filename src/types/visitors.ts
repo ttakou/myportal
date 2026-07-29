@@ -25,6 +25,9 @@ export interface Visitor {
   visit_until: string | null;
   status: VisitorStatus;
   badge_no: string | null;
+  /** Identity document recorded at registration/check-in (CNI, passport, …). */
+  id_document_type: string | null;
+  id_document_number: string | null;
   vehicle_type: string | null;
   vehicle_plate: string | null;
   host_name: string | null;
@@ -39,6 +42,19 @@ export interface Visitor {
   accompanying_infants: number;
   accompanying_children: number;
   accompanying_adolescents: number;
+}
+
+/** Identity-document types offered at registration / check-in. */
+export const ID_DOC_TYPES: { value: string; label: string }[] = [
+  { value: "cni", label: "CNI (National ID)" },
+  { value: "passport", label: "Passport" },
+  { value: "other", label: "Other" },
+];
+
+/** Human label for a stored id_document_type value. */
+export function idDocLabel(type: string | null): string | null {
+  if (!type) return null;
+  return ID_DOC_TYPES.find((t) => t.value === type)?.label ?? type;
 }
 
 type AccompanyingCounts = Pick<

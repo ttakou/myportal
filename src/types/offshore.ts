@@ -579,3 +579,35 @@ export interface StaffRotationHistory {
     currentlyOnboard: boolean;
   };
 }
+
+// --- Rotation / attendance exception flags ----------------------------------
+
+export type RotationFlagKind = "absent" | "early_arrival" | "early_departure" | "late_arrival";
+export type RotationFlagReason = "sick" | "medevac" | "compassionate" | "training_logistics" | "other";
+
+export const ROTATION_FLAG_KIND_LABEL: Record<RotationFlagKind, string> = {
+  absent: "Absent",
+  early_arrival: "Early arrival",
+  early_departure: "Early departure",
+  late_arrival: "Late arrival",
+};
+export const ROTATION_FLAG_REASON_LABEL: Record<RotationFlagReason, string> = {
+  sick: "Sick leave / medical",
+  medevac: "Medevac",
+  compassionate: "Compassionate / leave",
+  training_logistics: "Training / logistics",
+  other: "Other",
+};
+
+export interface RotationFlag {
+  id: string;
+  profile_id: string;
+  name: string;
+  installation_name: string | null;
+  kind: RotationFlagKind;
+  reason: RotationFlagReason;
+  note: string | null;
+  effective_date: string;
+  created_at: string;
+  resolved_at: string | null;
+}

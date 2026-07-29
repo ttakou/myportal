@@ -3,6 +3,7 @@
 
 export * from "./offshore/trips";
 export * from "./offshore/rotation-history";
+export * from "./offshore/flags";
 export * from "./offshore/installations";
 export * from "./offshore/crews";
 export * from "./offshore/rooms";
