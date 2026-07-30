@@ -93,6 +93,9 @@ export function VisitorsBoard({
   // Identity document (CNI / passport / other) + number.
   const [idType, setIdType] = useState("");
   const [idNumber, setIdNumber] = useState("");
+  // Visitor contact details.
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   // Optional end date turns the pre-registration into a multi-day pass the
   // visitor can check in and out of throughout [visitDate, visitUntil].
   const [visitUntil, setVisitUntil] = useState("");
@@ -137,6 +140,8 @@ export function VisitorsBoard({
     setVehiclePlate("");
     setIdType("");
     setIdNumber("");
+    setEmail("");
+    setPhone("");
     setVisitUntil("");
     setInfants("");
     setChildren("");
@@ -182,6 +187,8 @@ export function VisitorsBoard({
           vehiclePlate,
           idType,
           idNumber,
+          email,
+          phone,
           infants: Number(infants) || 0,
           children: Number(children) || 0,
           adolescents: Number(adolescents) || 0,
@@ -265,6 +272,20 @@ export function VisitorsBoard({
           value={idNumber}
           onChange={(e) => setIdNumber(e.target.value)}
           placeholder="CNI / Passport no. (optional)"
+          className="rounded-md border bg-background px-3 py-2 text-sm"
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email (optional)"
+          className="rounded-md border bg-background px-3 py-2 text-sm"
+        />
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone (optional)"
           className="rounded-md border bg-background px-3 py-2 text-sm"
         />
         {/* Optional end date → multi-day pass (repeated check-in/out over the range). */}
@@ -400,6 +421,11 @@ export function VisitorsBoard({
                     {v.id_document_number &&
                       ` · ${idDocLabel(v.id_document_type) ?? "ID"}: ${v.id_document_number}`}
                   </div>
+                  {(v.phone || v.email) && (
+                    <div className="text-xs text-muted-foreground">
+                      {[v.phone, v.email].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
                   {isPass(v) && (
                     <div className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-800">
                       <CalendarRange className="h-3 w-3" /> Pass · {visitRangeLabel(v)}
@@ -657,6 +683,8 @@ function CheckInDialog({
     vehiclePlate?: string;
     idType?: string;
     idNumber?: string;
+    email?: string;
+    phone?: string;
     infants?: number;
     children?: number;
     adolescents?: number;
@@ -669,6 +697,8 @@ function CheckInDialog({
   const [badgeNo, setBadgeNo] = useState(visitor.badge_no ?? "");
   const [idType, setIdType] = useState(visitor.id_document_type ?? "");
   const [idNumber, setIdNumber] = useState(visitor.id_document_number ?? "");
+  const [email, setEmail] = useState(visitor.email ?? "");
+  const [phone, setPhone] = useState(visitor.phone ?? "");
   const [vehicleType, setVehicleType] = useState(visitor.vehicle_type ?? "");
   const [vehiclePlate, setVehiclePlate] = useState(visitor.vehicle_plate ?? "");
   // Pre-filled from the pre-registration; editable because minors are often only
@@ -735,6 +765,28 @@ function CheckInDialog({
               />
             </label>
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block text-sm">
+              <span className="text-muted-foreground">Email</span>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Optional"
+                className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-muted-foreground">Phone</span>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Optional"
+                className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
           <label className="block text-sm">
             <span className="text-muted-foreground">Vehicle type</span>
             <select
@@ -792,6 +844,8 @@ function CheckInDialog({
                 vehiclePlate,
                 idType,
                 idNumber,
+                email,
+                phone,
                 comment,
                 checkInAt: arrival ? new Date(arrival).toISOString() : undefined,
                 infants: Number(infants) || 0,

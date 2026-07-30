@@ -86,6 +86,9 @@ export async function preRegisterVisitor(input: {
   /** Identity document (CNI / passport / other) + its number. */
   idType?: string;
   idNumber?: string;
+  /** Visitor contact details (optional). */
+  email?: string;
+  phone?: string;
   /** Walk-in: create the visitor already checked in (on site). */
   checkInNow?: boolean;
 }): Promise<ActionResult> {
@@ -132,6 +135,8 @@ export async function preRegisterVisitor(input: {
     service: input.service?.trim() || null,
     id_document_type: input.idType?.trim() || null,
     id_document_number: input.idNumber?.trim() || null,
+    email: input.email?.trim() || null,
+    phone: input.phone?.trim() || null,
     accompanying_infants: minors(input.infants),
     accompanying_children: minors(input.children),
     accompanying_adolescents: minors(input.adolescents),
@@ -187,6 +192,9 @@ export async function checkInVisitor(
     /** Identity document (CNI / passport / other) + its number. */
     idType?: string;
     idNumber?: string;
+    /** Visitor contact details (optional). */
+    email?: string;
+    phone?: string;
     /** Optional free-text note from reception/security. */
     comment?: string;
     /** Arrival timestamp (ISO). Defaults to now; reception may back-date it. */
@@ -222,6 +230,8 @@ export async function checkInVisitor(
   if (opts?.adolescents !== undefined) patch.accompanying_adolescents = minors(opts.adolescents);
   if (opts?.idType?.trim()) patch.id_document_type = opts.idType.trim();
   if (opts?.idNumber?.trim()) patch.id_document_number = opts.idNumber.trim();
+  if (opts?.email?.trim()) patch.email = opts.email.trim();
+  if (opts?.phone?.trim()) patch.phone = opts.phone.trim();
   if (comment !== null) patch.check_in_comment = comment;
 
   if (isPass) {
