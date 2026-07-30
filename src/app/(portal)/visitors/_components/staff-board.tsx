@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MessageSquare, Search, Users } from "lucide-react";
+import { MessageSquare, Pencil, Search, Users } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -12,7 +12,7 @@ import {
   type StaffAttendance,
 } from "@/types/staff-attendance";
 import { VEHICLE_TYPES } from "@/types/visitors";
-import { staffCheckIn, staffCheckOut } from "../staff-actions";
+import { setStaffCheckInAt, staffCheckIn, staffCheckOut } from "../staff-actions";
 
 const field = "rounded-md border bg-background px-2 py-1 text-sm";
 
@@ -38,23 +38,45 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
   const [vehicleType, setVehicleType] = useState("");
   const [plate, setPlate] = useState("");
   const [comment, setComment] = useState("");
+  // Optional arrival time on check-in (blank = now).
+  const [arrival, setArrival] = useState("");
   // The row whose check-out form is open (captures an optional comment).
   const [checkOutId, setCheckOutId] = useState<string | null>(null);
+  // The row whose recorded arrival time is being corrected.
+  const [editTimeId, setEditTimeId] = useState<string | null>(null);
+  const [editTime, setEditTime] = useState("");
 
   function openCheckIn(id: string) {
     setCheckOutId(null);
+    setEditTimeId(null);
     setCheckInId(id);
     setVehicleType("");
     setPlate("");
     setComment("");
+    setArrival("");
   }
   function confirmCheckIn(id: string) {
     const vehicle =
       vehicleType.trim() || plate.trim()
         ? { type: vehicleType.trim() || null, plate: plate.trim() || null }
         : undefined;
-    run(() => staffCheckIn(id, vehicle, comment.trim() || null));
+    run(() => staffCheckIn(id, vehicle, comment.trim() || null, arrival ? new Date(arrival).toISOString() : null));
     setCheckInId(null);
+  }
+  function openEditTime(id: string, currentIso: string | null) {
+    setCheckInId(null);
+    setCheckOutId(null);
+    setEditTimeId(id);
+    setEditTime(
+      currentIso
+        ? new Date(new Date(currentIso).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+        : "",
+    );
+  }
+  function confirmEditTime(id: string) {
+    if (!editTime) return;
+    run(() => setStaffCheckInAt(id, new Date(editTime).toISOString()));
+    setEditTimeId(null);
   }
   function openCheckOut(id: string) {
     setCheckInId(null);
@@ -167,7 +189,40 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
                     {ATTENDANCE_LABEL[s.status]}
                   </span>
                 </td>
-                <td className="px-4 py-3 tabular-nums text-muted-foreground">{time(s.check_in_at)}</td>
+                <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                  {editTimeId === s.profile_id ? (
+                    <span className="inline-flex items-center gap-1">
+                      <input
+                        type="datetime-local"
+                        value={editTime}
+                        max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                        onChange={(e) => setEditTime(e.target.value)}
+                        aria-label="Arrival time"
+                        className={cn(field, "w-44")}
+                      />
+                      <button type="button" disabled={pending || !editTime} onClick={() => confirmEditTime(s.profile_id)} className="text-xs font-medium text-primary hover:underline">
+                        Save
+                      </button>
+                      <button type="button" onClick={() => setEditTimeId(null)} className="text-xs text-muted-foreground hover:text-foreground">
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">
+                      {time(s.check_in_at)}
+                      {s.check_in_at && (
+                        <button
+                          type="button"
+                          onClick={() => openEditTime(s.profile_id, s.check_in_at)}
+                          title="Edit arrival time"
+                          className="text-muted-foreground/70 hover:text-foreground"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 tabular-nums text-muted-foreground">{time(s.check_out_at)}</td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {[s.vehicle_type, s.vehicle_plate].filter(Boolean).join(" · ") || "—"}
@@ -231,6 +286,15 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
                           placeholder="Comment (optional)"
                           aria-label="Check-in comment"
                           className={cn(field, "w-40")}
+                        />
+                        <input
+                          type="datetime-local"
+                          value={arrival}
+                          max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                          onChange={(e) => setArrival(e.target.value)}
+                          aria-label="Arrival time (blank = now)"
+                          title="Arrival time — leave blank for now"
+                          className={field}
                         />
                         <Button size="sm" disabled={pending} onClick={() => confirmCheckIn(s.profile_id)}>
                           Confirm
