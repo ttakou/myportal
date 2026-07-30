@@ -67,24 +67,41 @@ function cleanComment(c?: string | null): string | null {
   return t ? t.slice(0, 500) : null;
 }
 
+/**
+ * Resolve an optional operator-supplied arrival time (ISO) to a timestamp.
+ * Empty → now. Rejects unparseable values and times more than 5 min ahead.
+ */
+function parseArrivalTime(iso?: string | null): { iso: string; error?: string } {
+  if (!iso || !iso.trim()) return { iso: new Date().toISOString() };
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return { iso: "", error: "Invalid arrival time." };
+  if (t > Date.now() + 5 * 60000) return { iso: "", error: "Arrival time can't be in the future." };
+  return { iso: new Date(t).toISOString() };
+}
+
 async function recordCheckIn(
   profileId: string,
   method: "self" | "guard",
   coords: { lat: number; lng: number } | null,
   vehicle?: { type?: string | null; plate?: string | null },
   comment?: string | null,
+  checkInAt?: string | null,
 ): Promise<ActionResult> {
   const supabase = createClient();
   const user = await getCachedUser();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
 
+  // Arrival defaults to now; a guard may enter/adjust it (arrived earlier than logged).
+  const arrival = parseArrivalTime(checkInAt);
+  if (arrival.error) return { ok: false, error: arrival.error };
+
   const { error } = await supabase.from("staff_attendance").upsert(
     {
       tenant_id: tenant.id,
       profile_id: profileId,
       attendance_date: today(),
-      check_in_at: new Date().toISOString(),
+      check_in_at: arrival.iso,
       check_out_at: null,
       check_in_method: method,
       checked_in_by: user?.id ?? null,
@@ -128,10 +145,42 @@ export async function staffCheckIn(
   profileId: string,
   vehicle?: { type?: string | null; plate?: string | null },
   comment?: string | null,
+  checkInAt?: string | null,
 ): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
-  return recordCheckIn(profileId, "guard", null, vehicle, comment);
+  return recordCheckIn(profileId, "guard", null, vehicle, comment, checkInAt);
+}
+
+/**
+ * Correct a staff member's recorded arrival time for today — e.g. they arrived
+ * earlier than the gate logged them. Kept before any recorded check-out.
+ */
+export async function setStaffCheckInAt(profileId: string, checkInAt: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  if (!checkInAt?.trim()) return { ok: false, error: "Pick an arrival time." };
+  const arrival = parseArrivalTime(checkInAt);
+  if (arrival.error) return { ok: false, error: arrival.error };
+  const supabase = createClient();
+  const { data: row } = await supabase
+    .from("staff_attendance")
+    .select("check_in_at, check_out_at")
+    .eq("profile_id", profileId)
+    .eq("attendance_date", today())
+    .maybeSingle();
+  if (!row) return { ok: false, error: "No check-in recorded today for this person." };
+  if (row.check_out_at && arrival.iso > (row.check_out_at as string)) {
+    return { ok: false, error: "Arrival time must be before the check-out time." };
+  }
+  const { error } = await supabase
+    .from("staff_attendance")
+    .update({ check_in_at: arrival.iso })
+    .eq("profile_id", profileId)
+    .eq("attendance_date", today());
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
 }
 
 export async function staffCheckOut(
