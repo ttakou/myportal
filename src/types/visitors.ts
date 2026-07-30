@@ -28,6 +28,9 @@ export interface Visitor {
   /** Identity document recorded at registration/check-in (CNI, passport, …). */
   id_document_type: string | null;
   id_document_number: string | null;
+  /** Visitor contact details captured by reception (optional). */
+  email: string | null;
+  phone: string | null;
   vehicle_type: string | null;
   vehicle_plate: string | null;
   host_name: string | null;
