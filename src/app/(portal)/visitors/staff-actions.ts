@@ -1,7 +1,9 @@
 "use server";
 
+import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCachedUser } from "@/lib/auth";
 import { requireModule } from "@/lib/permissions-server";
 import { today } from "@/lib/canteen";
@@ -218,4 +220,86 @@ export async function selfCheckOut(): Promise<ActionResult> {
   const user = await getCachedUser();
   if (!user) return { ok: false, error: "You're not signed in." };
   return recordCheckOut(user.id);
+}
+
+// ---- Reception: register a walk-in staff member / contractor ----------------
+
+/**
+ * Let reception register a staff member or contractor who isn't in the system
+ * yet, so they can be checked in and mustered. Deliberately restricted: the new
+ * profile is always a plain **employee** account with **no** functional roles,
+ * access roles, manager or module access — reception cannot define anyone's
+ * role or permissions in the app. An admin can elevate later if needed.
+ */
+export async function registerStaffAtGate(input: {
+  fullName: string;
+  employeeType?: "employee" | "contractor";
+  department?: string;
+  empNum?: string;
+  email?: string;
+}): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+
+  const fullName = input.fullName.trim();
+  if (!fullName) return { ok: false, error: "Full name is required." };
+  const realEmail = (input.email ?? "").trim().toLowerCase();
+  if (realEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(realEmail)) {
+    return { ok: false, error: "Enter a valid email, or leave it blank." };
+  }
+  const hasEmail = realEmail.length > 0;
+  // Auth needs a unique login id even with no real email; use a placeholder and
+  // keep profiles.email null. Reception-created accounts are for tracking — they
+  // aren't expected to log in, so the random password is never surfaced.
+  const email = hasEmail ? realEmail : `pending-${randomBytes(6).toString("hex")}@no-email.local`;
+  const employeeType = input.employeeType === "contractor" ? "contractor" : "employee";
+
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password: randomBytes(24).toString("base64"),
+    email_confirm: true,
+    user_metadata: { full_name: fullName },
+  });
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes("already")
+        ? "An account with that email already exists."
+        : error.message,
+    };
+  }
+
+  const { error: profileError } = await admin.from("profiles").upsert(
+    {
+      id: data.user.id,
+      email: hasEmail ? email : null,
+      full_name: fullName,
+      tenant_id: tenant.id,
+      // Forced: reception can never grant a role or any access here.
+      role: "employee",
+      manager_id: null,
+      department: input.department?.trim() || null,
+      employee_type: employeeType,
+      emp_num: input.empNum?.trim() || null,
+      is_active: true,
+    },
+    { onConflict: "id" },
+  );
+  if (profileError) {
+    return {
+      ok: false,
+      error:
+        profileError.code === "23505" && profileError.message.includes("emp_num")
+          ? "That employee number is already in use."
+          : `Account created but profile setup failed: ${profileError.message}`,
+    };
+  }
+  revalidate();
+  return { ok: true };
 }
