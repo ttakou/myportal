@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MessageSquare, Pencil, Search, Users } from "lucide-react";
+import { MessageSquare, Pencil, Search, UserPlus, Users } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -12,7 +12,7 @@ import {
   type StaffAttendance,
 } from "@/types/staff-attendance";
 import { VEHICLE_TYPES } from "@/types/visitors";
-import { setStaffCheckInAt, staffCheckIn, staffCheckOut } from "../staff-actions";
+import { registerStaffAtGate, setStaffCheckInAt, staffCheckIn, staffCheckOut } from "../staff-actions";
 
 const field = "rounded-md border bg-background px-2 py-1 text-sm";
 
@@ -45,6 +45,34 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
   // The row whose recorded arrival time is being corrected.
   const [editTimeId, setEditTimeId] = useState<string | null>(null);
   const [editTime, setEditTime] = useState("");
+  // Register a walk-in staff member / contractor not yet in the system.
+  const [showRegister, setShowRegister] = useState(false);
+  const [regName, setRegName] = useState("");
+  const [regType, setRegType] = useState<"employee" | "contractor">("employee");
+  const [regDept, setRegDept] = useState("");
+  const [regEmpNum, setRegEmpNum] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+
+  function registerStaff() {
+    run(async () => {
+      const res = await registerStaffAtGate({
+        fullName: regName,
+        employeeType: regType,
+        department: regDept || undefined,
+        empNum: regEmpNum || undefined,
+        email: regEmail || undefined,
+      });
+      if (res.ok) {
+        setRegName("");
+        setRegDept("");
+        setRegEmpNum("");
+        setRegEmail("");
+        setRegType("employee");
+        setShowRegister(false);
+      }
+      return res;
+    });
+  }
 
   function openCheckIn(id: string) {
     setCheckOutId(null);
@@ -130,6 +158,13 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
           <p className="text-sm text-muted-foreground">
             {onSiteCount} of {rows.length} staff currently on site. Check staff in or out at the gate.
           </p>
+          <button
+            type="button"
+            onClick={() => setShowRegister((s) => !s)}
+            className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          >
+            <UserPlus className="h-4 w-4" /> Register a staff / contractor
+          </button>
         </div>
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -141,6 +176,40 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
           />
         </div>
       </div>
+
+      {showRegister && (
+        <div className="rounded-lg border bg-card p-3">
+          <p className="mb-2 text-sm font-medium">Register a staff member or contractor not yet in the system</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <input
+              value={regName}
+              onChange={(e) => setRegName(e.target.value)}
+              placeholder="Full name"
+              className={field}
+            />
+            <select
+              value={regType}
+              onChange={(e) => setRegType(e.target.value as "employee" | "contractor")}
+              aria-label="Type"
+              className={field}
+            >
+              <option value="employee">Employee</option>
+              <option value="contractor">Contractor</option>
+            </select>
+            <input value={regDept} onChange={(e) => setRegDept(e.target.value)} placeholder="Department (optional)" className={field} />
+            <input value={regEmpNum} onChange={(e) => setRegEmpNum(e.target.value)} placeholder="Employee # (optional)" className={field} />
+            <input value={regEmail} onChange={(e) => setRegEmail(e.target.value)} placeholder="Work email (optional)" className={field} />
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Button size="sm" disabled={pending || !regName.trim()} onClick={registerStaff}>
+              Register
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Creates a basic record only — no app role or access is granted here.
+            </span>
+          </div>
+        </div>
+      )}
 
       {error && (
         <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
