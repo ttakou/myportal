@@ -26,6 +26,19 @@ function revalidate() {
   revalidatePath("/visitors/muster");
 }
 
+/**
+ * Resolve an optional operator-supplied arrival time (ISO) to a timestamp.
+ * Empty → now. Rejects unparseable values and times more than 5 min in the
+ * future (arrival can't be ahead of the clock).
+ */
+function parseArrivalTime(iso?: string): { iso: string; error?: string } {
+  if (!iso || !iso.trim()) return { iso: new Date().toISOString() };
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return { iso: "", error: "Invalid arrival time." };
+  if (t > Date.now() + 5 * 60000) return { iso: "", error: "Arrival time can't be in the future." };
+  return { iso: new Date(t).toISOString() };
+}
+
 export type HostOption = { id: string; name: string; department: string | null };
 
 /** Typeahead for assigning a visit to an individual host (employee directory). */
@@ -176,6 +189,8 @@ export async function checkInVisitor(
     idNumber?: string;
     /** Optional free-text note from reception/security. */
     comment?: string;
+    /** Arrival timestamp (ISO). Defaults to now; reception may back-date it. */
+    checkInAt?: string;
   },
 ): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
@@ -189,7 +204,11 @@ export async function checkInVisitor(
     .maybeSingle();
   if (!visitor) return { ok: false, error: "Visitor not found." };
   const isPass = visitor.visit_until != null;
-  const now = new Date().toISOString();
+  // Arrival defaults to now, but reception may enter/adjust it (e.g. the
+  // visitor arrived earlier than they were registered at the desk).
+  const arrival = parseArrivalTime(opts?.checkInAt);
+  if (arrival.error) return { ok: false, error: arrival.error };
+  const now = arrival.iso;
   const minors = (n: number) => Math.max(0, Math.min(50, Math.round(Number(n) || 0)));
   const comment = opts?.comment?.trim() ? opts.comment.trim().slice(0, 500) : null;
 
@@ -277,6 +296,56 @@ export async function updateVisitorMinors(
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}
+
+/**
+ * Correct the recorded check-in (arrival) time of a visitor who is already on
+ * site or has departed — e.g. they arrived earlier than the desk logged them.
+ * For a single-day visit this is the row's arrival; for a long-stay pass it is
+ * the most recent gate entry (and the mirrored row time). Must stay before the
+ * departure time when one exists.
+ */
+export async function setVisitorCheckInAt(id: string, checkInAt: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const parsed = parseArrivalTime(checkInAt);
+  if (parsed.error) return { ok: false, error: parsed.error };
+  if (!checkInAt?.trim()) return { ok: false, error: "Pick an arrival time." };
+  const iso = parsed.iso;
+  const supabase = createClient();
+  const { data: visitor } = await supabase
+    .from("visitors")
+    .select("visit_until, check_in_at, check_out_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (!visitor) return { ok: false, error: "Visitor not found." };
+  if (visitor.check_out_at && iso > (visitor.check_out_at as string)) {
+    return { ok: false, error: "Arrival time must be before the departure time." };
+  }
+
+  if (visitor.visit_until != null) {
+    // Long-stay pass: adjust the most recent gate entry, and mirror onto the row.
+    const { data: entry } = await supabase
+      .from("visitor_checkins")
+      .select("id")
+      .eq("visitor_id", id)
+      .order("check_in_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (entry) {
+      const { error } = await supabase
+        .from("visitor_checkins")
+        .update({ check_in_at: iso })
+        .eq("id", entry.id);
+      if (error) return { ok: false, error: error.message };
+    }
+    await supabase.from("visitors").update({ check_in_at: iso }).eq("id", id);
+  } else {
+    const { error } = await supabase.from("visitors").update({ check_in_at: iso }).eq("id", id);
+    if (error) return { ok: false, error: error.message };
+  }
   revalidate();
   return { ok: true };
 }

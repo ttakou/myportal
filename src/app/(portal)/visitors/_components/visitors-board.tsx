@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { CalendarRange, Car, MessageSquare, UserCheck, UserPlus, Users } from "lucide-react";
+import { CalendarRange, Car, MessageSquare, Pencil, UserCheck, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -25,6 +25,7 @@ import {
   checkOutVisitor,
   preRegisterVisitor,
   searchHosts,
+  setVisitorCheckInAt,
   updateVisitorMinors,
   type HostOption,
 } from "../actions";
@@ -150,6 +151,8 @@ export function VisitorsBoard({
   const [checkIn, setCheckIn] = useState<Visitor | null>(null);
   // Reception check-out dialog (captures an optional security comment).
   const [checkOut, setCheckOut] = useState<Visitor | null>(null);
+  // Correct a visitor's recorded arrival time.
+  const [editArrival, setEditArrival] = useState<Visitor | null>(null);
   // Correct accompanying-minor counts on an existing (e.g. pre-registered) visitor.
   const [editMinors, setEditMinors] = useState<Visitor | null>(null);
 
@@ -440,7 +443,19 @@ export function VisitorsBoard({
                   )}
                 </td>
                 <td className="px-4 py-3 tabular-nums text-muted-foreground">
-                  {v.check_in_at ? new Date(v.check_in_at).toLocaleTimeString() : "—"}
+                  <span className="inline-flex items-center gap-1">
+                    {v.check_in_at ? new Date(v.check_in_at).toLocaleTimeString() : "—"}
+                    {canOperate && v.check_in_at && (
+                      <button
+                        type="button"
+                        onClick={() => setEditArrival(v)}
+                        title="Edit arrival time"
+                        className="text-muted-foreground/70 hover:text-foreground"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
                 </td>
                 <td className="px-4 py-3 tabular-nums text-muted-foreground">
                   {v.check_out_at ? new Date(v.check_out_at).toLocaleTimeString() : "—"}
@@ -556,6 +571,17 @@ export function VisitorsBoard({
           }
         />
       )}
+
+      {editArrival && (
+        <ArrivalTimeDialog
+          visitor={editArrival}
+          pending={pending}
+          onCancel={() => setEditArrival(null)}
+          onSubmit={(iso) =>
+            run(() => setVisitorCheckInAt(editArrival.id, iso), () => setEditArrival(null))
+          }
+        />
+      )}
     </div>
   );
 }
@@ -635,9 +661,11 @@ function CheckInDialog({
     children?: number;
     adolescents?: number;
     comment?: string;
+    checkInAt?: string;
   }) => void;
 }) {
   const [comment, setComment] = useState("");
+  const [arrival, setArrival] = useState("");
   const [badgeNo, setBadgeNo] = useState(visitor.badge_no ?? "");
   const [idType, setIdType] = useState(visitor.id_document_type ?? "");
   const [idNumber, setIdNumber] = useState(visitor.id_document_number ?? "");
@@ -660,9 +688,20 @@ function CheckInDialog({
       <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
         <h3 className="text-lg font-semibold">Check in {visitor.full_name}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          The arrival time is recorded automatically. Capture the badge and any vehicle details.
+          Arrival defaults to now — set a time only if they arrived earlier. Capture the badge and any vehicle details.
         </p>
         <div className="mt-4 space-y-3">
+          <label className="block text-sm">
+            <span className="text-muted-foreground">Arrival time</span>
+            <input
+              type="datetime-local"
+              value={arrival}
+              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+              onChange={(e) => setArrival(e.target.value)}
+              className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+            <span className="mt-0.5 block text-xs text-muted-foreground">Leave blank to use the current time.</span>
+          </label>
           <label className="block text-sm">
             <span className="text-muted-foreground">Badge number</span>
             <input
@@ -754,6 +793,7 @@ function CheckInDialog({
                 idType,
                 idNumber,
                 comment,
+                checkInAt: arrival ? new Date(arrival).toISOString() : undefined,
                 infants: Number(infants) || 0,
                 children: Number(children) || 0,
                 adolescents: Number(adolescents) || 0,
@@ -803,6 +843,59 @@ function CheckOutDialog({
           </Button>
           <Button className="flex-1" disabled={pending} onClick={() => onSubmit(comment)}>
             {pending ? "Checking out…" : "Check out"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Correct a visitor's recorded arrival time (reception/operator). */
+function ArrivalTimeDialog({
+  visitor,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  visitor: Visitor;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (iso: string) => void;
+}) {
+  const toLocalInput = (iso: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+  const [value, setValue] = useState(() => toLocalInput(visitor.check_in_at));
+  const nowLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-sm rounded-xl bg-card p-5 shadow-xl">
+        <h3 className="text-lg font-semibold">Arrival time — {visitor.full_name}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Adjust the recorded check-in time (e.g. they arrived before being logged).
+        </p>
+        <label className="mt-4 block text-sm">
+          <span className="text-muted-foreground">Arrival</span>
+          <input
+            type="datetime-local"
+            value={value}
+            max={nowLocal}
+            onChange={(e) => setValue(e.target.value)}
+            className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+          />
+        </label>
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            className="flex-1"
+            disabled={pending || !value}
+            onClick={() => value && onSubmit(new Date(value).toISOString())}
+          >
+            {pending ? "Saving…" : "Save"}
           </Button>
         </div>
       </div>
