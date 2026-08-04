@@ -38,9 +38,11 @@ import {
   type CertAlert,
   type Crew,
   type CrewChangeSuggestion,
+  type Flight,
   type GenderRestriction,
   type Manifest,
   type ManifestStatus,
+  type OffshoreTrip,
   type PobBreakdown,
   type PobOnboard,
   type Room,
@@ -98,6 +100,7 @@ import { BulkRosterImport } from "./bulk-roster-import";
 import { CateringPanel } from "./catering-panel";
 import { HistoryPanel } from "./history-panel";
 import { StaffRotationPanel } from "./staff-rotation-panel";
+import { TripsPanel } from "./trips-panel";
 import { AttendancePanel } from "./attendance-panel";
 import { CrewAssign } from "./crew-assign";
 import {
@@ -123,6 +126,7 @@ type Tab =
   | "assign"
   | "visitors"
   | "manifests"
+  | "trips"
   | "catering"
   | "emergency"
   | "drill"
@@ -142,6 +146,9 @@ export function OffshoreManagement(props: {
   certAlerts: CertAlert[];
   visits: VisitRequest[];
   manifests: Manifest[];
+  trips: OffshoreTrip[];
+  flights: Flight[];
+  canAddFlight: boolean;
   calendar: RotationCalendar;
   employees: AssignableEmployee[];
   suggestions: CrewChangeSuggestion[];
@@ -242,6 +249,9 @@ export function OffshoreManagement(props: {
           onboard={props.pob.people}
           visits={props.visits}
         />
+      )}
+      {tab === "trips" && (
+        <TripsPanel all={props.trips} flights={props.flights} canAddFlight={props.canAddFlight} />
       )}
       {tab === "assign" && <CrewAssign employees={props.employees} crews={props.crews} />}
       {tab === "catering" && <CateringPanel installations={props.installations} />}
