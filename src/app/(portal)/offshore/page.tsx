@@ -44,7 +44,11 @@ export default async function OffshorePage({
   const { view } = await searchParams;
   const access = await getAccess();
   const isAdmin = isAdminRole(await getCurrentRole());
-  const canManage = access.isAdmin || access.isCampboss || access.isOim;
+  // Full managers see and edit everything; the Dispatcher also reaches the
+  // management area but with a scoped, partly read-only set of views.
+  const offshoreManager = access.isAdmin || access.isCampboss || access.isOim;
+  const canManage = offshoreManager || access.isDispatcher;
+  const offshoreFlags = { manager: offshoreManager, dispatcher: access.isDispatcher };
 
   // One view at a time, driven by the sidebar submenu. Everyone lands on
   // "My trips" (the self-service area); managers can switch to a management view.
@@ -132,7 +136,8 @@ export default async function OffshorePage({
 
       {showManagement && activeView === "dashboard" && (
         <div className="space-y-4">
-          <DefaultModeToggle mode={defaultMode} />
+          {/* The tenant-wide default crew-change mode is a manager setting. */}
+          {offshoreManager && <DefaultModeToggle mode={defaultMode} />}
           {suggestions.length > 0 && (
             <CrewChangeSuggestions items={suggestions} defaultMode={defaultMode} />
           )}
@@ -142,6 +147,7 @@ export default async function OffshorePage({
       {showManagement && pobBreakdown && accommodation && (
         <Suspense fallback={null}>
         <OffshoreManagement
+          flags={offshoreFlags}
           crews={crews}
           rooms={rooms}
           roster={roster}

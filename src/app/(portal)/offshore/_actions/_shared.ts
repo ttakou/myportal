@@ -20,6 +20,17 @@ export async function canManageOffshore(): Promise<boolean> {
   return a.isAdmin || a.isCampboss || a.isOim;
 }
 
+/**
+ * Sections the Dispatcher runs in full — crew rotation, travel & manifests and
+ * the offshore-staff roster — on top of the full managers (admin/Campboss/OIM).
+ * The Dispatcher is deliberately NOT in `canManageOffshore`: that would bypass
+ * every offshore verb, whereas accommodation and POB stay read-only for them.
+ */
+export async function canDispatchOffshore(): Promise<boolean> {
+  const a = await getAccess();
+  return a.isAdmin || a.isCampboss || a.isOim || a.isDispatcher;
+}
+
 export async function tenantId(): Promise<string | null> {
   const supabase = createClient();
   const { data } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
@@ -38,6 +49,18 @@ export async function canManageCatering(): Promise<boolean> {
  */
 export async function requireOffshore(verb: Verb): Promise<ActionResult | null> {
   if (await canManageOffshore()) return null; // admin, campboss, or oim
+  return requirePermission("offshore", verb);
+}
+
+/**
+ * Guard for the sections the Dispatcher fully manages (crew rotation, travel &
+ * manifests, offshore-staff roster). Same as `requireOffshore` but the
+ * Dispatcher also bypasses the verb check. Accommodation / POB actions keep
+ * using `requireOffshore`, so the Dispatcher (who holds only the offshore
+ * `view` verb) stays read-only there.
+ */
+export async function requireOffshoreDispatch(verb: Verb): Promise<ActionResult | null> {
+  if (await canDispatchOffshore()) return null; // admin, campboss, oim, or dispatcher
   return requirePermission("offshore", verb);
 }
 

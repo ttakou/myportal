@@ -37,6 +37,7 @@ const FUNCTIONAL: { role: FunctionalRole; label: string }[] = [
   { role: "safety_admin", label: "Safety" },
   { role: "campboss", label: "Campboss" },
   { role: "oim", label: "OIM" },
+  { role: "dispatcher", label: "Dispatcher" },
   { role: "system_admin", label: "Sys admin" },
 ];
 

@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import type { CrewChangePrefill, CrewChangePrefillMember } from "@/types/offshore";
-import { requireOffshore, rev, tenantId } from "./_shared";
+import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 const DAY = 86_400_000;
 
@@ -54,7 +54,7 @@ function scheduleWindow(crew: {
 
 /** Board a single member now (late arrival joining colleagues already offshore). */
 export async function boardMember(profileId: string): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
@@ -134,7 +134,7 @@ export async function boardMember(profileId: string): Promise<ActionResult> {
 
 /** Board a crew for its current offshore window (idempotent). */
 export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
@@ -220,7 +220,7 @@ export async function getCrewChangePrefill(
   crewId: string,
   action: "mobilise" | "demobilise",
 ): Promise<{ ok: true; data: CrewChangePrefill } | { ok: false; error: string }> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return { ok: false, error: gate.error ?? "Not authorized." };
   const supabase = createClient();
 
@@ -313,7 +313,7 @@ export async function mobiliseCrewManual(input: {
   demobDate?: string | null;
   members: { profileId: string; roomId?: string | null; bed?: string | null }[];
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
@@ -377,7 +377,7 @@ export async function demobiliseSelected(input: {
   demobDate?: string | null;
   profileIds: string[];
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const ids = input.profileIds.filter(Boolean);
@@ -415,7 +415,7 @@ export async function demobiliseSelected(input: {
 
 /** Offboard everyone currently on board for a crew. */
 export async function demobiliseCrew(crewId: string): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);

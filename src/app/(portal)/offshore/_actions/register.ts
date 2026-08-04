@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/types/actions";
-import { requireOffshore, rev, tenantId } from "./_shared";
+import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 export interface RegisterEmpResult extends ActionResult {
   tempPassword?: string;
@@ -21,7 +21,7 @@ export async function registerOffshoreEmployee(input: {
   company?: string;
   crewId?: string;
 }): Promise<RegisterEmpResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   const fullName = input.fullName.trim();
   if (!fullName) return { ok: false, error: "Name is required." };
