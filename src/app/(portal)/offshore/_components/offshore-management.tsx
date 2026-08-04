@@ -71,11 +71,7 @@ import {
   removeEmergencyTeamMember,
   offboardTrip,
   reassignTripRoom,
-  setBackToBack,
-  setRoomDefaultOwners,
-  setAllRoomDefaults,
-  setStaffFixedRoom,
-  clearRoomDefaultOwners,
+  autoAllocateBeds,
   setTripCategory,
   findAvailableBeds,
   createManifest,
@@ -223,7 +219,6 @@ export function OffshoreManagement(props: {
         <RoomsPanel
           rooms={props.rooms}
           installations={props.installations}
-          roster={props.roster}
           readOnly={readOnly}
         />
       )}
@@ -2929,20 +2924,12 @@ function CrewBackToBackList({ calendar, crews }: { calendar: RotationCalendar; c
 /** Live occupancy: every room with its checked-in occupants and a fill level. */
 function RoomOccupancyList({
   rooms,
-  roster,
-  readOnly = false,
 }: {
   rooms: Room[];
-  roster: RosterEntry[];
-  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(true);
-  const { pending, error, run } = useRun();
   const occupiedRooms = rooms.filter((r) => r.occupied > 0).length;
   const totalOnboard = rooms.reduce((n, r) => n + r.occupied, 0);
-  const mates = roster
-    .map((m) => ({ id: m.profile_id, name: m.full_name || m.email }))
-    .sort((a, b) => a.name.localeCompare(b.name));
   // Show occupied rooms first, then by room label.
   const sorted = [...rooms].sort(
     (a, b) =>
@@ -2963,22 +2950,6 @@ function RoomOccupancyList({
       </button>
       {open && (
         <div className="px-3 pb-3">
-          {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
-          {!readOnly && (
-            <div className="mb-2 flex justify-end">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={pending}
-                onClick={() => {
-                  if (confirm("Set default owners for every room from the current allocation? Each on-board rotator's fixed room/bed is set, and their back-to-back shares it."))
-                    run(() => setAllRoomDefaults());
-                }}
-              >
-                Set all default owners from current
-              </Button>
-            </div>
-          )}
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {sorted.map((r) => {
               const label = [r.block, r.room_number].filter(Boolean).join(" ");
@@ -3001,109 +2972,28 @@ function RoomOccupancyList({
                     />
                   </div>
                   {r.occupants.length > 0 && (
-                    <ul className="mt-1.5 space-y-1.5">
+                    <ul className="mt-1.5 space-y-1">
                       {r.occupants.map((o) => (
-                        <li key={o.trip_id} className="border-b pb-1.5 last:border-0 last:pb-0">
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
-                            <span className="font-medium">{o.name}</span>
-                            {!readOnly && (
-                              <button
-                                disabled={pending}
-                                title="Remove from board"
-                                onClick={() => {
-                                  if (confirm(`Remove ${o.name} from board? They'll be taken off POB.`))
-                                    run(() => offboardTrip(o.trip_id));
-                                }}
-                                className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
-                          {!readOnly && o.profile_id && (
-                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <span>B2B:</span>
-                              <LazySelect
-                                value={mates.find((m) => m.name === o.b2b_name)?.id ?? null}
-                                options={mates.filter((m) => m.id !== o.profile_id)}
-                                getOptionValue={(m) => m.id}
-                                getOptionLabel={(m) => m.name}
-                                placeholder="— none —"
-                                disabled={pending}
-                                className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
-                                onChange={(v) => run(() => setBackToBack(o.profile_id as string, v))}
-                              />
-                            </div>
-                          )}
+                        <li key={o.trip_id} className="flex items-center gap-1.5 text-xs">
+                          <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
+                          <span className="font-medium">{o.name}</span>
                         </li>
                       ))}
                     </ul>
                   )}
-                  {!readOnly && (
-                  <div className="mt-1.5 border-t pt-1 text-[11px] text-muted-foreground">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-medium">Default owner(s)</span>
-                      <div className="flex items-center gap-1">
-                        {r.occupied > 0 && (
-                          <button
-                            disabled={pending}
-                            title="Set the current occupants (and their back-to-backs) as this room's fixed owners"
-                            onClick={() => run(() => setRoomDefaultOwners(r.id))}
-                            className="rounded border px-1.5 py-0.5 hover:bg-accent"
-                          >
-                            Set from current
-                          </button>
-                        )}
-                        {r.owners.length > 0 && (
-                          <button
-                            disabled={pending}
-                            title="Clear all default owners of this room"
-                            onClick={() => run(() => clearRoomDefaultOwners(r.id))}
-                            className="rounded border px-1.5 py-0.5 hover:bg-destructive/10 hover:text-destructive"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {r.owners.length > 0 ? (
+                  {r.owners.length > 0 && (
+                    <div className="mt-1.5 border-t pt-1 text-[11px] text-muted-foreground">
+                      <span className="font-medium">Cabin owner(s)</span>
                       <ul className="mt-0.5 space-y-0.5">
                         {r.owners.map((o) => (
                           <li key={o.profile_id} className="flex items-center gap-1">
                             <span className="font-mono">{o.bed || "•"}</span>
                             <span>{o.name}</span>
                             {o.back_to_back ? <span className="text-muted-foreground/70"> ⇄ {o.back_to_back}</span> : ""}
-                            <button
-                              disabled={pending}
-                              title={`Remove ${o.name} as a default owner`}
-                              onClick={() => run(() => setStaffFixedRoom(o.profile_id, null))}
-                              className="ml-auto rounded p-0.5 hover:bg-destructive/10 hover:text-destructive"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
                           </li>
                         ))}
                       </ul>
-                    ) : (
-                      <p className="mt-0.5 italic">none set</p>
-                    )}
-                    {/* Assign any roster member as a default owner — no need for them
-                        to be on board first. */}
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className="shrink-0">Add owner:</span>
-                      <LazySelect
-                        value={null}
-                        options={mates.filter((m) => !r.owners.some((o) => o.profile_id === m.id))}
-                        getOptionValue={(m) => m.id}
-                        getOptionLabel={(m) => m.name}
-                        placeholder="— pick a person —"
-                        disabled={pending}
-                        className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
-                        onChange={(v) => v && run(() => setStaffFixedRoom(v, r.id))}
-                      />
                     </div>
-                  </div>
                   )}
                 </div>
               );
@@ -3134,6 +3024,26 @@ function BedBoardPanel({
   const { pending, error, run } = useRun();
   const [q, setQ] = useState("");
   const [showFull, setShowFull] = useState(false);
+  const [allocMsg, setAllocMsg] = useState<string | null>(null);
+
+  function autoAllocate() {
+    setAllocMsg(null);
+    run(async () => {
+      const res = await autoAllocateBeds();
+      if (res.ok) {
+        const placed = res.placed ?? 0;
+        const unplaced = res.unplaced ?? 0;
+        setAllocMsg(
+          placed === 0 && unplaced === 0
+            ? "Everyone on board already has a bed."
+            : `Seated ${placed} ${placed === 1 ? "person" : "people"}` +
+                (unplaced ? ` · ${unplaced} still need a manual bed (no free room open to anyone)` : "") +
+                ".",
+        );
+      }
+      return res;
+    });
+  }
 
   const labelOf = (r: Room) => [r.block, r.room_number].filter(Boolean).join(" ");
 
@@ -3194,6 +3104,11 @@ function BedBoardPanel({
         </span>
         <span className="text-muted-foreground">on board waiting for a bed</span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {!readOnly && (
+            <Button size="sm" disabled={pending || waitingCount === 0} onClick={autoAllocate}>
+              Auto-allocate beds
+            </Button>
+          )}
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -3206,6 +3121,19 @@ function BedBoardPanel({
           </label>
         </div>
       </div>
+
+      {allocMsg && (
+        <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+          {allocMsg}
+        </p>
+      )}
+      {!readOnly && waitingCount > 0 && (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium">Auto-allocate beds</span> seats everyone waiting — honouring
+          fixed cabins first, then filling rooms open to anyone. Gender-restricted rooms are left for
+          you to place by hand below.
+        </p>
+      )}
 
       {pool.length === 0 ? (
         <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
@@ -3361,12 +3289,10 @@ function EmptyBed({
 function RoomsPanel({
   rooms,
   installations,
-  roster,
   readOnly = false,
 }: {
   rooms: Room[];
   installations: Installation[];
-  roster: RosterEntry[];
   readOnly?: boolean;
 }) {
   const { pending, error, run } = useRun();
@@ -3393,7 +3319,7 @@ function RoomsPanel({
           <FileText className="h-4 w-4" /> Room allocation report
         </Button>
       </div>
-      <RoomOccupancyList rooms={rooms} roster={roster} readOnly={readOnly} />
+      <RoomOccupancyList rooms={rooms} />
       {!readOnly && (
         <>
       <BulkRoomImport />
