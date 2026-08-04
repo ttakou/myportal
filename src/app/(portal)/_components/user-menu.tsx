@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LogOut } from "lucide-react";
@@ -34,13 +35,19 @@ export function UserMenu({
 
   return (
     <div className="flex items-center gap-3">
-      <div className="hidden text-right sm:block">
-        <p className="text-sm font-medium leading-tight">{name}</p>
-        <p className="text-xs capitalize text-muted-foreground">{prettyRole}</p>
-      </div>
-      <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-        {initials || "U"}
-      </div>
+      <Link
+        href="/account"
+        title="Account &amp; delegation"
+        className="flex items-center gap-3 rounded-md p-0.5 transition-opacity hover:opacity-80"
+      >
+        <div className="hidden text-right sm:block">
+          <p className="text-sm font-medium leading-tight">{name}</p>
+          <p className="text-xs capitalize text-muted-foreground">{prettyRole}</p>
+        </div>
+        <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+          {initials || "U"}
+        </div>
+      </Link>
       <button
         type="button"
         onClick={signOut}
