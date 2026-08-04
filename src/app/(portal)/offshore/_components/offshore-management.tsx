@@ -104,7 +104,14 @@ import { HistoryPanel } from "./history-panel";
 import { StaffRotationPanel } from "./staff-rotation-panel";
 import { AttendancePanel } from "./attendance-panel";
 import { CrewAssign } from "./crew-assign";
-import { resolveManagementView, hubForOffshoreView } from "./offshore-views";
+import {
+  resolveManagementView,
+  hubForOffshoreView,
+  offshoreViewPerm,
+  offshoreHubTabs,
+  firstOffshoreManagementView,
+  type OffshoreRoleFlags,
+} from "./offshore-views";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 type Tab =
@@ -127,6 +134,7 @@ type Tab =
   | "staff-history";
 
 export function OffshoreManagement(props: {
+  flags: OffshoreRoleFlags;
   crews: Crew[];
   rooms: Room[];
   roster: RosterEntry[];
@@ -151,15 +159,24 @@ export function OffshoreManagement(props: {
   // param, so only one panel renders at a time. Unknown/"mytrips" falls back to
   // the dashboard (the page renders the self-service area for "mytrips").
   const searchParams = useSearchParams();
-  const tab = resolveManagementView(searchParams.get("view")) as Tab;
-  // Consolidated navigation: sibling views of this view's hub render as tabs.
+  const requested = resolveManagementView(searchParams.get("view")) as Tab;
+  // Fall back to the first view the user may open if they deep-linked one their
+  // role can't see (e.g. a Dispatcher hitting ?view=catering).
+  const tab = (offshoreViewPerm(requested, props.flags) !== "none"
+    ? requested
+    : firstOffshoreManagementView(props.flags)) as Tab;
+  // Views the user may only read render with their write controls disabled.
+  const readOnly = offshoreViewPerm(tab, props.flags) === "view";
+  // Consolidated navigation: sibling views of this view's hub render as tabs
+  // (only those the role may open).
   const hub = hubForOffshoreView(tab);
+  const tabs = hub ? offshoreHubTabs(hub, props.flags) : [];
 
   return (
     <div className="space-y-4">
-      {hub?.tabs && hub.tabs.length > 1 && (
+      {tabs.length > 1 && (
         <nav className="flex flex-wrap gap-1 border-b" aria-label="Sub-views">
-          {hub.tabs.map((t) => (
+          {tabs.map((t) => (
             <Link
               key={t.key}
               href={`/offshore?view=${t.key}`}
@@ -193,6 +210,7 @@ export function OffshoreManagement(props: {
           emergencyTeams={props.emergencyTeams}
           musterGroups={props.musterGroups}
           installations={props.installations}
+          readOnly={readOnly}
         />
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
@@ -202,9 +220,16 @@ export function OffshoreManagement(props: {
       {tab === "calendar" && <RotationCalendarPanel calendar={props.calendar} crews={props.crews} />}
       {tab === "attendance" && <AttendancePanel installations={props.installations} />}
       {tab === "rooms" && (
-        <RoomsPanel rooms={props.rooms} installations={props.installations} roster={props.roster} />
+        <RoomsPanel
+          rooms={props.rooms}
+          installations={props.installations}
+          roster={props.roster}
+          readOnly={readOnly}
+        />
       )}
-      {tab === "bedboard" && <BedBoardPanel rooms={props.rooms} onboard={props.pob.people} />}
+      {tab === "bedboard" && (
+        <BedBoardPanel rooms={props.rooms} onboard={props.pob.people} readOnly={readOnly} />
+      )}
       {tab === "roster" && (
         <RosterPanel
           roster={props.roster}
@@ -276,12 +301,14 @@ function LiveBoardPanel({
   emergencyTeams,
   musterGroups,
   installations,
+  readOnly = false,
 }: {
   people: PobOnboard[];
   emergencyRoles: EmergencyRole[];
   emergencyTeams: EmergencyTeamMember[];
   musterGroups: string[];
   installations: Installation[];
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [auto, setAuto] = useState(true);
@@ -408,12 +435,14 @@ function LiveBoardPanel({
         >
           <Printer className="h-3.5 w-3.5" /> Print roster
         </a>
-        <Button size="sm" variant="outline" onClick={() => setShowCasual((s) => !s)}>
-          {showCasual ? "Close" : "Add casual visitor"}
-        </Button>
+        {!readOnly && (
+          <Button size="sm" variant="outline" onClick={() => setShowCasual((s) => !s)}>
+            {showCasual ? "Close" : "Add casual visitor"}
+          </Button>
+        )}
       </div>
 
-      {showCasual && (
+      {!readOnly && showCasual && (
         <CasualVisitorForm
           lbOptions={lbOptions}
           installations={installations}
@@ -546,7 +575,7 @@ function LiveBoardPanel({
                     {/* Manual lifeboat override — cabin drives it by default. */}
                     <select
                       value={p.lifeboat ?? ""}
-                      disabled={pending}
+                      disabled={pending || readOnly}
                       title="Set muster station manually (overrides the cabin)"
                       onChange={(e) => saveLifeboat(p, e.target.value)}
                       className="shrink-0 rounded border bg-background px-1 py-0.5 text-[11px] text-muted-foreground"
@@ -2898,7 +2927,15 @@ function CrewBackToBackList({ calendar, crews }: { calendar: RotationCalendar; c
 }
 
 /** Live occupancy: every room with its checked-in occupants and a fill level. */
-function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEntry[] }) {
+function RoomOccupancyList({
+  rooms,
+  roster,
+  readOnly = false,
+}: {
+  rooms: Room[];
+  roster: RosterEntry[];
+  readOnly?: boolean;
+}) {
   const [open, setOpen] = useState(true);
   const { pending, error, run } = useRun();
   const occupiedRooms = rooms.filter((r) => r.occupied > 0).length;
@@ -2927,19 +2964,21 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
       {open && (
         <div className="px-3 pb-3">
           {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
-          <div className="mb-2 flex justify-end">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={pending}
-              onClick={() => {
-                if (confirm("Set default owners for every room from the current allocation? Each on-board rotator's fixed room/bed is set, and their back-to-back shares it."))
-                  run(() => setAllRoomDefaults());
-              }}
-            >
-              Set all default owners from current
-            </Button>
-          </div>
+          {!readOnly && (
+            <div className="mb-2 flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  if (confirm("Set default owners for every room from the current allocation? Each on-board rotator's fixed room/bed is set, and their back-to-back shares it."))
+                    run(() => setAllRoomDefaults());
+                }}
+              >
+                Set all default owners from current
+              </Button>
+            </div>
+          )}
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {sorted.map((r) => {
               const label = [r.block, r.room_number].filter(Boolean).join(" ");
@@ -2968,19 +3007,21 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
                           <div className="flex items-center gap-1.5 text-xs">
                             <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
                             <span className="font-medium">{o.name}</span>
-                            <button
-                              disabled={pending}
-                              title="Remove from board"
-                              onClick={() => {
-                                if (confirm(`Remove ${o.name} from board? They'll be taken off POB.`))
-                                  run(() => offboardTrip(o.trip_id));
-                              }}
-                              className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            {!readOnly && (
+                              <button
+                                disabled={pending}
+                                title="Remove from board"
+                                onClick={() => {
+                                  if (confirm(`Remove ${o.name} from board? They'll be taken off POB.`))
+                                    run(() => offboardTrip(o.trip_id));
+                                }}
+                                className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
-                          {o.profile_id && (
+                          {!readOnly && o.profile_id && (
                             <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
                               <span>B2B:</span>
                               <LazySelect
@@ -2999,6 +3040,7 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
                       ))}
                     </ul>
                   )}
+                  {!readOnly && (
                   <div className="mt-1.5 border-t pt-1 text-[11px] text-muted-foreground">
                     <div className="flex items-center justify-between gap-1">
                       <span className="font-medium">Default owner(s)</span>
@@ -3062,6 +3104,7 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
                       />
                     </div>
                   </div>
+                  )}
                 </div>
               );
             })}
@@ -3079,7 +3122,15 @@ function RoomOccupancyList({ rooms, roster }: { rooms: Room[]; roster: RosterEnt
  * free bed. Assigning sets that trip's room + bed, so the person leaves the
  * "waiting for a bed" pool on the next refresh.
  */
-function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[] }) {
+function BedBoardPanel({
+  rooms,
+  onboard,
+  readOnly = false,
+}: {
+  rooms: Room[];
+  onboard: PobOnboard[];
+  readOnly?: boolean;
+}) {
   const { pending, error, run } = useRun();
   const [q, setQ] = useState("");
   const [showFull, setShowFull] = useState(false);
@@ -3227,26 +3278,29 @@ function BedBoardPanel({ rooms, onboard }: { rooms: Room[]; onboard: PobOnboard[
                   >
                     <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
                     <span className="truncate font-medium">{o.name}</span>
-                    <button
-                      disabled={pending}
-                      title={`Unassign ${o.name} from this bed (stays on board, returns to the waiting list)`}
-                      onClick={() => run(() => reassignTripRoom(o.trip_id, null))}
-                      className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        disabled={pending}
+                        title={`Unassign ${o.name} from this bed (stays on board, returns to the waiting list)`}
+                        onClick={() => run(() => reassignTripRoom(o.trip_id, null))}
+                        className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </li>
                 ))}
-                {slotLabels.map((lbl) => (
-                  <EmptyBed
-                    key={`${r.id}-${lbl}`}
-                    roomId={r.id}
-                    defaultBed={lbl}
-                    candidates={candidates}
-                    pending={pending}
-                    run={run}
-                  />
-                ))}
+                {!readOnly &&
+                  slotLabels.map((lbl) => (
+                    <EmptyBed
+                      key={`${r.id}-${lbl}`}
+                      roomId={r.id}
+                      defaultBed={lbl}
+                      candidates={candidates}
+                      pending={pending}
+                      run={run}
+                    />
+                  ))}
               </ul>
             </div>
           );
@@ -3308,10 +3362,12 @@ function RoomsPanel({
   rooms,
   installations,
   roster,
+  readOnly = false,
 }: {
   rooms: Room[];
   installations: Installation[];
   roster: RosterEntry[];
+  readOnly?: boolean;
 }) {
   const { pending, error, run } = useRun();
   const [installationId, setInstallationId] = useState("");
@@ -3337,7 +3393,9 @@ function RoomsPanel({
           <FileText className="h-4 w-4" /> Room allocation report
         </Button>
       </div>
-      <RoomOccupancyList rooms={rooms} roster={roster} />
+      <RoomOccupancyList rooms={rooms} roster={roster} readOnly={readOnly} />
+      {!readOnly && (
+        <>
       <BulkRoomImport />
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
@@ -3519,6 +3577,8 @@ function RoomsPanel({
         </select>
         <Button type="submit" disabled={pending}>Add room</Button>
       </form>
+        </>
+      )}
     </div>
   );
 }

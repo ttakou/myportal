@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
-import { requireOffshore, rev, tenantId } from "./_shared";
+import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 import { boardMember } from "./mobilise";
 
 /**
@@ -14,7 +14,7 @@ export async function generateNextCrewChange(
   crewId: string,
   direction: "out" | "in",
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const { data: crew } = await supabase
@@ -52,7 +52,7 @@ export async function createManifest(input: {
   profileIds: string[];
   visitRequestIds?: string[];
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   if (!input.scheduledDate) return { ok: false, error: "Scheduled date is required." };
   const visitorIds = input.visitRequestIds ?? [];
@@ -151,7 +151,7 @@ export async function generateCrewManifest(input: {
   direction: "out" | "in";
   scheduledDate: string;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   if (!input.scheduledDate) return { ok: false, error: "Scheduled date is required." };
   const supabase = createClient();
@@ -209,7 +209,7 @@ export async function setManifestStatus(
   id: string,
   status: "draft" | "approved" | "locked" | "cancelled",
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("approve");
+  const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_manifests").update({ status }).eq("id", id);
@@ -224,7 +224,7 @@ export async function updateManifestTransport(input: {
   transportMode?: "helicopter" | "boat";
   seatCapacity?: number;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("edit");
+  const gate = await requireOffshoreDispatch("edit");
   if (gate) return gate;
   const patch: Record<string, unknown> = {};
   if (input.transportMode === "helicopter" || input.transportMode === "boat") {
@@ -244,7 +244,7 @@ export async function updateManifestTransport(input: {
 }
 
 export async function togglePaxNoShow(id: string, noShow: boolean): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
@@ -257,7 +257,7 @@ export async function togglePaxNoShow(id: string, noShow: boolean): Promise<Acti
 }
 
 export async function removeManifestPax(id: string): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_manifest_pax").delete().eq("id", id);
@@ -272,7 +272,7 @@ export async function removeManifestPax(id: string): Promise<ActionResult> {
  * Seat capacity is enforced. Manifest must be locked first.
  */
 export async function confirmManifestMovement(id: string): Promise<ActionResult> {
-  const gate = await requireOffshore("approve");
+  const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
   const tenant = await tenantId();
@@ -390,7 +390,7 @@ export async function confirmManifestMovement(id: string): Promise<ActionResult>
  * (leaving) → they stayed aboard, put them back on POB.
  */
 export async function reverseManifestPax(input: { paxId: string }): Promise<ActionResult> {
-  const gate = await requireOffshore("approve");
+  const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
   const { data: p } = await supabase

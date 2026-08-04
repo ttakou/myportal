@@ -26,6 +26,7 @@ export type FunctionalRole =
   | "safety_admin"
   | "campboss"
   | "oim"
+  | "dispatcher"
   | "system_admin";
 
 /**
@@ -67,6 +68,11 @@ export interface Access {
   isCampboss: boolean;
   /** Offshore Installation Manager — approves offshore visit requests. */
   isOim: boolean;
+  /**
+   * Offshore Dispatcher — runs crew rotations, travel/manifests and the
+   * offshore-staff roster (full), with read-only POB & accommodation.
+   */
+  isDispatcher: boolean;
 }
 
 /** Resolve the current user's base role + functional roles into capability flags. */
@@ -98,5 +104,6 @@ export const getAccess = cache(async (): Promise<Access> => {
     isSafetyAdmin: isSystemAdmin || has("safety_admin"),
     isCampboss: isSystemAdmin || has("campboss"),
     isOim: isSystemAdmin || has("oim"),
+    isDispatcher: isSystemAdmin || has("dispatcher"),
   };
 });

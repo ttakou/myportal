@@ -25,6 +25,7 @@ const ASSIGNABLE_FUNCTIONAL: FunctionalRole[] = [
   "safety_admin",
   "campboss",
   "oim",
+  "dispatcher",
   "system_admin",
 ];
 
@@ -39,6 +40,8 @@ const ACCESS_ROLE_FUNCTIONAL: Partial<Record<string, FunctionalRole>> = {
   "Super Admin": "system_admin",
   Finance: "finance",
   "Safety Admin": "safety_admin",
+  // Seeded per tenant in migration 0156; unlocks the scoped offshore management.
+  Dispatcher: "dispatcher",
 };
 
 /** Read the name of a `tenant_roles` join result that may be array or object. */

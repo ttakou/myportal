@@ -3,14 +3,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
-import { requireOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 /** Assign people to a crew (crewId null = remove from crew). Upserts the roster row. */
 export async function assignToCrew(
   profileIds: string[],
   crewId: string | null,
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   if (!profileIds.length) return { ok: false, error: "No employees selected." };
   const supabase = createClient();
@@ -56,7 +56,7 @@ export async function setTripCategory(
   tripId: string,
   category: "staff" | "visitor",
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("edit");
+  const gate = await requireOffshoreDispatch("edit");
   if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = { category };
@@ -70,7 +70,7 @@ export async function setTripCategory(
 
 /** Offboard one person (demobilise their live trip) — removes them from POB. */
 export async function offboardTrip(tripId: string): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
@@ -106,7 +106,7 @@ export async function setBackToBack(
   profileId: string,
   b2bProfileId: string | null,
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("edit");
+  const gate = await requireOffshoreDispatch("edit");
   if (gate) return gate;
   if (profileId === b2bProfileId) return { ok: false, error: "A person can't be their own back-to-back." };
   const supabase = createClient();
@@ -269,7 +269,7 @@ export async function autoAssignBySchedule(input: {
   /** When no crew matches and no name is given, create an auto-named crew. */
   autoName?: boolean;
 }): Promise<AutoAssignResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   if (!input.profileIds.length) return { ok: false, error: "Select at least one employee." };
   if (!input.cycleStartDate) return { ok: false, error: "Cycle start date is required." };
@@ -328,7 +328,7 @@ export async function autoAssignBySchedule(input: {
 
 /** Merge crews that share a calendar: move members to target, delete the rest. */
 export async function mergeCrews(targetId: string, sourceIds: string[]): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   const sources = sourceIds.filter((id) => id && id !== targetId);
   if (!sources.length) return { ok: false, error: "Nothing to merge." };

@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
-import { requireOffshore, rev, tenantId } from "./_shared";
+import { requireOffshore, requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 export async function upsertCrew(input: {
   id?: string;
@@ -15,7 +15,7 @@ export async function upsertCrew(input: {
   departureLocation?: string;
   cycleStartDate?: string | null;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   if (!input.name.trim()) return { ok: false, error: "Crew name is required." };
   const supabase = createClient();
@@ -45,7 +45,7 @@ export async function upsertCrew(input: {
 }
 
 export async function deleteCrew(id: string): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_crews").delete().eq("id", id);
@@ -169,7 +169,7 @@ export async function updateRoomFields(input: {
 }
 
 export async function addRosterMember(profileId: string): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   if (!profileId) return { ok: false, error: "Choose a person." };
   const supabase = createClient();
@@ -184,7 +184,7 @@ export async function addRosterMember(profileId: string): Promise<ActionResult> 
 }
 
 export async function removeRosterMember(id: string): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_staff").delete().eq("id", id);
@@ -208,7 +208,7 @@ export async function updateRosterMember(input: {
   emergencyContact?: string;
   travelEligible?: boolean;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("edit");
+  const gate = await requireOffshoreDispatch("edit");
   if (gate) return gate;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
