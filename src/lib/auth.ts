@@ -83,11 +83,18 @@ export const getAccess = cache(async (): Promise<Access> => {
   let fns: FunctionalRole[] = [];
   if (user) {
     const supabase = createClient();
+    // Include functional roles held via an active delegation — but never the
+    // privileged admin roles, which are not delegable (mirrors uid_has_role).
+    const { getActiveDelegatorIds } = await import("@/lib/delegation");
+    const delegatorIds = await getActiveDelegatorIds();
     const { data } = await supabase
       .from("profile_roles")
-      .select("role")
-      .eq("profile_id", user.id);
-    fns = (data ?? []).map((r) => r.role as FunctionalRole);
+      .select("profile_id, role")
+      .in("profile_id", [user.id, ...delegatorIds]);
+    const PRIVILEGED = new Set<string>(["system_admin", "hr_admin"]);
+    fns = (data ?? [])
+      .filter((r) => r.profile_id === user.id || !PRIVILEGED.has(r.role as string))
+      .map((r) => r.role as FunctionalRole);
   }
   const has = (r: FunctionalRole) => fns.includes(r);
   const isSystemAdmin = admin || has("system_admin");
