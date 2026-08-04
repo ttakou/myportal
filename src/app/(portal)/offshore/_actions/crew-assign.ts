@@ -300,13 +300,15 @@ export async function autoAllocateBeds(): Promise<AutoAllocateResult> {
     }
   }
 
-  for (const a of assignments) {
-    const { error } = await supabase
-      .from("offshore_trips")
-      .update({ room_id: a.room_id, bed_no: a.bed_no })
-      .eq("id", a.id);
-    if (error) return { ok: false, error: error.message };
-  }
+  // Each row gets a different room/bed, so these are separate updates — run
+  // them concurrently instead of one round-trip at a time.
+  const results = await Promise.all(
+    assignments.map((a) =>
+      supabase.from("offshore_trips").update({ room_id: a.room_id, bed_no: a.bed_no }).eq("id", a.id),
+    ),
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) return { ok: false, error: failed.error.message };
   rev();
   return { ok: true, placed: assignments.length, unplaced };
 }
