@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useStatusTransition } from "@/components/activity";
 import {
@@ -10,6 +10,7 @@ import {
   History,
   ChevronDown,
   Printer,
+  RefreshCw,
   Trash2,
   Siren,
   X,
@@ -1926,40 +1927,161 @@ function Stat({
   value,
   sub,
   tone,
+  onClick,
+  active,
 }: {
   label: string;
   value: string | number;
   sub?: string;
   tone?: "green";
+  /** When set, the card becomes a button that opens its detail drill-down. */
+  onClick?: () => void;
+  active?: boolean;
 }) {
-  return (
-    <div className={cn("rounded-lg border bg-card p-3", tone === "green" && "border-green-300 bg-green-50")}>
+  const body = (
+    <>
       <div className={cn("text-2xl font-semibold", tone === "green" && "text-green-700")}>{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
       {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
-    </div>
+    </>
+  );
+  const base = cn(
+    "rounded-lg border bg-card p-3 text-left",
+    tone === "green" && "border-green-300 bg-green-50",
+  );
+  if (!onClick) return <div className={base}>{body}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Show details"
+      className={cn(base, "transition-colors hover:border-primary/50 hover:bg-accent", active && "ring-1 ring-primary")}
+    >
+      {body}
+    </button>
   );
 }
 
 function DrillCard({
   title,
   onClose,
+  onRefresh,
+  refreshing,
   children,
 }: {
   title: string;
   onClose: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="mt-2 rounded-lg border bg-card p-3">
-      <div className="mb-1 flex items-center justify-between">
+      <div className="mb-1 flex items-center justify-between gap-2">
         <span className="text-sm font-medium">{title}</span>
-        <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              title="Refresh"
+              className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+            </button>
+          )}
+          <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="max-h-96 overflow-y-auto">{children}</div>
     </div>
+  );
+}
+
+/** Compact rows for a list of on-board people in a stat drill-down. */
+function PobPeopleRows({ people }: { people: PobOnboard[] }) {
+  if (people.length === 0) return <p className="py-1 text-xs text-muted-foreground">None.</p>;
+  return (
+    <>
+      {[...people]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((p) => (
+          <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
+            <span className="font-medium">{p.name}</span>
+            {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
+            <span className="rounded bg-muted px-1 py-0.5 text-[10px] capitalize text-muted-foreground">{p.category}</span>
+            <span className="ml-auto text-xs text-muted-foreground">
+              {p.crew_name ?? "—"} · {p.room_label ?? "no bed"}{p.bed_no ? ` · ${p.bed_no}` : ""}{p.lifeboat ? ` · ${p.lifeboat}` : ""}
+            </span>
+          </div>
+        ))}
+    </>
+  );
+}
+
+/** Compact rows for a list of rooms in a stat drill-down. */
+function RoomRows({ rooms, showFree }: { rooms: Room[]; showFree?: boolean }) {
+  if (rooms.length === 0) return <p className="py-1 text-xs text-muted-foreground">None.</p>;
+  const labelOf = (r: Room) => [r.block, r.room_number].filter(Boolean).join(" ") || "—";
+  return (
+    <>
+      {[...rooms]
+        .sort((a, b) => labelOf(a).localeCompare(labelOf(b), undefined, { numeric: true }))
+        .map((r) => {
+          const free = Math.max(0, (r.bed_count || 0) - r.occupied);
+          return (
+            <div key={r.id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
+              <span className="font-medium">{labelOf(r)}</span>
+              <span className="text-xs text-muted-foreground">{r.installation_name ?? "—"}</span>
+              {r.status !== "available" && (
+                <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">{ROOM_STATUS_LABEL[r.status]}</span>
+              )}
+              <span className="ml-auto text-xs text-muted-foreground">
+                {showFree ? `${free} free · ` : ""}{r.occupied}/{r.bed_count || 0}
+              </span>
+            </div>
+          );
+        })}
+    </>
+  );
+}
+
+/** Rows for roster members with a fixed cabin. */
+function FixedCabinRows({ roster }: { roster: RosterEntry[] }) {
+  const fixed = roster.filter((m) => m.fixed_room_id);
+  if (fixed.length === 0) return <p className="py-1 text-xs text-muted-foreground">None.</p>;
+  return (
+    <>
+      {[...fixed]
+        .sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email))
+        .map((m) => (
+          <div key={m.id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
+            <span className="font-medium">{m.full_name || m.email}</span>
+            {m.crew_name && <span className="text-xs text-muted-foreground">{m.crew_name}</span>}
+            <span className="ml-auto text-xs text-muted-foreground">
+              {m.fixed_room_label ?? "—"}{m.fixed_bed ? ` · ${m.fixed_bed}` : ""}
+            </span>
+          </div>
+        ))}
+    </>
+  );
+}
+
+/** Rows for the overstayer list (past planned return). */
+function OverstayerRows({ list }: { list: PobBreakdown["overstayers"] }) {
+  if (list.length === 0) return <p className="py-1 text-xs text-muted-foreground">None.</p>;
+  return (
+    <>
+      {list.map((o, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
+          <span className="font-medium">{o.name}</span>
+          <span className="text-xs text-muted-foreground">{o.installation ?? "—"}</span>
+          <span className="ml-auto text-xs text-amber-700">due {o.demob_date}</span>
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -2125,7 +2247,10 @@ function UnassignedRow({ person, crews }: { person: PobBreakdown["people"][numbe
   );
 }
 
-type Drill = { type: "crew" | "lb"; key: string } | { type: "rooms" } | null;
+type Drill =
+  | { type: "crew" | "lb" | "stat"; key: string }
+  | { type: "rooms" }
+  | null;
 
 function Dashboard({
   pob,
@@ -2151,6 +2276,57 @@ function Dashboard({
 
   const unassigned = pob.people.filter((p) => !p.crew_id);
 
+  // Clickable KPI cards → a detail drill-down that can be refreshed live.
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
+  const refresh = () => startRefresh(() => router.refresh());
+  const today = new Date().toISOString().slice(0, 10);
+  const statDrill = (key: string) => ({
+    onClick: () => toggle({ type: "stat", key }),
+    active: isOpen({ type: "stat", key }),
+  });
+  const POB_STAT_KEYS = ["pob", "staff", "visitors", "arrivals", "departures", "overstayers"];
+  const blocked = (r: Room) => ["blocked", "maintenance"].includes(r.status);
+  function statCard(key: string): { title: string; node: ReactNode } | null {
+    switch (key) {
+      case "pob":
+        return { title: `On board now (${pob.total})`, node: <PobPeopleRows people={pob.people} /> };
+      case "staff":
+        return { title: `Offshore staff on board (${pob.byCategory.staff})`, node: <PobPeopleRows people={pob.people.filter((p) => p.category === "staff")} /> };
+      case "visitors":
+        return { title: `Visitors on board (${pob.byCategory.visitor})`, node: <PobPeopleRows people={pob.people.filter((p) => p.category === "visitor")} /> };
+      case "arrivals":
+        return { title: `Arrived today (${pob.arrivalsToday})`, node: <PobPeopleRows people={pob.people.filter((p) => p.mobilize_date === today)} /> };
+      case "departures":
+        return { title: `Departing today (${pob.departuresToday})`, node: <PobPeopleRows people={pob.people.filter((p) => p.demob_date === today)} /> };
+      case "overstayers":
+        return { title: `Overstayers (${pob.overstayers.length})`, node: <OverstayerRows list={pob.overstayers} /> };
+      case "rooms":
+        return { title: `Rooms (${accommodation.totalRooms})`, node: <RoomRows rooms={rooms} /> };
+      case "beds":
+        return { title: `Usable beds (${accommodation.totalBeds})`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r))} /> };
+      case "occupied":
+        return { title: `Occupied — who's in a bed (${accommodation.occupiedBeds})`, node: <PobPeopleRows people={pob.people.filter((p) => p.room_id)} /> };
+      case "available":
+        return { title: `Rooms with a free bed (${accommodation.availableBeds} beds)`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r) && Math.max(0, (r.bed_count || 0) - r.occupied) > 0)} showFree /> };
+      case "fixed":
+        return { title: `Fixed cabins — staff (${accommodation.fixedBeds})`, node: <FixedCabinRows roster={roster} /> };
+      case "blocked":
+        return { title: `Blocked / maintenance rooms (${accommodation.blockedRooms})`, node: <RoomRows rooms={rooms.filter(blocked)} /> };
+      default:
+        return null;
+    }
+  }
+  const statDetail = drill?.type === "stat" ? statCard(drill.key) : null;
+  const statDrillCard = (group: "pob" | "acc") =>
+    drill?.type === "stat" &&
+    statDetail &&
+    POB_STAT_KEYS.includes(drill.key) === (group === "pob") ? (
+      <DrillCard title={statDetail.title} onClose={() => setDrill(null)} onRefresh={refresh} refreshing={refreshing}>
+        {statDetail.node}
+      </DrillCard>
+    ) : null;
+
   return (
     <div className="space-y-5">
       <section>
@@ -2172,13 +2348,14 @@ function Dashboard({
         </div>
         {error && <p className="mb-2 rounded-md bg-destructive/10 px-3 py-1.5 text-sm text-destructive">{error}</p>}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Current POB" value={pob.total} />
-          <Stat label="Offshore staff" value={pob.byCategory.staff} />
-          <Stat label="Visitors" value={pob.byCategory.visitor} />
-          <Stat label="Arrivals today" value={pob.arrivalsToday} />
-          <Stat label="Departures today" value={pob.departuresToday} />
-          <Stat label="Overstayers" value={pob.overstayers.length} />
+          <Stat label="Current POB" value={pob.total} {...statDrill("pob")} />
+          <Stat label="Offshore staff" value={pob.byCategory.staff} {...statDrill("staff")} />
+          <Stat label="Visitors" value={pob.byCategory.visitor} {...statDrill("visitors")} />
+          <Stat label="Arrivals today" value={pob.arrivalsToday} {...statDrill("arrivals")} />
+          <Stat label="Departures today" value={pob.departuresToday} {...statDrill("departures")} />
+          <Stat label="Overstayers" value={pob.overstayers.length} {...statDrill("overstayers")} />
         </div>
+        {statDrillCard("pob")}
         {pob.byInstallation.length > 0 && (
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {pob.byInstallation.map((i) => {
@@ -2344,13 +2521,14 @@ function Dashboard({
           Accommodation
         </h3>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Rooms" value={accommodation.totalRooms} />
-          <Stat label="Beds (usable)" value={accommodation.totalBeds} />
-          <Stat label="Occupied" value={accommodation.occupiedBeds} />
-          <Stat label="Available" value={accommodation.availableBeds} tone="green" />
-          <Stat label="Fixed (staff)" value={accommodation.fixedBeds} />
-          <Stat label="Blocked rooms" value={accommodation.blockedRooms} />
+          <Stat label="Rooms" value={accommodation.totalRooms} {...statDrill("rooms")} />
+          <Stat label="Beds (usable)" value={accommodation.totalBeds} {...statDrill("beds")} />
+          <Stat label="Occupied" value={accommodation.occupiedBeds} {...statDrill("occupied")} />
+          <Stat label="Available" value={accommodation.availableBeds} tone="green" {...statDrill("available")} />
+          <Stat label="Fixed (staff)" value={accommodation.fixedBeds} {...statDrill("fixed")} />
+          <Stat label="Blocked rooms" value={accommodation.blockedRooms} {...statDrill("blocked")} />
         </div>
+        {statDrillCard("acc")}
         {accommodation.overbooked.length > 0 && (
           <button
             onClick={() => toggle({ type: "rooms" })}
