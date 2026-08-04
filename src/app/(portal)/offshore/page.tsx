@@ -56,12 +56,10 @@ export default async function OffshorePage({
   const showManagement = canManage && activeView !== "mytrips";
   const showMyTrips = !showManagement;
 
-  const [mine, all, installations, flights, myVisits, suggestionLists, boardPeople, me] =
+  const [mine, installations, myVisits, suggestionLists, boardPeople, me] =
     await Promise.all([
       getMyOffshoreTrips(),
-      isAdmin ? getAllOffshoreTrips() : Promise.resolve([]),
       getInstallations(),
-      isAdmin ? getFlights() : Promise.resolve([]),
       getMyVisitRequests(),
       getVisitorSuggestions(),
       getAssignableEmployees(),
@@ -92,6 +90,8 @@ export default async function OffshorePage({
     musterGroups,
     musterDrill,
     musterDrillHistory,
+    trips,
+    flights,
   ] = showManagement
     ? await Promise.all([
         getCrews(),
@@ -112,8 +112,10 @@ export default async function OffshorePage({
         getMusterGroups(),
         getActiveMusterDrill(),
         getMusterDrills(),
+        getAllOffshoreTrips(),
+        getFlights(),
       ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], [], null, []];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], [], null, [], [], []];
 
   return (
     <div className="space-y-8">
@@ -159,6 +161,9 @@ export default async function OffshorePage({
           certAlerts={certAlerts}
           visits={visits}
           manifests={manifests}
+          trips={trips}
+          flights={flights}
+          canAddFlight={isAdmin}
           calendar={calendar}
           employees={employees}
           suggestions={suggestions}
@@ -176,10 +181,7 @@ export default async function OffshorePage({
         <>
           <OffshoreBoard
             mine={mine}
-            all={all}
             installations={installations}
-            flights={flights}
-            isAdmin={isAdmin}
             people={people}
             meId={meId}
           />

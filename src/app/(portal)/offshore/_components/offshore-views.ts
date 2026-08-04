@@ -10,6 +10,7 @@ export type OffshoreViewKey =
   | "calendar"
   | "attendance"
   | "manifests"
+  | "trips"
   | "rooms"
   | "bedboard"
   | "catering"
@@ -42,6 +43,7 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "calendar", label: "Rotation calendar", icon: "CalendarRange" },
   { key: "attendance", label: "Attendance flags", icon: "UserX" },
   { key: "manifests", label: "Manifests", icon: "ClipboardList" },
+  { key: "trips", label: "All trips", icon: "Ship" },
   { key: "rooms", label: "Accommodation", icon: "BedDouble" },
   { key: "bedboard", label: "Bed board", icon: "BedSingle" },
   { key: "catering", label: "Catering", icon: "UtensilsCrossed" },
@@ -113,6 +115,7 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
   calendar: "full",
   attendance: "full",
   manifests: "full",
+  trips: "full",
   rooms: "view",
   bedboard: "view",
   catering: "none",
@@ -196,6 +199,7 @@ export const OFFSHORE_HUBS: OffshoreHub[] = [
     key: "manifests", label: "Travel & Manifests", icon: "ClipboardList",
     tabs: [
       { key: "manifests", label: "Manifests" },
+      { key: "trips", label: "All trips" },
       { key: "visitors", label: "Visitors" },
     ],
   },
