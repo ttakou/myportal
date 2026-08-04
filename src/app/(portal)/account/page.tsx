@@ -1,9 +1,20 @@
 import { getMyNotificationPrefs } from "@/lib/notification-prefs";
+import {
+  getDelegatableUsers,
+  getMyIncomingDelegations,
+  getMyOutgoingDelegations,
+} from "@/lib/delegation";
 import { PushToggle } from "../emergency/_components/push-toggle";
 import { NotificationPreferences } from "./_components/notification-preferences";
+import { DelegationPanel } from "./_components/delegation-panel";
 
 export default async function AccountPage() {
-  const prefs = await getMyNotificationPrefs();
+  const [prefs, users, outgoing, incoming] = await Promise.all([
+    getMyNotificationPrefs(),
+    getDelegatableUsers(),
+    getMyOutgoingDelegations(),
+    getMyIncomingDelegations(),
+  ]);
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -22,6 +33,8 @@ export default async function AccountPage() {
       </section>
 
       <NotificationPreferences initial={prefs} />
+
+      <DelegationPanel users={users} outgoing={outgoing} incoming={incoming} />
     </div>
   );
 }

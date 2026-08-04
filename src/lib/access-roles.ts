@@ -51,10 +51,14 @@ export async function getMyAllowedSlugs(): Promise<string[] | null> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
+  // Include modules reachable via an active delegation (RLS lets a delegate
+  // read their delegators' assignments).
+  const { getActiveDelegatorIds } = await import("@/lib/delegation");
+  const delegatorIds = await getActiveDelegatorIds();
   const { data, error } = await supabase
     .from("profile_access_roles")
     .select("tenant_roles(module_slugs)")
-    .eq("profile_id", user.id);
+    .in("profile_id", [user.id, ...delegatorIds]);
   if (error || !data || data.length === 0) return null;
 
   const slugs = new Set<string>();

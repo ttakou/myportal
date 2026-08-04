@@ -136,10 +136,35 @@ export async function middleware(request: NextRequest) {
       .eq("profile_id", user.id),
   ]);
 
-  const roleAllowed = (myRoles ?? []).some((row) => {
-    const role = Array.isArray(row.tenant_roles) ? row.tenant_roles[0] : row.tenant_roles;
-    return ((role?.module_slugs as string[]) ?? []).includes(matched.slug);
-  });
+  const grantsSlug = (rows: { tenant_roles: unknown }[] | null) =>
+    (rows ?? []).some((row) => {
+      const role = Array.isArray(row.tenant_roles) ? row.tenant_roles[0] : row.tenant_roles;
+      return ((role?.module_slugs as string[]) ?? []).includes(matched.slug);
+    });
+
+  let roleAllowed = grantsSlug(myRoles);
+
+  // Fallback: a module reachable via an active delegation. Only queried when the
+  // user's own roles don't already grant it, so the common path stays a single
+  // round-trip.
+  if (!roleAllowed) {
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: delegRows } = await supabase
+      .from("access_delegations")
+      .select("delegator_id")
+      .eq("delegate_id", user.id)
+      .is("revoked_at", null)
+      .lte("starts_on", today)
+      .gte("ends_on", today);
+    const delegatorIds = [...new Set((delegRows ?? []).map((r) => r.delegator_id as string))];
+    if (delegatorIds.length > 0) {
+      const { data: delegRoles } = await supabase
+        .from("profile_access_roles")
+        .select("tenant_roles(module_slugs)")
+        .in("profile_id", delegatorIds);
+      roleAllowed = grantsSlug(delegRoles);
+    }
+  }
 
   if (error || !data || !roleAllowed) {
     const denied = request.nextUrl.clone();

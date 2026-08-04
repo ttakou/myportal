@@ -14,10 +14,14 @@ export const getMyPermissions = cache(async (): Promise<PermissionMap> => {
   if (!user) return {};
 
   const supabase = createClient();
+  // Union the user's own access-role grants with any held via an active
+  // delegation (RLS lets a delegate read their delegators' assignments).
+  const { getActiveDelegatorIds } = await import("@/lib/delegation");
+  const delegatorIds = await getActiveDelegatorIds();
   const { data } = await supabase
     .from("profile_access_roles")
     .select("tenant_roles(permissions)")
-    .eq("profile_id", user.id);
+    .in("profile_id", [user.id, ...delegatorIds]);
 
   const acc: Record<string, Set<Verb>> = {};
   for (const row of (data ?? []) as Record<string, any>[]) {
