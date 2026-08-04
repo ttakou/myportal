@@ -120,44 +120,6 @@ export async function setBackToBack(
 }
 
 /**
- * Set a room's default owners from who is currently allocated there: each
- * on-board rotator's fixed room/bed is set to this room, and their back-to-back
- * (who shares the cabin on the opposite rotation) gets the same fixed room.
- */
-export async function setRoomDefaultOwners(roomId: string): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
-  if (gate) return gate;
-  const supabase = createClient();
-  const { data: trips } = await supabase
-    .from("offshore_trips")
-    .select("profile_id, bed_no")
-    .eq("status", "onboard")
-    .eq("room_id", roomId)
-    .not("profile_id", "is", null);
-  if (!trips?.length) return { ok: false, error: "No one is currently allocated to this room." };
-
-  for (const t of trips) {
-    await supabase
-      .from("offshore_staff")
-      .update({ fixed_room_id: roomId, fixed_bed: (t.bed_no as string | null) ?? null })
-      .eq("profile_id", t.profile_id as string);
-    const { data: s } = await supabase
-      .from("offshore_staff")
-      .select("back_to_back_id")
-      .eq("profile_id", t.profile_id as string)
-      .maybeSingle();
-    if (s?.back_to_back_id) {
-      await supabase
-        .from("offshore_staff")
-        .update({ fixed_room_id: roomId })
-        .eq("profile_id", s.back_to_back_id as string);
-    }
-  }
-  rev();
-  return { ok: true };
-}
-
-/**
  * Directly set (or clear) one roster member's default/fixed room — independent
  * of whether they're currently on board. Picking a person as a room's default
  * owner, moving them to another room, or clearing it all flow through here.
@@ -185,54 +147,6 @@ export async function setStaffFixedRoom(
   return { ok: true };
 }
 
-/** Clear every default owner of a room (unset their fixed room and bed). */
-export async function clearRoomDefaultOwners(roomId: string): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
-  if (gate) return gate;
-  const supabase = createClient();
-  const { error } = await supabase
-    .from("offshore_staff")
-    .update({ fixed_room_id: null, fixed_bed: null })
-    .eq("fixed_room_id", roomId);
-  if (error) return { ok: false, error: error.message };
-  rev();
-  return { ok: true };
-}
-
-/** Set every room's default owners from the current allocation in one pass. */
-export async function setAllRoomDefaults(): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
-  if (gate) return gate;
-  const supabase = createClient();
-  const { data: trips } = await supabase
-    .from("offshore_trips")
-    .select("profile_id, bed_no, room_id")
-    .eq("status", "onboard")
-    .not("room_id", "is", null)
-    .not("profile_id", "is", null);
-  if (!trips?.length) return { ok: false, error: "Nobody is currently on board." };
-
-  const { data: staff } = await supabase.from("offshore_staff").select("profile_id, back_to_back_id");
-  const b2bByProfile = new Map<string, string | null>();
-  for (const s of staff ?? []) b2bByProfile.set(s.profile_id as string, (s.back_to_back_id as string | null) ?? null);
-
-  for (const t of trips) {
-    await supabase
-      .from("offshore_staff")
-      .update({ fixed_room_id: t.room_id as string, fixed_bed: (t.bed_no as string | null) ?? null })
-      .eq("profile_id", t.profile_id as string);
-    const b2b = b2bByProfile.get(t.profile_id as string);
-    if (b2b) {
-      await supabase
-        .from("offshore_staff")
-        .update({ fixed_room_id: t.room_id as string })
-        .eq("profile_id", b2b);
-    }
-  }
-  rev();
-  return { ok: true };
-}
-
 /** Move an on-board person to a different room/bed (e.g. to clear an over-booked room). */
 export async function reassignTripRoom(
   tripId: string,
@@ -248,6 +162,153 @@ export async function reassignTripRoom(
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
+}
+
+export interface AutoAllocateResult extends ActionResult {
+  placed?: number;
+  unplaced?: number;
+}
+
+/**
+ * One-click bed allocation: seat every on-board person who has no bed yet.
+ *
+ * Each person's fixed cabin is honoured first (when it still has a free bed);
+ * the rest fill rooms open to anyone, one room at a time so crewmates land
+ * together, with beds auto-numbered. Gender-restricted rooms are left for manual
+ * placement — staff gender isn't recorded, so this never mis-seats anyone.
+ */
+export async function autoAllocateBeds(): Promise<AutoAllocateResult> {
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
+  const supabase = createClient();
+
+  // Everyone on board (seated or not); the seated ones tell us which beds are free.
+  const { data: tripRows } = await supabase
+    .from("offshore_trips")
+    .select("id, profile_id, crew_id, room_id, bed_no")
+    .eq("status", "onboard");
+  const onboard = (tripRows ?? []) as {
+    id: string;
+    profile_id: string | null;
+    crew_id: string | null;
+    room_id: string | null;
+    bed_no: string | null;
+  }[];
+  const needBed = onboard.filter((t) => !t.room_id);
+  if (needBed.length === 0) return { ok: true, placed: 0, unplaced: 0 };
+
+  // Rooms open for allocation (skip blocked / under maintenance).
+  const { data: roomRows } = await supabase
+    .from("offshore_rooms")
+    .select("id, bed_count, gender_restriction, status, is_active")
+    .eq("is_active", true);
+  const rooms = ((roomRows ?? []) as Record<string, any>[]).filter(
+    (r) => !["blocked", "maintenance"].includes(r.status),
+  );
+
+  // Active visitor allocations occupy a bed each (no bed label).
+  const { data: allocs } = await supabase
+    .from("offshore_bed_allocations")
+    .select("room_id, status")
+    .neq("status", "checked_out");
+
+  // Fixed cabins for the people who still need a bed.
+  const needIds = needBed.map((t) => t.profile_id).filter(Boolean) as string[];
+  const { data: staffRows } = needIds.length
+    ? await supabase
+        .from("offshore_staff")
+        .select("profile_id, fixed_room_id, fixed_bed")
+        .in("profile_id", needIds)
+    : { data: [] as Record<string, any>[] };
+  const fixedByProfile = new Map<string, { room_id: string | null; bed: string | null }>();
+  for (const s of (staffRows ?? []) as Record<string, any>[])
+    fixedByProfile.set(s.profile_id, { room_id: s.fixed_room_id ?? null, bed: s.fixed_bed ?? null });
+
+  // Live occupancy per room: beds used + which "Bed N" labels are taken.
+  type RoomState = { cap: number; gender: string; used: number; beds: Set<string> };
+  const state = new Map<string, RoomState>();
+  for (const r of rooms)
+    state.set(r.id, {
+      cap: (r.bed_count as number) ?? 0,
+      gender: (r.gender_restriction as string) ?? "any",
+      used: 0,
+      beds: new Set<string>(),
+    });
+  for (const t of onboard) {
+    if (!t.room_id) continue;
+    const st = state.get(t.room_id);
+    if (!st) continue;
+    st.used++;
+    if (t.bed_no) st.beds.add(t.bed_no);
+  }
+  for (const a of (allocs ?? []) as Record<string, any>[]) {
+    const st = a.room_id ? state.get(a.room_id) : null;
+    if (st) st.used++;
+  }
+
+  const freeBeds = (st: RoomState) => Math.max(0, st.cap - st.used);
+  const nextBed = (st: RoomState) => {
+    for (let n = 1; n <= st.cap; n++) {
+      const lbl = `Bed ${n}`;
+      if (!st.beds.has(lbl)) return lbl;
+    }
+    return `Bed ${st.used + 1}`;
+  };
+  const seat = (st: RoomState, bed: string) => {
+    st.used++;
+    st.beds.add(bed);
+  };
+  const emptiestAnyRoom = (): string | null => {
+    let best: string | null = null;
+    let bestFree = 0;
+    for (const [rid, st] of state) {
+      if (st.gender !== "any") continue;
+      const f = freeBeds(st);
+      if (f > bestFree) {
+        bestFree = f;
+        best = rid;
+      }
+    }
+    return best;
+  };
+
+  // Seat crew-by-crew, filling one room before opening the next.
+  const order = [...needBed].sort((a, b) => (a.crew_id ?? "").localeCompare(b.crew_id ?? ""));
+  const assignments: { id: string; room_id: string; bed_no: string }[] = [];
+  let unplaced = 0;
+  let curId: string | null = null;
+
+  for (const person of order) {
+    const fixed = person.profile_id ? fixedByProfile.get(person.profile_id) : undefined;
+    if (fixed?.room_id) {
+      const st = state.get(fixed.room_id);
+      if (st && freeBeds(st) > 0) {
+        const bed = fixed.bed && !st.beds.has(fixed.bed) ? fixed.bed : nextBed(st);
+        seat(st, bed);
+        assignments.push({ id: person.id, room_id: fixed.room_id, bed_no: bed });
+        continue;
+      }
+    }
+    if (!curId || freeBeds(state.get(curId)!) === 0) curId = emptiestAnyRoom();
+    if (curId) {
+      const st = state.get(curId)!;
+      const bed = nextBed(st);
+      seat(st, bed);
+      assignments.push({ id: person.id, room_id: curId, bed_no: bed });
+    } else {
+      unplaced++;
+    }
+  }
+
+  for (const a of assignments) {
+    const { error } = await supabase
+      .from("offshore_trips")
+      .update({ room_id: a.room_id, bed_no: a.bed_no })
+      .eq("id", a.id);
+    if (error) return { ok: false, error: error.message };
+  }
+  rev();
+  return { ok: true, placed: assignments.length, unplaced };
 }
 
 export interface AutoAssignResult extends ActionResult {
