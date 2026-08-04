@@ -22,7 +22,20 @@ export function HistoryPanel() {
   const [from, setFrom] = useState(() => isoDaysAgo(30));
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [rooms, setRooms] = useState<RoomHistoryRow[] | null>(null);
+  // Client-side filters over the loaded occupancy rows.
+  const [roomFilter, setRoomFilter] = useState("");
+  const [occFilter, setOccFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Distinct rooms in the current result, and the rows after both filters.
+  const roomOptions = [...new Set((rooms ?? []).map((r) => r.room_label))].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  );
+  const filteredRooms = (rooms ?? []).filter(
+    (r) =>
+      (!roomFilter || r.room_label === roomFilter) &&
+      (!occFilter.trim() || r.occupant.toLowerCase().includes(occFilter.trim().toLowerCase())),
+  );
 
   function loadPob() {
     setError(null);
@@ -37,7 +50,11 @@ export function HistoryPanel() {
     startTransition(async () => {
       const res = await fetchRoomHistory(from, to);
       if (!res.ok) setError(res.error ?? "Failed.");
-      else setRooms(res.rows ?? null);
+      else {
+        setRoomFilter("");
+        setOccFilter("");
+        setRooms(res.rows ?? null);
+      }
     });
   }
 
@@ -108,6 +125,43 @@ export function HistoryPanel() {
           <Button size="sm" disabled={pending} onClick={loadRooms}>Show occupancy</Button>
         </div>
         {rooms && (
+          <>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-muted-foreground">
+              Room
+              <select
+                value={roomFilter}
+                onChange={(e) => setRoomFilter(e.target.value)}
+                className={`mt-1 block ${field}`}
+              >
+                <option value="">All rooms</option>
+                {roomOptions.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs text-muted-foreground">
+              Occupant
+              <input
+                value={occFilter}
+                onChange={(e) => setOccFilter(e.target.value)}
+                placeholder="Filter by name…"
+                className={`mt-1 block ${field}`}
+              />
+            </label>
+            {(roomFilter || occFilter) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setRoomFilter(""); setOccFilter(""); }}
+              >
+                Clear
+              </Button>
+            )}
+            <span className="pb-2 text-xs text-muted-foreground">
+              {filteredRooms.length} of {rooms.length} stay(s)
+            </span>
+          </div>
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -120,7 +174,7 @@ export function HistoryPanel() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {rooms.map((r, i) => (
+                {filteredRooms.map((r, i) => (
                   <tr key={i}>
                     <td className="px-3 py-1.5 font-medium">{r.room_label}</td>
                     <td className="px-3 py-1.5 text-muted-foreground">{r.installation ?? "—"}</td>
@@ -132,12 +186,19 @@ export function HistoryPanel() {
                     </td>
                   </tr>
                 ))}
-                {rooms.length === 0 && (
-                  <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No room occupancy in that period.</td></tr>
+                {filteredRooms.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                      {rooms.length === 0
+                        ? "No room occupancy in that period."
+                        : "No stays match the room / occupant filter."}
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
           </div>
+          </>
         )}
       </section>
     </div>
