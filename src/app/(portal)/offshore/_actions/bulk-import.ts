@@ -4,6 +4,19 @@ import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
+/**
+ * Run independent per-row writes with bounded concurrency (instead of one
+ * round-trip at a time — a 500-row import used to be 500 sequential requests).
+ * Results come back in input order so per-row reporting is unchanged.
+ */
+async function inBatches<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
+  }
+  return out;
+}
+
 export interface BulkRoomRow {
   installation: string;
   block?: string;
@@ -51,6 +64,7 @@ export async function bulkUpsertRooms(
     existingKey.set(`${r.installation_id}|${(r.room_number as string).toLowerCase()}`, r.id as string);
 
   const results: BulkRoomResult[] = [];
+  const writes: { label: string; existingId: string | undefined; row: Record<string, unknown> }[] = [];
   for (const raw of rows) {
     const roomNumber = (raw.roomNumber ?? "").trim();
     const instName = (raw.installation ?? "").trim();
@@ -87,12 +101,18 @@ export async function bulkUpsertRooms(
       notes: raw.notes?.trim() || null,
     };
     const existingId = existingKey.get(`${installationId}|${roomNumber.toLowerCase()}`);
-    const { error } = existingId
-      ? await supabase.from("offshore_rooms").update(row).eq("id", existingId)
-      : await supabase.from("offshore_rooms").insert(row);
-    if (error) results.push({ room: label, ok: false, status: "failed", error: error.message });
-    else results.push({ room: label, ok: true, status: existingId ? "updated" : "created" });
+    writes.push({ label, existingId, row });
   }
+
+  results.push(
+    ...(await inBatches(writes, 25, async (w): Promise<BulkRoomResult> => {
+      const { error } = w.existingId
+        ? await supabase.from("offshore_rooms").update(w.row).eq("id", w.existingId)
+        : await supabase.from("offshore_rooms").insert(w.row);
+      if (error) return { room: w.label, ok: false, status: "failed", error: error.message };
+      return { room: w.label, ok: true, status: w.existingId ? "updated" : "created" };
+    })),
+  );
 
   rev();
   const ok = results.some((r) => r.ok);
@@ -165,6 +185,7 @@ export async function bulkUpsertRoster(
   };
 
   const results: BulkRosterResult[] = [];
+  const writes: { person: string; existingId: string | undefined; row: Record<string, unknown> }[] = [];
   for (const raw of rows) {
     const person = (raw.person ?? "").trim();
     if (!person) continue;
@@ -197,12 +218,18 @@ export async function bulkUpsertRoster(
     };
 
     const existingId = staffByProfile.get(profileId);
-    const { error } = existingId
-      ? await supabase.from("offshore_staff").update(row).eq("id", existingId)
-      : await supabase.from("offshore_staff").insert(row);
-    if (error) results.push({ person, ok: false, status: "failed", error: error.message });
-    else results.push({ person, ok: true, status: existingId ? "updated" : "created" });
+    writes.push({ person, existingId, row });
   }
+
+  results.push(
+    ...(await inBatches(writes, 25, async (w): Promise<BulkRosterResult> => {
+      const { error } = w.existingId
+        ? await supabase.from("offshore_staff").update(w.row).eq("id", w.existingId)
+        : await supabase.from("offshore_staff").insert(w.row);
+      if (error) return { person: w.person, ok: false, status: "failed", error: error.message };
+      return { person: w.person, ok: true, status: w.existingId ? "updated" : "created" };
+    })),
+  );
 
   rev();
   const ok = results.some((r) => r.ok);

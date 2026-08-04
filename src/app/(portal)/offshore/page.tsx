@@ -68,9 +68,6 @@ export default async function OffshorePage({
   const meId = me?.id ?? "";
   const people = boardPeople.map((p) => ({ id: p.id, name: p.name }));
 
-  // Tenant default for how crew changes open (auto vs manual).
-  const defaultMode = showManagement ? await getOffshoreDefaultMode() : "auto";
-
   const [
     crews,
     rooms,
@@ -92,6 +89,8 @@ export default async function OffshorePage({
     musterDrillHistory,
     trips,
     flights,
+    // Tenant default for how crew changes open (auto vs manual).
+    defaultMode,
   ] = showManagement
     ? await Promise.all([
         getCrews(),
@@ -114,8 +113,9 @@ export default async function OffshorePage({
         getMusterDrills(),
         getAllOffshoreTrips(),
         getFlights(),
+        getOffshoreDefaultMode(),
       ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], [], null, [], [], []];
+    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], [], null, [], [], [], "auto" as const];
 
   return (
     <div className="space-y-8">
