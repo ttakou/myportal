@@ -26,6 +26,7 @@ import {
   preRegisterVisitor,
   searchHosts,
   setVisitorCheckInAt,
+  setVisitorCheckOutAt,
   updateVisitorMinors,
   type HostOption,
 } from "../actions";
@@ -158,6 +159,7 @@ export function VisitorsBoard({
   const [checkOut, setCheckOut] = useState<Visitor | null>(null);
   // Correct a visitor's recorded arrival time.
   const [editArrival, setEditArrival] = useState<Visitor | null>(null);
+  const [editDeparture, setEditDeparture] = useState<Visitor | null>(null);
   // Correct accompanying-minor counts on an existing (e.g. pre-registered) visitor.
   const [editMinors, setEditMinors] = useState<Visitor | null>(null);
 
@@ -484,7 +486,19 @@ export function VisitorsBoard({
                   </span>
                 </td>
                 <td className="px-4 py-3 tabular-nums text-muted-foreground">
-                  {v.check_out_at ? new Date(v.check_out_at).toLocaleTimeString() : "—"}
+                  <span className="inline-flex items-center gap-1">
+                    {v.check_out_at ? new Date(v.check_out_at).toLocaleTimeString() : "—"}
+                    {canOperate && v.check_out_at && (
+                      <button
+                        type="button"
+                        onClick={() => setEditDeparture(v)}
+                        title="Edit departure time"
+                        className="text-muted-foreground/70 hover:text-foreground"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -605,6 +619,17 @@ export function VisitorsBoard({
           onCancel={() => setEditArrival(null)}
           onSubmit={(iso) =>
             run(() => setVisitorCheckInAt(editArrival.id, iso), () => setEditArrival(null))
+          }
+        />
+      )}
+
+      {editDeparture && (
+        <DepartureTimeDialog
+          visitor={editDeparture}
+          pending={pending}
+          onCancel={() => setEditDeparture(null)}
+          onSubmit={(iso) =>
+            run(() => setVisitorCheckOutAt(editDeparture.id, iso), () => setEditDeparture(null))
           }
         />
       )}
@@ -935,6 +960,61 @@ function ArrivalTimeDialog({
           <input
             type="datetime-local"
             value={value}
+            max={nowLocal}
+            onChange={(e) => setValue(e.target.value)}
+            className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
+          />
+        </label>
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            className="flex-1"
+            disabled={pending || !value}
+            onClick={() => value && onSubmit(new Date(value).toISOString())}
+          >
+            {pending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DepartureTimeDialog({
+  visitor,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  visitor: Visitor;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (iso: string) => void;
+}) {
+  const toLocalInput = (iso: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+  const [value, setValue] = useState(() => toLocalInput(visitor.check_out_at));
+  const nowLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  // Departure can't be before the recorded arrival.
+  const minLocal = visitor.check_in_at ? toLocalInput(visitor.check_in_at) : undefined;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-sm rounded-xl bg-card p-5 shadow-xl">
+        <h3 className="text-lg font-semibold">Departure time — {visitor.full_name}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Adjust the recorded check-out time (e.g. they left before being logged out).
+        </p>
+        <label className="mt-4 block text-sm">
+          <span className="text-muted-foreground">Departure</span>
+          <input
+            type="datetime-local"
+            value={value}
+            min={minLocal}
             max={nowLocal}
             onChange={(e) => setValue(e.target.value)}
             className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"

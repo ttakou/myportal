@@ -360,6 +360,58 @@ export async function setVisitorCheckInAt(id: string, checkInAt: string): Promis
   return { ok: true };
 }
 
+/**
+ * Correct the recorded check-out (departure) time of a visitor who has already
+ * left — e.g. they departed before the desk logged it. For a single-day visit
+ * this is the row's departure; for a long-stay pass it is the most recent gate
+ * entry (and the mirrored row time). Must stay after the arrival time and not be
+ * in the future.
+ */
+export async function setVisitorCheckOutAt(id: string, checkOutAt: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  if (!checkOutAt?.trim()) return { ok: false, error: "Pick a departure time." };
+  const t = Date.parse(checkOutAt);
+  if (Number.isNaN(t)) return { ok: false, error: "Invalid departure time." };
+  if (t > Date.now() + 5 * 60000) return { ok: false, error: "Departure time can't be in the future." };
+  const iso = new Date(t).toISOString();
+  const supabase = createClient();
+  const { data: visitor } = await supabase
+    .from("visitors")
+    .select("visit_until, check_in_at, check_out_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (!visitor) return { ok: false, error: "Visitor not found." };
+  if (!visitor.check_out_at) return { ok: false, error: "This visitor has not checked out yet." };
+  if (visitor.check_in_at && iso < (visitor.check_in_at as string)) {
+    return { ok: false, error: "Departure time must be after the arrival time." };
+  }
+
+  if (visitor.visit_until != null) {
+    // Long-stay pass: adjust the most recent gate entry, and mirror onto the row.
+    const { data: entry } = await supabase
+      .from("visitor_checkins")
+      .select("id")
+      .eq("visitor_id", id)
+      .order("check_in_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (entry) {
+      const { error } = await supabase
+        .from("visitor_checkins")
+        .update({ check_out_at: iso })
+        .eq("id", entry.id);
+      if (error) return { ok: false, error: error.message };
+    }
+    await supabase.from("visitors").update({ check_out_at: iso }).eq("id", id);
+  } else {
+    const { error } = await supabase.from("visitors").update({ check_out_at: iso }).eq("id", id);
+    if (error) return { ok: false, error: error.message };
+  }
+  revalidate();
+  return { ok: true };
+}
+
 export async function checkOutVisitor(id: string, comment?: string): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;

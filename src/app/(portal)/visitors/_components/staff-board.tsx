@@ -12,7 +12,7 @@ import {
   type StaffAttendance,
 } from "@/types/staff-attendance";
 import { VEHICLE_TYPES } from "@/types/visitors";
-import { registerStaffAtGate, setStaffCheckInAt, staffCheckIn, staffCheckOut } from "../staff-actions";
+import { registerStaffAtGate, setStaffCheckInAt, setStaffCheckOutAt, staffCheckIn, staffCheckOut } from "../staff-actions";
 
 const field = "rounded-md border bg-background px-2 py-1 text-sm";
 
@@ -45,6 +45,9 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
   // The row whose recorded arrival time is being corrected.
   const [editTimeId, setEditTimeId] = useState<string | null>(null);
   const [editTime, setEditTime] = useState("");
+  // The row whose recorded departure time is being corrected.
+  const [editOutId, setEditOutId] = useState<string | null>(null);
+  const [editOut, setEditOut] = useState("");
   // Register a walk-in staff member / contractor not yet in the system.
   const [showRegister, setShowRegister] = useState(false);
   const [regName, setRegName] = useState("");
@@ -105,6 +108,22 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
     if (!editTime) return;
     run(() => setStaffCheckInAt(id, new Date(editTime).toISOString()));
     setEditTimeId(null);
+  }
+  function openEditOut(id: string, currentIso: string | null) {
+    setCheckInId(null);
+    setCheckOutId(null);
+    setEditTimeId(null);
+    setEditOutId(id);
+    setEditOut(
+      currentIso
+        ? new Date(new Date(currentIso).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+        : "",
+    );
+  }
+  function confirmEditOut(id: string) {
+    if (!editOut) return;
+    run(() => setStaffCheckOutAt(id, new Date(editOut).toISOString()));
+    setEditOutId(null);
   }
   function openCheckOut(id: string) {
     setCheckInId(null);
@@ -292,7 +311,41 @@ export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3 tabular-nums text-muted-foreground">{time(s.check_out_at)}</td>
+                <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                  {editOutId === s.profile_id ? (
+                    <span className="inline-flex items-center gap-1">
+                      <input
+                        type="datetime-local"
+                        value={editOut}
+                        min={s.check_in_at ? new Date(new Date(s.check_in_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : undefined}
+                        max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                        onChange={(e) => setEditOut(e.target.value)}
+                        aria-label="Departure time"
+                        className={cn(field, "w-44")}
+                      />
+                      <button type="button" disabled={pending || !editOut} onClick={() => confirmEditOut(s.profile_id)} className="text-xs font-medium text-primary hover:underline">
+                        Save
+                      </button>
+                      <button type="button" onClick={() => setEditOutId(null)} className="text-xs text-muted-foreground hover:text-foreground">
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">
+                      {time(s.check_out_at)}
+                      {s.check_out_at && (
+                        <button
+                          type="button"
+                          onClick={() => openEditOut(s.profile_id, s.check_out_at)}
+                          title="Edit departure time"
+                          className="text-muted-foreground/70 hover:text-foreground"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {[s.vehicle_type, s.vehicle_plate].filter(Boolean).join(" · ") || "—"}
                 </td>

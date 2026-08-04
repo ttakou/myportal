@@ -185,6 +185,41 @@ export async function setStaffCheckInAt(profileId: string, checkInAt: string): P
   return { ok: true };
 }
 
+/**
+ * Correct a staff member's recorded departure time for today — e.g. they left
+ * before the gate logged them out. Kept after the recorded arrival and not in
+ * the future.
+ */
+export async function setStaffCheckOutAt(profileId: string, checkOutAt: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  if (!checkOutAt?.trim()) return { ok: false, error: "Pick a departure time." };
+  const t = Date.parse(checkOutAt);
+  if (Number.isNaN(t)) return { ok: false, error: "Invalid departure time." };
+  if (t > Date.now() + 5 * 60000) return { ok: false, error: "Departure time can't be in the future." };
+  const iso = new Date(t).toISOString();
+  const supabase = createClient();
+  const { data: row } = await supabase
+    .from("staff_attendance")
+    .select("check_in_at, check_out_at")
+    .eq("profile_id", profileId)
+    .eq("attendance_date", today())
+    .maybeSingle();
+  if (!row) return { ok: false, error: "No check-in recorded today for this person." };
+  if (!row.check_out_at) return { ok: false, error: "This person has not checked out yet." };
+  if (row.check_in_at && iso < (row.check_in_at as string)) {
+    return { ok: false, error: "Departure time must be after the arrival time." };
+  }
+  const { error } = await supabase
+    .from("staff_attendance")
+    .update({ check_out_at: iso })
+    .eq("profile_id", profileId)
+    .eq("attendance_date", today());
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}
+
 export async function staffCheckOut(
   profileId: string,
   comment?: string | null,
