@@ -4,14 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
-import { requireOffshore, rev } from "./_shared";
+import { requireOffshoreDispatch, rev } from "./_shared";
 
 export async function requestOffshoreTrip(input: {
   installationId: string;
   mobilizeDate: string;
   demobDate?: string;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("create");
+  const gate = await requireOffshoreDispatch("create");
   if (gate) return gate;
   if (!input.mobilizeDate) return { ok: false, error: "Mobilise date is required." };
   const supabase = createClient();
@@ -44,7 +44,7 @@ export async function requestOffshoreTripGroup(input: {
    */
   people: { profileId?: string | null; name?: string | null }[];
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("create");
+  const gate = await requireOffshoreDispatch("create");
   if (gate) return gate;
   if (!input.mobilizeDate) return { ok: false, error: "Mobilise date is required." };
 
@@ -119,7 +119,7 @@ export async function requestOffshoreTripGroup(input: {
 }
 
 export async function clearHse(id: string): Promise<ActionResult> {
-  const gate = await requireOffshore("approve");
+  const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
   const {
@@ -143,7 +143,7 @@ export async function assignManifest(
   flightId: string | null,
   bedNo: string | null,
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase
@@ -159,7 +159,7 @@ export async function setOffshoreStatus(
   id: string,
   status: "onboard" | "demobilised" | "cancelled",
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("approve");
+  const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
   const { error } = await supabase.from("offshore_trips").update({ status }).eq("id", id);
@@ -173,7 +173,7 @@ export async function addFlight(input: {
   route: string;
   seats: number;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("manage");
+  const gate = await requireOffshoreDispatch("manage");
   if (gate) return gate;
   if (!input.route.trim() || !input.flightDate)
     return { ok: false, error: "Route and date are required." };

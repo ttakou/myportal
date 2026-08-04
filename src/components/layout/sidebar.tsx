@@ -41,7 +41,11 @@ export async function Sidebar({
     getMyPermissions(),
     getIsSavingsApprover(),
   ]);
+  // Full offshore managers drive the admin console's offshore section; the
+  // Dispatcher additionally gets the (scoped) offshore submenu but not the
+  // admin console.
   const canManageOffshore = access.isAdmin || access.isCampboss || access.isOim;
+  const offshoreFlags = { manager: canManageOffshore, dispatcher: access.isDispatcher };
   const isHr = access.isHr || access.isSystemAdmin || access.isAdmin;
   const isOrgAdmin = access.isAdmin || access.isSystemAdmin;
   const canMuster = isOrgAdmin || hasPermission(perms, "visitors", "operate");
@@ -91,7 +95,7 @@ export async function Sidebar({
       return {
         ...base,
         defaultSubKey: "mytrips",
-        subItems: offshoreHubSubmenu(canManageOffshore),
+        subItems: offshoreHubSubmenu(offshoreFlags),
       };
     }
     // Training & Competence: My Training for everyone; Team views for managers;

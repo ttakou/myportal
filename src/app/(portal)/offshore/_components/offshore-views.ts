@@ -83,6 +83,69 @@ export function resolveManagementView(raw: string | null | undefined): OffshoreV
 // one-panel-at-a-time switch are untouched.
 // =============================================================================
 
+// =============================================================================
+// Per-role access to the management sub-views.
+//
+//   full → see the view and use its write controls
+//   view → see the view read-only (write controls disabled/hidden)
+//   none → the view (and its sidebar entry / tab) is hidden entirely
+//
+// Full managers (admin / Campboss / OIM) get "full" on everything. The
+// Dispatcher runs crew rotation, travel & manifests and the offshore-staff
+// roster in full, and sees POB / live board and accommodation read-only.
+// Anyone else gets no management views (self-service "My trips" only).
+// =============================================================================
+
+export type OffshorePerm = "none" | "view" | "full";
+
+export interface OffshoreRoleFlags {
+  /** admin / Campboss / OIM — full control of every offshore view. */
+  manager: boolean;
+  /** Offshore Dispatcher — full crew/travel/roster, read-only POB & rooms. */
+  dispatcher: boolean;
+}
+
+const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
+  mytrips: "full",
+  dashboard: "view",
+  board: "view",
+  crews: "full",
+  calendar: "full",
+  attendance: "full",
+  manifests: "full",
+  rooms: "view",
+  bedboard: "view",
+  catering: "none",
+  roster: "full",
+  assign: "full",
+  visitors: "full",
+  emergency: "none",
+  drill: "none",
+  installations: "none",
+  history: "none",
+  "staff-history": "none",
+};
+
+/** The Dispatcher's (or full manager's) access level for one management view. */
+export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags): OffshorePerm {
+  if (flags.manager) return "full";
+  if (flags.dispatcher) return DISPATCHER_VIEW_PERMS[key] ?? "none";
+  return "none";
+}
+
+/** True when the user may see any management view at all (vs. self-service only). */
+export function canSeeOffshoreManagement(flags: OffshoreRoleFlags): boolean {
+  return flags.manager || flags.dispatcher;
+}
+
+/** First management view the user may open — the landing view after "My trips". */
+export function firstOffshoreManagementView(flags: OffshoreRoleFlags): OffshoreViewKey {
+  const hit = OFFSHORE_VIEWS.find(
+    (v) => v.key !== "mytrips" && offshoreViewPerm(v.key, flags) !== "none",
+  );
+  return hit?.key ?? DEFAULT_OFFSHORE_VIEW;
+}
+
 export interface OffshoreHubTab {
   key: OffshoreViewKey;
   label: string;
@@ -167,14 +230,47 @@ export interface OffshoreNavItem {
   matchViews?: string[];
 }
 
-/** Consolidated sidebar submenu: one entry per hub, gated like the flat list. */
-export function offshoreHubSubmenu(canManage: boolean): OffshoreNavItem[] {
-  const hubs = canManage ? OFFSHORE_HUBS : OFFSHORE_HUBS.filter((h) => h.key === "mytrips");
-  return hubs.map((h) => ({
-    key: h.key,
-    label: h.label,
-    icon: h.icon,
-    href: `/offshore?view=${h.key}`,
-    matchViews: h.tabs?.map((t) => t.key),
-  }));
+/** All view keys a hub covers (its landing key, or its tabs). */
+function hubViewKeys(h: OffshoreHub): OffshoreViewKey[] {
+  return h.tabs?.map((t) => t.key) ?? [h.key];
+}
+
+/**
+ * Consolidated sidebar submenu: one entry per hub the user may see. A hub is
+ * shown when at least one of its views is permitted (view or full); its landing
+ * link and highlight-match set are trimmed to just the permitted views, so a
+ * Dispatcher's "POB & Live Board" entry lands on the Overview and never exposes
+ * the Catering tab.
+ */
+export function offshoreHubSubmenu(flags: OffshoreRoleFlags): OffshoreNavItem[] {
+  if (!canSeeOffshoreManagement(flags)) {
+    return OFFSHORE_HUBS.filter((h) => h.key === "mytrips").map((h) => ({
+      key: h.key,
+      label: h.label,
+      icon: h.icon,
+      href: `/offshore?view=${h.key}`,
+    }));
+  }
+  const items: OffshoreNavItem[] = [];
+  for (const h of OFFSHORE_HUBS) {
+    const visible = hubViewKeys(h).filter((k) => offshoreViewPerm(k, flags) !== "none");
+    if (visible.length === 0) continue;
+    const landing = visible[0];
+    items.push({
+      key: landing,
+      label: h.label,
+      icon: h.icon,
+      href: `/offshore?view=${landing}`,
+      matchViews: h.tabs ? visible : undefined,
+    });
+  }
+  return items;
+}
+
+/** The permitted sibling tabs of a hub, for the management area's tab bar. */
+export function offshoreHubTabs(
+  hub: OffshoreHub,
+  flags: OffshoreRoleFlags,
+): OffshoreHubTab[] {
+  return (hub.tabs ?? []).filter((t) => offshoreViewPerm(t.key, flags) !== "none");
 }

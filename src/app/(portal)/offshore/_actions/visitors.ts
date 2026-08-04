@@ -5,7 +5,7 @@ import { searchBedAvailability } from "@/lib/offshore";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import type { RoomAvailability } from "@/types/offshore";
-import { VISITOR_TYPES, requireOffshore, rev, tenantId } from "./_shared";
+import { VISITOR_TYPES, requireOffshore, requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 export async function createVisitRequest(input: {
   visitorName: string;
@@ -21,7 +21,7 @@ export async function createVisitRequest(input: {
   overnight?: boolean;
   emergencyContact?: string;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("create");
+  const gate = await requireOffshoreDispatch("create");
   if (gate) return gate;
   if (!input.visitorName.trim()) return { ok: false, error: "Visitor name is required." };
   if (!input.departDate) return { ok: false, error: "Departure date is required." };
@@ -55,7 +55,7 @@ export async function decideVisitRequest(
   decision: "approved" | "rejected",
   reason?: string,
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("approve");
+  const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
   const {
@@ -106,7 +106,7 @@ export async function createVisitGroup(input: {
   overnight?: boolean;
   visitors: { name: string; company?: string; gender?: string; emergencyContact?: string }[];
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("create");
+  const gate = await requireOffshoreDispatch("create");
   if (gate) return gate;
   if (!input.departDate) return { ok: false, error: "Departure date is required." };
   const visitors = (input.visitors ?? []).filter((v) => v.name?.trim());
@@ -150,7 +150,7 @@ export async function decideVisitGroup(
   decision: "approved" | "rejected",
   reason?: string,
 ): Promise<ActionResult> {
-  const gate = await requireOffshore("approve");
+  const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
   const {
@@ -266,6 +266,9 @@ export async function setVisitorMovement(
   id: string,
   movement: "onboard" | "returned",
 ): Promise<ActionResult> {
+  // Marking a visitor physically on board / returned also frees their bed
+  // allocation (accommodation), so this stays with the full offshore managers
+  // rather than the Dispatcher (whose accommodation access is read-only).
   const gate = await requireOffshore("operate");
   if (gate) return gate;
   const supabase = createClient();

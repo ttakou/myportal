@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getRotationFlags } from "@/lib/offshore";
 import type { ActionResult } from "@/types/actions";
 import type { RotationFlag, RotationFlagKind, RotationFlagReason } from "@/types/offshore";
-import { requireOffshore, rev, tenantId } from "./_shared";
+import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 const KINDS: RotationFlagKind[] = ["absent", "early_arrival", "early_departure", "late_arrival"];
 const REASONS: RotationFlagReason[] = ["sick", "medevac", "compassionate", "training_logistics", "other"];
@@ -12,7 +12,7 @@ const REASONS: RotationFlagReason[] = ["sick", "medevac", "compassionate", "trai
 export async function fetchRotationFlags(
   includeResolved = false,
 ): Promise<{ ok: boolean; flags?: RotationFlag[]; error?: string }> {
-  const gate = await requireOffshore("view");
+  const gate = await requireOffshoreDispatch("view");
   if (gate) return gate;
   return { ok: true, flags: await getRotationFlags(includeResolved) };
 }
@@ -26,7 +26,7 @@ export async function addRotationFlag(input: {
   note?: string;
   effectiveDate?: string;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   if (!input.profileId) return { ok: false, error: "Pick a staff member." };
   if (!KINDS.includes(input.kind)) return { ok: false, error: "Pick what happened." };
@@ -54,7 +54,7 @@ export async function addRotationFlag(input: {
 
 /** Clear a flag once dealt with (resolved), or delete it outright. */
 export async function resolveRotationFlag(id: string, remove = false): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
   const {
