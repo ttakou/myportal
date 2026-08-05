@@ -35,6 +35,7 @@ import { OffshoreManagement } from "./_components/offshore-management";
 import { CrewChangeSuggestions } from "./_components/crew-change-suggestions";
 import { DefaultModeToggle } from "./_components/default-mode-toggle";
 import { VisitorRequestForm } from "./_components/visitor-request-form";
+import { PendingApprovals } from "./_components/pending-approvals";
 
 export default async function OffshorePage({
   searchParams,
@@ -56,7 +57,7 @@ export default async function OffshorePage({
   const showManagement = canManage && activeView !== "mytrips";
   const showMyTrips = !showManagement;
 
-  const [mine, installations, myVisits, suggestionLists, boardPeople, me] =
+  const [mine, installations, myVisits, suggestionLists, boardPeople, me, approvalVisits, approvalTrips] =
     await Promise.all([
       getMyOffshoreTrips(),
       getInstallations(),
@@ -64,6 +65,10 @@ export default async function OffshorePage({
       getVisitorSuggestions(),
       getAssignableEmployees(),
       createClient().auth.getUser().then((r) => r.data.user),
+      // Approvers landing on "My trips" see their pending queue without having
+      // to open the management area (fetched there separately when shown).
+      canManage && showMyTrips ? getAllVisitRequests() : Promise.resolve([]),
+      canManage && showMyTrips ? getAllOffshoreTrips() : Promise.resolve([]),
     ]);
   const meId = me?.id ?? "";
   const people = boardPeople.map((p) => ({ id: p.id, name: p.name }));
@@ -179,6 +184,7 @@ export default async function OffshorePage({
       {/* "My trips" lands on top — the user's own trips first, then the request forms. */}
       {showMyTrips && (
         <>
+          {canManage && <PendingApprovals visits={approvalVisits} trips={approvalTrips} />}
           <OffshoreBoard
             mine={mine}
             installations={installations}

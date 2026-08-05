@@ -102,6 +102,7 @@ import { CateringPanel } from "./catering-panel";
 import { HistoryPanel } from "./history-panel";
 import { StaffRotationPanel } from "./staff-rotation-panel";
 import { TripsPanel } from "./trips-panel";
+import { PendingApprovals } from "./pending-approvals";
 import { AttendancePanel } from "./attendance-panel";
 import { CrewAssign } from "./crew-assign";
 import {
@@ -205,6 +206,8 @@ export function OffshoreManagement(props: {
           crews={props.crews}
           rooms={props.rooms}
           roster={props.roster}
+          visits={props.visits}
+          trips={props.trips}
         />
       )}
       {tab === "board" && (
@@ -2259,6 +2262,8 @@ function Dashboard({
   crews,
   rooms,
   roster,
+  visits,
+  trips,
 }: {
   pob: PobBreakdown;
   accommodation: AccommodationSummary;
@@ -2266,6 +2271,8 @@ function Dashboard({
   crews: Crew[];
   rooms: Room[];
   roster: RosterEntry[];
+  visits: VisitRequest[];
+  trips: OffshoreTrip[];
 }) {
   const { pending, error, run } = useRun();
   const [drill, setDrill] = useState<Drill>(null);
@@ -2329,6 +2336,7 @@ function Dashboard({
 
   return (
     <div className="space-y-5">
+      <PendingApprovals visits={visits} trips={trips} />
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
