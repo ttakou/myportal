@@ -1394,6 +1394,20 @@ function ManifestBuilder({
         <p className="text-[11px] text-muted-foreground">
           Pick a date to pre-fill the manifest from the rotation schedule and the visitor bookings.
         </p>
+      ) : plan.scheduledCrews.length > 0 && plan.picks.length === 0 ? (
+        // The crew's cycle turns on this date but there is nobody to move: on a
+        // leaving run none of them are aboard, on a joining run they all are.
+        // Saying "pre-filled" over an empty list reads as a broken schedule.
+        <p className="rounded-md border border-dashed bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+          <span className="font-medium">
+            {plan.scheduledCrews.map((c) => c.name).join(", ")}
+          </span>{" "}
+          {direction === "out" ? "is due offshore" : "is due ashore"} on {date}, but nobody was added:{" "}
+          {direction === "out"
+            ? "every member is already on board."
+            : "none of its members are on board."}{" "}
+          Add anyone you need from the list below.
+        </p>
       ) : plan.scheduledCrews.length > 0 || plan.picks.length > 0 ? (
         <p className="text-[11px] text-muted-foreground">
           Pre-filled from the schedule:{" "}
