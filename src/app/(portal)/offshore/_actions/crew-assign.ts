@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { planBedAllocation } from "@/lib/offshore/allocation";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, requireOffshoreDispatch, rev, tenantId } from "./_shared";
@@ -224,81 +225,20 @@ export async function autoAllocateBeds(): Promise<AutoAllocateResult> {
   for (const s of (staffRows ?? []) as Record<string, any>[])
     fixedByProfile.set(s.profile_id, { room_id: s.fixed_room_id ?? null, bed: s.fixed_bed ?? null });
 
-  // Live occupancy per room: beds used + which "Bed N" labels are taken.
-  type RoomState = { cap: number; gender: string; used: number; beds: Set<string> };
-  const state = new Map<string, RoomState>();
-  for (const r of rooms)
-    state.set(r.id, {
-      cap: (r.bed_count as number) ?? 0,
-      gender: (r.gender_restriction as string) ?? "any",
-      used: 0,
-      beds: new Set<string>(),
-    });
-  for (const t of onboard) {
-    if (!t.room_id) continue;
-    const st = state.get(t.room_id);
-    if (!st) continue;
-    st.used++;
-    if (t.bed_no) st.beds.add(t.bed_no);
-  }
-  for (const a of (allocs ?? []) as Record<string, any>[]) {
-    const st = a.room_id ? state.get(a.room_id) : null;
-    if (st) st.used++;
-  }
-
-  const freeBeds = (st: RoomState) => Math.max(0, st.cap - st.used);
-  const nextBed = (st: RoomState) => {
-    for (let n = 1; n <= st.cap; n++) {
-      const lbl = `Bed ${n}`;
-      if (!st.beds.has(lbl)) return lbl;
-    }
-    return `Bed ${st.used + 1}`;
-  };
-  const seat = (st: RoomState, bed: string) => {
-    st.used++;
-    st.beds.add(bed);
-  };
-  const emptiestAnyRoom = (): string | null => {
-    let best: string | null = null;
-    let bestFree = 0;
-    for (const [rid, st] of state) {
-      if (st.gender !== "any") continue;
-      const f = freeBeds(st);
-      if (f > bestFree) {
-        bestFree = f;
-        best = rid;
-      }
-    }
-    return best;
-  };
-
-  // Seat crew-by-crew, filling one room before opening the next.
-  const order = [...needBed].sort((a, b) => (a.crew_id ?? "").localeCompare(b.crew_id ?? ""));
-  const assignments: { id: string; room_id: string; bed_no: string }[] = [];
-  let unplaced = 0;
-  let curId: string | null = null;
-
-  for (const person of order) {
-    const fixed = person.profile_id ? fixedByProfile.get(person.profile_id) : undefined;
-    if (fixed?.room_id) {
-      const st = state.get(fixed.room_id);
-      if (st && freeBeds(st) > 0) {
-        const bed = fixed.bed && !st.beds.has(fixed.bed) ? fixed.bed : nextBed(st);
-        seat(st, bed);
-        assignments.push({ id: person.id, room_id: fixed.room_id, bed_no: bed });
-        continue;
-      }
-    }
-    if (!curId || freeBeds(state.get(curId)!) === 0) curId = emptiestAnyRoom();
-    if (curId) {
-      const st = state.get(curId)!;
-      const bed = nextBed(st);
-      seat(st, bed);
-      assignments.push({ id: person.id, room_id: curId, bed_no: bed });
-    } else {
-      unplaced++;
-    }
-  }
+  // Pure placement rules live in lib/offshore/allocation (unit-tested).
+  const { assignments, unplaced } = planBedAllocation({
+    onboard,
+    rooms: rooms.map((r) => ({
+      id: r.id as string,
+      bed_count: (r.bed_count as number) ?? 0,
+      gender_restriction: (r.gender_restriction as string) ?? "any",
+      status: r.status as string,
+    })),
+    visitorAllocations: ((allocs ?? []) as Record<string, any>[]).map(
+      (a) => (a.room_id as string | null) ?? null,
+    ),
+    fixedByProfile,
+  });
 
   // Each row gets a different room/bed, so these are separate updates — run
   // them concurrently instead of one round-trip at a time.

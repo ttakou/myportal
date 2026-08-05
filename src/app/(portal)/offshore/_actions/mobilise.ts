@@ -5,9 +5,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import type { CrewChangePrefill, CrewChangePrefillMember } from "@/types/offshore";
+import { scheduleWindow } from "@/lib/offshore/rotation-math";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
-const DAY = 86_400_000;
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 /** Map profile ids → display name (full name, else email). */
 async function namesFor(supabase: SupabaseClient, ids: string[]): Promise<Map<string, string>> {
@@ -26,30 +27,6 @@ async function roomLabels(supabase: SupabaseClient, ids: string[]): Promise<Map<
       [r.block, r.room_number].filter(Boolean).join(" ") || "—",
     ]),
   );
-}
-
-/** The crew's current offshore window from its rotation cycle. */
-function scheduleWindow(crew: {
-  offshore_days: number;
-  onshore_days: number;
-  cycle_start_date: string | null;
-}): { fromIso: string; toIso: string } {
-  const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
-  let from = today;
-  let to = today + crew.offshore_days * DAY;
-  if (crew.cycle_start_date) {
-    const period = crew.offshore_days + crew.onshore_days;
-    const start = new Date(crew.cycle_start_date + "T00:00:00Z").getTime();
-    const idx = period > 0 ? (((Math.floor((today - start) / DAY) % period) + period) % period) : 0;
-    if (idx < crew.offshore_days) {
-      from = today - idx * DAY;
-      to = from + crew.offshore_days * DAY;
-    }
-  }
-  return {
-    fromIso: new Date(from).toISOString().slice(0, 10),
-    toIso: new Date(to).toISOString().slice(0, 10),
-  };
 }
 
 /** Board a single member now (late arrival joining colleagues already offshore). */
@@ -75,7 +52,7 @@ export async function boardMember(profileId: string): Promise<ActionResult> {
     .maybeSingle();
 
   let installationId: string | null = null;
-  let fromIso = new Date().toISOString().slice(0, 10);
+  let fromIso = todayIso();
   let toIso: string | null = null;
   if (staff?.crew_id) {
     const { data: crew } = await supabase
@@ -85,21 +62,16 @@ export async function boardMember(profileId: string): Promise<ActionResult> {
       .maybeSingle();
     if (crew) {
       installationId = (crew.installation_id as string | null) ?? null;
-      const DAY = 86_400_000;
-      const today = new Date(fromIso + "T00:00:00Z").getTime();
-      let from = today;
-      let to = today + (crew.offshore_days as number) * DAY;
-      if (crew.cycle_start_date) {
-        const period = (crew.offshore_days as number) + (crew.onshore_days as number);
-        const start = new Date((crew.cycle_start_date as string) + "T00:00:00Z").getTime();
-        const idx = ((Math.floor((today - start) / DAY) % period) + period) % period;
-        if (idx < (crew.offshore_days as number)) {
-          from = today - idx * DAY;
-          to = from + (crew.offshore_days as number) * DAY;
-        }
-      }
-      fromIso = new Date(from).toISOString().slice(0, 10);
-      toIso = new Date(to).toISOString().slice(0, 10);
+      const window = scheduleWindow(
+        {
+          offshore_days: crew.offshore_days as number,
+          onshore_days: crew.onshore_days as number,
+          cycle_start_date: (crew.cycle_start_date as string | null) ?? null,
+        },
+        fromIso,
+      );
+      fromIso = window.fromIso;
+      toIso = window.toIso;
     }
   }
 
@@ -147,21 +119,14 @@ export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
     .maybeSingle();
   if (!crew) return { ok: false, error: "Crew not found." };
 
-  const DAY = 86_400_000;
-  const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
-  let from = today;
-  let to = today + (crew.offshore_days as number) * DAY;
-  if (crew.cycle_start_date) {
-    const period = (crew.offshore_days as number) + (crew.onshore_days as number);
-    const start = new Date((crew.cycle_start_date as string) + "T00:00:00Z").getTime();
-    const idx = ((Math.floor((today - start) / DAY) % period) + period) % period;
-    if (idx < (crew.offshore_days as number)) {
-      from = today - idx * DAY;
-      to = from + (crew.offshore_days as number) * DAY;
-    }
-  }
-  const fromIso = new Date(from).toISOString().slice(0, 10);
-  const toIso = new Date(to).toISOString().slice(0, 10);
+  const { fromIso, toIso } = scheduleWindow(
+    {
+      offshore_days: crew.offshore_days as number,
+      onshore_days: crew.onshore_days as number,
+      cycle_start_date: (crew.cycle_start_date as string | null) ?? null,
+    },
+    todayIso(),
+  );
 
   const { data: members } = await supabase
     .from("offshore_staff")
@@ -231,11 +196,14 @@ export async function getCrewChangePrefill(
     .maybeSingle();
   if (!crew) return { ok: false, error: "Crew not found." };
 
-  const { fromIso, toIso } = scheduleWindow({
-    offshore_days: crew.offshore_days as number,
-    onshore_days: crew.onshore_days as number,
-    cycle_start_date: crew.cycle_start_date as string | null,
-  });
+  const { fromIso, toIso } = scheduleWindow(
+    {
+      offshore_days: crew.offshore_days as number,
+      onshore_days: crew.onshore_days as number,
+      cycle_start_date: crew.cycle_start_date as string | null,
+    },
+    todayIso(),
+  );
 
   // Who's aboard right now for this crew (carry their actual room/bed).
   const { data: aboardTrips } = await supabase
