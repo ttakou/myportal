@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useStatusTransition } from "@/components/activity";
 import {
@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { planManifest, seatOverflow } from "@/lib/offshore/manifest-plan";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -1191,27 +1192,68 @@ function ManifestBuilder({
     .filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Pre-fill the manifest from the chosen crew + direction: inbound pulls the
-  // crew's staff ashore (due to mobilise); outbound pulls the crew's staff on
-  // board (due to demobilise). Cleared when no crew is selected. The planner can
-  // still add/remove anyone before creating.
+  // Everyone the schedule says should travel on this date and direction: the
+  // rotation cycle decides the crews, the bookings decide the visitors. See
+  // lib/offshore/manifest-plan.ts — the rules are unit-tested there.
+  const plan = useMemo(
+    () =>
+      planManifest({
+        direction,
+        dateIso: date,
+        crewIdFilter: crewId || null,
+        crews: crews.map((c) => ({
+          id: c.id,
+          name: c.name,
+          offshore_days: c.offshore_days,
+          onshore_days: c.onshore_days,
+          cycle_start_date: c.cycle_start_date,
+        })),
+        roster: roster.map((m) => ({
+          profile_id: m.profile_id,
+          name: m.full_name || m.email,
+          crew_id: m.crew_id,
+          is_rotational: m.is_rotational,
+        })),
+        onboard: onboard.map((o) => ({
+          profile_id: o.profile_id,
+          name: o.name,
+          crew_id: o.crew_id,
+        })),
+        visits: visits.map((v) => ({
+          id: v.id,
+          visitor_name: v.visitor_name,
+          status: v.status,
+          depart_date: v.depart_date,
+          return_date: v.return_date,
+        })),
+      }),
+    [direction, date, crewId, crews, roster, onboard, visits],
+  );
+
+  // Pre-fill whenever the planning inputs change. Everyone the schedule returns
+  // goes on — an overbooked run is flagged below rather than trimmed, so the
+  // operator decides who moves. They can still add or remove anyone by hand.
+  const planKey = `${direction}|${date}|${crewId}|${plan.picks.map((p) => p.kind + p.id).join(",")}`;
+  const appliedKey = useRef<string | null>(null);
   useEffect(() => {
-    if (!crewId) {
-      setPicked([]);
-      return;
-    }
-    const pool: PickItem[] =
-      direction === "out"
-        ? roster
-            .filter((m) => m.crew_id === crewId && !onboard.some((o) => o.profile_id === m.profile_id))
-            .map((m) => ({ key: "s" + m.profile_id, id: m.profile_id, name: m.full_name || m.email, kind: "staff" as const, crew_id: m.crew_id }))
-        : onboard
-            .filter((o) => o.profile_id && o.crew_id === crewId)
-            .map((o) => ({ key: "s" + o.profile_id, id: o.profile_id as string, name: o.name, kind: "staff" as const, crew_id: o.crew_id }));
-    setPicked(pool);
-    // roster/onboard are stable props; re-fill only when crew or direction changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [crewId, direction]);
+    if (appliedKey.current === planKey) return;
+    appliedKey.current = planKey;
+    setPicked(
+      plan.picks.map((p) => ({
+        key: (p.kind === "staff" ? "s" : "v") + p.id,
+        id: p.id,
+        name: p.kind === "visitor" ? `${p.name} (visitor)` : p.name,
+        kind: p.kind,
+        crew_id: p.crew_id,
+      })),
+    );
+  }, [planKey, plan.picks]);
+
+  const reasonFor = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of plan.picks) m.set((p.kind === "staff" ? "s" : "v") + p.id, p.reason);
+    return m;
+  }, [plan.picks]);
 
   const setModeAndSeats = (m: "helicopter" | "boat") => {
     setMode(m);
@@ -1237,7 +1279,8 @@ function ManifestBuilder({
       reset,
     );
 
-  const over = picked.length > seats;
+  const seatCheck = seatOverflow(picked.length, seats);
+  const over = seatCheck.over;
 
   return (
     <div className="space-y-2 rounded-lg border border-dashed bg-card/50 p-3">
@@ -1275,14 +1318,49 @@ function ManifestBuilder({
         </label>
       </div>
 
-      {crewId ? (
+      {/* What the schedule produced for this date + direction. */}
+      {!date ? (
         <p className="text-[11px] text-muted-foreground">
-          Pre-filled with <span className="font-medium">{crews.find((c) => c.id === crewId)?.name}</span>{" "}
-          {direction === "out" ? "joining (mobilise)" : "leaving (demobilise)"} — add or remove anyone before creating.
+          Pick a date to pre-fill the manifest from the rotation schedule and the visitor bookings.
+        </p>
+      ) : plan.scheduledCrews.length > 0 || plan.picks.length > 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          Pre-filled from the schedule:{" "}
+          {plan.scheduledCrews.length > 0 ? (
+            <>
+              <span className="font-medium">
+                {plan.scheduledCrews.map((c) => c.name).join(", ")}
+              </span>{" "}
+              {direction === "out" ? "due offshore" : "due ashore"}
+            </>
+          ) : (
+            "no crew change"
+          )}
+          {plan.picks.some((p) => p.kind === "visitor") &&
+            `, plus ${plan.picks.filter((p) => p.kind === "visitor").length} booked visitor(s)`}
+          . Everyone due is listed — add or remove anyone before creating.
         </p>
       ) : (
-        <p className="text-[11px] text-muted-foreground">
-          Pick a crew to auto-fill the manifest from the crew change, or add people manually.
+        <p className="rounded-md border border-dashed bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+          Nothing is scheduled to move on {date}
+          {crewId ? " for this crew" : ""}.
+          {plan.nearest.length > 0 && (
+            <>
+              {" "}
+              Nearest{" "}
+              {direction === "out" ? "departures" : "returns"}:{" "}
+              {plan.nearest.map((n) => `${n.crewName} ${n.dateIso}`).join(" · ")}.
+            </>
+          )}{" "}
+          You can still build the movement by hand.
+        </p>
+      )}
+
+      {/* Overbooking is surfaced, never silently trimmed. */}
+      {over && (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] font-medium text-destructive">
+          Overbooked by {seatCheck.excess} — {picked.length} passenger(s) for {seats} seat(s). Everyone
+          scheduled is still listed: add a run, raise the seat count, or take people off before creating.
         </p>
       )}
 
@@ -1348,7 +1426,24 @@ function ManifestBuilder({
                   onClick={() => setPicked((cur) => cur.filter((x) => x.key !== p.key))}
                   className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-destructive/10"
                 >
-                  <span><span className="mr-1 tabular-nums text-muted-foreground/70">{i + 1}.</span>{p.name}</span>
+                  <span className="min-w-0">
+                    <span
+                      className={cn(
+                        "mr-1 tabular-nums",
+                        // Everyone past the seat count is still listed; number
+                        // them in red so the overflow is obvious at a glance.
+                        i >= seats ? "font-semibold text-destructive" : "text-muted-foreground/70",
+                      )}
+                    >
+                      {i + 1}.
+                    </span>
+                    {p.name}
+                    {reasonFor.has(p.key) && (
+                      <span className="ml-1 text-[10px] text-muted-foreground">
+                        · {reasonFor.get(p.key)}
+                      </span>
+                    )}
+                  </span>
                   <span className="text-muted-foreground">×</span>
                 </button>
               </li>
