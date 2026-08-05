@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
+import { SearchSelect } from "@/components/ui/search-select";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import type { Installation } from "@/types/offshore";
 import {
@@ -230,6 +231,8 @@ export function OffshoreManagement(props: {
         <RoomsPanel
           rooms={props.rooms}
           installations={props.installations}
+          roster={props.roster}
+          onboard={props.pob.people}
           readOnly={readOnly}
         />
       )}
@@ -3117,15 +3120,48 @@ function CrewBackToBackList({ calendar, crews }: { calendar: RotationCalendar; c
   );
 }
 
-/** Live occupancy: every room with its checked-in occupants and a fill level. */
+/**
+ * Live occupancy: every room with its checked-in occupants and a fill level.
+ *
+ * Editable in place (managers only — the Dispatcher is read-only on Rooms):
+ * occupants come from the live trip (room + bed), cabin owners from the roster's
+ * fixed cabin, so each half saves through its own action.
+ */
 function RoomOccupancyList({
   rooms,
+  roster,
+  onboard,
+  readOnly = false,
 }: {
   rooms: Room[];
+  roster: RosterEntry[];
+  onboard: PobOnboard[];
+  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(true);
+  const { pending, error, run } = useRun();
   const occupiedRooms = rooms.filter((r) => r.occupied > 0).length;
   const totalOnboard = rooms.reduce((n, r) => n + r.occupied, 0);
+
+  // Roster row id per profile — owners carry a profile_id, but the roster action
+  // keys off offshore_staff.id.
+  const staffByProfile = useMemo(() => {
+    const m = new Map<string, RosterEntry>();
+    for (const s of roster) m.set(s.profile_id, s);
+    return m;
+  }, [roster]);
+
+  // Everyone on board, for the "put someone in this bed" picker.
+  const pool = useMemo(
+    () =>
+      onboard.map((p) => ({
+        id: p.trip_id,
+        room_id: p.room_id,
+        name: p.company ? `${p.name} · ${p.company}` : p.name,
+        placedIn: p.room_id ? p.room_label : null,
+      })),
+    [onboard],
+  );
   // Show occupied rooms first, then by room label.
   const sorted = [...rooms].sort(
     (a, b) =>
@@ -3146,14 +3182,62 @@ function RoomOccupancyList({
       </button>
       {open && (
         <div className="px-3 pb-3">
+          {error && (
+            <p className="mb-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+          )}
+          {!readOnly && (
+            <p className="mb-2 text-xs text-muted-foreground">
+              Edit in place: change a bed label, remove someone from a bed, or seat a waiting person.
+              Cabin owner(s) set the roster&apos;s fixed cabin — the permanent allocation auto-allocate
+              honours first.
+            </p>
+          )}
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {sorted.map((r) => {
               const label = [r.block, r.room_number].filter(Boolean).join(" ");
               const beds = r.bed_count || 0;
               const over = r.occupied > beds;
               const pct = beds > 0 ? Math.min(100, (r.occupied / beds) * 100) : r.occupied > 0 ? 100 : 0;
+              // A blocked / under-maintenance room keeps its occupants (and the
+              // controls to move them out) but takes nobody new.
+              const takesPeople = !["blocked", "maintenance"].includes(r.status);
+              const free = takesPeople ? Math.max(0, beds - r.occupants.length) : 0;
+              // Suggested labels for the empty beds: lowest "Bed N" not in use.
+              const usedBeds = new Set(r.occupants.map((o) => o.bed_no).filter(Boolean) as string[]);
+              const slotLabels: string[] = [];
+              let k = 0;
+              while (slotLabels.length < free) {
+                k++;
+                const lbl = `Bed ${k}`;
+                if (!usedBeds.has(lbl)) slotLabels.push(lbl);
+              }
+              const candidates = pool
+                .filter((p) => p.room_id !== r.id)
+                .map((p) => ({
+                  id: p.id,
+                  waiting: !p.room_id,
+                  label: p.placedIn ? `${p.name} — move from ${p.placedIn}` : p.name,
+                }))
+                .sort((a, b) => Number(b.waiting) - Number(a.waiting) || a.label.localeCompare(b.label));
+              const ownerIds = new Set(r.owners.map((o) => o.profile_id));
+              const ownerCandidates = roster
+                .filter((s) => !ownerIds.has(s.profile_id))
+                .map((s) => ({
+                  id: s.id,
+                  label: s.fixed_room_id
+                    ? `${s.full_name || s.email} — move from ${s.fixed_room_label ?? "a cabin"}`
+                    : s.full_name || s.email,
+                }));
               return (
-                <div key={r.id} className={cn("rounded-md border p-2 text-sm", r.occupied === 0 && "opacity-60")}>
+                <div
+                  key={r.id}
+                  className={cn(
+                    "rounded-md border p-2 text-sm",
+                    // Empty rooms recede only when there's nothing to do with
+                    // them — with the editors on they are a place to seat people.
+                    readOnly && r.occupied === 0 && "opacity-60",
+                  )}
+                >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{label}</span>
                     <span className={cn("text-xs font-semibold", over ? "text-destructive" : r.occupied === 0 ? "text-muted-foreground" : "text-green-700")}>
@@ -3167,28 +3251,72 @@ function RoomOccupancyList({
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  {r.occupants.length > 0 && (
+                  {(r.occupants.length > 0 || (!readOnly && slotLabels.length > 0)) && (
                     <ul className="mt-1.5 space-y-1">
-                      {r.occupants.map((o) => (
-                        <li key={o.trip_id} className="flex items-center gap-1.5 text-xs">
-                          <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
-                          <span className="font-medium">{o.name}</span>
-                        </li>
-                      ))}
+                      {r.occupants.map((o) =>
+                        readOnly ? (
+                          <li key={o.trip_id} className="flex items-center gap-1.5 text-xs">
+                            <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
+                            <span className="font-medium">{o.name}</span>
+                          </li>
+                        ) : (
+                          <OccupantRow
+                            key={o.trip_id}
+                            occupant={o}
+                            roomId={r.id}
+                            pending={pending}
+                            run={run}
+                          />
+                        ),
+                      )}
+                      {!readOnly &&
+                        slotLabels.map((lbl) => (
+                          <EmptyBed
+                            key={`${r.id}-${lbl}`}
+                            roomId={r.id}
+                            defaultBed={lbl}
+                            candidates={candidates}
+                            pending={pending}
+                            run={run}
+                          />
+                        ))}
                     </ul>
                   )}
-                  {r.owners.length > 0 && (
+                  {(r.owners.length > 0 || !readOnly) && (
                     <div className="mt-1.5 border-t pt-1 text-[11px] text-muted-foreground">
                       <span className="font-medium">Cabin owner(s)</span>
                       <ul className="mt-0.5 space-y-0.5">
-                        {r.owners.map((o) => (
-                          <li key={o.profile_id} className="flex items-center gap-1">
-                            <span className="font-mono">{o.bed || "•"}</span>
-                            <span>{o.name}</span>
-                            {o.back_to_back ? <span className="text-muted-foreground/70"> ⇄ {o.back_to_back}</span> : ""}
-                          </li>
-                        ))}
+                        {r.owners.map((o) =>
+                          readOnly ? (
+                            <li key={o.profile_id} className="flex items-center gap-1">
+                              <span className="font-mono">{o.bed || "•"}</span>
+                              <span>{o.name}</span>
+                              {o.back_to_back ? <span className="text-muted-foreground/70"> ⇄ {o.back_to_back}</span> : ""}
+                            </li>
+                          ) : (
+                            <OwnerRow
+                              key={o.profile_id}
+                              owner={o}
+                              staffId={staffByProfile.get(o.profile_id)?.id ?? null}
+                              pending={pending}
+                              run={run}
+                            />
+                          ),
+                        )}
                       </ul>
+                      {!readOnly && (
+                        <SearchSelect
+                          value={null}
+                          options={ownerCandidates}
+                          getOptionValue={(s) => s.id}
+                          getOptionLabel={(s) => s.label}
+                          placeholder={ownerCandidates.length ? "Type a name to add owner…" : "— no one left —"}
+                          disabled={pending || ownerCandidates.length === 0}
+                          wrapperClassName="mt-1"
+                          className="w-full rounded border bg-background px-1 py-0.5 text-[11px]"
+                          onChange={(v) => v && run(() => updateRosterMember({ id: v, fixedRoomId: r.id }))}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
@@ -3219,7 +3347,9 @@ function BedBoardPanel({
 }) {
   const { pending, error, run } = useRun();
   const [q, setQ] = useState("");
-  const [showFull, setShowFull] = useState(false);
+  // Full rooms stay on the board by default — they still need editing (move
+  // someone out, relabel a bed). Tick the filter to narrow to rooms with space.
+  const [freeOnly, setFreeOnly] = useState(false);
   const [allocMsg, setAllocMsg] = useState<string | null>(null);
 
   function autoAllocate() {
@@ -3270,7 +3400,7 @@ function BedBoardPanel({
     return usable
       .filter((r) => {
         const free = (r.bed_count || 0) - r.occupied;
-        if (!showFull && free <= 0) return false;
+        if (freeOnly && free <= 0) return false;
         if (!needle) return true;
         const hay = [r.block, r.floor, r.room_number, r.lifeboat].filter(Boolean).join(" ").toLowerCase();
         return hay.includes(needle);
@@ -3281,14 +3411,15 @@ function BedBoardPanel({
         const fb = (b.bed_count || 0) - b.occupied;
         return (fb > 0 ? 1 : 0) - (fa > 0 ? 1 : 0) || labelOf(a).localeCompare(labelOf(b));
       });
-  }, [usable, needle, showFull]);
+  }, [usable, needle, freeOnly]);
 
   return (
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
       <p className="text-sm text-muted-foreground">
-        Every room with a free bed. Pick a waiting person to drop them straight into an empty bed —
-        their POB record gets that room &amp; bed. Blocked and under-maintenance rooms are hidden.
+        Every usable room, full ones included so you can always move someone out. Type a name into an
+        empty bed to drop that person straight into it — their POB record gets that room &amp; bed.
+        Blocked and under-maintenance rooms are hidden.
       </p>
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border bg-card px-3 py-2 text-sm">
@@ -3312,8 +3443,8 @@ function BedBoardPanel({
             className={cn(field, "py-1")}
           />
           <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            <input type="checkbox" checked={showFull} onChange={(e) => setShowFull(e.target.checked)} />
-            Show full rooms
+            <input type="checkbox" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} />
+            Only rooms with a free bed
           </label>
         </div>
       </div>
@@ -3433,11 +3564,108 @@ function BedBoardPanel({
           <p className="text-sm text-muted-foreground">
             {usable.length === 0
               ? "No rooms yet."
-              : "No rooms with empty beds. Tick “Show full rooms” to see them all."}
+              : freeOnly
+                ? "Every room is full. Untick “Only rooms with a free bed” to see them all."
+                : "No room matches that filter."}
           </p>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * One live occupant on the occupancy card: rename their bed (saved on blur) or
+ * lift them out of it. Unassigning keeps them on board — they drop back into the
+ * "waiting for a bed" pool.
+ */
+function OccupantRow({
+  occupant,
+  roomId,
+  pending,
+  run,
+}: {
+  occupant: Room["occupants"][number];
+  roomId: string;
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const original = occupant.bed_no ?? "";
+  const [bed, setBed] = useState(original);
+  // Re-sync when the server sends a different value (e.g. after auto-allocate).
+  useEffect(() => setBed(original), [original]);
+  return (
+    <li className="flex items-center gap-1.5 rounded bg-muted/40 px-1.5 py-1 text-xs">
+      <input
+        value={bed}
+        disabled={pending}
+        aria-label={`Bed for ${occupant.name}`}
+        placeholder="•"
+        onChange={(e) => setBed(e.target.value)}
+        onBlur={() => {
+          if (bed.trim() !== original) run(() => reassignTripRoom(occupant.trip_id, roomId, bed));
+        }}
+        className="w-14 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
+      />
+      <span className="truncate font-medium">{occupant.name}</span>
+      <button
+        disabled={pending}
+        title={`Unassign ${occupant.name} from this bed (stays on board, returns to the waiting list)`}
+        onClick={() => run(() => reassignTripRoom(occupant.trip_id, null))}
+        className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </li>
+  );
+}
+
+/**
+ * One cabin owner on the occupancy card — the roster's fixed cabin, not a live
+ * trip. Editing the bed or clearing the owner writes straight to the roster row,
+ * exactly as the Roster tab's fixed-room fields do.
+ */
+function OwnerRow({
+  owner,
+  staffId,
+  pending,
+  run,
+}: {
+  owner: Room["owners"][number];
+  staffId: string | null;
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const original = owner.bed ?? "";
+  const [bed, setBed] = useState(original);
+  useEffect(() => setBed(original), [original]);
+  // Owners always resolve to a roster row; guard anyway so a stale render can't
+  // fire an update with no id.
+  const editable = Boolean(staffId) && !pending;
+  return (
+    <li className="flex items-center gap-1">
+      <input
+        value={bed}
+        disabled={!editable}
+        aria-label={`Fixed bed for ${owner.name}`}
+        placeholder="•"
+        onChange={(e) => setBed(e.target.value)}
+        onBlur={() => {
+          if (staffId && bed.trim() !== original) run(() => updateRosterMember({ id: staffId, fixedBed: bed }));
+        }}
+        className="w-14 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
+      />
+      <span className="truncate">{owner.name}</span>
+      {owner.back_to_back ? <span className="shrink-0 text-muted-foreground/70">⇄ {owner.back_to_back}</span> : null}
+      <button
+        disabled={!editable}
+        title={`Remove ${owner.name} as an owner of this cabin (clears their fixed cabin)`}
+        onClick={() => staffId && run(() => updateRosterMember({ id: staffId, fixedRoomId: null }))}
+        className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </li>
   );
 }
 
@@ -3468,14 +3696,15 @@ function EmptyBed({
         aria-label="Bed label"
         className="w-16 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
       />
-      <LazySelect
+      <SearchSelect
         value={null}
         options={candidates}
         getOptionValue={(p) => p.id}
         getOptionLabel={(p) => p.label}
-        placeholder={candidates.length ? "— assign / move person —" : "— nobody available —"}
+        placeholder={candidates.length ? "Type a name to assign / move…" : "— nobody available —"}
         disabled={pending || candidates.length === 0}
-        className="flex-1 rounded border bg-background px-1 py-0.5 text-[11px]"
+        wrapperClassName="flex-1"
+        className="w-full rounded border bg-background px-1 py-0.5 text-[11px]"
         onChange={(v) => v && run(() => reassignTripRoom(v, roomId, bed.trim() || null))}
       />
     </li>
@@ -3485,10 +3714,14 @@ function EmptyBed({
 function RoomsPanel({
   rooms,
   installations,
+  roster,
+  onboard,
   readOnly = false,
 }: {
   rooms: Room[];
   installations: Installation[];
+  roster: RosterEntry[];
+  onboard: PobOnboard[];
   readOnly?: boolean;
 }) {
   const { pending, error, run } = useRun();
@@ -3515,7 +3748,7 @@ function RoomsPanel({
           <FileText className="h-4 w-4" /> Room allocation report
         </Button>
       </div>
-      <RoomOccupancyList rooms={rooms} />
+      <RoomOccupancyList rooms={rooms} roster={roster} onboard={onboard} readOnly={readOnly} />
       {!readOnly && (
         <>
       <BulkRoomImport />
