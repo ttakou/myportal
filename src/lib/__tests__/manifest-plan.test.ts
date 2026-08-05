@@ -161,7 +161,25 @@ describe("planManifest — inbound (leaving)", () => {
 
   it("takes the changing crew's people off board, plus visitors due to return", () => {
     const plan = planManifest({ ...base, direction: "in", dateIso: "2026-01-15", onboard, visits });
-    expect(plan.picks.map((p) => p.id).sort()).toEqual(["a1", "v3"]);
+    // v3 is on board; v1 is still "approved" on its return date — the arrival
+    // was never confirmed, so it is listed rather than silently left offshore.
+    expect(plan.picks.map((p) => p.id).sort()).toEqual(["a1", "v1", "v3"]);
+  });
+
+  it("flags a returning visitor whose arrival was never confirmed", () => {
+    const plan = planManifest({ ...base, direction: "in", dateIso: "2026-01-15", onboard, visits });
+    expect(plan.picks.find((p) => p.id === "v1")!.reason).toBe(
+      "Visitor — booked return (arrival never confirmed)",
+    );
+    expect(plan.picks.find((p) => p.id === "v3")!.reason).toBe("Visitor — booked return");
+  });
+
+  it("still ignores a visitor whose booking already closed", () => {
+    const closed = [
+      { id: "v9", visitor_name: "Gone", status: "returned", depart_date: "2026-01-01", return_date: "2026-01-15" },
+    ];
+    const plan = planManifest({ ...base, direction: "in", dateIso: "2026-01-15", onboard, visits: closed });
+    expect(plan.picks.map((p) => p.id)).not.toContain("v9");
   });
 
   it("leaves another crew's people on board", () => {

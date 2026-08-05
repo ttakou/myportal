@@ -194,7 +194,14 @@ export default async function OffshorePage({
       {/* "My trips" lands on top — the user's own trips first, then the request forms. */}
       {showMyTrips && (
         <>
-          {canManage && <PendingApprovals visits={approvalVisits} trips={approvalTrips} />}
+          {canManage && (
+        <PendingApprovals
+          visits={approvalVisits}
+          trips={approvalTrips}
+          // Deciding needs the approve verb; a registrar sees the queue only.
+          canDecide={offshoreManager || access.isDispatcher}
+        />
+      )}
           <OffshoreBoard
             mine={mine}
             installations={installations}
