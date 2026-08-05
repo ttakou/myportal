@@ -21,6 +21,7 @@ import {
   crewFill,
   manifestCandidates,
   pendingMovements,
+  planPicksAsCandidates,
   type ManifestCandidate,
 } from "@/lib/offshore/manifest-picker";
 import { bedCandidates, type BedCandidate } from "@/lib/offshore/bed-candidates";
@@ -1187,6 +1188,11 @@ function ManifestBuilder({
 
   const pickedKeys = new Set(picked.map((p) => p.key));
 
+  const aboardIds = useMemo(
+    () => new Set(onboard.map((o) => o.profile_id).filter(Boolean) as string[]),
+    [onboard],
+  );
+
   // Everyone is selectable in either direction — real crew changes carry late
   // additions and people already in place. The direction only decides whether a
   // pick also changes their status, which is confirmed before it happens.
@@ -1262,13 +1268,8 @@ function ManifestBuilder({
   useEffect(() => {
     if (appliedKey.current === planKey) return;
     appliedKey.current = planKey;
-    const byKey = new Map(allCandidates.map((c) => [c.key, c]));
-    setPicked(
-      plan.picks
-        .map((p) => byKey.get((p.kind === "staff" ? "s" : "v") + p.id))
-        .filter(Boolean) as ManifestCandidate[],
-    );
-  }, [planKey, plan.picks, allCandidates]);
+    setPicked(planPicksAsCandidates(plan.picks, allCandidates, direction, aboardIds));
+  }, [planKey, plan.picks, allCandidates, direction, aboardIds]);
 
   const reasonFor = useMemo(() => {
     const m = new Map<string, string>();
@@ -1344,6 +1345,21 @@ function ManifestBuilder({
             ))}
           </select>
         </label>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending || plan.picks.length === 0}
+          title={
+            plan.picks.length
+              ? "Put back everyone the rotation schedule says is due on this date"
+              : "Nothing is scheduled for this date and direction"
+          }
+          onClick={() =>
+            setPicked(planPicksAsCandidates(plan.picks, allCandidates, direction, aboardIds))
+          }
+        >
+          Fill from schedule ({plan.picks.length})
+        </Button>
         <Button
           size="sm"
           variant="outline"

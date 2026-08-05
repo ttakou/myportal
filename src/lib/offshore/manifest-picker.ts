@@ -135,6 +135,58 @@ export function crewFill(
   );
 }
 
+/** A person the schedule says should travel, as produced by planManifest. */
+export interface PlannedPick {
+  id: string;
+  name: string;
+  kind: "staff" | "visitor";
+  crew_id: string | null;
+}
+
+/**
+ * Turn the schedule's picks into manifest rows, WITHOUT losing anybody.
+ *
+ * Matching picks to the candidate list and discarding the misses looks tidy and
+ * is quietly wrong: candidates are built from the offshore-staff roster, while
+ * the schedule's leaving side comes from live trips, and the two do not agree —
+ * production currently has 50 people on board who hold no roster row. Dropping
+ * them produced an empty manifest under a banner announcing the crew, which
+ * reads as the schedule being broken.
+ *
+ * A pick with no candidate is therefore carried through on its own details. It
+ * is still marked as moving where the direction implies it, so the confirmation
+ * covers them too.
+ */
+export function planPicksAsCandidates(
+  picks: readonly PlannedPick[],
+  all: readonly ManifestCandidate[],
+  direction: ManifestDirection,
+  aboardProfileIds: ReadonlySet<string>,
+): ManifestCandidate[] {
+  const byKey = new Map(all.map((c) => [c.key, c]));
+  return picks.map((p) => {
+    const key = (p.kind === "staff" ? "s" : "v") + p.id;
+    const known = byKey.get(key);
+    if (known) return known;
+    // Not on the roster (or not otherwise selectable) — keep them anyway.
+    const aboard = p.kind === "staff" ? aboardProfileIds.has(p.id) : direction === "in";
+    const move = p.kind === "staff" ? movementFor(direction, aboard) : null;
+    return {
+      key,
+      id: p.id,
+      kind: p.kind,
+      name: p.name,
+      crew_id: p.crew_id,
+      crew_name: null,
+      aboard,
+      moves: move !== null,
+      label:
+        `${p.name}${p.kind === "visitor" ? " (visitor)" : ""} — ${aboard ? "on board" : "ashore"}` +
+        (move === "board" ? " · will be mobilised" : move === "offboard" ? " · will be demobilised" : ""),
+    };
+  });
+}
+
 /** The status changes creating this manifest would apply, for the confirmation. */
 export function pendingMovements(
   picked: readonly ManifestCandidate[],
