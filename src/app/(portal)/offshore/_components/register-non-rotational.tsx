@@ -6,8 +6,8 @@ import { UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SearchSelect } from "@/components/ui/search-select";
-import type { RosterEntry } from "@/types/offshore";
-import { registerNonRotationalStaff } from "../actions";
+import type { PobOnboard, RosterEntry } from "@/types/offshore";
+import { boardMember, offboardTrip, registerNonRotationalStaff } from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -23,10 +23,18 @@ const field = "rounded-md border bg-background px-3 py-2 text-sm";
 export function RegisterNonRotational({
   roster,
   addable,
+  onboard,
+  canBoard = false,
   readOnly = false,
 }: {
   roster: RosterEntry[];
   addable: { id: string; full_name: string }[];
+  onboard: PobOnboard[];
+  /**
+   * Boarding needs the offshore `operate` verb, which the registrar roles do
+   * not hold — they may register people but not put them on the installation.
+   */
+  canBoard?: boolean;
   readOnly?: boolean;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -42,12 +50,24 @@ export function RegisterNonRotational({
   const [position, setPosition] = useState("");
   const [employeeType, setEmployeeType] = useState<"employee" | "contractor">("contractor");
 
+  // A person with no crew is invisible to the crew-based board controls on the
+  // dashboard, so this is the only place they can be put on board.
+  const tripByProfile = useMemo(() => {
+    const m = new Map<string, PobOnboard>();
+    for (const p of onboard) if (p.profile_id) m.set(p.profile_id, p);
+    return m;
+  }, [onboard]);
+
+  const byName = (a: RosterEntry, b: RosterEntry) =>
+    (a.full_name ?? a.email).localeCompare(b.full_name ?? b.email);
+  const crewless = useMemo(() => roster.filter((m) => !m.crew_id), [roster]);
   const nonRotators = useMemo(
-    () =>
-      roster
-        .filter((m) => !m.is_rotational)
-        .sort((a, b) => (a.full_name ?? "").localeCompare(b.full_name ?? "")),
-    [roster],
+    () => crewless.filter((m) => !m.is_rotational).sort(byName),
+    [crewless],
+  );
+  const awaitingCrew = useMemo(
+    () => crewless.filter((m) => m.is_rotational).sort(byName),
+    [crewless],
   );
 
   function reset() {
@@ -80,6 +100,15 @@ export function RegisterNonRotational({
     });
   }
 
+  function runBoarding(fn: () => Promise<{ ok: boolean; error?: string }>) {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Action failed.");
+    });
+  }
+
   const canSubmit =
     !pending && (mode === "existing" ? Boolean(profileId) : fullName.trim().length > 0);
 
@@ -98,6 +127,9 @@ export function RegisterNonRotational({
         For people who work offshore but are not on a rotation — vendor technicians, inspectors,
         short-term contractors. They join the offshore staff roster with no crew, so POB and the
         muster roll count them as staff while the rotation calendar leaves them out.
+        {canBoard &&
+          " Anyone on the roster without a crew is listed below and can be boarded here — the" +
+            " dashboard's board controls are built per crew, so crewless people never appear there."}
       </p>
 
       {readOnly ? (
@@ -207,29 +239,112 @@ export function RegisterNonRotational({
         </div>
       )}
 
-      <div className="rounded-lg border bg-card">
-        <div className="border-b px-3 py-2 text-sm font-semibold">
-          Non-rotational staff ({nonRotators.length})
-        </div>
-        {nonRotators.length === 0 ? (
-          <p className="px-3 py-3 text-sm text-muted-foreground">
-            Nobody registered as non-rotational yet.
-          </p>
-        ) : (
-          <ul className="divide-y">
-            {nonRotators.map((m) => (
+      <CrewlessList
+        title="Non-rotational staff"
+        empty="Nobody registered as non-rotational yet."
+        people={nonRotators}
+        badge="Non-rotational"
+        tripByProfile={tripByProfile}
+        canBoard={canBoard}
+        pending={pending}
+        onRun={runBoarding}
+      />
+
+      {awaitingCrew.length > 0 && (
+        <CrewlessList
+          title="Rotational staff not yet in a crew"
+          empty=""
+          note="They have no rotation cycle to board them from, so board them here or assign a crew on Assign crews."
+          people={awaitingCrew}
+          badge="No crew"
+          tripByProfile={tripByProfile}
+          canBoard={canBoard}
+          pending={pending}
+          onRun={runBoarding}
+        />
+      )}
+
+    </div>
+  );
+}
+
+/**
+ * Roster members with no crew, with the board control they cannot reach
+ * anywhere else — the dashboard's "Board now" list is built per crew, so a
+ * crewless person never appears in it.
+ */
+function CrewlessList({
+  title,
+  empty,
+  note,
+  people,
+  badge,
+  tripByProfile,
+  canBoard,
+  pending,
+  onRun,
+}: {
+  title: string;
+  empty: string;
+  note?: string;
+  people: RosterEntry[];
+  badge: string;
+  tripByProfile: Map<string, PobOnboard>;
+  canBoard: boolean;
+  pending: boolean;
+  onRun: (fn: () => Promise<{ ok: boolean; error?: string }>) => void;
+}) {
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="border-b px-3 py-2 text-sm font-semibold">
+        {title} ({people.length})
+      </div>
+      {note && <p className="border-b px-3 py-1.5 text-xs text-muted-foreground">{note}</p>}
+      {people.length === 0 ? (
+        <p className="px-3 py-3 text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <ul className="divide-y">
+          {people.map((m) => {
+            const trip = tripByProfile.get(m.profile_id);
+            return (
               <li key={m.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm">
                 <span className="font-medium">{m.full_name || m.email}</span>
                 {m.company && <span className="text-xs text-muted-foreground">{m.company}</span>}
                 {m.position && <span className="text-xs text-muted-foreground">· {m.position}</span>}
-                <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Non-rotational
+                <span
+                  className={cn(
+                    "ml-auto rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide",
+                    trip ? "bg-green-100 text-green-800" : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {trip ? `On board${trip.room_label ? ` · ${trip.room_label}` : ""}` : badge}
                 </span>
+                {canBoard &&
+                  (trip ? (
+                    <button
+                      disabled={pending}
+                      onClick={() => {
+                        if (confirm(`Demob ${m.full_name || m.email} now?`))
+                          onRun(() => offboardTrip(trip.trip_id));
+                      }}
+                      className="rounded border px-1.5 py-0.5 text-[11px] hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      Demob
+                    </button>
+                  ) : (
+                    <button
+                      disabled={pending}
+                      onClick={() => onRun(() => boardMember(m.profile_id))}
+                      className="rounded border px-1.5 py-0.5 text-[11px] hover:bg-green-50 hover:text-green-700"
+                    >
+                      Board now
+                    </button>
+                  ))}
               </li>
-            ))}
-          </ul>
-        )}
-      </div>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
