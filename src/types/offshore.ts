@@ -191,11 +191,14 @@ export interface Room {
   /** People currently on board in this room (live). */
   occupied: number;
   occupants: {
+    /** Trip id for staff; `visit-<allocation id>` for a visitor's bed. */
     trip_id: string;
     profile_id: string | null;
     name: string;
     bed_no: string | null;
     b2b_name: string | null;
+    /** Visitors hold beds via a bed allocation, not a trip. */
+    kind: "staff" | "visitor";
   }[];
 }
 
