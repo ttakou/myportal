@@ -45,7 +45,13 @@ export async function Sidebar({
   // Dispatcher additionally gets the (scoped) offshore submenu but not the
   // admin console.
   const canManageOffshore = access.isAdmin || access.isCampboss || access.isOim;
-  const offshoreFlags = { manager: canManageOffshore, dispatcher: access.isDispatcher };
+  const offshoreFlags = {
+    manager: canManageOffshore,
+    dispatcher: access.isDispatcher,
+    // Reception / radio room / ops supervisor: one view, registering
+    // non-rotational staff.
+    registrar: hasPermission(perms, "offshore", "create"),
+  };
   const isHr = access.isHr || access.isSystemAdmin || access.isAdmin;
   const isOrgAdmin = access.isAdmin || access.isSystemAdmin;
   const canMuster = isOrgAdmin || hasPermission(perms, "visitors", "operate");
