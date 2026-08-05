@@ -257,6 +257,10 @@ export function OffshoreManagement(props: {
         <RegisterNonRotational
           roster={props.roster}
           addable={props.addable}
+          onboard={props.pob.people}
+          // Boarding is an `operate` act; the registrar roles hold only
+          // `create`, so they register people without putting them on board.
+          canBoard={props.flags.manager || props.flags.dispatcher}
           readOnly={readOnly}
         />
       )}
