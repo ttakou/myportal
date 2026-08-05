@@ -3270,6 +3270,11 @@ function RoomOccupancyList({
     return m;
   }, [roster]);
 
+  const onboardProfileIds = useMemo(
+    () => new Set(onboard.map((p) => p.profile_id).filter(Boolean) as string[]),
+    [onboard],
+  );
+
   // Everyone on board, for the "put someone in this bed" picker.
   const pool = useMemo(
     () =>
@@ -3339,6 +3344,10 @@ function RoomOccupancyList({
               const candidates = bedCandidates(pool, r.id);
               const ownerIds = new Set(r.owners.map((o) => o.profile_id));
               const roomIssues = issuesByRoom.get(r.id) ?? [];
+              // A bed belongs to a live trip, so an owner who is ashore has
+              // nothing to attach one to — they are not in the picker, and
+              // without saying so their absence reads as a bug.
+              const ashoreOwners = r.owners.filter((o) => !onboardProfileIds.has(o.profile_id));
               const dupBeds = duplicateBedKeys(r);
               const ownerCandidates = roster
                 .filter((s) => !ownerIds.has(s.profile_id))
@@ -3422,6 +3431,13 @@ function RoomOccupancyList({
                         ))}
                     </ul>
                   )}
+                  {!readOnly && ashoreOwners.length > 0 && (
+                    <p className="mt-1.5 rounded border border-dashed bg-muted/30 px-1.5 py-1 text-[11px] text-muted-foreground">
+                      {ashoreOwners.length} cabin owner(s) are ashore, so they cannot hold a bed yet and
+                      are not in the pickers above — a bed belongs to a trip. Board them from Crew
+                      change or the Live board first. Their permanent berth is still editable below.
+                    </p>
+                  )}
                   {(r.owners.length > 0 || !readOnly) && (
                     <div className="mt-1.5 border-t pt-1 text-[11px] text-muted-foreground">
                       <span className="font-medium">Cabin owner(s)</span>
@@ -3431,6 +3447,9 @@ function RoomOccupancyList({
                             <li key={o.profile_id} className="flex items-center gap-1">
                               <span className="font-mono">{o.bed || "•"}</span>
                               <span>{o.name}</span>
+                              {!onboardProfileIds.has(o.profile_id) && (
+                                <span className="text-muted-foreground/70">· ashore</span>
+                              )}
                               {o.back_to_back ? <span className="text-muted-foreground/70"> ⇄ {o.back_to_back}</span> : ""}
                             </li>
                           ) : (
@@ -3438,6 +3457,7 @@ function RoomOccupancyList({
                               key={o.profile_id}
                               owner={o}
                               staffId={staffByProfile.get(o.profile_id)?.id ?? null}
+                              aboard={onboardProfileIds.has(o.profile_id)}
                               pending={pending}
                               run={run}
                             />
@@ -3769,11 +3789,14 @@ function OccupantRow({
 function OwnerRow({
   owner,
   staffId,
+  aboard = false,
   pending,
   run,
 }: {
   owner: Room["owners"][number];
   staffId: string | null;
+  /** False when they are on their off-rotation, so they can hold no bed. */
+  aboard?: boolean;
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
@@ -3797,6 +3820,14 @@ function OwnerRow({
         className="w-14 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
       />
       <span className="truncate">{owner.name}</span>
+      {!aboard && (
+        <span
+          className="shrink-0 text-muted-foreground/70"
+          title="Ashore on their off-rotation — board them before they can take a bed"
+        >
+          · ashore
+        </span>
+      )}
       {owner.back_to_back ? <span className="shrink-0 text-muted-foreground/70">⇄ {owner.back_to_back}</span> : null}
       <button
         disabled={!editable}
