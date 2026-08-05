@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { compareRoomLabels } from "@/lib/offshore/room-order";
 import type {
   AccommodationSummary,
   Room,
@@ -368,8 +369,9 @@ export async function getRoomAllocationAsOf(date: string): Promise<RoomAllocatio
       owners: ownersByRoom.get(r.id as string) ?? [],
     };
   });
-  // Occupied rooms first.
-  mapped.sort((a, b) => b.occupants.length - a.occupants.length || a.label.localeCompare(b.label));
+  // A→Z, matching the on-screen occupancy list, so the printed sheet can be
+  // read against the corridor rather than against who happens to be aboard.
+  mapped.sort((a, b) => compareRoomLabels(a.label, b.label));
 
   return {
     date,

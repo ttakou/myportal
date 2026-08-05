@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { planManifest, seatOverflow } from "@/lib/offshore/manifest-plan";
 import { bedCandidates } from "@/lib/offshore/bed-candidates";
 import { bedKey, duplicateBedKeys, roomBedIssues } from "@/lib/offshore/bed-issues";
+import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -3287,11 +3288,15 @@ function RoomOccupancyList({
       })),
     [onboard],
   );
-  // Show occupied rooms first, then by room label.
-  const sorted = [...rooms].sort(
-    (a, b) =>
-      b.occupied - a.occupied ||
-      [a.block, a.room_number].filter(Boolean).join(" ").localeCompare([b.block, b.room_number].filter(Boolean).join(" ")),
+  // Straight A→Z (numeric-aware, so Door 3 precedes Door 10) — a corridor order
+  // you can scan, rather than one that reshuffles as people board.
+  const allSorted = useMemo(() => sortRooms(rooms), [rooms]);
+  // Picking a room narrows the grid to it, for editing one room without
+  // hunting through the whole estate.
+  const [pickedRoom, setPickedRoom] = useState<string | null>(null);
+  const sorted = useMemo(
+    () => (pickedRoom ? allSorted.filter((r) => r.id === pickedRoom) : allSorted),
+    [allSorted, pickedRoom],
   );
 
   return (
@@ -3322,9 +3327,31 @@ function RoomOccupancyList({
               honours first.
             </p>
           )}
+          <div className="mb-2 flex flex-wrap items-end gap-2">
+            <label className="text-xs text-muted-foreground">
+              Go to room
+              <SearchSelect
+                value={pickedRoom}
+                options={allSorted}
+                getOptionValue={(r) => r.id}
+                getOptionLabel={(r) =>
+                  `${roomLabel(r)}${r.installation_name ? ` · ${r.installation_name}` : ""} — ${r.occupied}/${r.bed_count || 0}`
+                }
+                placeholder="All rooms — type to find one…"
+                wrapperClassName="mt-0.5 w-64"
+                className={cn(field, "w-full py-1")}
+                onChange={setPickedRoom}
+              />
+            </label>
+            {pickedRoom && (
+              <Button size="sm" variant="outline" onClick={() => setPickedRoom(null)}>
+                Show all {allSorted.length} rooms
+              </Button>
+            )}
+          </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {sorted.map((r) => {
-              const label = [r.block, r.room_number].filter(Boolean).join(" ");
+              const label = roomLabel(r);
               const beds = r.bed_count || 0;
               const over = r.occupied > beds;
               const pct = beds > 0 ? Math.min(100, (r.occupied / beds) * 100) : r.occupied > 0 ? 100 : 0;
