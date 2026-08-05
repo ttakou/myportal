@@ -27,6 +27,7 @@ import {
 import { bedCandidates, type BedCandidate } from "@/lib/offshore/bed-candidates";
 import { bedKey, duplicateBedKeys, roomBedIssues } from "@/lib/offshore/bed-issues";
 import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
+import { offshorePeople } from "@/lib/offshore/people";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -245,6 +246,7 @@ export function OffshoreManagement(props: {
           rooms={props.rooms}
           installations={props.installations}
           roster={props.roster}
+          employees={props.employees}
           onboard={props.pob.people}
           readOnly={readOnly}
         />
@@ -254,6 +256,7 @@ export function OffshoreManagement(props: {
           rooms={props.rooms}
           onboard={props.pob.people}
           roster={props.roster}
+          employees={props.employees}
           readOnly={readOnly}
         />
       )}
@@ -282,6 +285,7 @@ export function OffshoreManagement(props: {
           manifests={props.manifests}
           crews={props.crews}
           roster={props.roster}
+          employees={props.employees}
           onboard={props.pob.people}
           visits={props.visits}
         />
@@ -1163,9 +1167,22 @@ const MANIFEST_STYLE: Record<ManifestStatus, string> = {
 
 /** Build a manifest: pick mode + date, then move passengers from left to right. */
 
+/** Adapt roster rows for lib/offshore/people. */
+function rosterInfo(roster: RosterEntry[]) {
+  return roster.map((m) => ({
+    profile_id: m.profile_id,
+    name: m.full_name || m.email,
+    crew_id: m.crew_id,
+    crew_name: m.crew_name,
+    company: m.company,
+    travel_eligible: m.travel_eligible,
+  }));
+}
+
 function ManifestBuilder({
   crews,
   roster,
+  employees,
   onboard,
   visits,
   pending,
@@ -1173,6 +1190,8 @@ function ManifestBuilder({
 }: {
   crews: Crew[];
   roster: RosterEntry[];
+  /** Every active profile — going offshore is not limited to the roster. */
+  employees: AssignableEmployee[];
   onboard: PobBreakdown["people"];
   visits: VisitRequest[];
   pending: boolean;
@@ -1193,6 +1212,10 @@ function ManifestBuilder({
     [onboard],
   );
 
+  // Everyone who may travel — the directory, enriched by the roster. Anyone
+  // barred by travel_eligible is excluded; a missing roster row is not a bar.
+  const people = useMemo(() => offshorePeople(employees, rosterInfo(roster)), [employees, roster]);
+
   // Everyone is selectable in either direction — real crew changes carry late
   // additions and people already in place. The direction only decides whether a
   // pick also changes their status, which is confirmed before it happens.
@@ -1200,17 +1223,11 @@ function ManifestBuilder({
     () =>
       manifestCandidates({
         direction,
-        roster: roster.map((m) => ({
-          profile_id: m.profile_id,
-          name: m.full_name || m.email,
-          crew_id: m.crew_id,
-          crew_name: m.crew_name,
-          travel_eligible: m.travel_eligible,
-        })),
+        roster: people,
         onboard: onboard.map((o) => ({ profile_id: o.profile_id, crew_id: o.crew_id })),
         visits: visits.map((v) => ({ id: v.id, visitor_name: v.visitor_name, status: v.status })),
       }),
-    [direction, roster, onboard, visits],
+    [direction, people, onboard, visits],
   );
 
   const candidates = allCandidates
@@ -1562,12 +1579,14 @@ function ManifestsPanel({
   manifests,
   crews,
   roster,
+  employees,
   onboard,
   visits,
 }: {
   manifests: Manifest[];
   crews: Crew[];
   roster: RosterEntry[];
+  employees: AssignableEmployee[];
   onboard: PobBreakdown["people"];
   visits: VisitRequest[];
 }) {
@@ -1580,7 +1599,15 @@ function ManifestsPanel({
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
-      <ManifestBuilder crews={crews} roster={roster} onboard={onboard} visits={visits} pending={pending} run={run} />
+      <ManifestBuilder
+        crews={crews}
+        roster={roster}
+        employees={employees}
+        onboard={onboard}
+        visits={visits}
+        pending={pending}
+        run={run}
+      />
 
       <div className="space-y-3">
         {active.map((m) => (
@@ -3330,11 +3357,13 @@ function CrewBackToBackList({ calendar, crews }: { calendar: RotationCalendar; c
 function RoomOccupancyList({
   rooms,
   roster,
+  employees,
   onboard,
   readOnly = false,
 }: {
   rooms: Room[];
   roster: RosterEntry[];
+  employees: AssignableEmployee[];
   onboard: PobOnboard[];
   readOnly?: boolean;
 }) {
@@ -3373,14 +3402,10 @@ function RoomOccupancyList({
   // the same step — see bedCandidates.
   const ashorePool = useMemo(() => {
     const aboard = new Set(onboard.map((p) => p.profile_id).filter(Boolean) as string[]);
-    return roster
-      .filter((m) => !aboard.has(m.profile_id) && m.travel_eligible)
-      .map((m) => ({
-        profile_id: m.profile_id,
-        name: m.company ? `${m.full_name || m.email} · ${m.company}` : m.full_name || m.email,
-        crew_name: m.crew_name,
-      }));
-  }, [roster, onboard]);
+    return offshorePeople(employees, rosterInfo(roster))
+      .filter((m) => !aboard.has(m.profile_id))
+      .map((m) => ({ profile_id: m.profile_id, name: m.name, crew_name: m.crew_name }));
+  }, [employees, roster, onboard]);
 
   // Everyone on board, for the "put someone in this bed" picker.
   const pool = useMemo(
@@ -3634,11 +3659,13 @@ function BedBoardPanel({
   rooms,
   onboard,
   roster,
+  employees,
   readOnly = false,
 }: {
   rooms: Room[];
   onboard: PobOnboard[];
   roster: RosterEntry[];
+  employees: AssignableEmployee[];
   readOnly?: boolean;
 }) {
   const { pending, error, run } = useRun();
@@ -3689,14 +3716,10 @@ function BedBoardPanel({
   // Roster members not on board; allocating a berth boards them (bedCandidates).
   const ashorePool = useMemo(() => {
     const aboard = new Set(onboard.map((p) => p.profile_id).filter(Boolean) as string[]);
-    return roster
-      .filter((m) => !aboard.has(m.profile_id) && m.travel_eligible)
-      .map((m) => ({
-        profile_id: m.profile_id,
-        name: m.company ? `${m.full_name || m.email} · ${m.company}` : m.full_name || m.email,
-        crew_name: m.crew_name,
-      }));
-  }, [roster, onboard]);
+    return offshorePeople(employees, rosterInfo(roster))
+      .filter((m) => !aboard.has(m.profile_id))
+      .map((m) => ({ profile_id: m.profile_id, name: m.name, crew_name: m.crew_name }));
+  }, [employees, roster, onboard]);
 
   const usable = useMemo(
     () => rooms.filter((r) => !["blocked", "maintenance"].includes(r.status)),
@@ -3728,8 +3751,8 @@ function BedBoardPanel({
       <p className="text-sm text-muted-foreground">
         Every usable room, full ones included so you can always move someone out. Type a name into an
         empty bed to drop that person straight into it — their POB record gets that room &amp; bed.
-        People who are ashore are offered too, and picking one boards them into that bed. Blocked and
-        under-maintenance rooms are hidden.
+        Anyone ashore is offered too — not just rostered crew — and picking one boards them into that
+        bed. Blocked and under-maintenance rooms are hidden.
       </p>
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border bg-card px-3 py-2 text-sm">
@@ -4046,12 +4069,14 @@ function RoomsPanel({
   rooms,
   installations,
   roster,
+  employees,
   onboard,
   readOnly = false,
 }: {
   rooms: Room[];
   installations: Installation[];
   roster: RosterEntry[];
+  employees: AssignableEmployee[];
   onboard: PobOnboard[];
   readOnly?: boolean;
 }) {
@@ -4079,7 +4104,13 @@ function RoomsPanel({
           <FileText className="h-4 w-4" /> Room allocation report
         </Button>
       </div>
-      <RoomOccupancyList rooms={rooms} roster={roster} onboard={onboard} readOnly={readOnly} />
+      <RoomOccupancyList
+        rooms={rooms}
+        roster={roster}
+        employees={employees}
+        onboard={onboard}
+        readOnly={readOnly}
+      />
       {!readOnly && (
         <>
       <BulkRoomImport />
