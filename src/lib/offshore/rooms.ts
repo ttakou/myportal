@@ -11,7 +11,8 @@ import { one, todayIso } from "./_shared";
 
 export async function getRooms(): Promise<Room[]> {
   const supabase = createClient();
-  const [{ data, error }, { data: onboard }, { data: staff }, { data: fixedOwners }] = await Promise.all([
+  const [{ data, error }, { data: onboard }, { data: staff }, { data: fixedOwners }, { data: visitorBeds }] =
+    await Promise.all([
     supabase
       .from("offshore_rooms")
       .select(
@@ -36,6 +37,15 @@ export async function getRooms(): Promise<Room[]> {
           " b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)",
       )
       .not("fixed_room_id", "is", null),
+    // Visitors hold beds through offshore_bed_allocations, not through a trip.
+    // Without this the room shows those beds as free — the accommodation screen
+    // would offer an occupied berth to somebody else.
+    supabase
+      .from("offshore_bed_allocations")
+      .select(
+        "id, room_id, status, visit:offshore_visit_requests(id, visitor_name, visitor_company, status)",
+      )
+      .neq("status", "checked_out"),
   ]);
   if (error) {
     console.error("getRooms:", error.message);
@@ -66,7 +76,14 @@ export async function getRooms(): Promise<Room[]> {
   // Live occupants per room from on-board trips.
   const occByRoom = new Map<
     string,
-    { trip_id: string; profile_id: string | null; name: string; bed_no: string | null; b2b_name: string | null }[]
+    {
+      trip_id: string;
+      profile_id: string | null;
+      name: string;
+      bed_no: string | null;
+      b2b_name: string | null;
+      kind: "staff" | "visitor";
+    }[]
   >();
   for (const t of (onboard ?? []) as Record<string, any>[]) {
     const rid = t.room_id as string | null;
@@ -78,6 +95,32 @@ export async function getRooms(): Promise<Room[]> {
       name: one<{ full_name?: string }>(t.person)?.full_name ?? "—",
       bed_no: (t.bed_no as string | null) ?? null,
       b2b_name: t.profile_id ? b2bByProfile.get(t.profile_id as string) ?? null : null,
+      kind: "staff" as const,
+    });
+    occByRoom.set(rid, list);
+  }
+
+  // Visitors occupying a bed right now. A closed visit (returned/cancelled/
+  // rejected) frees the berth even if the allocation row was never checked out.
+  const LIVE_VISIT = new Set(["approved", "onboard"]);
+  for (const a of (visitorBeds ?? []) as Record<string, any>[]) {
+    const rid = a.room_id as string | null;
+    const visit = one<{ id?: string; visitor_name?: string; visitor_company?: string; status?: string }>(
+      a.visit,
+    );
+    if (!rid || !visit?.id || !LIVE_VISIT.has(visit.status ?? "")) continue;
+    const list = occByRoom.get(rid) ?? [];
+    list.push({
+      // No trip exists, so key on the allocation. The "visit-" prefix marks it
+      // as not a trip id — the bed controls key off trips and must not fire.
+      trip_id: `visit-${a.id}`,
+      profile_id: null,
+      name: visit.visitor_company
+        ? `${visit.visitor_name ?? "Visitor"} · ${visit.visitor_company}`
+        : visit.visitor_name ?? "Visitor",
+      bed_no: null,
+      b2b_name: null,
+      kind: "visitor" as const,
     });
     occByRoom.set(rid, list);
   }

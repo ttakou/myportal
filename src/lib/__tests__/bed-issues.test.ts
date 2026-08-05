@@ -89,3 +89,35 @@ describe("duplicateBedKeys", () => {
     expect(duplicateBedKeys(room(12, ["Bed 1", "Bed 2"])).size).toBe(0);
   });
 });
+
+describe("visitor-held beds count as occupied", () => {
+  // Room 313 read 0/2 while a visitor was checked in there: getRooms built
+  // occupants from trips only, and a visitor holds a bed through
+  // offshore_bed_allocations. The room then offered an occupied berth.
+  it("a visitor fills a bed just like staff", () => {
+    const r = { bed_count: 2, occupants: [{ bed_no: null }] };
+    expect(r.occupants.length).toBe(1);
+    // One of two berths gone, so only one is free.
+    expect(r.bed_count - r.occupants.length).toBe(1);
+  });
+
+  it("a visitor with no bed label is not reported as a duplicate", () => {
+    expect(
+      roomBedIssues({ bed_count: 2, occupants: [{ bed_no: null }, { bed_no: "Bed 1" }] })
+        .filter((i) => i.kind === "duplicate"),
+    ).toEqual([]);
+  });
+
+  it("but two unlabelled occupants are reported as needing a bed recorded", () => {
+    const issues = roomBedIssues({ bed_count: 2, occupants: [{ bed_no: null }, { bed_no: null }] });
+    expect(issues.map((i) => i.kind)).toEqual(["unassigned"]);
+  });
+
+  it("a visitor pushing a room past capacity is flagged", () => {
+    const issues = roomBedIssues({
+      bed_count: 1,
+      occupants: [{ bed_no: "Bed 1" }, { bed_no: null }],
+    });
+    expect(issues.some((i) => i.kind === "over_capacity")).toBe(true);
+  });
+});

@@ -3635,7 +3635,7 @@ function RoomOccupancyList({
                   {(r.occupants.length > 0 || (!readOnly && slotLabels.length > 0)) && (
                     <ul className="mt-1.5 space-y-1">
                       {r.occupants.map((o) =>
-                        readOnly ? (
+                        readOnly || o.kind === "visitor" ? (
                           <li key={o.trip_id} className="flex items-center gap-1.5 text-xs">
                             <span
                               className={cn(
@@ -3648,6 +3648,14 @@ function RoomOccupancyList({
                               {o.bed_no || "•"}
                             </span>
                             <span className="font-medium">{o.name}</span>
+                            {o.kind === "visitor" && (
+                              <span
+                                className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground"
+                                title="Holds this bed through a visit booking — change it on the Visitors tab"
+                              >
+                                visitor
+                              </span>
+                            )}
                           </li>
                         ) : (
                           <OccupantRow
@@ -3942,7 +3950,12 @@ function BedBoardPanel({
                   >
                     <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
                     <span className="truncate font-medium">{o.name}</span>
-                    {!readOnly && (
+                    {o.kind === "visitor" && (
+                      <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                        visitor
+                      </span>
+                    )}
+                    {!readOnly && o.kind !== "visitor" && (
                       <button
                         disabled={pending}
                         title={`Unassign ${o.name} from this bed (stays on board, returns to the waiting list)`}
