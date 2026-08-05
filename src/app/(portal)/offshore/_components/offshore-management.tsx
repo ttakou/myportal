@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { planManifest, seatOverflow } from "@/lib/offshore/manifest-plan";
 import { bedCandidates } from "@/lib/offshore/bed-candidates";
+import { bedKey, duplicateBedKeys, roomBedIssues } from "@/lib/offshore/bed-issues";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -3247,6 +3248,19 @@ function RoomOccupancyList({
   const { pending, error, run } = useRun();
   const occupiedRooms = rooms.filter((r) => r.occupied > 0).length;
   const totalOnboard = rooms.reduce((n, r) => n + r.occupied, 0);
+  // Bed conflicts — two people on one bunk, a room over its berth count,
+  // anyone on board here with no bed. The estate mixes positional labels,
+  // the facility's own bunk numbers and bottom/top, all of which are valid,
+  // so nothing is rewritten; the clashes are just made visible.
+  const issuesByRoom = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof roomBedIssues>>();
+    for (const r of rooms) {
+      const found = roomBedIssues(r);
+      if (found.length) m.set(r.id, found);
+    }
+    return m;
+  }, [rooms]);
+  const roomsWithIssues = issuesByRoom.size;
 
   // Roster row id per profile — owners carry a profile_id, but the roster action
   // keys off offshore_staff.id.
@@ -3283,6 +3297,11 @@ function RoomOccupancyList({
       >
         <span className="text-sm font-semibold">
           Room occupancy (live) — {occupiedRooms} room(s) in use · {totalOnboard} on board
+          {roomsWithIssues > 0 && (
+            <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
+              {roomsWithIssues} room(s) need attention
+            </span>
+          )}
         </span>
         <span className="text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
       </button>
@@ -3319,6 +3338,8 @@ function RoomOccupancyList({
               }
               const candidates = bedCandidates(pool, r.id);
               const ownerIds = new Set(r.owners.map((o) => o.profile_id));
+              const roomIssues = issuesByRoom.get(r.id) ?? [];
+              const dupBeds = duplicateBedKeys(r);
               const ownerCandidates = roster
                 .filter((s) => !ownerIds.has(s.profile_id))
                 .map((s) => ({
@@ -3350,12 +3371,31 @@ function RoomOccupancyList({
                       style={{ width: `${pct}%` }}
                     />
                   </div>
+                  {roomIssues.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5 rounded border border-destructive/30 bg-destructive/5 px-1.5 py-1">
+                      {roomIssues.map((iss, n) => (
+                        <li key={n} className="flex items-start gap-1 text-[11px] text-destructive">
+                          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+                          {iss.message}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {(r.occupants.length > 0 || (!readOnly && slotLabels.length > 0)) && (
                     <ul className="mt-1.5 space-y-1">
                       {r.occupants.map((o) =>
                         readOnly ? (
                           <li key={o.trip_id} className="flex items-center gap-1.5 text-xs">
-                            <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
+                            <span
+                              className={cn(
+                                "font-mono",
+                                o.bed_no && dupBeds.has(bedKey(o.bed_no))
+                                  ? "font-semibold text-destructive"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              {o.bed_no || "•"}
+                            </span>
                             <span className="font-medium">{o.name}</span>
                           </li>
                         ) : (
@@ -3363,6 +3403,7 @@ function RoomOccupancyList({
                             key={o.trip_id}
                             occupant={o}
                             roomId={r.id}
+                            clashes={Boolean(o.bed_no) && dupBeds.has(bedKey(o.bed_no ?? ""))}
                             pending={pending}
                             run={run}
                           />
@@ -3675,11 +3716,14 @@ function BedBoardPanel({
 function OccupantRow({
   occupant,
   roomId,
+  clashes = false,
   pending,
   run,
 }: {
   occupant: Room["occupants"][number];
   roomId: string;
+  /** True when somebody else in this room holds the same bed. */
+  clashes?: boolean;
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
@@ -3698,7 +3742,11 @@ function OccupantRow({
         onBlur={() => {
           if (bed.trim() !== original) run(() => reassignTripRoom(occupant.trip_id, roomId, bed));
         }}
-        className="w-14 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
+        title={clashes ? "Someone else in this room holds this bed" : undefined}
+        className={cn(
+          "w-14 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]",
+          clashes && "border-destructive font-semibold text-destructive",
+        )}
       />
       <span className="truncate font-medium">{occupant.name}</span>
       <button
