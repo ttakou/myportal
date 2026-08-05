@@ -29,8 +29,21 @@ async function roomLabels(supabase: SupabaseClient, ids: string[]): Promise<Map<
   );
 }
 
-/** Board a single member now (late arrival joining colleagues already offshore). */
-export async function boardMember(profileId: string): Promise<ActionResult> {
+/**
+ * Board a single member now (late arrival joining colleagues already offshore).
+ *
+ * `bed` boards them straight into a chosen room and bed — the accommodation
+ * screens allocate an ashore person to a berth in one step rather than making
+ * the user board them elsewhere first and come back. Without it the person's
+ * fixed cabin is used, as before.
+ *
+ * Already aboard: with `bed` they are moved to it (so the control is safe to
+ * press twice); without, this is a no-op.
+ */
+export async function boardMember(
+  profileId: string,
+  bed?: { roomId: string; bedNo?: string | null },
+): Promise<ActionResult> {
   const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const supabase = createClient();
@@ -43,7 +56,16 @@ export async function boardMember(profileId: string): Promise<ActionResult> {
     .eq("profile_id", profileId)
     .eq("status", "onboard")
     .maybeSingle();
-  if (already) return { ok: true }; // already aboard
+  if (already) {
+    if (!bed) return { ok: true }; // already aboard, nothing asked for
+    const { error: mvErr } = await supabase
+      .from("offshore_trips")
+      .update({ room_id: bed.roomId, bed_no: bed.bedNo?.trim() || null })
+      .eq("id", already.id);
+    if (mvErr) return { ok: false, error: mvErr.message };
+    rev();
+    return { ok: true };
+  }
 
   const { data: staff } = await supabase
     .from("offshore_staff")
@@ -86,8 +108,8 @@ export async function boardMember(profileId: string): Promise<ActionResult> {
     demob_date: toIso,
     status: "onboard",
     hse_cleared_at: new Date().toISOString(),
-    room_id: staff?.fixed_room_id ?? null,
-    bed_no: staff?.fixed_bed ?? null,
+    room_id: bed?.roomId ?? staff?.fixed_room_id ?? null,
+    bed_no: bed ? bed.bedNo?.trim() || null : staff?.fixed_bed ?? null,
     lifeboat: staff?.lifeboat ?? null,
     mode: "auto",
   });

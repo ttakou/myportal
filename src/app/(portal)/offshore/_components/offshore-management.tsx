@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { planManifest, seatOverflow } from "@/lib/offshore/manifest-plan";
-import { bedCandidates } from "@/lib/offshore/bed-candidates";
+import { bedCandidates, type BedCandidate } from "@/lib/offshore/bed-candidates";
 import { bedKey, duplicateBedKeys, roomBedIssues } from "@/lib/offshore/bed-issues";
 import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
 import { Button } from "@/components/ui/button";
@@ -243,7 +243,12 @@ export function OffshoreManagement(props: {
         />
       )}
       {tab === "bedboard" && (
-        <BedBoardPanel rooms={props.rooms} onboard={props.pob.people} readOnly={readOnly} />
+        <BedBoardPanel
+          rooms={props.rooms}
+          onboard={props.pob.people}
+          roster={props.roster}
+          readOnly={readOnly}
+        />
       )}
       {tab === "roster" && (
         <RosterPanel
@@ -3280,6 +3285,19 @@ function RoomOccupancyList({
     [onboard],
   );
 
+  // Roster members not on board. Allocating one of them a berth boards them in
+  // the same step — see bedCandidates.
+  const ashorePool = useMemo(() => {
+    const aboard = new Set(onboard.map((p) => p.profile_id).filter(Boolean) as string[]);
+    return roster
+      .filter((m) => !aboard.has(m.profile_id) && m.travel_eligible)
+      .map((m) => ({
+        profile_id: m.profile_id,
+        name: m.company ? `${m.full_name || m.email} · ${m.company}` : m.full_name || m.email,
+        crew_name: m.crew_name,
+      }));
+  }, [roster, onboard]);
+
   // Everyone on board, for the "put someone in this bed" picker.
   const pool = useMemo(
     () =>
@@ -3327,8 +3345,9 @@ function RoomOccupancyList({
           {!readOnly && (
             <p className="mb-2 text-xs text-muted-foreground">
               Edit in place: change a bed label, remove someone from a bed, or seat a waiting person.
-              Cabin owner(s) set the roster&apos;s fixed cabin — the permanent allocation auto-allocate
-              honours first.
+              Allocating a berth to someone who is ashore also boards them, so they appear on POB and
+              the muster roll. Cabin owner(s) set the roster&apos;s fixed cabin — the permanent
+              allocation auto-allocate honours first.
             </p>
           )}
           <div className="mb-2 flex flex-wrap items-end gap-2">
@@ -3372,7 +3391,7 @@ function RoomOccupancyList({
                 const lbl = `Bed ${k}`;
                 if (!usedBeds.has(lbl)) slotLabels.push(lbl);
               }
-              const candidates = bedCandidates(pool, r.id);
+              const candidates = bedCandidates(pool, r.id, ashorePool, !readOnly);
               const ownerIds = new Set(r.owners.map((o) => o.profile_id));
               const roomIssues = issuesByRoom.get(r.id) ?? [];
               // A bed belongs to a live trip, so an owner who is ashore has
@@ -3464,9 +3483,9 @@ function RoomOccupancyList({
                   )}
                   {!readOnly && ashoreOwners.length > 0 && (
                     <p className="mt-1.5 rounded border border-dashed bg-muted/30 px-1.5 py-1 text-[11px] text-muted-foreground">
-                      {ashoreOwners.length} cabin owner(s) are ashore, so they cannot hold a bed yet and
-                      are not in the pickers above — a bed belongs to a trip. Board them from Crew
-                      change or the Live board first. Their permanent berth is still editable below.
+                      {ashoreOwners.length} cabin owner(s) are ashore. Picking one in a bed above
+                      boards them into it — they join POB and the muster roll straight away. Their
+                      permanent berth is editable below without boarding them.
                     </p>
                   )}
                   {(r.owners.length > 0 || !readOnly) && (
@@ -3530,10 +3549,12 @@ function RoomOccupancyList({
 function BedBoardPanel({
   rooms,
   onboard,
+  roster,
   readOnly = false,
 }: {
   rooms: Room[];
   onboard: PobOnboard[];
+  roster: RosterEntry[];
   readOnly?: boolean;
 }) {
   const { pending, error, run } = useRun();
@@ -3581,6 +3602,18 @@ function BedBoardPanel({
   );
   const waitingCount = pool.filter((p) => !p.room_id).length;
 
+  // Roster members not on board; allocating a berth boards them (bedCandidates).
+  const ashorePool = useMemo(() => {
+    const aboard = new Set(onboard.map((p) => p.profile_id).filter(Boolean) as string[]);
+    return roster
+      .filter((m) => !aboard.has(m.profile_id) && m.travel_eligible)
+      .map((m) => ({
+        profile_id: m.profile_id,
+        name: m.company ? `${m.full_name || m.email} · ${m.company}` : m.full_name || m.email,
+        crew_name: m.crew_name,
+      }));
+  }, [roster, onboard]);
+
   const usable = useMemo(
     () => rooms.filter((r) => !["blocked", "maintenance"].includes(r.status)),
     [rooms],
@@ -3611,7 +3644,8 @@ function BedBoardPanel({
       <p className="text-sm text-muted-foreground">
         Every usable room, full ones included so you can always move someone out. Type a name into an
         empty bed to drop that person straight into it — their POB record gets that room &amp; bed.
-        Blocked and under-maintenance rooms are hidden.
+        People who are ashore are offered too, and picking one boards them into that bed. Blocked and
+        under-maintenance rooms are hidden.
       </p>
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border bg-card px-3 py-2 text-sm">
@@ -3684,7 +3718,7 @@ function BedBoardPanel({
           // Candidates for this room's empty beds: everyone on board except the
           // people already in it. Waiting (bed-less) people sort to the top;
           // placed people read as "move from <their room>".
-          const candidates = bedCandidates(pool, r.id);
+          const candidates = bedCandidates(pool, r.id, ashorePool, !readOnly);
           return (
             <div key={r.id} className="rounded-md border bg-card p-2 text-sm">
               <div className="flex items-center justify-between gap-2">
@@ -3886,7 +3920,7 @@ function EmptyBed({
 }: {
   roomId: string;
   defaultBed: string;
-  candidates: { id: string; label: string }[];
+  candidates: BedCandidate[];
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
@@ -3908,7 +3942,17 @@ function EmptyBed({
         disabled={pending || candidates.length === 0}
         wrapperClassName="flex-1"
         className="w-full rounded border bg-background px-1 py-0.5 text-[11px]"
-        onChange={(v) => v && run(() => reassignTripRoom(v, roomId, bed.trim() || null))}
+        onChange={(v) => {
+          const pick = candidates.find((c) => c.id === v);
+          if (!pick) return;
+          // "board" carries a profile id and puts an ashore person on board in
+          // the same step; "move" carries a trip id and only reseats them.
+          if (pick.kind === "board") {
+            run(() => boardMember(pick.id, { roomId, bedNo: bed.trim() || null }));
+          } else {
+            run(() => reassignTripRoom(pick.id, roomId, bed.trim() || null));
+          }
+        }}
       />
     </li>
   );

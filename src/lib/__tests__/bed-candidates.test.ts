@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bedCandidates, type BedPoolPerson } from "@/lib/offshore/bed-candidates";
+import { bedCandidates, type AshorePerson, type BedPoolPerson } from "@/lib/offshore/bed-candidates";
 
 const DOOR5 = "room-door5";
 const DOOR3 = "room-door3";
@@ -19,6 +19,10 @@ describe("bedCandidates", () => {
     const oum = list.find((c) => c.id === "t-oum");
     expect(oum).toBeDefined();
     expect(oum!.label).toBe("OUM RAPHAEL — change bed (now 43)");
+  });
+
+  it("marks on-board people as a move, not a boarding", () => {
+    for (const c of bedCandidates(pool, DOOR5)) expect(c.kind).toBe("move");
   });
 
   it("never drops anyone from the list", () => {
@@ -54,5 +58,46 @@ describe("bedCandidates", () => {
     expect(bedCandidates(pool, DOOR3).find((c) => c.id === "t-oum")!.label).toBe(
       "OUM RAPHAEL — move from Door 5",
     );
+  });
+});
+
+describe("bedCandidates — ashore staff", () => {
+  const ashore: AshorePerson[] = [
+    { profile_id: "p-ash", name: "Ashore Alice", crew_name: "CREW A" },
+    { profile_id: "p-ash2", name: "Ashore Bob", crew_name: null },
+  ];
+
+  it("leaves ashore staff out unless boarding is allowed", () => {
+    const list = bedCandidates(pool, DOOR5, ashore, false);
+    expect(list.some((c) => c.kind === "board")).toBe(false);
+    expect(list).toHaveLength(pool.length);
+  });
+
+  it("offers them when boarding is allowed, keyed by profile id", () => {
+    const list = bedCandidates(pool, DOOR5, ashore, true);
+    const alice = list.find((c) => c.id === "p-ash");
+    expect(alice).toBeDefined();
+    expect(alice!.kind).toBe("board");
+  });
+
+  it("says in the label that picking them boards them", () => {
+    const alice = bedCandidates(pool, DOOR5, ashore, true).find((c) => c.id === "p-ash")!;
+    expect(alice.label).toBe("Ashore Alice · CREW A — ashore, board into this bed");
+  });
+
+  it("omits the crew when there is none", () => {
+    const bob = bedCandidates(pool, DOOR5, ashore, true).find((c) => c.id === "p-ash2")!;
+    expect(bob.label).toBe("Ashore Bob — ashore, board into this bed");
+  });
+
+  it("sorts ashore staff after everyone already on board", () => {
+    const list = bedCandidates(pool, DOOR5, ashore, true);
+    const firstBoard = list.findIndex((c) => c.kind === "board");
+    const lastMove = list.map((c) => c.kind).lastIndexOf("move");
+    expect(firstBoard).toBeGreaterThan(lastMove);
+  });
+
+  it("still puts a bed-less on-board person at the very top", () => {
+    expect(bedCandidates(pool, DOOR5, ashore, true)[0].id).toBe("t-waiting");
   });
 });
