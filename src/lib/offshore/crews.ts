@@ -8,6 +8,7 @@ import type {
   TripMode,
 } from "@/types/offshore";
 import { DAY_MS, one, todayIso } from "./_shared";
+import { nextChangeDate } from "./rotation-math";
 import { getRoster } from "./roster";
 
 /**
@@ -27,21 +28,6 @@ export async function getOffshoreDefaultMode(): Promise<TripMode> {
   return mode === "manual" ? "manual" : "auto";
 }
 
-/** Next date a crew starts an offshore period, on/after today, from its cycle. */
-function nextChangeDate(
-  cycleStart: string | null,
-  offshoreDays: number,
-  onshoreDays: number,
-): string | null {
-  if (!cycleStart) return null;
-  const period = offshoreDays + onshoreDays;
-  if (period <= 0) return null;
-  const start = new Date(cycleStart + "T00:00:00Z").getTime();
-  const now = new Date(todayIso() + "T00:00:00Z").getTime();
-  let n = 0;
-  if (now > start) n = Math.ceil((now - start) / (period * DAY_MS));
-  return new Date(start + n * period * DAY_MS).toISOString().slice(0, 10);
-}
 
 export async function getCrews(): Promise<Crew[]> {
   const supabase = createClient();
@@ -71,7 +57,14 @@ export async function getCrews(): Promise<Crew[]> {
     is_active: r.is_active,
     member_count: r.offshore_staff?.[0]?.count ?? 0,
     cycle_start_date: r.cycle_start_date,
-    next_change_date: nextChangeDate(r.cycle_start_date, r.offshore_days, r.onshore_days),
+    next_change_date: nextChangeDate(
+      {
+        offshore_days: r.offshore_days,
+        onshore_days: r.onshore_days,
+        cycle_start_date: r.cycle_start_date,
+      },
+      todayIso(),
+    ),
   }));
 }
 
