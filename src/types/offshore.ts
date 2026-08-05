@@ -213,6 +213,11 @@ export interface RosterEntry {
   fixed_room_id: string | null;
   fixed_room_label: string | null;
   fixed_bed: string | null;
+  /**
+   * False for short-term / ad-hoc personnel who work offshore but sit outside
+   * the crew rotation — they carry no crew and the rotation maths skips them.
+   */
+  is_rotational: boolean;
   /** Muster / lifeboat station (LB-1, LB-2, …). */
   lifeboat: string | null;
   medical_expiry: string | null;

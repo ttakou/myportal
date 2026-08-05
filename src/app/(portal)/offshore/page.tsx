@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { FileBarChart } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getMyPermissions } from "@/lib/permissions-server";
+import { hasPermission } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/server";
 import {
   getAccommodationSummary,
@@ -48,8 +50,16 @@ export default async function OffshorePage({
   // Full managers see and edit everything; the Dispatcher also reaches the
   // management area but with a scoped, partly read-only set of views.
   const offshoreManager = access.isAdmin || access.isCampboss || access.isOim;
-  const canManage = offshoreManager || access.isDispatcher;
-  const offshoreFlags = { manager: offshoreManager, dispatcher: access.isDispatcher };
+  // Holders of the offshore `create` verb (the seeded Receptionist / Radio
+  // Operator / Operations Supervisor access roles) reach one view only:
+  // registering non-rotational staff.
+  const offshoreRegistrar = hasPermission(await getMyPermissions(), "offshore", "create");
+  const canManage = offshoreManager || access.isDispatcher || offshoreRegistrar;
+  const offshoreFlags = {
+    manager: offshoreManager,
+    dispatcher: access.isDispatcher,
+    registrar: offshoreRegistrar,
+  };
 
   // One view at a time, driven by the sidebar submenu. Everyone lands on
   // "My trips" (the self-service area); managers can switch to a management view.

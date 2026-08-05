@@ -9,6 +9,7 @@ export async function getRoster(): Promise<RosterEntry[]> {
     .select(
       "id, profile_id, crew_id, position, company, back_to_back_id, fixed_room_id, fixed_bed," +
         " lifeboat, medical_expiry, bosiet_expiry, huet_expiry, emergency_contact, travel_eligible," +
+        " is_rotational," +
         " profile:profiles!offshore_staff_profile_id_fkey(full_name, email)," +
         " b2b:profiles!offshore_staff_back_to_back_id_fkey(full_name)," +
         " crew:offshore_crews(name), room:offshore_rooms(room_number, block, lifeboat)",
@@ -37,6 +38,8 @@ export async function getRoster(): Promise<RosterEntry[]> {
           ? [room.block, room.room_number].filter(Boolean).join(" ")
           : null,
         fixed_bed: r.fixed_bed,
+        // Rows written before 0164 predate the column; treat them as rotators.
+        is_rotational: r.is_rotational ?? true,
         // Muster follows the fixed room; fall back to any stored value.
         lifeboat: (room?.lifeboat as string | null) ?? r.lifeboat ?? null,
         medical_expiry: r.medical_expiry,

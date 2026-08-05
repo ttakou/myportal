@@ -106,6 +106,7 @@ import { TripsPanel } from "./trips-panel";
 import { PendingApprovals } from "./pending-approvals";
 import { AttendancePanel } from "./attendance-panel";
 import { CrewAssign } from "./crew-assign";
+import { RegisterNonRotational } from "./register-non-rotational";
 import {
   resolveManagementView,
   hubForOffshoreView,
@@ -127,6 +128,7 @@ type Tab =
   | "bedboard"
   | "roster"
   | "assign"
+  | "register"
   | "visitors"
   | "manifests"
   | "trips"
@@ -245,6 +247,13 @@ export function OffshoreManagement(props: {
           crews={props.crews}
           rooms={props.rooms}
           addable={props.addable}
+        />
+      )}
+      {tab === "register" && (
+        <RegisterNonRotational
+          roster={props.roster}
+          addable={props.addable}
+          readOnly={readOnly}
         />
       )}
       {tab === "visitors" && <VisitorsPanel visits={props.visits} />}
@@ -4003,6 +4012,14 @@ function RosterPanel({
               {!m.travel_eligible && (
                 <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] text-destructive">
                   Not eligible
+                </span>
+              )}
+              {!m.is_rotational && (
+                <span
+                  className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
+                  title="Works offshore but sits outside the crew rotation — no crew, skipped by the rotation calendar."
+                >
+                  Non-rotational
                 </span>
               )}
               {m.crew_name && (

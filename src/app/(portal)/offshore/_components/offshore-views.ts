@@ -16,6 +16,7 @@ export type OffshoreViewKey =
   | "catering"
   | "roster"
   | "assign"
+  | "register"
   | "visitors"
   | "emergency"
   | "drill"
@@ -49,6 +50,7 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "catering", label: "Catering", icon: "UtensilsCrossed" },
   { key: "roster", label: "Offshore staff", icon: "Users" },
   { key: "assign", label: "Assign crews", icon: "UserCog" },
+  { key: "register", label: "Register staff", icon: "UserPlus" },
   { key: "visitors", label: "Visitors", icon: "Plane" },
   { key: "emergency", label: "Muster roles", icon: "LifeBuoy" },
   { key: "drill", label: "Muster drill", icon: "Siren" },
@@ -105,6 +107,13 @@ export interface OffshoreRoleFlags {
   manager: boolean;
   /** Offshore Dispatcher — full crew/travel/roster, read-only POB & rooms. */
   dispatcher: boolean;
+  /**
+   * Holder of the offshore `create` verb through an access role — the seeded
+   * Receptionist / Radio Operator / Operations Supervisor. Their sole
+   * management view is registering non-rotational staff; everything else
+   * (crews, POB, manifests, accommodation) stays hidden.
+   */
+  registrar: boolean;
 }
 
 const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
@@ -121,6 +130,9 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
   catering: "none",
   roster: "full",
   assign: "full",
+  // The Dispatcher already owns the roster outright, so registering a
+  // non-rotator adds nothing they could not already do.
+  register: "full",
   visitors: "full",
   emergency: "none",
   drill: "none",
@@ -133,12 +145,15 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
 export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags): OffshorePerm {
   if (flags.manager) return "full";
   if (flags.dispatcher) return DISPATCHER_VIEW_PERMS[key] ?? "none";
+  // A registrar reaches exactly one view. Checked after the two role flags so
+  // that holding the verb as well as a role never *narrows* what they see.
+  if (flags.registrar) return key === "register" ? "full" : "none";
   return "none";
 }
 
 /** True when the user may see any management view at all (vs. self-service only). */
 export function canSeeOffshoreManagement(flags: OffshoreRoleFlags): boolean {
-  return flags.manager || flags.dispatcher;
+  return flags.manager || flags.dispatcher || flags.registrar;
 }
 
 /** First management view the user may open — the landing view after "My trips". */
@@ -186,6 +201,7 @@ export const OFFSHORE_HUBS: OffshoreHub[] = [
     tabs: [
       { key: "roster", label: "Staff roster" },
       { key: "assign", label: "Assign crews" },
+      { key: "register", label: "Register staff" },
     ],
   },
   {
