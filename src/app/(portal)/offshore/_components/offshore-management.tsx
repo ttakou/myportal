@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { planManifest, seatOverflow } from "@/lib/offshore/manifest-plan";
+import { bedCandidates } from "@/lib/offshore/bed-candidates";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -3263,6 +3264,7 @@ function RoomOccupancyList({
         room_id: p.room_id,
         name: p.company ? `${p.name} · ${p.company}` : p.name,
         placedIn: p.room_id ? p.room_label : null,
+        bed: p.bed_no,
       })),
     [onboard],
   );
@@ -3315,14 +3317,7 @@ function RoomOccupancyList({
                 const lbl = `Bed ${k}`;
                 if (!usedBeds.has(lbl)) slotLabels.push(lbl);
               }
-              const candidates = pool
-                .filter((p) => p.room_id !== r.id)
-                .map((p) => ({
-                  id: p.id,
-                  waiting: !p.room_id,
-                  label: p.placedIn ? `${p.name} — move from ${p.placedIn}` : p.name,
-                }))
-                .sort((a, b) => Number(b.waiting) - Number(a.waiting) || a.label.localeCompare(b.label));
+              const candidates = bedCandidates(pool, r.id);
               const ownerIds = new Set(r.owners.map((o) => o.profile_id));
               const ownerCandidates = roster
                 .filter((s) => !ownerIds.has(s.profile_id))
@@ -3488,6 +3483,7 @@ function BedBoardPanel({
         room_id: p.room_id,
         name: p.company ? `${p.name} · ${p.company}` : p.name,
         placedIn: p.room_id ? p.room_label : null,
+        bed: p.bed_no,
       })),
     [onboard],
   );
@@ -3596,14 +3592,7 @@ function BedBoardPanel({
           // Candidates for this room's empty beds: everyone on board except the
           // people already in it. Waiting (bed-less) people sort to the top;
           // placed people read as "move from <their room>".
-          const candidates = pool
-            .filter((p) => p.room_id !== r.id)
-            .map((p) => ({
-              id: p.id,
-              waiting: !p.room_id,
-              label: p.placedIn ? `${p.name} — move from ${p.placedIn}` : p.name,
-            }))
-            .sort((a, b) => Number(b.waiting) - Number(a.waiting) || a.label.localeCompare(b.label));
+          const candidates = bedCandidates(pool, r.id);
           return (
             <div key={r.id} className="rounded-md border bg-card p-2 text-sm">
               <div className="flex items-center justify-between gap-2">
