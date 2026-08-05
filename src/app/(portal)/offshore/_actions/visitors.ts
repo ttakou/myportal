@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { searchBedAvailability } from "@/lib/offshore";
-import { notifyUsers } from "@/lib/notify";
+import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import type { RoomAvailability } from "@/types/offshore";
 import { VISITOR_TYPES, requireOffshore, requireOffshoreDispatch, rev, tenantId } from "./_shared";
@@ -46,6 +46,12 @@ export async function createVisitRequest(input: {
     emergency_contact: input.emergencyContact?.trim() || null,
   });
   if (error) return { ok: false, error: error.message };
+  await notifyOffshoreApprovers({
+    tenantId: tenant,
+    title: `Visit request: ${input.visitorName.trim()}`,
+    body: `Awaiting your approval — travel ${input.departDate}.`,
+    url: "/offshore",
+  });
   rev();
   return { ok: true };
 }
@@ -140,6 +146,12 @@ export async function createVisitGroup(input: {
   }));
   const { error } = await supabase.from("offshore_visit_requests").insert(rows);
   if (error) return { ok: false, error: error.message };
+  await notifyOffshoreApprovers({
+    tenantId: tenant,
+    title: `Visit request: ${visitors.length} visitor(s)`,
+    body: `Awaiting your approval — travel ${input.departDate}.`,
+    url: "/offshore",
+  });
   rev();
   return { ok: true };
 }

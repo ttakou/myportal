@@ -90,3 +90,36 @@ export async function notifyUsers(input: {
     console.error("notifyUsers failed:", (e as Error).message);
   }
 }
+
+/**
+ * Notify the offshore approvers (Campboss + OIM) of the tenant — e.g. when a
+ * new trip or visit request lands in their queue. Resolved on the service-role
+ * client because a regular requester can't read other people's functional
+ * roles under RLS. Best-effort like notifyUsers.
+ */
+export async function notifyOffshoreApprovers(input: {
+  tenantId: string;
+  title: string;
+  body?: string;
+  url?: string;
+}): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    if (!admin) return;
+    const { data } = await admin
+      .from("profile_roles")
+      .select("profile_id")
+      .eq("tenant_id", input.tenantId)
+      .in("role", ["campboss", "oim"]);
+    await notifyUsers({
+      tenantId: input.tenantId,
+      profileIds: (data ?? []).map((r) => r.profile_id as string),
+      category: "approval",
+      title: input.title,
+      body: input.body,
+      url: input.url ?? "/offshore",
+    });
+  } catch (e) {
+    console.error("notifyOffshoreApprovers failed:", (e as Error).message);
+  }
+}
