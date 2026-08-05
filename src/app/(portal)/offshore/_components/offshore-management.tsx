@@ -17,6 +17,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { planManifest, seatOverflow } from "@/lib/offshore/manifest-plan";
+import {
+  crewFill,
+  manifestCandidates,
+  pendingMovements,
+  type ManifestCandidate,
+} from "@/lib/offshore/manifest-picker";
 import { bedCandidates, type BedCandidate } from "@/lib/offshore/bed-candidates";
 import { bedKey, duplicateBedKeys, roomBedIssues } from "@/lib/offshore/bed-issues";
 import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
@@ -1155,7 +1161,6 @@ const MANIFEST_STYLE: Record<ManifestStatus, string> = {
 };
 
 /** Build a manifest: pick mode + date, then move passengers from left to right. */
-type PickItem = { key: string; id: string; name: string; kind: "staff" | "visitor"; crew_id: string | null };
 
 function ManifestBuilder({
   crews,
@@ -1178,31 +1183,38 @@ function ManifestBuilder({
   const [date, setDate] = useState("");
   const [seats, setSeats] = useState(24);
   const [search, setSearch] = useState("");
-  const [picked, setPicked] = useState<PickItem[]>([]);
+  const [picked, setPicked] = useState<ManifestCandidate[]>([]);
 
   const pickedKeys = new Set(picked.map((p) => p.key));
 
-  // Staff pool: inbound (out) = roster ashore; outbound (in) = on-board staff.
-  const staff: PickItem[] =
-    direction === "out"
-      ? roster
-          .filter((m) => !onboard.some((o) => o.profile_id === m.profile_id))
-          .map((m) => ({ key: "s" + m.profile_id, id: m.profile_id, name: m.full_name || m.email, kind: "staff" as const, crew_id: m.crew_id }))
-      : onboard
-          .filter((o) => o.profile_id)
-          .map((o) => ({ key: "s" + o.profile_id, id: o.profile_id as string, name: o.name, kind: "staff" as const, crew_id: o.crew_id }));
+  // Everyone is selectable in either direction — real crew changes carry late
+  // additions and people already in place. The direction only decides whether a
+  // pick also changes their status, which is confirmed before it happens.
+  const allCandidates = useMemo(
+    () =>
+      manifestCandidates({
+        direction,
+        roster: roster.map((m) => ({
+          profile_id: m.profile_id,
+          name: m.full_name || m.email,
+          crew_id: m.crew_id,
+          crew_name: m.crew_name,
+          travel_eligible: m.travel_eligible,
+        })),
+        onboard: onboard.map((o) => ({ profile_id: o.profile_id, crew_id: o.crew_id })),
+        visits: visits.map((v) => ({ id: v.id, visitor_name: v.visitor_name, status: v.status })),
+      }),
+    [direction, roster, onboard, visits],
+  );
 
-  // Visitor pool: inbound = approved (due to travel out); outbound = currently on board.
-  const visitorStatus = direction === "out" ? "approved" : "onboard";
-  const visitorPool: PickItem[] = visits
-    .filter((v) => v.status === visitorStatus)
-    .map((v) => ({ key: "v" + v.id, id: v.id, name: `${v.visitor_name} (visitor)`, kind: "visitor" as const, crew_id: null }));
-
-  const candidates = [...staff, ...visitorPool]
+  const candidates = allCandidates
     .filter((c) => !crewId || c.crew_id === crewId)
     .filter((c) => !pickedKeys.has(c.key))
-    .filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .filter((c) => c.label.toLowerCase().includes(search.toLowerCase()));
+
+  // What creating this manifest would do to the people on it.
+  const movements = pendingMovements(picked, direction);
+  const movementCount = movements.board.length + movements.offboard.length;
 
   // Everyone the schedule says should travel on this date and direction: the
   // rotation cycle decides the crews, the bookings decide the visitors. See
@@ -1250,16 +1262,13 @@ function ManifestBuilder({
   useEffect(() => {
     if (appliedKey.current === planKey) return;
     appliedKey.current = planKey;
+    const byKey = new Map(allCandidates.map((c) => [c.key, c]));
     setPicked(
-      plan.picks.map((p) => ({
-        key: (p.kind === "staff" ? "s" : "v") + p.id,
-        id: p.id,
-        name: p.kind === "visitor" ? `${p.name} (visitor)` : p.name,
-        kind: p.kind,
-        crew_id: p.crew_id,
-      })),
+      plan.picks
+        .map((p) => byKey.get((p.kind === "staff" ? "s" : "v") + p.id))
+        .filter(Boolean) as ManifestCandidate[],
     );
-  }, [planKey, plan.picks]);
+  }, [planKey, plan.picks, allCandidates]);
 
   const reasonFor = useMemo(() => {
     const m = new Map<string, string>();
@@ -1276,7 +1285,20 @@ function ManifestBuilder({
     setDate("");
     setSearch("");
   };
-  const submit = () =>
+  function submit() {
+    // Creating the manifest can also move people. Say exactly who, and let the
+    // operator create it without the movements if that is not what they meant.
+    let applyMovements = false;
+    if (movementCount > 0) {
+      const what = movements.board.length
+        ? `mobilise ${movements.board.length} person(s) who are ashore`
+        : `demobilise ${movements.offboard.length} person(s) who are on board`;
+      applyMovements = confirm(
+        `This manifest will also ${what}, changing POB, the muster roll and catering counts.\n\n` +
+          `${[...movements.board, ...movements.offboard].map((p) => `• ${p.name}`).join("\n")}\n\n` +
+          `OK to create and apply. Cancel to create the manifest only.`,
+      );
+    }
     run(
       () =>
         createManifest({
@@ -1287,9 +1309,11 @@ function ManifestBuilder({
           seatCapacity: seats,
           profileIds: picked.filter((p) => p.kind === "staff").map((p) => p.id),
           visitRequestIds: picked.filter((p) => p.kind === "visitor").map((p) => p.id),
+          applyMovements,
         }),
       reset,
     );
+  }
 
   const seatCheck = seatOverflow(picked.length, seats);
   const over = seatCheck.over;
@@ -1300,8 +1324,8 @@ function ManifestBuilder({
         <label className="text-xs text-muted-foreground">
           Direction
           <select value={direction} onChange={(e) => setDirection(e.target.value as "out" | "in")} className={cn(field, "mt-0.5 block py-1")}>
-            <option value="out">Inbound — joining (mobilise)</option>
-            <option value="in">Outbound — leaving (demobilise)</option>
+            <option value="out">Going offshore — joining (mobilise)</option>
+            <option value="in">Coming ashore — leaving (demobilise)</option>
           </select>
         </label>
         <label className="text-xs text-muted-foreground">
@@ -1320,6 +1344,25 @@ function ManifestBuilder({
             ))}
           </select>
         </label>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending || !crewId}
+          title={
+            crewId
+              ? "Add every member of this crew on the right side of the change"
+              : "Pick a crew first"
+          }
+          onClick={() => {
+            const fill = crewFill(allCandidates, crewId, direction);
+            setPicked((cur) => {
+              const have = new Set(cur.map((p) => p.key));
+              return [...cur, ...fill.filter((c) => !have.has(c.key))];
+            });
+          }}
+        >
+          Add entire crew
+        </Button>
         <label className="text-xs text-muted-foreground">
           Date
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={cn(field, "mt-0.5 block py-1")} />
@@ -1350,7 +1393,8 @@ function ManifestBuilder({
           )}
           {plan.picks.some((p) => p.kind === "visitor") &&
             `, plus ${plan.picks.filter((p) => p.kind === "visitor").length} booked visitor(s)`}
-          . Everyone due is listed — add or remove anyone before creating.
+          . Everyone due is listed — add or remove anyone before creating, from either side of the
+          change.
         </p>
       ) : (
         <p className="rounded-md border border-dashed bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
@@ -1365,6 +1409,16 @@ function ManifestBuilder({
             </>
           )}{" "}
           You can still build the movement by hand.
+        </p>
+      )}
+
+      {movementCount > 0 && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+          Creating this manifest will also{" "}
+          {movements.board.length > 0 && <strong>mobilise {movements.board.length}</strong>}
+          {movements.offboard.length > 0 && <strong>demobilise {movements.offboard.length}</strong>}{" "}
+          person(s) — POB, the muster roll and catering counts change with it. You will be asked to
+          confirm, and can still create the manifest without moving anyone.
         </p>
       )}
 

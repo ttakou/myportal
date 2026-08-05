@@ -51,6 +51,14 @@ export async function createManifest(input: {
   seatCapacity: number;
   profileIds: string[];
   visitRequestIds?: string[];
+  /**
+   * Also move the staff on the manifest into the state the direction implies:
+   * a joining run mobilises whoever is still ashore, a leaving run demobilises
+   * whoever is aboard. The caller confirms this first — it changes POB, the
+   * muster roll and catering counts. Who actually moves is recomputed here from
+   * live trips rather than taken from the client.
+   */
+  applyMovements?: boolean;
 }): Promise<ActionResult> {
   const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
@@ -142,6 +150,38 @@ export async function createManifest(input: {
     }
   }
   await supabase.from("offshore_manifest_pax").insert(pax);
+
+  if (input.applyMovements && input.profileIds.length) {
+    const { data: live } = await supabase
+      .from("offshore_trips")
+      .select("id, profile_id")
+      .eq("status", "onboard")
+      .in("profile_id", input.profileIds);
+    const tripByProfile = new Map(
+      (live ?? []).map((t) => [t.profile_id as string, t.id as string]),
+    );
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (input.direction === "out") {
+      // Joining: board everyone not already aboard. boardMember is idempotent
+      // and picks up each person's crew, installation and fixed cabin.
+      for (const id of input.profileIds) {
+        if (!tripByProfile.has(id)) await boardMember(id);
+      }
+    } else {
+      // Leaving: demobilise everyone currently aboard, in one write.
+      const tripIds = input.profileIds
+        .map((id) => tripByProfile.get(id))
+        .filter(Boolean) as string[];
+      if (tripIds.length) {
+        await supabase
+          .from("offshore_trips")
+          .update({ status: "demobilised", demob_date: today })
+          .in("id", tripIds);
+      }
+    }
+  }
+
   rev();
   return { ok: true };
 }
