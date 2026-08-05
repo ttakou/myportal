@@ -174,13 +174,22 @@ export function planManifest(input: {
           reason: "Visitor — booked departure",
         });
       } else {
-        if (v.status !== "onboard" || v.return_date !== dateIso) continue;
+        if (v.return_date !== dateIso) continue;
+        // "onboard" is the clean case. "approved" on the return date means the
+        // arrival was never confirmed in the system — either they are offshore
+        // and nobody marked them, or they did not travel. Listing them is the
+        // safe error: a no-show is removed with one click, whereas leaving
+        // somebody who IS offshore off the return manifest strands them.
+        if (v.status !== "onboard" && v.status !== "approved") continue;
         picks.push({
           id: v.id,
           name: v.visitor_name,
           kind: "visitor",
           crew_id: null,
-          reason: "Visitor — booked return",
+          reason:
+            v.status === "onboard"
+              ? "Visitor — booked return"
+              : "Visitor — booked return (arrival never confirmed)",
         });
       }
     }

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useStatusTransition } from "@/components/activity";
 import {
   AlertTriangle,
+  BedDouble,
   FileText,
   History,
   ChevronDown,
@@ -28,6 +29,7 @@ import { bedCandidates, type BedCandidate } from "@/lib/offshore/bed-candidates"
 import { bedKey, duplicateBedKeys, roomBedIssues } from "@/lib/offshore/bed-issues";
 import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
 import { offshorePeople } from "@/lib/offshore/people";
+import { countAwaitingBed, visitorsAwaitingBed } from "@/lib/offshore/visitor-queue";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -215,6 +217,7 @@ export function OffshoreManagement(props: {
       )}
       {tab === "dashboard" && (
         <Dashboard
+          canDecide={props.flags.manager || props.flags.dispatcher}
           pob={props.pob}
           accommodation={props.accommodation}
           certAlerts={props.certAlerts}
@@ -313,6 +316,82 @@ export function OffshoreManagement(props: {
       {tab === "history" && <HistoryPanel />}
       {tab === "staff-history" && <StaffRotationPanel />}
     </div>
+  );
+}
+
+/**
+ * Approved visitors still without a bed — the Campboss's booking queue.
+ *
+ * Approval and accommodation belong to different people: the OIM decides
+ * whether a visit happens, the Campboss finds the room. Nothing joined the two,
+ * so an approved visitor needing a bed showed up only as one card among all
+ * visitors, with no count and no prompt. Grouped by installation because a
+ * Campboss runs one platform.
+ */
+function VisitorBookingQueue({ visits }: { visits: VisitRequest[] }) {
+  const groups = useMemo(
+    () =>
+      visitorsAwaitingBed(
+        visits.map((v) => ({
+          id: v.id,
+          visitor_name: v.visitor_name,
+          visitor_company: v.visitor_company,
+          status: v.status,
+          depart_date: v.depart_date,
+          return_date: v.return_date,
+          accommodation_required: v.accommodation_required,
+          installation_id: v.installation_id,
+          installation_name: v.installation_name,
+          allocation: v.allocation,
+        })),
+      ),
+    [visits],
+  );
+  const total = countAwaitingBed(groups);
+  if (total === 0) return null;
+
+  return (
+    <section className="rounded-lg border border-amber-300 bg-amber-50/60">
+      <div className="flex flex-wrap items-center gap-2 border-b border-amber-200 px-3 py-2">
+        <BedDouble className="h-4 w-4 text-amber-700" />
+        <h3 className="text-sm font-semibold text-amber-900">Visitors awaiting a bed</h3>
+        <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+          {total}
+        </span>
+        <Link
+          href="/offshore?view=visitors"
+          className="ml-auto rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-amber-100"
+        >
+          Book rooms
+        </Link>
+      </div>
+      <div className="space-y-2 p-3">
+        {groups.map((g) => (
+          <div key={g.installation_id ?? "none"}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900">
+              {g.installation_name} ({g.visits.length})
+            </p>
+            <ul className="mt-0.5 space-y-0.5">
+              {g.visits.map((v) => (
+                <li key={v.id} className="flex flex-wrap items-center gap-x-2 text-xs text-amber-900">
+                  <span className="font-medium">{v.visitor_name}</span>
+                  {v.visitor_company && <span className="opacity-70">{v.visitor_company}</span>}
+                  <span className="opacity-70">
+                    {v.depart_date}
+                    {v.return_date ? ` → ${v.return_date}` : ""}
+                  </span>
+                  {v.status === "onboard" && (
+                    <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                      already on board
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -2486,6 +2565,7 @@ type Drill =
   | null;
 
 function Dashboard({
+  canDecide,
   pob,
   accommodation,
   certAlerts,
@@ -2495,6 +2575,8 @@ function Dashboard({
   visits,
   trips,
 }: {
+  /** False for viewers who see the queue but cannot decide it. */
+  canDecide: boolean;
   pob: PobBreakdown;
   accommodation: AccommodationSummary;
   certAlerts: CertAlert[];
@@ -2566,7 +2648,8 @@ function Dashboard({
 
   return (
     <div className="space-y-5">
-      <PendingApprovals visits={visits} trips={trips} />
+      <PendingApprovals visits={visits} trips={trips} canDecide={canDecide} />
+      <VisitorBookingQueue visits={visits} />
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
