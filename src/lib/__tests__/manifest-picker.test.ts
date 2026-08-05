@@ -3,6 +3,7 @@ import {
   crewFill,
   manifestCandidates,
   pendingMovements,
+  planPicksAsCandidates,
   type PickerOnboard,
   type PickerStaff,
   type PickerVisit,
@@ -130,5 +131,50 @@ describe("pendingMovements", () => {
       const picked = list.filter((c) => c.kind === "visitor");
       expect(pendingMovements(picked, d)).toEqual({ board: [], offboard: [] });
     }
+  });
+});
+
+describe("planPicksAsCandidates — nobody is dropped", () => {
+  const all = manifestCandidates({ ...base, direction: "in" });
+  const aboard = new Set(["a2", "ghost"]);
+
+  it("keeps a scheduled person who has no roster row", () => {
+    // Production has 50 people on board holding no offshore_staff row; the
+    // schedule finds them via live trips, the candidate list cannot.
+    const picks = [{ id: "ghost", name: "Unrostered Aboard", kind: "staff" as const, crew_id: "A" }];
+    const out = planPicksAsCandidates(picks, all, "in", aboard);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe("Unrostered Aboard");
+  });
+
+  it("still marks that person as being demobilised", () => {
+    const picks = [{ id: "ghost", name: "Unrostered Aboard", kind: "staff" as const, crew_id: "A" }];
+    const out = planPicksAsCandidates(picks, all, "in", aboard);
+    expect(out[0].moves).toBe(true);
+    expect(out[0].label).toBe("Unrostered Aboard — on board · will be demobilised");
+    expect(pendingMovements(out, "in").offboard).toHaveLength(1);
+  });
+
+  it("prefers the real candidate when the person IS on the roster", () => {
+    const picks = [{ id: "a2", name: "stale name", kind: "staff" as const, crew_id: "A" }];
+    const out = planPicksAsCandidates(picks, all, "in", aboard);
+    expect(out[0].name).toBe("Alpha Aboard"); // from the roster, not the pick
+    expect(out[0].crew_name).toBe("CREW A");
+  });
+
+  it("preserves the schedule's order and count exactly", () => {
+    const picks = [
+      { id: "a2", name: "Alpha Aboard", kind: "staff" as const, crew_id: "A" },
+      { id: "ghost", name: "Unrostered", kind: "staff" as const, crew_id: "A" },
+      { id: "v2", name: "Aboard Guest", kind: "visitor" as const, crew_id: null },
+    ];
+    const out = planPicksAsCandidates(picks, all, "in", aboard);
+    expect(out.map((c) => c.id)).toEqual(["a2", "ghost", "v2"]);
+  });
+
+  it("never marks a visitor as moving", () => {
+    const picks = [{ id: "v9", name: "New Guest", kind: "visitor" as const, crew_id: null }];
+    const out = planPicksAsCandidates(picks, all, "in", aboard);
+    expect(out[0].moves).toBe(false);
   });
 });
