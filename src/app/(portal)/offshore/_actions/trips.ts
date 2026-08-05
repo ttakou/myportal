@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { notifyUsers } from "@/lib/notify";
+import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshoreDispatch, rev } from "./_shared";
 
@@ -24,6 +24,12 @@ export async function requestOffshoreTrip(input: {
     demob_date: input.demobDate || null,
   });
   if (error) return { ok: false, error: error.message };
+  await notifyOffshoreApprovers({
+    tenantId: tenant.id as string,
+    title: "New offshore trip request",
+    body: `Awaiting HSE clearance — mobilise ${input.mobilizeDate}.`,
+    url: "/offshore?view=trips",
+  });
   rev();
   return { ok: true };
 }
@@ -113,6 +119,12 @@ export async function requestOffshoreTripGroup(input: {
     title: "Offshore trip booked",
     body: "You've been added to an offshore trip.",
     url: "/offshore",
+  });
+  await notifyOffshoreApprovers({
+    tenantId,
+    title: `Offshore trip request: ${rows.length} person(s)`,
+    body: `Awaiting HSE clearance — mobilise ${input.mobilizeDate}.`,
+    url: "/offshore?view=trips",
   });
   rev();
   return { ok: true };
