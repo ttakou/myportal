@@ -97,9 +97,15 @@ export async function getCrewChangeSuggestions(): Promise<CrewChangeSuggestion[]
     const idx = ((diff % period) + period) % period;
     const expectedOffshore = idx < c.offshore_days;
     const aboard = onboardByCrew.get(c.id) ?? 0;
-    if (expectedOffshore && aboard === 0) {
+    // Mobilise while ANYONE is still ashore, not only when the whole crew is.
+    // Requiring aboard === 0 silenced every partial crew change: on live data
+    // CREW B2 starts its offshore phase today with 5 of 9 already aboard, so
+    // the four still ashore raised no prompt at all. Same for CREW B (25/26)
+    // and CREW F (34/35) mid-phase.
+    const ashore = Math.max(0, c.member_count - aboard);
+    if (expectedOffshore && ashore > 0) {
       const since = new Date(today - idx * DAY_MS).toISOString().slice(0, 10);
-      out.push({ crew_id: c.id, crew_name: c.name, action: "mobilise", since, count: c.member_count });
+      out.push({ crew_id: c.id, crew_name: c.name, action: "mobilise", since, count: ashore });
     } else if (!expectedOffshore && aboard > 0) {
       const since = new Date(today - (idx - c.offshore_days) * DAY_MS).toISOString().slice(0, 10);
       out.push({ crew_id: c.id, crew_name: c.name, action: "demobilise", since, count: aboard });

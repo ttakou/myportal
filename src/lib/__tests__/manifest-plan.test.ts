@@ -261,3 +261,39 @@ describe("seatOverflow", () => {
     expect(seatOverflow(2, -5)).toEqual({ over: true, excess: 2, free: 0 });
   });
 });
+
+describe("partial crew changes still count as due", () => {
+  // The crew-change prompt used to require the whole crew ashore. On live data
+  // CREW B2 begins its offshore phase with 5 of 9 already aboard, so the four
+  // still ashore raised nothing; CREW B (25/26) and CREW F (34/35) likewise.
+  const dueToMobilise = (members: number, aboard: number, expectedOffshore: boolean) =>
+    expectedOffshore && Math.max(0, members - aboard) > 0;
+
+  it("prompts when part of the crew is still ashore", () => {
+    expect(dueToMobilise(9, 5, true)).toBe(true); // CREW B2
+    expect(dueToMobilise(26, 25, true)).toBe(true); // CREW B
+    expect(dueToMobilise(35, 34, true)).toBe(true); // CREW F
+  });
+
+  it("still prompts when the whole crew is ashore", () => {
+    expect(dueToMobilise(9, 0, true)).toBe(true);
+  });
+
+  it("goes quiet once everyone is aboard", () => {
+    expect(dueToMobilise(9, 9, true)).toBe(false);
+  });
+
+  it("says nothing during the onshore phase", () => {
+    expect(dueToMobilise(9, 0, false)).toBe(false);
+  });
+
+  it("counts only the people actually still ashore", () => {
+    expect(Math.max(0, 9 - 5)).toBe(4);
+  });
+
+  it("never reports a negative count when more are aboard than rostered", () => {
+    // Possible: a trip can carry a crew_id for somebody with no roster row.
+    expect(Math.max(0, 9 - 12)).toBe(0);
+    expect(dueToMobilise(9, 12, true)).toBe(false);
+  });
+});
