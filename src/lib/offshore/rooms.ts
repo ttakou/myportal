@@ -157,7 +157,7 @@ export async function getRooms(): Promise<Room[]> {
 /** Accommodation rollup across rooms + current on-board occupancy. */
 export async function getAccommodationSummary(): Promise<AccommodationSummary> {
   const supabase = createClient();
-  const [{ data: rooms }, { data: onboard }] = await Promise.all([
+  const [{ data: rooms }, { data: onboard }, { data: visitorBeds }] = await Promise.all([
     supabase
       .from("offshore_rooms")
       .select("id, room_number, block, bed_count, status, offshore_staff(count)")
@@ -166,6 +166,12 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
       .from("offshore_trips")
       .select("id, room_id, bed_no, person:profiles!offshore_trips_profile_id_fkey(full_name)")
       .eq("status", "onboard"),
+    // Visitors hold beds through an allocation, not a trip. Counting only trips
+    // made this rollup disagree with the room cards, which do count them.
+    supabase
+      .from("offshore_bed_allocations")
+      .select("id, room_id, visit:offshore_visit_requests(visitor_name, status)")
+      .neq("status", "checked_out"),
   ]);
 
   // On-board occupants per room (a 2-bed room may hold 4 on day/night shift).
@@ -180,6 +186,21 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
       trip_id: t.id as string,
       name: one<{ full_name?: string }>(t.person)?.full_name ?? "—",
       bed_no: (t.bed_no as string | null) ?? null,
+    });
+    occByRoom.set(rid, list);
+  }
+
+  for (const a of (visitorBeds ?? []) as Record<string, any>[]) {
+    const visit = one<{ visitor_name?: string; status?: string }>(a.visit);
+    if (!["approved", "onboard"].includes(visit?.status ?? "")) continue;
+    occupiedBeds++;
+    const rid = a.room_id as string | null;
+    if (!rid) continue;
+    const list = occByRoom.get(rid) ?? [];
+    list.push({
+      trip_id: `visit-${a.id}`,
+      name: visit?.visitor_name ?? "Visitor",
+      bed_no: null,
     });
     occByRoom.set(rid, list);
   }

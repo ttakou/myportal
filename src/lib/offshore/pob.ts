@@ -109,6 +109,9 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     });
     const lb = vmuster || "Unassigned";
     byLifeboatMap.set(lb, (byLifeboatMap.get(lb) ?? 0) + 1);
+    // Visitors belong to no crew, but they are on board — without this the crew
+    // chips sum to less than Current POB and the two never reconcile.
+    byCrewMap.set("Unassigned", (byCrewMap.get("Unassigned") ?? 0) + 1);
     people.push({
       trip_id: `visit-${v.id}`,
       profile_id: null,
