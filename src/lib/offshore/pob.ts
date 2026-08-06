@@ -2,13 +2,27 @@ import { createClient } from "@/lib/supabase/server";
 import type { PobAsOf, PobBreakdown, PobPerson } from "@/types/offshore";
 import { one } from "./_shared";
 import { tripLifeboat, visitorLifeboat } from "./lifeboat";
+import type { RotationCycle } from "./rotation-math";
+import {
+  identityOf,
+  scheduleStateOf,
+  type OffshoreIdentity,
+  type ScheduleState,
+} from "./pob-classify";
 
 /** POB dashboard: counts by installation, crew, category + today's movements. */
 export async function getPobBreakdown(): Promise<PobBreakdown> {
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
 
-  const [{ data: onboard }, { data: pob }, { data: arrivals }, { data: visitors }, { data: staffRows }] =
+  const [
+    { data: onboard },
+    { data: pob },
+    { data: arrivals },
+    { data: visitors },
+    { data: staffRows },
+    { data: crewRows },
+  ] =
     await Promise.all([
       supabase
         .from("offshore_trips")
@@ -33,8 +47,37 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
             " offshore_bed_allocations(status, room:offshore_rooms(room_number, block, lifeboat))",
         )
         .eq("status", "onboard"),
-      supabase.from("offshore_staff").select("profile_id, company"),
+      supabase.from("offshore_staff").select("profile_id, company, is_rotational"),
+      supabase.from("offshore_crews").select("id, offshore_days, onshore_days, cycle_start_date"),
     ]);
+
+  // Identity comes from the roster, schedule state from the crew's cycle.
+  const rosterByProfile = new Map<string, { is_rotational: boolean }>();
+  for (const s of (staffRows ?? []) as Record<string, any>[]) {
+    rosterByProfile.set(s.profile_id as string, {
+      is_rotational: (s.is_rotational as boolean | null) ?? true,
+    });
+  }
+  const cycleByCrew = new Map<string, RotationCycle>();
+  for (const c of (crewRows ?? []) as Record<string, any>[]) {
+    cycleByCrew.set(c.id as string, {
+      offshore_days: (c.offshore_days as number) ?? 0,
+      onshore_days: (c.onshore_days as number) ?? 0,
+      cycle_start_date: (c.cycle_start_date as string | null) ?? null,
+    });
+  }
+  const byIdentity: Record<OffshoreIdentity, number> = {
+    rotational: 0,
+    non_rotational: 0,
+    visitor: 0,
+  };
+  const byScheduleState: Record<ScheduleState, number> = {
+    on_schedule: 0,
+    due_ashore: 0,
+    overstaying: 0,
+    early: 0,
+    unscheduled: 0,
+  };
 
   const companyByProfile = new Map<string, string | null>();
   for (const s of (staffRows ?? []) as Record<string, any>[]) {
@@ -53,10 +96,24 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
   const people: PobBreakdown["people"] = [];
 
   for (const r of rows as Record<string, any>[]) {
-    // Anyone on board who is not in a rotation crew counts as a visitor: the
-    // "Offshore staff" figure is meant to be the rotating workforce, and a
-    // crewless person is not part of it whatever their trip was labelled.
-    const countsAsVisitor = r.category === "visitor" || !r.crew_id;
+    // Identity from the roster, never from the crew: a rotator who overstays,
+    // arrives early or sits between crews is still rotational staff. The old
+    // rule ("no crew ⇒ visitor") answered two questions with one field and
+    // silently demoted those people to guests.
+    const roster = r.profile_id ? rosterByProfile.get(r.profile_id as string) : undefined;
+    const identity = identityOf({
+      rostered: Boolean(roster),
+      isRotational: roster?.is_rotational,
+    });
+    byIdentity[identity]++;
+    const state = scheduleStateOf({
+      todayIso: today,
+      demobDate: (r.demob_date as string | null) ?? null,
+      mobilizeDate: (r.mobilize_date as string | null) ?? null,
+      cycle: r.crew_id ? cycleByCrew.get(r.crew_id as string) ?? null : null,
+    });
+    byScheduleState[state]++;
+    const countsAsVisitor = identity === "visitor";
     if (countsAsVisitor) visitor++;
     else staff++;
     const crewName = one<{ name?: string }>(r.crew)?.name ?? null;
@@ -75,6 +132,8 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       profile_id: (r.profile_id as string | null) ?? null,
       name: one<{ full_name?: string }>(r.person)?.full_name ?? "—",
       category: countsAsVisitor ? "visitor" : "staff",
+      identity,
+      schedule_state: state,
       crew_id: (r.crew_id as string | null) ?? null,
       crew_name: crewName,
       lifeboat: muster,
@@ -85,15 +144,16 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       mobilize_date: r.mobilize_date as string,
       demob_date: (r.demob_date as string | null) ?? null,
     });
-    if (r.demob_date) {
-      if (r.demob_date === today) departuresToday++;
-      if (r.demob_date < today) {
-        overstayers.push({
-          name: one<{ full_name?: string }>(r.person)?.full_name ?? "—",
-          installation: one<{ name?: string }>(r.installation)?.name ?? null,
-          demob_date: r.demob_date,
-        });
-      }
+    if (r.demob_date === today) departuresToday++;
+    // Overstay comes from the schedule state, not from demob_date alone: that
+    // is what catches somebody whose crew's phase closed weeks ago but who was
+    // never given a planned return date at all.
+    if (state === "overstaying") {
+      overstayers.push({
+        name: one<{ full_name?: string }>(r.person)?.full_name ?? "—",
+        installation: one<{ name?: string }>(r.installation)?.name ?? null,
+        demob_date: (r.demob_date as string | null) ?? null,
+      });
     }
   }
 
@@ -116,7 +176,17 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     // Visitors belong to no crew, but they are on board — without this the crew
     // chips sum to less than Current POB and the two never reconcile.
     byCrewMap.set("Unassigned", (byCrewMap.get("Unassigned") ?? 0) + 1);
+    byIdentity.visitor++;
+    const vState = scheduleStateOf({
+      todayIso: today,
+      demobDate: (v.return_date as string | null) ?? null,
+      mobilizeDate: (v.depart_date as string | null) ?? null,
+      cycle: null,
+    });
+    byScheduleState[vState]++;
     people.push({
+      identity: "visitor" as const,
+      schedule_state: vState,
       trip_id: `visit-${v.id}`,
       profile_id: null,
       name: v.is_casual ? `${v.visitor_name} (casual)` : v.visitor_name,
@@ -131,11 +201,13 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       mobilize_date: (v.depart_date as string) ?? today,
       demob_date: (v.return_date as string | null) ?? null,
     });
-    if (v.return_date) {
-      if (v.return_date === today) departuresToday++;
-      if (v.return_date < today) {
-        overstayers.push({ name: v.visitor_name, installation: instName, demob_date: v.return_date });
-      }
+    if (v.return_date === today) departuresToday++;
+    if (vState === "overstaying") {
+      overstayers.push({
+        name: v.visitor_name,
+        installation: instName,
+        demob_date: (v.return_date as string | null) ?? null,
+      });
     }
   }
 
@@ -165,6 +237,8 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       .map(([name, n]) => ({ name, pob: n }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     byCategory: { staff, visitor },
+    byIdentity,
+    byScheduleState,
     arrivalsToday,
     departuresToday,
     overstayers,

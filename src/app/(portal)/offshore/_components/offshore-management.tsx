@@ -31,6 +31,11 @@ import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
 import { offshorePeople } from "@/lib/offshore/people";
 import { countAwaitingBed, visitorsAwaitingBed } from "@/lib/offshore/visitor-queue";
 import { manifestDescriptor } from "@/lib/offshore/manifest-label";
+import {
+  EXCEPTION_STATES,
+  IDENTITY_LABEL,
+  SCHEDULE_STATE_LABEL,
+} from "@/lib/offshore/pob-classify";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -2392,7 +2397,23 @@ function PobPeopleRows({
           <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
             <span className="font-medium">{p.name}</span>
             {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
-            <span className="rounded bg-muted px-1 py-0.5 text-[10px] capitalize text-muted-foreground">{p.category}</span>
+            <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+              {IDENTITY_LABEL[p.identity]}
+            </span>
+            {p.schedule_state !== "on_schedule" && (
+              <span
+                className={cn(
+                  "rounded px-1 py-0.5 text-[10px]",
+                  p.schedule_state === "overstaying"
+                    ? "bg-destructive/10 text-destructive"
+                    : p.schedule_state === "unscheduled"
+                      ? "bg-muted text-muted-foreground"
+                      : "bg-amber-100 text-amber-800",
+                )}
+              >
+                {SCHEDULE_STATE_LABEL[p.schedule_state]}
+              </span>
+            )}
             <span className="ml-auto text-xs text-muted-foreground">
               {p.crew_name ?? "—"} · {p.room_label ?? "no bed"}{p.bed_no ? ` · ${p.bed_no}` : ""}{p.lifeboat ? ` · ${p.lifeboat}` : ""}
             </span>
@@ -2481,7 +2502,9 @@ function OverstayerRows({ list }: { list: PobBreakdown["overstayers"] }) {
         <div key={i} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
           <span className="font-medium">{o.name}</span>
           <span className="text-xs text-muted-foreground">{o.installation ?? "—"}</span>
-          <span className="ml-auto text-xs text-amber-700">due {o.demob_date}</span>
+          <span className="ml-auto text-xs text-amber-700">
+            {o.demob_date ? `due ${o.demob_date}` : "no return date set"}
+          </span>
         </div>
       ))}
     </>
@@ -2695,16 +2718,37 @@ function Dashboard({
     onClick: () => toggle({ type: "stat", key }),
     active: isOpen({ type: "stat", key }),
   });
-  const POB_STAT_KEYS = ["pob", "staff", "visitors", "arrivals", "departures", "overstayers"];
+  const POB_STAT_KEYS = [
+    "pob",
+    "rotational",
+    "non_rotational",
+    "visitors",
+    "arrivals",
+    "departures",
+    "overstayers",
+    ...EXCEPTION_STATES.map((s) => `sched:${s}`),
+  ];
   const blocked = (r: Room) => ["blocked", "maintenance"].includes(r.status);
   function statCard(key: string): { title: string; node: ReactNode } | null {
+    // Schedule-state chips drill into the same people list, filtered by state.
+    if (key.startsWith("sched:")) {
+      const state = key.slice(6) as PobOnboard["schedule_state"];
+      const list = pob.people.filter((p) => p.schedule_state === state);
+      return {
+        title: `${SCHEDULE_STATE_LABEL[state]} (${list.length})`,
+        node: <PobPeopleRows people={list} canDemob={canDecide} />,
+      };
+    }
+    const byIdentity = (id: PobOnboard["identity"]) => pob.people.filter((p) => p.identity === id);
     switch (key) {
       case "pob":
         return { title: `On board now (${pob.total})`, node: <PobPeopleRows people={pob.people} canDemob={canDecide} /> };
-      case "staff":
-        return { title: `Offshore staff on board (${pob.byCategory.staff})`, node: <PobPeopleRows people={pob.people.filter((p) => p.category === "staff")} canDemob={canDecide} /> };
+      case "rotational":
+        return { title: `Rotational staff on board (${pob.byIdentity.rotational})`, node: <PobPeopleRows people={byIdentity("rotational")} canDemob={canDecide} /> };
+      case "non_rotational":
+        return { title: `Non-rotational staff on board (${pob.byIdentity.non_rotational})`, node: <PobPeopleRows people={byIdentity("non_rotational")} canDemob={canDecide} /> };
       case "visitors":
-        return { title: `Visitors on board (${pob.byCategory.visitor})`, node: <PobPeopleRows people={pob.people.filter((p) => p.category === "visitor")} canDemob={canDecide} /> };
+        return { title: `Visitors on board (${pob.byIdentity.visitor})`, node: <PobPeopleRows people={byIdentity("visitor")} canDemob={canDecide} /> };
       case "arrivals":
         return { title: `Arrived today (${pob.arrivalsToday})`, node: <PobPeopleRows people={pob.people.filter((p) => p.mobilize_date === today)} canDemob={canDecide} /> };
       case "departures":
@@ -2759,14 +2803,42 @@ function Dashboard({
           </Button>
         </div>
         {error && <p className="mb-2 rounded-md bg-destructive/10 px-3 py-1.5 text-sm text-destructive">{error}</p>}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {/* Two independent axes. These cards answer "what is this person"; the
+            strip below answers "are they where the schedule expects them". */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           <Stat label="Current POB" value={pob.total} {...statDrill("pob")} />
-          <Stat label="Offshore staff" value={pob.byCategory.staff} {...statDrill("staff")} />
-          <Stat label="Visitors" value={pob.byCategory.visitor} {...statDrill("visitors")} />
+          <Stat label="Rotational staff" value={pob.byIdentity.rotational} {...statDrill("rotational")} />
+          <Stat label="Non-rotational staff" value={pob.byIdentity.non_rotational} {...statDrill("non_rotational")} />
+          <Stat label="Visitors" value={pob.byIdentity.visitor} {...statDrill("visitors")} />
           <Stat label="Arrivals today" value={pob.arrivalsToday} {...statDrill("arrivals")} />
           <Stat label="Departures today" value={pob.departuresToday} {...statDrill("departures")} />
           <Stat label="Overstayers" value={pob.overstayers.length} {...statDrill("overstayers")} />
         </div>
+        {EXCEPTION_STATES.some((s) => pob.byScheduleState[s] > 0) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="font-medium text-muted-foreground">Against schedule:</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground">
+              On schedule · {pob.byScheduleState.on_schedule}
+            </span>
+            {EXCEPTION_STATES.filter((s) => pob.byScheduleState[s] > 0).map((s) => (
+              <button
+                key={s}
+                onClick={() => toggle({ type: "stat", key: `sched:${s}` })}
+                className={cn(
+                  "rounded-full px-2 py-0.5 font-medium",
+                  s === "overstaying"
+                    ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                    : s === "unscheduled"
+                      ? "bg-muted text-muted-foreground hover:bg-accent"
+                      : "bg-amber-100 text-amber-800 hover:bg-amber-200",
+                  isOpen({ type: "stat", key: `sched:${s}` }) && "ring-1 ring-primary",
+                )}
+              >
+                {SCHEDULE_STATE_LABEL[s]} · {pob.byScheduleState[s]}
+              </button>
+            ))}
+          </div>
+        )}
         {statDrillCard("pob")}
         {pob.byInstallation.length > 0 && (
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
