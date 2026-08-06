@@ -1,4 +1,5 @@
 import { getAccess } from "@/lib/auth";
+import { manifestDescriptor } from "@/lib/offshore/manifest-label";
 import { getManifestById } from "@/lib/offshore";
 import { TRIP_TYPE_LABEL } from "@/types/offshore";
 import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
@@ -23,8 +24,8 @@ export default async function ManifestReportPage({
 
   const travelling = m.pax.filter((p) => !p.no_show);
   const noShow = m.pax.filter((p) => p.no_show);
-  const directionLabel = m.direction === "out" ? "Inbound — joining installation" : "Outbound — leaving installation";
-  const mode = (m.transport_mode ?? "—").replace(/^\w/, (c) => c.toUpperCase());
+  // Derived from the columns: the stored title contradicts the data on some rows.
+  const desc = manifestDescriptor(m);
 
   const Cell = ({ label, value }: { label: string; value: string }) => (
     <div>
@@ -50,14 +51,15 @@ export default async function ManifestReportPage({
         <ReportHeader
           title="Passenger manifest"
           subtitle="Offshore logistics"
-          meta={[TRIP_TYPE_LABEL[m.trip_type] ?? m.trip_type, m.status.toUpperCase()]}
+          meta={[desc.movement, desc.transport, m.status.toUpperCase()]}
         />
 
         {/* Meta */}
         <div className="grid grid-cols-2 gap-x-8 gap-y-3 py-4 sm:grid-cols-3">
-          <Cell label="Movement" value={m.title} />
-          <Cell label="Direction" value={directionLabel} />
-          <Cell label="Transport" value={mode} />
+          <Cell label="Movement" value={desc.summary} />
+          <Cell label="Direction" value={desc.movementLong} />
+          <Cell label="Route" value={desc.route} />
+          <Cell label="Transport" value={desc.transport} />
           <Cell label="Scheduled date" value={m.scheduled_date} />
           <Cell label="Installation" value={m.installation_name ?? "—"} />
           <Cell label="Crew" value={m.crew_name ?? "—"} />

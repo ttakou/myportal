@@ -30,6 +30,7 @@ import { bedKey, duplicateBedKeys, roomBedIssues } from "@/lib/offshore/bed-issu
 import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
 import { offshorePeople } from "@/lib/offshore/people";
 import { countAwaitingBed, visitorsAwaitingBed } from "@/lib/offshore/visitor-queue";
+import { manifestDescriptor } from "@/lib/offshore/manifest-label";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -1727,7 +1728,10 @@ function ManifestHistory({
     .filter((m) => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
+      // Search what is shown — "mob", "demob", "helicopter", the route — not the
+      // stored title, which the card no longer displays.
       return (
+        manifestDescriptor(m).summary.toLowerCase().includes(q) ||
         m.title.toLowerCase().includes(q) ||
         (m.installation_name ?? "").toLowerCase().includes(q) ||
         (m.crew_name ?? "").toLowerCase().includes(q) ||
@@ -1826,6 +1830,10 @@ function ManifestCard({
   const editable = m.status === "draft" || m.status === "approved";
   const canEditTransport = m.status !== "completed" && m.status !== "cancelled";
 
+  // Derived from the manifest's own columns: the stored title was baked by more
+  // than one code path and contradicts the data on some rows.
+  const desc = manifestDescriptor(m);
+
   const [editingTransport, setEditingTransport] = useState(false);
   const [editMode, setEditMode] = useState<"helicopter" | "boat">(
     m.transport_mode === "helicopter" ? "helicopter" : "boat",
@@ -1838,8 +1846,23 @@ function ManifestCard({
         <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", MANIFEST_STYLE[m.status])}>
           {MANIFEST_STATUS_LABEL[m.status]}
         </span>
-        <span className="font-medium">{m.title}</span>
-        <span className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[m.trip_type] ?? m.trip_type}</span>
+        {m.crew_name && <span className="font-medium">{m.crew_name}</span>}
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[11px] font-semibold",
+            desc.movement === "MOB"
+              ? "bg-green-100 text-green-800"
+              : "bg-blue-100 text-blue-800",
+          )}
+          title={desc.movementLong}
+        >
+          {desc.movement}
+        </span>
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          {desc.transport}
+        </span>
+        <span className="text-xs text-muted-foreground">{desc.route}</span>
+        <span className="text-xs font-medium tabular-nums">{desc.date}</span>
         <span className={cn("ml-auto text-xs", overCapacity ? "font-medium text-destructive" : "text-muted-foreground")}>
           {travelling.length}/{m.seat_capacity} seats
         </span>
