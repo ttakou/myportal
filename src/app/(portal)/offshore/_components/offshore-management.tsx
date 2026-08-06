@@ -31,6 +31,7 @@ import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
 import { offshorePeople } from "@/lib/offshore/people";
 import { countAwaitingBed, visitorsAwaitingBed } from "@/lib/offshore/visitor-queue";
 import { manifestDescriptor } from "@/lib/offshore/manifest-label";
+import { crewManifestPreview, nextCrewChangeDate } from "@/lib/offshore/crew-preview";
 import {
   EXCEPTION_STATES,
   IDENTITY_LABEL,
@@ -246,7 +247,13 @@ export function OffshoreManagement(props: {
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
       {tab === "crews" && (
-        <CrewsPanel crews={props.crews} installations={props.installations} suggestions={props.suggestions} />
+        <CrewsPanel
+          crews={props.crews}
+          installations={props.installations}
+          suggestions={props.suggestions}
+          roster={props.roster}
+          onboard={props.pob.people}
+        />
       )}
       {tab === "calendar" && <RotationCalendarPanel calendar={props.calendar} crews={props.crews} />}
       {tab === "attendance" && <AttendancePanel installations={props.installations} />}
@@ -3256,18 +3263,102 @@ function CrewNameEditor({
   );
 }
 
+/**
+ * Read-only passenger list for a crew: exactly who a generated crew manifest
+ * would carry, plus the date each direction would be stamped with. Nothing here
+ * writes — it exists so the list can be checked before a manifest is created.
+ */
+function CrewManifestPreview({
+  crew,
+  roster,
+  onboard,
+  today,
+}: {
+  crew: Crew;
+  roster: RosterEntry[];
+  onboard: PobOnboard[];
+  today: string;
+}) {
+  const cycle = {
+    offshore_days: crew.offshore_days,
+    onshore_days: crew.onshore_days,
+    cycle_start_date: crew.cycle_start_date,
+  };
+  const preview = crewManifestPreview({ crewId: crew.id, roster, onboard });
+  const outDate = nextCrewChangeDate({ todayIso: today, direction: "out", cycle });
+  const inDate = nextCrewChangeDate({ todayIso: today, direction: "in", cycle });
+
+  return (
+    <div className="mt-2 rounded-md border border-dashed bg-muted/30 p-2">
+      <p className="text-[11px] text-muted-foreground">
+        Preview only — nothing is created until you press a manifest button. Both buttons put the
+        whole crew on the manifest.
+      </p>
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        <span className="font-medium">{preview.members.length} on the manifest</span>
+        <span className="text-muted-foreground">{preview.onboardCount} already on board</span>
+        <span className="text-muted-foreground">{preview.ashoreCount} ashore</span>
+        {preview.blockedCount > 0 && (
+          <span className="font-medium text-destructive">
+            {preview.blockedCount} cannot travel — certificates
+          </span>
+        )}
+      </div>
+      {(outDate || inDate) && (
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          Would be dated — Inbound (board): {outDate ?? "—"} · Outbound (demob): {inDate ?? "—"}
+        </p>
+      )}
+      {preview.members.length === 0 ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Nobody is on this crew — a manifest cannot be generated.
+        </p>
+      ) : (
+        <div className="mt-1 max-h-56 overflow-y-auto">
+          {preview.members.map((m) => (
+            <div
+              key={m.profile_id}
+              className="flex flex-wrap items-center gap-2 border-b py-1 text-xs last:border-0"
+            >
+              <span className="font-medium">{m.name}</span>
+              {m.position && <span className="text-muted-foreground">{m.position}</span>}
+              {!m.travel_eligible && (
+                <span className="rounded bg-destructive/10 px-1 py-0.5 text-[10px] text-destructive">
+                  Cannot travel
+                </span>
+              )}
+              <span className="ml-auto text-muted-foreground">
+                {m.onboard ? `On board${m.room_label ? ` · ${m.room_label}` : ""}` : "Ashore"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CrewsPanel({
   crews,
   installations,
   suggestions,
+  roster,
+  onboard,
 }: {
   crews: Crew[];
   installations: Installation[];
   suggestions: CrewChangeSuggestion[];
+  roster: RosterEntry[];
+  onboard: PobOnboard[];
 }) {
   // crew → which movement is due now (mobilise = outbound, demobilise = inbound)
   const dueByCrew = new Map(suggestions.map((s) => [s.crew_id, s.action]));
   const { pending, error, run } = useRun();
+  // Which crew's passenger list is open. Looking is not the same as generating:
+  // both manifest buttons write immediately, so this is the way to check the
+  // list — and the dates — before creating anything.
+  const [preview, setPreview] = useState<string | null>(null);
+  const today = new Date().toISOString().slice(0, 10);
   const [name, setName] = useState("");
   const [installationId, setInstallationId] = useState("");
   const [rotation, setRotation] = useState("14/14");
@@ -3299,7 +3390,24 @@ function CrewsPanel({
               {c.transport_mode ? ` · ${c.transport_mode}` : ""}
               {c.departure_location ? ` · from ${c.departure_location}` : ""}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">{c.member_count} member(s)</p>
+            <button
+              type="button"
+              onClick={() => setPreview((cur) => (cur === c.id ? null : c.id))}
+              aria-expanded={preview === c.id}
+              className="mt-1 flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              {c.member_count} member(s)
+              <ChevronDown className={cn("h-3 w-3 transition-transform", preview === c.id && "rotate-180")} />
+              <span>— see who is on the manifest</span>
+            </button>
+            {preview === c.id && (
+              <CrewManifestPreview
+                crew={c}
+                roster={roster}
+                onboard={onboard}
+                today={today}
+              />
+            )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <label className="text-xs text-muted-foreground">
                 Cycle start
