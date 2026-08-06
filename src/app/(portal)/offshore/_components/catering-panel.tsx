@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Download, Trash2, UtensilsCrossed } from "lucide-react";
+import { Download, FileText, Trash2, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
 import { Button } from "@/components/ui/button";
 import type { Installation } from "@/types/offshore";
 import { MEAL_LABEL, MEAL_TIME, type MealEntry, type MealKind } from "@/types/offshore";
@@ -85,16 +86,16 @@ export function CateringPanel({ installations }: { installations: Installation[]
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `daily-meal-sheet-${date}.csv`;
+    a.download = `${mealSheetLabel(date).slug}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <UtensilsCrossed className="h-5 w-5 text-primary" />
-        <h3 className="font-semibold">Daily meal sheet</h3>
+        <h3 className="font-semibold">{mealSheetLabel(date).title}</h3>
       </div>
       <p className="text-xs text-muted-foreground">
         Breakfast {MEAL_TIME.breakfast} · Snack {MEAL_TIME.snack} · Lunch {MEAL_TIME.lunch} · Dinner{" "}
@@ -114,9 +115,20 @@ export function CateringPanel({ installations }: { installations: Installation[]
           Generate from POB
         </Button>
         {entries.length > 0 && (
-          <Button size="sm" variant="outline" onClick={exportCsv}>
-            <Download className="h-4 w-4" /> Export
-          </Button>
+          <>
+            <Button size="sm" variant="outline" onClick={exportCsv}>
+              <Download className="h-4 w-4" /> Export
+            </Button>
+            {/* The saved sheet as a labelled document, to review, sign or file. */}
+            <a
+              href={`/offshore-meals?installation=${installationId}&date=${date}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              <FileText className="h-4 w-4" /> Open meal sheet
+            </a>
+          </>
         )}
       </div>
 

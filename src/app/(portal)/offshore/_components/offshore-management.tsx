@@ -329,7 +329,15 @@ export function OffshoreManagement(props: {
  * visitors, with no count and no prompt. Grouped by installation because a
  * Campboss runs one platform.
  */
-function VisitorBookingQueue({ visits }: { visits: VisitRequest[] }) {
+function VisitorBookingQueue({
+  visits,
+  canDemob = false,
+}: {
+  visits: VisitRequest[];
+  /** Demobilising is an `operate` act — managers and the Dispatcher. */
+  canDemob?: boolean;
+}) {
+  const { pending, error, run } = useRun();
   const groups = useMemo(
     () =>
       visitorsAwaitingBed(
@@ -366,6 +374,11 @@ function VisitorBookingQueue({ visits }: { visits: VisitRequest[] }) {
           Book rooms
         </Link>
       </div>
+      {error && (
+        <p className="mx-3 mt-2 rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+          {error}
+        </p>
+      )}
       <div className="space-y-2 p-3">
         {groups.map((g) => (
           <div key={g.installation_id ?? "none"}>
@@ -385,6 +398,25 @@ function VisitorBookingQueue({ visits }: { visits: VisitRequest[] }) {
                     <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
                       already on board
                     </span>
+                  )}
+                  {canDemob && (
+                    <button
+                      type="button"
+                      disabled={pending}
+                      title={`Demob ${v.visitor_name} — use when they are on this list by mistake`}
+                      onClick={() => {
+                        if (
+                          confirm(
+                            `Demob ${v.visitor_name}?\n\nThey leave this queue, stop counting on POB and drop off the meal sheet. Use this when they are here by mistake or did not travel.`,
+                          )
+                        ) {
+                          run(() => setVisitorMovement(v.id, "returned"));
+                        }
+                      }}
+                      className="ml-auto rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-medium hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      Demob
+                    </button>
                   )}
                 </li>
               ))}
@@ -2672,7 +2704,7 @@ function Dashboard({
   return (
     <div className="space-y-5">
       <PendingApprovals visits={visits} trips={trips} canDecide={canDecide} />
-      <VisitorBookingQueue visits={visits} />
+      <VisitorBookingQueue visits={visits} canDemob={canDecide} />
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
