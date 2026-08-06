@@ -89,7 +89,10 @@ export async function createManifest(input: {
     .from("offshore_manifests")
     .insert({
       tenant_id: tenant,
-      title: `${crewName} · ${input.direction === "out" ? "inbound" : "outbound"} · ${modeLabel} · ${input.scheduledDate}`,
+      // MOB/DEMOB rather than inbound/outbound: sites use those words in
+      // opposite senses, and the old formula produced titles that
+      // contradicted the direction column.
+      title: `${crewName} · ${input.direction === "out" ? "MOB" : "DEMOB"} · ${modeLabel} · ${input.scheduledDate}`,
       crew_id: input.crewId || null,
       installation_id: installationId,
       trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
@@ -215,7 +218,7 @@ export async function generateCrewManifest(input: {
     .from("offshore_manifests")
     .insert({
       tenant_id: tenant,
-      title: `${crew.name} · ${input.direction === "out" ? "inbound" : "outbound"} · ${input.scheduledDate}`,
+      title: `${crew.name} · ${input.direction === "out" ? "MOB" : "DEMOB"} · ${crew.transport_mode ?? "transport not set"} · ${input.scheduledDate}`,
       crew_id: input.crewId,
       installation_id: crew.installation_id,
       trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
