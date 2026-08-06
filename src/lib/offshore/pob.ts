@@ -53,7 +53,11 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
   const people: PobBreakdown["people"] = [];
 
   for (const r of rows as Record<string, any>[]) {
-    if (r.category === "visitor") visitor++;
+    // Anyone on board who is not in a rotation crew counts as a visitor: the
+    // "Offshore staff" figure is meant to be the rotating workforce, and a
+    // crewless person is not part of it whatever their trip was labelled.
+    const countsAsVisitor = r.category === "visitor" || !r.crew_id;
+    if (countsAsVisitor) visitor++;
     else staff++;
     const crewName = one<{ name?: string }>(r.crew)?.name ?? null;
     const crew = crewName ?? "Unassigned";
@@ -70,7 +74,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       trip_id: r.id as string,
       profile_id: (r.profile_id as string | null) ?? null,
       name: one<{ full_name?: string }>(r.person)?.full_name ?? "—",
-      category: r.category === "visitor" ? "visitor" : "staff",
+      category: countsAsVisitor ? "visitor" : "staff",
       crew_id: (r.crew_id as string | null) ?? null,
       crew_name: crewName,
       lifeboat: muster,

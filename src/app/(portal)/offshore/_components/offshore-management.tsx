@@ -2368,13 +2368,27 @@ function DrillCard({
 }
 
 /** Compact rows for a list of on-board people in a stat drill-down. */
-function PobPeopleRows({ people }: { people: PobOnboard[] }) {
+function PobPeopleRows({
+  people,
+  canDemob = false,
+}: {
+  people: PobOnboard[];
+  /** Demobilising is an `operate` act — managers and the Dispatcher. */
+  canDemob?: boolean;
+}) {
+  const { pending, error, run } = useRun();
   if (people.length === 0) return <p className="py-1 text-xs text-muted-foreground">None.</p>;
   return (
     <>
+      {error && (
+        <p className="my-1 rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{error}</p>
+      )}
       {[...people]
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((p) => (
+        .map((p) => {
+          // A visitor booking carries no trip; its row id is "visit-<id>".
+          const visitId = p.trip_id.startsWith("visit-") ? p.trip_id.slice(6) : null;
+          return (
           <div key={p.trip_id} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
             <span className="font-medium">{p.name}</span>
             {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
@@ -2382,8 +2396,30 @@ function PobPeopleRows({ people }: { people: PobOnboard[] }) {
             <span className="ml-auto text-xs text-muted-foreground">
               {p.crew_name ?? "—"} · {p.room_label ?? "no bed"}{p.bed_no ? ` · ${p.bed_no}` : ""}{p.lifeboat ? ` · ${p.lifeboat}` : ""}
             </span>
+            {canDemob && (
+              <button
+                type="button"
+                disabled={pending}
+                title={`Demob ${p.name} — they leave POB, the muster roll and the meal sheet`}
+                onClick={() => {
+                  if (
+                    !confirm(
+                      `Demob ${p.name}?\n\nThey come off POB, the muster roll and the meal sheet. Use this when they have gone ashore, or are on this list by mistake.`,
+                    )
+                  )
+                    return;
+                  run(() =>
+                    visitId ? setVisitorMovement(visitId, "returned") : offboardTrip(p.trip_id),
+                  );
+                }}
+                className="rounded border px-1.5 py-0.5 text-[11px] hover:bg-destructive/10 hover:text-destructive"
+              >
+                Demob
+              </button>
+            )}
           </div>
-        ))}
+          );
+        })}
     </>
   );
 }
@@ -2664,15 +2700,15 @@ function Dashboard({
   function statCard(key: string): { title: string; node: ReactNode } | null {
     switch (key) {
       case "pob":
-        return { title: `On board now (${pob.total})`, node: <PobPeopleRows people={pob.people} /> };
+        return { title: `On board now (${pob.total})`, node: <PobPeopleRows people={pob.people} canDemob={canDecide} /> };
       case "staff":
-        return { title: `Offshore staff on board (${pob.byCategory.staff})`, node: <PobPeopleRows people={pob.people.filter((p) => p.category === "staff")} /> };
+        return { title: `Offshore staff on board (${pob.byCategory.staff})`, node: <PobPeopleRows people={pob.people.filter((p) => p.category === "staff")} canDemob={canDecide} /> };
       case "visitors":
-        return { title: `Visitors on board (${pob.byCategory.visitor})`, node: <PobPeopleRows people={pob.people.filter((p) => p.category === "visitor")} /> };
+        return { title: `Visitors on board (${pob.byCategory.visitor})`, node: <PobPeopleRows people={pob.people.filter((p) => p.category === "visitor")} canDemob={canDecide} /> };
       case "arrivals":
-        return { title: `Arrived today (${pob.arrivalsToday})`, node: <PobPeopleRows people={pob.people.filter((p) => p.mobilize_date === today)} /> };
+        return { title: `Arrived today (${pob.arrivalsToday})`, node: <PobPeopleRows people={pob.people.filter((p) => p.mobilize_date === today)} canDemob={canDecide} /> };
       case "departures":
-        return { title: `Departing today (${pob.departuresToday})`, node: <PobPeopleRows people={pob.people.filter((p) => p.demob_date === today)} /> };
+        return { title: `Departing today (${pob.departuresToday})`, node: <PobPeopleRows people={pob.people.filter((p) => p.demob_date === today)} canDemob={canDecide} /> };
       case "overstayers":
         return { title: `Overstayers (${pob.overstayers.length})`, node: <OverstayerRows list={pob.overstayers} /> };
       case "rooms":
@@ -2680,7 +2716,7 @@ function Dashboard({
       case "beds":
         return { title: `Usable beds (${accommodation.totalBeds})`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r))} /> };
       case "occupied":
-        return { title: `Occupied — who's in a bed (${accommodation.occupiedBeds})`, node: <PobPeopleRows people={pob.people.filter((p) => p.room_id)} /> };
+        return { title: `Occupied — who's in a bed (${accommodation.occupiedBeds})`, node: <PobPeopleRows people={pob.people.filter((p) => p.room_id)} canDemob={canDecide} /> };
       case "available":
         return { title: `Rooms with a free bed (${accommodation.availableBeds} beds)`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r) && Math.max(0, (r.bed_count || 0) - r.occupied) > 0)} showFree /> };
       case "fixed":
