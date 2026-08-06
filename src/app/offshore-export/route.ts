@@ -2,12 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAccess } from "@/lib/auth";
 import {
   getManifestById,
+  getMealSheet,
   getManifests,
   getMusterDrill,
   getRoomAllocationAsOf,
   getRoster,
   getRotationReport,
 } from "@/lib/offshore";
+import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -70,6 +72,28 @@ export async function GET(req: NextRequest) {
       }
     }
     return csvResponse(`room-allocation-${date}.csv`, rows);
+  }
+
+  if (type === "meals") {
+    const date = sp.get("date") || today();
+    const installationId = sp.get("installation") || "";
+    const entries = installationId ? await getMealSheet(installationId, date) : [];
+    const rows: (string | number | null)[][] = [
+      ["Name", "Category", "Breakfast", "Snack", "Lunch", "Dinner", "Lodging"],
+    ];
+    const yn = (b: boolean) => (b ? "Y" : "N");
+    for (const e of entries) {
+      rows.push([
+        e.person_name,
+        e.category,
+        yn(e.breakfast),
+        yn(e.snack),
+        yn(e.lunch),
+        yn(e.dinner),
+        yn(e.lodging),
+      ]);
+    }
+    return csvResponse(`${mealSheetLabel(date).slug}.csv`, rows);
   }
 
   if (type === "rotation") {

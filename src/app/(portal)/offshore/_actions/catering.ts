@@ -34,17 +34,26 @@ export async function generateMealSheet(
   if (!tenant) return { ok: false, error: "No tenant in scope." };
 
   const [{ data: trips }, { data: visits }] = await Promise.all([
+    // Everyone on board, not only those whose trip records an installation.
+    // Most trips carry none - 94 of 156 in production - and filtering on it
+    // strictly left the majority of POB off the sheet entirely. Someone whose
+    // installation was never recorded is still aboard and still eats; the
+    // filtering happens below so they can be included deliberately.
     supabase
       .from("offshore_trips")
-      .select("mobilize_date, demob_date, person:profiles!offshore_trips_profile_id_fkey(full_name, email)")
-      .eq("installation_id", installationId)
+      .select(
+        "mobilize_date, demob_date, installation_id, person:profiles!offshore_trips_profile_id_fkey(full_name, email)",
+      )
       .eq("status", "onboard")
       .lte("mobilize_date", date),
+    // Approved as well as on board: a visitor with no bed yet is still offshore
+    // and still eats. Excluding them starved anyone the Campboss had not
+    // allocated a room to. One there by mistake is demobbed from the dashboard
+    // queue, which is cheaper than missing a meal.
     supabase
       .from("offshore_visit_requests")
-      .select("visitor_name, depart_date, return_date")
-      .eq("installation_id", installationId)
-      .eq("status", "onboard")
+      .select("visitor_name, depart_date, return_date, status, installation_id")
+      .in("status", ["onboard", "approved"])
       .lte("depart_date", date),
   ]);
 
@@ -52,6 +61,9 @@ export async function generateMealSheet(
   const people: Row[] = [];
   for (const t of trips ?? []) {
     if (t.demob_date && (t.demob_date as string) < date) continue;
+    // On this installation, or on none at all — never on a different one.
+    const tripInstallation = (t.installation_id as string | null) ?? null;
+    if (tripInstallation && tripInstallation !== installationId) continue;
     const p = Array.isArray(t.person) ? t.person[0] : t.person;
     people.push({
       name: (p?.full_name as string) || (p?.email as string) || "Crew",
@@ -62,6 +74,8 @@ export async function generateMealSheet(
   }
   for (const v of visits ?? []) {
     if (v.return_date && (v.return_date as string) < date) continue;
+    const visitInstallation = (v.installation_id as string | null) ?? null;
+    if (visitInstallation && visitInstallation !== installationId) continue;
     people.push({
       name: v.visitor_name as string,
       category: "visitor",
