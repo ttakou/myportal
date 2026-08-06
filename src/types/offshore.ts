@@ -237,6 +237,13 @@ export interface PobBreakdown {
   /** On-board headcount per lifeboat / muster station (LB-1, LB-2, …). */
   byLifeboat: { name: string; pob: number }[];
   byCategory: { staff: number; visitor: number };
+  /** Headline split by what someone IS (roster-derived, stable). */
+  byIdentity: Record<"rotational" | "non_rotational" | "visitor", number>;
+  /** Exceptions: where each person sits against their crew's cycle today. */
+  byScheduleState: Record<
+    "on_schedule" | "due_ashore" | "overstaying" | "early" | "unscheduled",
+    number
+  >;
   arrivalsToday: number;
   departuresToday: number;
   overstayers: { name: string; installation: string | null; demob_date: string | null }[];
@@ -246,6 +253,10 @@ export interface PobBreakdown {
 
 /** A single on-board person, used for dashboard drill-downs. */
 export interface PobOnboard {
+  /** What they are: from the roster, independent of their crew. */
+  identity: "rotational" | "non_rotational" | "visitor";
+  /** Where they are versus their crew's cycle today. */
+  schedule_state: "on_schedule" | "due_ashore" | "overstaying" | "early" | "unscheduled";
   trip_id: string;
   profile_id: string | null;
   name: string;

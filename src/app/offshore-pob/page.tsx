@@ -1,6 +1,7 @@
 import { getAccess } from "@/lib/auth";
 import { getPobBreakdown, getRotationFlags } from "@/lib/offshore";
 import { ROTATION_FLAG_KIND_LABEL, ROTATION_FLAG_REASON_LABEL, type PobOnboard } from "@/types/offshore";
+import { IDENTITY_LABEL } from "@/lib/offshore/pob-classify";
 import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
@@ -48,8 +49,9 @@ export default async function PobRosterPage() {
 
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-700">
           <span className="font-semibold">{pob.total} on board</span>
-          <span>{pob.byCategory.staff} staff</span>
-          <span>{pob.byCategory.visitor} visitors</span>
+          <span>{pob.byIdentity.rotational} rotational</span>
+          <span>{pob.byIdentity.non_rotational} non-rotational</span>
+          <span>{pob.byIdentity.visitor} visitors</span>
           {pob.byLifeboat.map((lb) => (
             <span key={lb.name}>{lb.name}: {lb.pob}</span>
           ))}
@@ -78,7 +80,7 @@ export default async function PobRosterPage() {
                   <tr key={p.trip_id} className="border-b border-gray-100">
                     <td className={`${td} tabular-nums text-gray-400`}>{i + 1}</td>
                     <td className={`${td} font-semibold`} style={{ color: "#dc2626" }}>{p.name}</td>
-                    <td className={`${td} capitalize text-gray-700`}>{p.category}</td>
+                    <td className={`${td} text-gray-700`}>{IDENTITY_LABEL[p.identity]}</td>
                     <td className={`${td} text-gray-700`}>{p.company ?? "—"}</td>
                     <td className={`${td} text-gray-700`}>
                       {p.room_label ?? "—"}{p.bed_no ? ` · ${p.bed_no}` : ""}
