@@ -110,44 +110,79 @@ function preset(
  * per cycle, and sent them one copy of every notice per cycle. They are phases
  * of one annual cycle, and this is that cycle expressed as stages.
  *
- * Each phase is owned by whoever closes it. Day offsets are counted from the
- * cycle's start date, so the same sequence re-dates itself for any year.
+ * The first three phases carry the employee's input as well as the manager's,
+ * so each is two stages: the employee contributes, then the manager assesses
+ * and closes the phase. A stage only opens its fields to the role that owns it,
+ * so one stage per phase would have shut the employee out of their own
+ * mid-year and final assessment.
+ *
+ * Day offsets run from the cycle's start date, so the same sequence re-dates
+ * itself for any year. Each phase keeps the deadline its old cycle carried, and
+ * the employee's step falls a fortnight ahead of it.
  */
 export const HOUSE_PHASES: WorkflowStage[] = [
-  {
-    ...preset("goals_setting", "Goals Setting", "employee", 89, ["goals", "key_results"]),
-  },
-  {
-    ...preset(
-      "mid_year_review",
-      "Mid Year Review",
-      "line_manager",
-      180,
-      ["manager_rating", "manager_comment"],
-      { approve: true, return: true },
-    ),
-  },
-  {
-    ...preset(
-      "final_review",
-      "Final Review",
-      "line_manager",
-      338,
-      ["manager_rating", "manager_comment", "overall_rating"],
-      { approve: true, return: true },
-    ),
-  },
-  {
-    ...preset("annual_calibration", "Annual Calibration", "calibration", 348, ["overall_rating"], {
-      approve: true,
-    }),
-  },
-  {
-    ...preset("final_appraisal", "Final Appraisal", "employee", 364, ["employee_comment"], {
-      approve: true,
-    }),
-  },
+  // 1 — Goals Setting: due 31 Mar for a calendar-year cycle.
+  preset("goals_setting_employee", "Goals Setting — employee submits", "employee", 75, [
+    "goals",
+    "key_results",
+  ]),
+  preset(
+    "goals_setting_manager",
+    "Goals Setting — manager approves",
+    "line_manager",
+    89,
+    ["goals"],
+    { approve: true, return: true },
+  ),
+
+  // 2 — Mid Year Review: due 30 Jun.
+  preset("mid_year_employee", "Mid Year Review — employee self-assessment", "employee", 166, [
+    "self_rating",
+    "employee_comment",
+    "key_results",
+  ]),
+  preset(
+    "mid_year_manager",
+    "Mid Year Review — manager assessment",
+    "line_manager",
+    180,
+    ["manager_rating", "manager_comment"],
+    { approve: true, return: true },
+  ),
+
+  // 3 — Final Review: due 5 Dec.
+  preset("final_review_employee", "Final Review — employee self-assessment", "employee", 324, [
+    "self_rating",
+    "employee_comment",
+  ]),
+  preset(
+    "final_review_manager",
+    "Final Review — manager assessment",
+    "line_manager",
+    338,
+    ["manager_rating", "manager_comment", "overall_rating"],
+    { approve: true, return: true },
+  ),
+
+  // 4 — Annual Calibration: the committee's, not the employee's.
+  preset("annual_calibration", "Annual Calibration", "calibration", 348, ["overall_rating"], {
+    approve: true,
+  }),
+
+  // 5 — Final Appraisal: the employee signs the outcome off.
+  preset("final_appraisal", "Final Appraisal", "employee", 364, ["employee_comment"], {
+    approve: true,
+  }),
 ];
 
-/** The phase order, for anything that needs to check or display the sequence. */
-export const HOUSE_PHASE_ORDER = HOUSE_PHASES.map((s) => s.key);
+/** The five business phases, and which stages make up each one. */
+export const HOUSE_PHASE_GROUPS: { phase: string; stageKeys: string[] }[] = [
+  { phase: "Goals Setting", stageKeys: ["goals_setting_employee", "goals_setting_manager"] },
+  { phase: "Mid Year Review", stageKeys: ["mid_year_employee", "mid_year_manager"] },
+  { phase: "Final Review", stageKeys: ["final_review_employee", "final_review_manager"] },
+  { phase: "Annual Calibration", stageKeys: ["annual_calibration"] },
+  { phase: "Final Appraisal", stageKeys: ["final_appraisal"] },
+];
+
+/** The phase names in order, for anything that displays the sequence. */
+export const HOUSE_PHASE_ORDER = HOUSE_PHASE_GROUPS.map((g) => g.phase);
