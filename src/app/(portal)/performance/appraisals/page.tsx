@@ -151,6 +151,7 @@ export default async function AppraisalsPage({
         cycles={visibleCycles}
         selectedId={cycle?.id ?? null}
         canOpenPhase={access.isHr || access.isSystemAdmin || access.isAdmin}
+        pinnedPhase={cycle?.current_phase ?? null}
         phases={
           cycle
             ? cyclePhases({

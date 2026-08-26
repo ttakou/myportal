@@ -23,6 +23,7 @@ export function CycleSwitcher({
   selectedId,
   phases,
   canOpenPhase = false,
+  pinnedPhase = null,
 }: {
   cycles: AppraisalCycle[];
   selectedId: string | null;
@@ -30,6 +31,8 @@ export function CycleSwitcher({
   phases: CyclePhase[];
   /** HR and administrators may open a phase. */
   canOpenPhase?: boolean;
+  /** The phase opened by hand, if any — as opposed to one read off the dates. */
+  pinnedPhase?: string | null;
 }) {
   if (cycles.length === 0) return null;
   const ordered = [...cycles].sort(
@@ -69,7 +72,12 @@ export function CycleSwitcher({
               </Link>
 
               {selected && phases.length > 0 && (
-                <PhaseRail cycleId={c.id} phases={phases} canOpen={canOpenPhase} />
+                <PhaseRail
+                  cycleId={c.id}
+                  phases={phases}
+                  canOpen={canOpenPhase}
+                  isPinned={Boolean(pinnedPhase)}
+                />
               )}
 
               {selected && phases.length === 0 && (

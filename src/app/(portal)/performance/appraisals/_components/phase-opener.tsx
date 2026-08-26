@@ -29,11 +29,14 @@ export function PhaseRail({
   cycleId,
   phases,
   canOpen,
+  isPinned = false,
 }: {
   cycleId: string;
   phases: CyclePhase[];
   /** HR and administrators decide which phase is open. */
   canOpen: boolean;
+  /** True when a phase has been opened by hand rather than read off the dates. */
+  isPinned?: boolean;
 }) {
   const [pending, startTransition] = useStatusTransition("Opening…");
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +97,27 @@ export function PhaseRail({
         <p className="text-[11px] text-muted-foreground">
           Click a phase to open it. Each person still works through their own appraisal in order —
           opening a phase says where the cycle is, it does not move anybody past their steps.
+          {isPinned ? (
+            <>
+              {" "}
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setError(null);
+                  startTransition(async () => {
+                    const res = await setCyclePhase(cycleId, null);
+                    if (!res.ok) setError(res.error ?? "Couldn't clear the open phase.");
+                  });
+                }}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Follow the dates instead
+              </button>
+            </>
+          ) : (
+            " The phase is currently read from the stage dates."
+          )}
         </p>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
