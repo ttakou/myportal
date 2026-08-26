@@ -1,6 +1,8 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUsers } from "@/lib/notify";
+import { dispatchScheduledEvent } from "@/lib/notify-dispatch";
+import { deadlineEventFor, deadlinePhrase } from "@/lib/performance/deadline-notices";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -73,6 +75,31 @@ export async function runAppraisalReminders(
 
     for (const a of (appraisals ?? []) as Row[]) {
       if (["closed", "completed", "overdue"].includes(a.status)) continue;
+
+      // Cycles without a workflow template still have one real deadline — the
+      // goal-setting date. Raise the tenant's configured rules against it so
+      // people are warned before it lands, not only chased after.
+      const goalDeadline = c.goal_setting_deadline as string | null;
+      if (goalDeadline && a.stage === "goal_setting") {
+        const event = deadlineEventFor({ dueDate: goalDeadline, today });
+        if (event) {
+          await dispatchScheduledEvent(
+            event,
+            {
+              tenantId: a.tenant_id,
+              employeeIds: [a.employee_id],
+              managerIds: a.manager_id ? [a.manager_id] : [],
+              placeholders: {
+                stage: "Goal setting",
+                deadline: goalDeadline,
+                status: deadlinePhrase({ dueDate: goalDeadline, today }),
+              },
+              url: "/performance/appraisals",
+            },
+            { dueDate: goalDeadline, today },
+          );
+        }
+      }
 
       const goalsOverdue =
         a.stage === "goal_setting" &&

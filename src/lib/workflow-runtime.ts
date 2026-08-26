@@ -17,6 +17,10 @@ export interface AppraisalWorkflow {
   terminal: "completed" | "rejected" | null;
   /** Roles the signed-in user holds for THIS appraisal. */
   userRoles: StageRole[];
+  /** True when the user is an administrator who may stand in for anybody here. */
+  canProxy: boolean;
+  /** The three parties, so a proxy step can name who it was taken for. */
+  parties: { employee_id: string | null; manager_id: string | null; second_level_id: string | null };
 }
 
 /**
@@ -83,7 +87,8 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
     if (user.id === ap.manager_id) userRoles.push("line_manager");
     if (user.id === ap.second_level_id) userRoles.push("second_level");
   }
-  if (access.isHr || access.isSystemAdmin || access.isAdmin) {
+  const canProxy = access.isHr || access.isSystemAdmin || access.isAdmin;
+  if (canProxy) {
     userRoles.push("hr", "calibration");
   }
 
@@ -96,5 +101,11 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
     activeKeys,
     terminal: terminal ?? (activeKeys.length === 0 ? "completed" : null),
     userRoles,
+    canProxy,
+    parties: {
+      employee_id: (ap.employee_id as string | null) ?? null,
+      manager_id: (ap.manager_id as string | null) ?? null,
+      second_level_id: (ap.second_level_id as string | null) ?? null,
+    },
   };
 }

@@ -770,7 +770,15 @@ function History({ appraisal }: { appraisal: Appraisal }) {
         {appraisal.events.map((e) => (
           <li key={e.id}>
             <span className="text-foreground">{e.action.replace(/_/g, " ")}</span>
-            {e.actor_name ? ` · ${e.actor_name}` : ""} · {new Date(e.created_at).toLocaleString()}
+            {e.actor_name ? ` · ${e.actor_name}` : ""}
+            {/* A step somebody took for another person must never read as that
+                person's own work. */}
+            {e.on_behalf_of_name && (
+              <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
+                acting for {e.on_behalf_of_name}
+              </span>
+            )}{" "}
+            · {new Date(e.created_at).toLocaleString()}
             {e.comment ? ` — ${e.comment}` : ""}
           </li>
         ))}

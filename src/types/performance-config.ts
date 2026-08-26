@@ -37,8 +37,9 @@ export interface PerformanceConfig {
 
 /** Mirrors the DB column defaults — used when a tenant has no row yet. */
 export const DEFAULT_PERFORMANCE_CONFIG: PerformanceConfig = {
-  minGoals: 1,
-  maxGoals: 8,
+  // Three objectives is the house standard; a cycle may widen or narrow it.
+  minGoals: 3,
+  maxGoals: 3,
   minGoalWeight: 0,
   maxGoalWeight: 100,
   goalWeightsTotal100: true,

@@ -7,6 +7,7 @@ import {
   activeStageKeys,
   canAct,
   prevStageKey,
+  responsibleUserId,
   stageByKey,
   type StageAction,
 } from "@/lib/workflow-engine";
@@ -35,9 +36,14 @@ export async function advanceAppraisalStage(
 
   const stage = stageByKey(wf.stages, stageKey);
   if (!stage) return { ok: false, error: "Stage not found." };
-  if (!wf.userRoles.some((r) => canAct(stage, r))) {
+  // Whose step this is. An administrator may take it for them when the person
+  // cannot — off the rig, on leave, or signing on paper — and the event then
+  // names both parties so the timeline never reads as the person's own work.
+  const mine = wf.userRoles.some((r) => canAct(stage, r));
+  if (!mine && !wf.canProxy) {
     return { ok: false, error: "It's not your turn to act on this stage." };
   }
+  const onBehalfOf = mine ? null : responsibleUserId(stage.responsibleRole, wf.parties);
 
   const supabase = createClient();
   const {
@@ -78,6 +84,7 @@ export async function advanceAppraisalStage(
     actor_id: user?.id ?? null,
     stage: stage.key,
     action: `workflow_${action}`,
+    on_behalf_of: onBehalfOf,
   });
 
   revalidatePath("/performance/appraisals");

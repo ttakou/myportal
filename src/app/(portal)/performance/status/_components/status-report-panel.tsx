@@ -1,0 +1,359 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, Download, Search, UserCog } from "lucide-react";
+import { useStatusTransition } from "@/components/activity";
+import { Button } from "@/components/ui/button";
+import { SearchSelect } from "@/components/ui/search-select";
+import { setAppraisalReviewers } from "../../appraisals/actions";
+import { cn } from "@/lib/utils";
+import {
+  STAGE_STATE_LABEL,
+  type ParticipantProgress,
+} from "@/lib/performance/stage-progress";
+import type {
+  Colleague,
+  ReviewerAssignment,
+  StatusReport,
+} from "@/lib/performance/status-report";
+
+const field = "rounded-md border bg-background px-3 py-2 text-sm";
+
+type Filter = "all" | "late" | "open" | "done";
+
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "Everyone" },
+  { key: "late", label: "Running late" },
+  { key: "open", label: "Still open" },
+  { key: "done", label: "Complete" },
+];
+
+export function StatusReportPanel({ report }: { report: StatusReport }) {
+  const router = useRouter();
+  const [filter, setFilter] = useState<Filter>("all");
+  const [query, setQuery] = useState("");
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return report.rows.filter((r) => {
+      if (filter === "late" && r.daysLate === 0) return false;
+      if (filter === "open" && r.finished) return false;
+      if (filter === "done" && !r.finished) return false;
+      if (!q) return true;
+      return [r.employeeName, r.department, r.managerName, r.currentStageLabel]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [report.rows, filter, query]);
+
+  const exportHref = `/performance/status/export${
+    report.selectedCycleId ? `?cycle=${report.selectedCycleId}` : ""
+  }`;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-muted-foreground">
+          Cycle
+          <select
+            value={report.selectedCycleId ?? ""}
+            onChange={(e) => router.push(`/performance/status?cycle=${e.target.value}`)}
+            className={cn(field, "mt-1 block")}
+          >
+            {report.cycles.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.status !== "active" ? ` (${c.status})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="relative text-xs text-muted-foreground">
+          Search
+          <Search className="pointer-events-none absolute bottom-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Name, department, manager"
+            className={cn(field, "mt-1 block w-56 pl-8")}
+          />
+        </label>
+        <a
+          href={exportHref}
+          download
+          className="ml-auto inline-flex items-center rounded-md border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
+        >
+          <Download className="mr-1.5 h-4 w-4" /> Export to Excel
+        </a>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <Stat label="Participants" value={report.summary.participants} />
+        <Stat label="Complete" value={report.summary.finished} />
+        <Stat label="In progress" value={report.summary.inProgress} />
+        <Stat label="Not started" value={report.summary.notStarted} />
+        <Stat label="Running late" value={report.summary.overdue} tone={report.summary.overdue > 0 ? "bad" : undefined} />
+      </div>
+
+      {report.noWorkflow && (
+        <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          This cycle runs no workflow template, so progress is shown against the built-in stage
+          ladder and only the goal-setting date applies. Give the cycle a template in performance
+          settings to get a deadline on every stage.
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-1.5">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent",
+              filter === f.key && "border-primary bg-primary/10 text-primary",
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
+          Nobody matches that filter.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <ParticipantRow
+              key={r.appraisalId}
+              row={r}
+              reviewers={report.reviewers[r.appraisalId]}
+              colleagues={report.colleagues}
+            />
+          ))}
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        {rows.length} of {report.rows.length} shown · generated {report.generatedAt}
+      </p>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone?: "bad";
+}) {
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p
+        className={cn(
+          "text-2xl font-semibold tabular-nums",
+          tone === "bad" && "text-destructive",
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/** One participant: the headline, then the stage track. */
+function ParticipantRow({
+  row,
+  reviewers,
+  colleagues,
+}: {
+  row: ParticipantProgress;
+  reviewers?: ReviewerAssignment;
+  colleagues: Colleague[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 p-3 text-left hover:bg-accent/50"
+      >
+        <span className="font-medium">{row.employeeName}</span>
+        {row.department && (
+          <span className="text-xs text-muted-foreground">{row.department}</span>
+        )}
+        <span className="ml-auto flex flex-wrap items-center gap-2 text-xs">
+          {row.finished ? (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
+              Complete
+            </span>
+          ) : (
+            <>
+              <span className="text-muted-foreground">
+                {row.currentStageLabel} · waiting on {row.currentStageOwner}
+              </span>
+              {row.daysLate > 0 ? (
+                <span className="rounded-full bg-destructive/10 px-2 py-0.5 font-medium text-destructive">
+                  {row.daysLate}d late
+                </span>
+              ) : (
+                <span className="text-muted-foreground">due {row.currentStageDue}</span>
+              )}
+            </>
+          )}
+          <span className="tabular-nums text-muted-foreground">
+            {row.completedCount}/{row.totalCount}
+          </span>
+        </span>
+      </button>
+
+      <div className="px-3 pb-3">
+        <div className="flex gap-0.5" aria-hidden="true">
+          {row.stages.map((s) => (
+            <span
+              key={s.key}
+              title={`${s.label} — ${STAGE_STATE_LABEL[s.state]}, due ${s.dueDate}`}
+              className={cn(
+                "h-1.5 flex-1 rounded-full",
+                s.state === "done"
+                  ? "bg-emerald-500"
+                  : s.overdue
+                    ? "bg-destructive"
+                    : s.state === "current"
+                      ? "bg-primary"
+                      : "bg-muted",
+              )}
+            />
+          ))}
+        </div>
+      </div>
+
+      {open && (
+        <div className="border-t px-3 py-2">
+          <table className="w-full text-xs">
+            <thead className="text-left text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-2 font-medium">Stage</th>
+                <th className="py-1 pr-2 font-medium">Owner</th>
+                <th className="py-1 pr-2 font-medium">Due</th>
+                <th className="py-1 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {row.stages.map((s) => (
+                <tr key={s.key}>
+                  <td className="py-1 pr-2">{s.label}</td>
+                  <td className="py-1 pr-2 text-muted-foreground">{s.responsibleRole.replace(/_/g, " ")}</td>
+                  <td className="py-1 pr-2 tabular-nums text-muted-foreground">{s.dueDate}</td>
+                  <td
+                    className={cn(
+                      "py-1",
+                      s.overdue ? "font-medium text-destructive" : "text-muted-foreground",
+                    )}
+                  >
+                    {s.overdue ? `In progress — ${s.daysLate}d late` : STAGE_STATE_LABEL[s.state]}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {reviewers && <ReviewerEditor assignment={reviewers} colleagues={colleagues} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Reassign who reviews this person.
+ *
+ * Reviewers came from the reporting line when the cycle launched and could not
+ * be changed afterwards, so a transfer or a departed manager left the appraisal
+ * with nobody able to act on it.
+ */
+function ReviewerEditor({
+  assignment,
+  colleagues,
+}: {
+  assignment: ReviewerAssignment;
+  colleagues: Colleague[];
+}) {
+  const [pending, startTransition] = useStatusTransition("Saving…");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [managerId, setManagerId] = useState(assignment.managerId ?? "");
+  const [secondLevelId, setSecondLevelId] = useState(assignment.secondLevelId ?? "");
+
+  // Nobody reviews their own appraisal, so keep the employee out of both lists.
+  const options = useMemo(
+    () => colleagues.filter((c) => c.id !== assignment.employeeId),
+    [colleagues, assignment.employeeId],
+  );
+
+  const changed =
+    managerId !== (assignment.managerId ?? "") || secondLevelId !== (assignment.secondLevelId ?? "");
+
+  function save() {
+    setError(null);
+    setSaved(false);
+    startTransition(async () => {
+      const res = await setAppraisalReviewers({
+        appraisalId: assignment.appraisalId,
+        managerId,
+        secondLevelId: secondLevelId || null,
+      });
+      if (res.ok) setSaved(true);
+      else setError(res.error ?? "Couldn't reassign the reviewers.");
+    });
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-dashed bg-muted/30 p-2">
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <UserCog className="h-3.5 w-3.5" /> Reviewers
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-muted-foreground">
+          Line manager
+          <div className="mt-1 w-56">
+            <SearchSelect
+              value={managerId}
+              onChange={(v) => setManagerId(v ?? "")}
+              options={options}
+              getOptionValue={(c) => c.id}
+              getOptionLabel={(c) => c.name}
+              placeholder="Choose a line manager"
+            />
+          </div>
+        </label>
+        <label className="text-xs text-muted-foreground">
+          Second-level
+          <div className="mt-1 w-56">
+            <SearchSelect
+              value={secondLevelId}
+              onChange={(v) => setSecondLevelId(v ?? "")}
+              options={options}
+              getOptionValue={(c) => c.id}
+              getOptionLabel={(c) => c.name}
+              placeholder="None"
+            />
+          </div>
+        </label>
+        <Button size="sm" variant="outline" disabled={pending || !changed || !managerId} onClick={save}>
+          Save reviewers
+        </Button>
+        {saved && !changed && <span className="text-xs text-emerald-700">Saved.</span>}
+      </div>
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
