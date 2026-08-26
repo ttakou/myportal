@@ -6,6 +6,7 @@ import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  HOUSE_PHASES,
   STAGE_FIELDS,
   STAGE_FIELD_LABEL,
   STAGE_PRESETS,
@@ -66,6 +67,17 @@ export function WorkflowDesigner({
     const p = STAGE_PRESETS.find((s) => s.key === presetKey);
     if (p) mutate([...stages, { ...p, key: `${p.key}_${stages.length}` }]);
   };
+  // The five agreed phases in one action. Having to assemble them by hand from
+  // the stage list is how they ended up as five separate cycles instead.
+  const useHouseProcess = () => {
+    if (
+      stages.length > 0 &&
+      !confirm("Replace the stages below with the standard five-phase process?")
+    )
+      return;
+    mutate(HOUSE_PHASES.map((p) => ({ ...p })));
+  };
+
   const toggleField = (i: number, f: StageField) => {
     const cur = stages[i].editableFields;
     setStage(i, { editableFields: cur.includes(f) ? cur.filter((x) => x !== f) : [...cur, f] });
@@ -91,6 +103,9 @@ export function WorkflowDesigner({
         </select>
         <Button variant="outline" size="sm" disabled={!presetKey} onClick={addPreset}>
           <Plus className="h-4 w-4" /> Add
+        </Button>
+        <Button variant="outline" size="sm" onClick={useHouseProcess}>
+          Use the standard five-phase process
         </Button>
         <Button variant="outline" size="sm" onClick={() => mutate([...stages, blankStage()])}>
           <Plus className="h-4 w-4" /> Blank stage

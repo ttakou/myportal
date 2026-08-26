@@ -101,3 +101,53 @@ function preset(
     notify: true,
   };
 }
+
+/**
+ * The house appraisal process: five phases, in this order.
+ *
+ * Until now these five were created as five separate *cycles*, which gave every
+ * employee four or five open appraisals for the same year, counted them once
+ * per cycle, and sent them one copy of every notice per cycle. They are phases
+ * of one annual cycle, and this is that cycle expressed as stages.
+ *
+ * Each phase is owned by whoever closes it. Day offsets are counted from the
+ * cycle's start date, so the same sequence re-dates itself for any year.
+ */
+export const HOUSE_PHASES: WorkflowStage[] = [
+  {
+    ...preset("goals_setting", "Goals Setting", "employee", 89, ["goals", "key_results"]),
+  },
+  {
+    ...preset(
+      "mid_year_review",
+      "Mid Year Review",
+      "line_manager",
+      180,
+      ["manager_rating", "manager_comment"],
+      { approve: true, return: true },
+    ),
+  },
+  {
+    ...preset(
+      "final_review",
+      "Final Review",
+      "line_manager",
+      338,
+      ["manager_rating", "manager_comment", "overall_rating"],
+      { approve: true, return: true },
+    ),
+  },
+  {
+    ...preset("annual_calibration", "Annual Calibration", "calibration", 348, ["overall_rating"], {
+      approve: true,
+    }),
+  },
+  {
+    ...preset("final_appraisal", "Final Appraisal", "employee", 364, ["employee_comment"], {
+      approve: true,
+    }),
+  },
+];
+
+/** The phase order, for anything that needs to check or display the sequence. */
+export const HOUSE_PHASE_ORDER = HOUSE_PHASES.map((s) => s.key);
