@@ -105,84 +105,103 @@ function preset(
 /**
  * The house appraisal process: five phases, in this order.
  *
- * Until now these five were created as five separate *cycles*, which gave every
- * employee four or five open appraisals for the same year, counted them once
- * per cycle, and sent them one copy of every notice per cycle. They are phases
- * of one annual cycle, and this is that cycle expressed as stages.
+ * These five were originally created as five separate *cycles*, which gave
+ * every employee four or five open appraisals for the same year, counted them
+ * once per cycle, and sent them one copy of every notice per cycle. They are
+ * phases of one annual cycle, and this is that cycle expressed as stages.
  *
- * The first three phases carry the employee's input as well as the manager's,
- * so each is two stages: the employee contributes, then the manager assesses
- * and closes the phase. A stage only opens its fields to the role that owns it,
- * so one stage per phase would have shut the employee out of their own
- * mid-year and final assessment.
+ * Two rules shape the stage list:
+ *
+ * 1. The employee has input in the first three phases, so each of those is two
+ *    stages. A stage only opens its fields to the role that owns it, so one
+ *    stage per phase would have shut the employee out of their own mid-year
+ *    and final self-assessment.
+ * 2. Every phase ends in an explicit sign-off that closes it for that one
+ *    person — never a silent roll-on. Those are the stages carrying
+ *    `allowApprove`, and each records who closed it and when.
  *
  * Day offsets run from the cycle's start date, so the same sequence re-dates
  * itself for any year. Each phase keeps the deadline its old cycle carried, and
  * the employee's step falls a fortnight ahead of it.
  */
 export const HOUSE_PHASES: WorkflowStage[] = [
-  // 1 — Goals Setting: due 31 Mar for a calendar-year cycle.
+  // 1 — Goals Setting: closes 31 Mar for a calendar-year cycle.
   preset("goals_setting_employee", "Goals Setting — employee submits", "employee", 75, [
     "goals",
     "key_results",
   ]),
   preset(
-    "goals_setting_manager",
-    "Goals Setting — manager approves",
+    "goals_setting_signoff",
+    "Goals Setting — manager sign-off",
     "line_manager",
     89,
     ["goals"],
     { approve: true, return: true },
   ),
 
-  // 2 — Mid Year Review: due 30 Jun.
+  // 2 — Mid Year Review: closes 30 Jun.
   preset("mid_year_employee", "Mid Year Review — employee self-assessment", "employee", 166, [
     "self_rating",
     "employee_comment",
     "key_results",
   ]),
   preset(
-    "mid_year_manager",
-    "Mid Year Review — manager assessment",
+    "mid_year_signoff",
+    "Mid Year Review — manager assessment and sign-off",
     "line_manager",
     180,
     ["manager_rating", "manager_comment"],
     { approve: true, return: true },
   ),
 
-  // 3 — Final Review: due 5 Dec.
+  // 3 — Final Review: closes 5 Dec.
   preset("final_review_employee", "Final Review — employee self-assessment", "employee", 324, [
     "self_rating",
     "employee_comment",
   ]),
   preset(
-    "final_review_manager",
-    "Final Review — manager assessment",
+    "final_review_signoff",
+    "Final Review — manager assessment and sign-off",
     "line_manager",
     338,
     ["manager_rating", "manager_comment", "overall_rating"],
     { approve: true, return: true },
   ),
 
-  // 4 — Annual Calibration: the committee's, not the employee's.
-  preset("annual_calibration", "Annual Calibration", "calibration", 348, ["overall_rating"], {
-    approve: true,
-  }),
+  // 4 — Annual Calibration: the committee's alone, closes 15 Dec.
+  preset(
+    "annual_calibration_signoff",
+    "Annual Calibration — committee sign-off",
+    "calibration",
+    348,
+    ["overall_rating"],
+    { approve: true },
+  ),
 
-  // 5 — Final Appraisal: the employee signs the outcome off.
-  preset("final_appraisal", "Final Appraisal", "employee", 364, ["employee_comment"], {
-    approve: true,
-  }),
+  // 5 — Final Appraisal: the rating that stands once calibration has moved it.
+  // Recorded first, then acknowledged by the person it belongs to.
+  preset("final_appraisal_rating", "Final Appraisal — final rating recorded", "hr", 356, [
+    "overall_rating",
+    "manager_comment",
+  ]),
+  preset("final_appraisal_signoff", "Final Appraisal — employee sign-off", "employee", 364, [
+    "employee_comment",
+  ], { approve: true }),
 ];
 
 /** The five business phases, and which stages make up each one. */
 export const HOUSE_PHASE_GROUPS: { phase: string; stageKeys: string[] }[] = [
-  { phase: "Goals Setting", stageKeys: ["goals_setting_employee", "goals_setting_manager"] },
-  { phase: "Mid Year Review", stageKeys: ["mid_year_employee", "mid_year_manager"] },
-  { phase: "Final Review", stageKeys: ["final_review_employee", "final_review_manager"] },
-  { phase: "Annual Calibration", stageKeys: ["annual_calibration"] },
-  { phase: "Final Appraisal", stageKeys: ["final_appraisal"] },
+  { phase: "Goals Setting", stageKeys: ["goals_setting_employee", "goals_setting_signoff"] },
+  { phase: "Mid Year Review", stageKeys: ["mid_year_employee", "mid_year_signoff"] },
+  { phase: "Final Review", stageKeys: ["final_review_employee", "final_review_signoff"] },
+  { phase: "Annual Calibration", stageKeys: ["annual_calibration_signoff"] },
+  { phase: "Final Appraisal", stageKeys: ["final_appraisal_rating", "final_appraisal_signoff"] },
 ];
 
 /** The phase names in order, for anything that displays the sequence. */
 export const HOUSE_PHASE_ORDER = HOUSE_PHASE_GROUPS.map((g) => g.phase);
+
+/** The stage that closes each phase — the sign-off, per person. */
+export const PHASE_SIGNOFF_KEYS = HOUSE_PHASE_GROUPS.map(
+  (g) => g.stageKeys[g.stageKeys.length - 1],
+);
