@@ -4,6 +4,11 @@ import { notifyUsers } from "@/lib/notify";
 import { isEmailConfigured, sendEmail } from "@/lib/email";
 import { renderTemplate, resolveRuleProfileIds, type DispatchContext } from "@/lib/notify-template";
 import { ruleFiresToday } from "@/lib/performance/deadline-notices";
+import {
+  needsHrRecipients,
+  pickHrRecipients,
+  type RoleHolder,
+} from "@/lib/performance/hr-recipients";
 import type { NotificationEvent, NotificationRule, RecipientRole } from "@/types/notifications";
 
 export type { DispatchContext } from "@/lib/notify-template";
@@ -85,6 +90,20 @@ async function dispatch(
     const rules = ((data ?? []) as Record<string, unknown>[]).map(ruleFromRow);
     const values = ctx.placeholders ?? {};
 
+    // "HR" and "calibration" name a role, not a person, so no caller can supply
+    // their ids the way it supplies the employee's. Resolve them here, once,
+    // and only when a rule actually asks for them.
+    let ctxWithHr = ctx;
+    if (needsHrRecipients(rules) && ctx.hrIds === undefined && ctx.calibrationIds === undefined) {
+      const { data: holders } = await admin
+        .from("profile_roles")
+        .select("profile_id, role")
+        .eq("tenant_id", ctx.tenantId)
+        .in("role", ["hr_admin", "system_admin"]);
+      const ids = pickHrRecipients((holders ?? []) as RoleHolder[]);
+      ctxWithHr = { ...ctx, hrIds: ids, calibrationIds: ids };
+    }
+
     for (const rule of rules) {
       // An action dispatch only ever fires immediate rules; a sweep dispatch
       // only ever fires the scheduled ones. Neither can double up on the other.
@@ -99,7 +118,7 @@ async function dispatch(
       const wantsEmail = rule.channels.includes("email");
       const wantsTeams = rule.channels.includes("teams");
 
-      const profileIds = resolveRuleProfileIds(rule.recipients, ctx);
+      const profileIds = resolveRuleProfileIds(rule.recipients, ctxWithHr);
 
       // In-app and/or email to resolved recipients (preference-aware).
       if ((wantsInApp || wantsEmail) && profileIds.length) {

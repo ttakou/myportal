@@ -10,6 +10,7 @@ import {
 } from "@/lib/workflow-engine";
 import { dispatchScheduledEvent } from "@/lib/notify-dispatch";
 import { deadlineEventFor, deadlinePhrase } from "@/lib/performance/deadline-notices";
+import { pickHrRecipients, type RoleHolder } from "@/lib/performance/hr-recipients";
 import type { WorkflowStage } from "@/types/workflow";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -59,6 +60,20 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
   let overdue = 0;
   let reminded = 0;
   let notified = 0;
+  // Resolved per tenant, once, and only if an HR-owned stage actually runs late.
+  const hrByTenant = new Map<string, string[]>();
+  async function hrFor(tenantId: string): Promise<string[]> {
+    const cached = hrByTenant.get(tenantId);
+    if (cached) return cached;
+    const { data: holders } = await admin!
+      .from("profile_roles")
+      .select("profile_id, role")
+      .eq("tenant_id", tenantId)
+      .in("role", ["hr_admin", "system_admin"]);
+    const ids = pickHrRecipients((holders ?? []) as RoleHolder[]);
+    hrByTenant.set(tenantId, ids);
+    return ids;
+  }
 
   for (const c of cycles) {
     const stages = stagesByTemplate.get(c.template_id as string) ?? [];
@@ -105,11 +120,14 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
       if (!isStageOverdue(stage, c.period_start as string, today)) continue;
 
       overdue += 1;
+      // HR and calibration stages name no individual — the role is the owner —
+      // so chase whoever holds it rather than chasing nobody.
       const owner = responsibleUserId(stage.responsibleRole, a);
-      if (owner) {
+      const recipients = owner ? [owner] : await hrFor(a.tenant_id as string);
+      if (recipients.length) {
         await notifyUsers({
           tenantId: a.tenant_id as string,
-          profileIds: [owner],
+          profileIds: recipients,
           category: "approval",
           title: `Overdue: ${stage.label}`,
           body: `The "${stage.label}" stage is past its due date — please action it.`,
