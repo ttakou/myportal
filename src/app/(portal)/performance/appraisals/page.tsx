@@ -29,6 +29,8 @@ import { CalibrationPanel } from "./_components/calibration-panel";
 import { SecondLevelPanel } from "./_components/second-level-panel";
 import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
+import { cyclePhases } from "@/lib/performance/cycle-phases";
+import { getCyclePhaseStages } from "@/lib/performance/house-template";
 import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
 import { PipPanel } from "./_components/pip-panel";
@@ -145,7 +147,19 @@ export default async function AppraisalsPage({
         </p>
       </div>
 
-      <CycleSwitcher cycles={visibleCycles} selectedId={cycle?.id ?? null} />
+      <CycleSwitcher
+        cycles={visibleCycles}
+        selectedId={cycle?.id ?? null}
+        phases={
+          cycle
+            ? cyclePhases({
+                stages: await getCyclePhaseStages(cycle.id),
+                cycleStart: cycle.period_start ?? null,
+                todayIso: new Date().toISOString().slice(0, 10),
+              })
+            : []
+        }
+      />
 
       {cycle && !isCurrent && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

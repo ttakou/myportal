@@ -8,6 +8,7 @@ import { runAppraisalReminders } from "@/lib/appraisal-reminders";
 import { dispatchEvent } from "@/lib/notify-dispatch";
 import { getPerformanceConfig } from "@/lib/performance-config";
 import { getAppraisalCapabilities } from "@/lib/perf-permissions";
+import { ensureHousePhaseTemplate } from "@/lib/performance/house-template";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -135,8 +136,13 @@ export async function createCycle(input: {
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
   const bands = normalizeBands(input.ratingBands);
+  // Every cycle runs the five phases. Attached here rather than left for
+  // somebody to remember afterwards — a cycle without a template is a cycle
+  // with no process, which is how the phases became separate cycles before.
+  const templateId = await ensureHousePhaseTemplate(supabase, tenant.id as string);
   const { error } = await supabase.from("appraisal_cycles").insert({
     tenant_id: tenant.id,
+    ...(templateId ? { template_id: templateId } : {}),
     name: input.name.trim(),
     year: Math.floor(input.year) || new Date().getFullYear(),
     period_start: input.periodStart,
