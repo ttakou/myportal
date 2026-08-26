@@ -83,7 +83,7 @@ describe("phase deadlines", () => {
     expect(due("mid_year_signoff")).toBe("2026-06-30");
     expect(due("final_review_signoff")).toBe("2026-12-05");
     expect(due("annual_calibration_signoff")).toBe("2026-12-15");
-    expect(due("final_appraisal_signoff")).toBe("2026-12-31");
+    expect(due("final_appraisal_rating")).toBe("2026-12-31");
   });
 
   it("spaces the four steps of a phase a week apart", () => {
@@ -104,7 +104,7 @@ describe("phase deadlines", () => {
 
   it("re-dates itself for a cycle starting in another year", () => {
     expect(stageDueDate(byKey.goals_setting_submit, "2027-01-01")).toBe("2027-03-10");
-    expect(stageDueDate(byKey.final_appraisal_signoff, "2027-01-01")).toBe("2027-12-31");
+    expect(stageDueDate(byKey.final_appraisal_rating, "2027-01-01")).toBe("2027-12-31");
   });
 });
 
@@ -114,18 +114,20 @@ describe("calibration and the final appraisal", () => {
     expect(byKey.annual_calibration_signoff.responsibleRole).toBe("calibration");
   });
 
-  it("records the final rating after calibration, then has it signed", () => {
+  it("records the final rating after calibration, and ends there", () => {
     // Calibration can move a rating, so the number that stands is recorded
-    // afterwards — signing the earlier one would put the wrong rating on record.
-    expect(HOUSE_PHASE_GROUPS[4].stageKeys).toEqual([
-      "final_appraisal_rating",
-      "final_appraisal_employee_signoff",
-      "final_appraisal_signoff",
-    ]);
+    // afterwards. Nothing follows it: the sign-offs are already given, phase by
+    // phase, on the assessments this rating comes from.
+    expect(HOUSE_PHASE_GROUPS[4].stageKeys).toEqual(["final_appraisal_rating"]);
     expect(byKey.final_appraisal_rating.editableFields).toContain("overall_rating");
     // Recorded by the PGM — or by an HR admin, who counts as holding the role.
     expect(byKey.final_appraisal_rating.responsibleRole).toBe("pgm");
     expect(due("annual_calibration_signoff") < due("final_appraisal_rating")).toBe(true);
+  });
+
+  it("makes the rating itself the last step of the whole process", () => {
+    expect(HOUSE_PHASES[HOUSE_PHASES.length - 1].key).toBe("final_appraisal_rating");
+    expect(byKey.final_appraisal_rating.allowApprove).toBe(true);
   });
 });
 
@@ -162,7 +164,7 @@ describe("the process as a whole", () => {
     const all = HOUSE_PHASES.map((s) => s.key);
     expect(activeStageKeys(HOUSE_PHASES, {}, all)).toEqual([]);
     expect(activeStageKeys(HOUSE_PHASES, {}, all.slice(0, -1))).toEqual([
-      "final_appraisal_signoff",
+      "final_appraisal_rating",
     ]);
   });
 

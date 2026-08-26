@@ -34,7 +34,7 @@ describe("cyclePhases", () => {
   });
 
   it("counts the steps in each phase", () => {
-    expect(phasesOn("2026-01-01").map((p) => p.stageCount)).toEqual([4, 4, 4, 1, 3]);
+    expect(phasesOn("2026-01-01").map((p) => p.stageCount)).toEqual([4, 4, 4, 1, 1]);
   });
 
   it("closes a phase on the due date of its last step", () => {
