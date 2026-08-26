@@ -76,6 +76,8 @@ export interface AppraisalCycle {
   period_start: string;
   period_end: string;
   goal_setting_deadline: string | null;
+  /** The phase the cycle is open on, by name. Null = derive from the dates. */
+  current_phase: string | null;
   status: CycleStatus;
   weight_okr: number;
   weight_competency: number;

@@ -150,12 +150,14 @@ export default async function AppraisalsPage({
       <CycleSwitcher
         cycles={visibleCycles}
         selectedId={cycle?.id ?? null}
+        canOpenPhase={access.isHr || access.isSystemAdmin || access.isAdmin}
         phases={
           cycle
             ? cyclePhases({
                 stages: await getCyclePhaseStages(cycle.id),
                 cycleStart: cycle.period_start ?? null,
                 todayIso: new Date().toISOString().slice(0, 10),
+                openPhase: cycle.current_phase ?? null,
               })
             : []
         }

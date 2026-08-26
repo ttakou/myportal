@@ -39,17 +39,24 @@ export function phaseNameOf(label: string): string {
 }
 
 /**
- * Group a cycle's stages into phases, and mark the one that is running.
+ * Group a cycle's stages into phases, and mark the one that is open.
  *
- * "Current" is the first phase that has not closed — including one whose date
- * has passed while a later phase is still to come, because an overrun phase is
- * still where the cycle actually is. Only when every phase has closed is none
- * current.
+ * `openPhase` is the phase somebody has opened, and it wins outright. Where the
+ * cycle actually is, is a decision, not an arithmetic result: the dates say one
+ * thing and the work can be somewhere else entirely, and it is the work that
+ * matters. Everything before an open phase reads as closed, everything after as
+ * upcoming, whatever the calendar says.
+ *
+ * With no open phase set, the dates decide: the first phase that has not closed,
+ * including one whose date has passed while later phases remain — an overrun
+ * phase is still where the cycle is, and somebody has to be chased for it.
  */
 export function cyclePhases(input: {
   stages: WorkflowStage[];
   cycleStart: string | null;
   todayIso: string;
+  /** The phase somebody has opened, by name. Null derives it from the dates. */
+  openPhase?: string | null;
 }): CyclePhase[] {
   const groups: { name: string; stageKeys: string[]; lastStage: WorkflowStage }[] = [];
   for (const stage of input.stages) {
@@ -73,7 +80,20 @@ export function cyclePhases(input: {
     state: "upcoming" as PhaseState,
   }));
 
-  // Closed = its date has gone. The first phase still open is where we are.
+  // Somebody has said where the cycle is: that phase is open, and position in
+  // the sequence decides the rest.
+  const openIndex = input.openPhase
+    ? phases.findIndex((p) => p.name === input.openPhase)
+    : -1;
+  if (openIndex >= 0) {
+    phases.forEach((phase, i) => {
+      phase.state = i < openIndex ? "done" : i === openIndex ? "current" : "upcoming";
+    });
+    return phases;
+  }
+
+  // Nothing set: closed = its date has gone, and the first still open is where
+  // the cycle reads as being.
   let currentTaken = false;
   for (const phase of phases) {
     const closed = phase.dueDate !== null && phase.dueDate < input.todayIso;

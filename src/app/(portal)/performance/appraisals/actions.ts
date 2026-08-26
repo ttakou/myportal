@@ -233,6 +233,29 @@ export async function launchCycle(cycleId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Open a phase of a cycle — say where the process actually is.
+ *
+ * The phase was inferred from the calendar, which is wrong the moment the work
+ * runs behind its dates. Opening one records the decision; passing null hands it
+ * back to the dates.
+ */
+export async function setCyclePhase(
+  cycleId: string,
+  phase: string | null,
+): Promise<ActionResult> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisal_cycles")
+    .update({ current_phase: phase?.trim() || null, updated_at: new Date().toISOString() })
+    .eq("id", cycleId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 export async function closeCycle(cycleId: string): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;

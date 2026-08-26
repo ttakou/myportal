@@ -109,7 +109,7 @@ export async function getActiveCycle(): Promise<AppraisalCycle | null> {
   const { data } = await supabase
     .from("appraisal_cycles")
     .select(
-      "id, name, year, period_start, period_end, goal_setting_deadline, status," +
+      "id, name, year, period_start, period_end, goal_setting_deadline, status, current_phase," +
         " weight_okr, weight_competency, weight_development, require_second_level, rating_bands, created_at",
     )
     .order("status", { ascending: true }) // 'active' sorts before 'draft'/'closed'? no — filter instead
@@ -126,7 +126,7 @@ export const getCycles = cache(async (): Promise<AppraisalCycle[]> => {
   const { data } = await supabase
     .from("appraisal_cycles")
     .select(
-      "id, name, year, period_start, period_end, goal_setting_deadline, status," +
+      "id, name, year, period_start, period_end, goal_setting_deadline, status, current_phase," +
         " weight_okr, weight_competency, weight_development, require_second_level, rating_bands, created_at",
     )
     .order("year", { ascending: false })
