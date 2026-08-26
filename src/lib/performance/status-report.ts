@@ -54,6 +54,12 @@ export interface StatusReport {
    * to the built-in stage ladder rather than showing nothing.
    */
   noWorkflow: boolean;
+  /**
+   * Appraisal rows in this cycle belonging to people who are no longer in the
+   * workflow — left behind by a launch under an older roster rule. Excluded
+   * from every figure above, and surfaced so they can be cleaned up.
+   */
+  outsideRoster: number;
   reviewers: Record<string, ReviewerAssignment>;
   colleagues: Colleague[];
 }
@@ -94,6 +100,21 @@ function contextFor(
 ): EmployeeContext {
   const isManager = managers.has(employeeId);
   return { department, isManager, isManagementGrade: isManager };
+}
+
+/**
+ * Everyone the performance workflow applies to.
+ *
+ * The cycle's appraisal rows are not the same set: a cycle launched under an
+ * older, looser roster rule left rows behind for people who cannot open the
+ * module at all, and reporting or chasing those people is noise at best. The
+ * roster is the authority on who is in the workflow, so every count here is
+ * taken against it.
+ */
+async function appraisableIds(): Promise<Set<string>> {
+  const supabase = createClient();
+  const { data } = await supabase.rpc("appraisable_profiles");
+  return new Set(((data ?? []) as { id: string }[]).map((p) => p.id));
 }
 
 /** Active people HR can name as a reviewer. */
@@ -149,6 +170,7 @@ export async function getStatusReport(cycleId?: string | null): Promise<StatusRe
     summary: summarise([]),
     generatedAt: today,
     noWorkflow: false,
+    outsideRoster: 0,
     reviewers: {},
     colleagues: [],
   };
@@ -161,10 +183,11 @@ export async function getStatusReport(cycleId?: string | null): Promise<StatusRe
     .maybeSingle();
   if (!cycle) return empty;
 
-  const [stages, managers, colleagues] = await Promise.all([
+  const [stages, managers, colleagues, appraisable] = await Promise.all([
     stagesForTemplate((cycle.template_id as string | null) ?? null),
     managerIdSet(),
     activeColleagues(),
+    appraisableIds(),
   ]);
   const cycleName = String(cycle.name ?? "Cycle");
   // A cycle launched before the workflow designer existed has no template. It
@@ -187,7 +210,9 @@ export async function getStatusReport(cycleId?: string | null): Promise<StatusRe
     .eq("cycle_id", selected);
 
   const reviewers: Record<string, ReviewerAssignment> = {};
-  const rows = ((data ?? []) as Record<string, unknown>[]).map((r) => {
+  const all = (data ?? []) as Record<string, unknown>[];
+  const inWorkflow = all.filter((r) => appraisable.has(String(r.employee_id)));
+  const rows = inWorkflow.map((r) => {
     const employee = one<{ full_name?: string; department?: string }>(
       r.employee as { full_name?: string; department?: string } | null,
     );
@@ -236,6 +261,7 @@ export async function getStatusReport(cycleId?: string | null): Promise<StatusRe
     summary: summarise(rows),
     generatedAt: today,
     noWorkflow: usingLegacy,
+    outsideRoster: all.length - inWorkflow.length,
     reviewers,
     colleagues,
   };
@@ -281,12 +307,13 @@ export async function getDeadlineBoard(): Promise<DeadlineBoard> {
   const supabase = createClient();
   const today = todayIso();
 
-  const [{ data: cycles }, managers] = await Promise.all([
+  const [{ data: cycles }, managers, appraisable] = await Promise.all([
     supabase
       .from("appraisal_cycles")
       .select("id, name, status, period_start, goal_setting_deadline, template_id")
       .in("status", ["active", "draft"]),
     managerIdSet(),
+    appraisableIds(),
   ]);
 
   const rows: DeadlineRow[] = [];
@@ -303,12 +330,15 @@ export async function getDeadlineBoard(): Promise<DeadlineBoard> {
     if (!stages.length) {
       cyclesWithoutWorkflow.push(cycleName);
       if (goalDeadline) {
-        const { count } = await supabase
+        const { data: waiting } = await supabase
           .from("appraisals")
-          .select("id", { count: "exact", head: true })
+          .select("employee_id")
           .eq("cycle_id", cycleId)
           .eq("stage", "goal_setting");
-        const pending = count ?? 0;
+        // Only people actually in the workflow count towards a deadline.
+        const pending = ((waiting ?? []) as { employee_id: string }[]).filter((w) =>
+          appraisable.has(w.employee_id),
+        ).length;
         rows.push({
           cycleId,
           cycleName,
@@ -340,6 +370,7 @@ export async function getDeadlineBoard(): Promise<DeadlineBoard> {
     // How many people are still standing behind each stage.
     const pendingByStage = new Map<string, number>();
     for (const a of (appraisals ?? []) as Record<string, unknown>[]) {
+      if (!appraisable.has(String(a.employee_id))) continue;
       const employee = one<{ department?: string }>(a.employee as { department?: string } | null);
       const done = new Set(
         Array.isArray(a.completed_stages) ? (a.completed_stages as string[]) : [],

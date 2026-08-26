@@ -11,6 +11,7 @@ import {
 import { dispatchScheduledEvent } from "@/lib/notify-dispatch";
 import { deadlineEventFor, deadlinePhrase } from "@/lib/performance/deadline-notices";
 import { pickHrRecipients, type RoleHolder } from "@/lib/performance/hr-recipients";
+import { appraisableIdsForTenant } from "@/lib/performance/roster";
 import type { WorkflowStage } from "@/types/workflow";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -60,7 +61,8 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
   let overdue = 0;
   let reminded = 0;
   let notified = 0;
-  // Resolved per tenant, once, and only if an HR-owned stage actually runs late.
+  // Both resolved per tenant, once, and only when actually needed.
+  const rosterByTenant = new Map<string, Set<string>>();
   const hrByTenant = new Map<string, string[]>();
   async function hrFor(tenantId: string): Promise<string[]> {
     const cached = hrByTenant.get(tenantId);
@@ -79,6 +81,12 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
     const stages = stagesByTemplate.get(c.template_id as string) ?? [];
     if (!stages.length || !c.period_start) continue;
 
+    const cycleTenant = c.tenant_id as string;
+    if (!rosterByTenant.has(cycleTenant)) {
+      rosterByTenant.set(cycleTenant, await appraisableIdsForTenant(admin, cycleTenant));
+    }
+    const roster = rosterByTenant.get(cycleTenant)!;
+
     const { data: appraisals } = await admin
       .from("appraisals")
       .select("id, tenant_id, employee_id, manager_id, second_level_id, current_stage_key")
@@ -86,6 +94,8 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
       .not("current_stage_key", "is", null);
 
     for (const a of appraisals ?? []) {
+      // Somebody outside the workflow's population can act on nothing here.
+      if (!roster.has(a.employee_id as string)) continue;
       const key = a.current_stage_key as string;
       if (key === COMPLETED || key === REJECTED) continue;
       const stage = stages.find((s) => s.key === key);

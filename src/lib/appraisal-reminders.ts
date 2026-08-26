@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUsers } from "@/lib/notify";
 import { dispatchScheduledEvent } from "@/lib/notify-dispatch";
 import { deadlineEventFor, deadlinePhrase } from "@/lib/performance/deadline-notices";
+import { appraisableIdsForTenant } from "@/lib/performance/roster";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -67,7 +68,18 @@ export async function runAppraisalReminders(
   // Cache owner → line-manager lookups so we hit `profiles` once per owner.
   const managerOf = new Map<string, string | null>();
 
+  // Who the workflow actually applies to, per tenant. A cycle launched under an
+  // older roster rule left rows behind for people who cannot open the module at
+  // all; chasing them is pure noise, and they can do nothing about it.
+  const rosterByTenant = new Map<string, Set<string>>();
+
   for (const c of cycles ?? []) {
+    const cycleTenant = c.tenant_id as string;
+    if (!rosterByTenant.has(cycleTenant)) {
+      rosterByTenant.set(cycleTenant, await appraisableIdsForTenant(admin, cycleTenant));
+    }
+    const roster = rosterByTenant.get(cycleTenant)!;
+
     const { data: appraisals } = await admin
       .from("appraisals")
       .select("id, tenant_id, employee_id, manager_id, stage, status, updated_at")
@@ -75,6 +87,7 @@ export async function runAppraisalReminders(
 
     for (const a of (appraisals ?? []) as Row[]) {
       if (["closed", "completed", "overdue"].includes(a.status)) continue;
+      if (!roster.has(a.employee_id)) continue;
 
       // Cycles without a workflow template still have one real deadline — the
       // goal-setting date. Raise the tenant's configured rules against it so
