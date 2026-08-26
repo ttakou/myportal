@@ -8,6 +8,7 @@ export interface DispatchContext {
   secondLevelIds?: string[];
   hrIds?: string[];
   calibrationIds?: string[];
+  pgmIds?: string[];
   /** Values substituted into {{placeholders}} in templates. */
   placeholders?: Record<string, string>;
   /** Where the notification links to. */
@@ -28,6 +29,7 @@ export function resolveRuleProfileIds(recipients: RecipientRole[], ctx: Dispatch
     second_level: ctx.secondLevelIds,
     hr: ctx.hrIds,
     calibration: ctx.calibrationIds,
+    pgm: ctx.pgmIds,
   };
   const ids = recipients.flatMap((r) => byRole[r] ?? []);
   return [...new Set(ids.filter(Boolean))];

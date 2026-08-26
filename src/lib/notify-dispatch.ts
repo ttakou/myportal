@@ -7,6 +7,8 @@ import { ruleFiresToday } from "@/lib/performance/deadline-notices";
 import {
   needsHrRecipients,
   pickHrRecipients,
+  pickPgmRecipients,
+  ROLE_HOLDER_ROLES,
   type RoleHolder,
 } from "@/lib/performance/hr-recipients";
 import type { NotificationEvent, NotificationRule, RecipientRole } from "@/types/notifications";
@@ -94,14 +96,25 @@ async function dispatch(
     // their ids the way it supplies the employee's. Resolve them here, once,
     // and only when a rule actually asks for them.
     let ctxWithHr = ctx;
-    if (needsHrRecipients(rules) && ctx.hrIds === undefined && ctx.calibrationIds === undefined) {
-      const { data: holders } = await admin
+    if (
+      needsHrRecipients(rules) &&
+      ctx.hrIds === undefined &&
+      ctx.calibrationIds === undefined &&
+      ctx.pgmIds === undefined
+    ) {
+      const { data } = await admin
         .from("profile_roles")
         .select("profile_id, role")
         .eq("tenant_id", ctx.tenantId)
-        .in("role", ["hr_admin", "system_admin"]);
-      const ids = pickHrRecipients((holders ?? []) as RoleHolder[]);
-      ctxWithHr = { ...ctx, hrIds: ids, calibrationIds: ids };
+        .in("role", ROLE_HOLDER_ROLES);
+      const holders = (data ?? []) as RoleHolder[];
+      const hrIds = pickHrRecipients(holders);
+      ctxWithHr = {
+        ...ctx,
+        hrIds,
+        calibrationIds: hrIds,
+        pgmIds: pickPgmRecipients(holders),
+      };
     }
 
     for (const rule of rules) {

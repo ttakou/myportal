@@ -30,12 +30,28 @@ export function pickHrRecipients(holders: RoleHolder[]): string[] {
   return unique(holders.filter((h) => h.role === "system_admin").map((h) => h.profile_id));
 }
 
+/**
+ * The people a notice addressed to the PGM should reach.
+ *
+ * The final rating may be recorded by the PGM or by an HR admin, so a notice
+ * about it should reach whoever can act. PGM holders first; HR admins stand in
+ * where nobody holds the role, on the same reasoning as above.
+ */
+export function pickPgmRecipients(holders: RoleHolder[]): string[] {
+  const pgm = unique(holders.filter((h) => h.role === "pgm").map((h) => h.profile_id));
+  if (pgm.length) return pgm;
+  return pickHrRecipients(holders);
+}
+
 function unique(ids: string[]): string[] {
   return [...new Set(ids.filter(Boolean))];
 }
 
 /** Roles that resolve to a role-holder list rather than to a named person. */
-export const ROLE_ADDRESSED = ["hr", "calibration"] as const;
+export const ROLE_ADDRESSED = ["hr", "calibration", "pgm"] as const;
+
+/** The functional roles those lists are drawn from. */
+export const ROLE_HOLDER_ROLES = ["pgm", "hr_admin", "system_admin"];
 
 /** Whether any of these rules is addressed to a role rather than a person. */
 export function needsHrRecipients(rules: { recipients: string[] }[]): boolean {

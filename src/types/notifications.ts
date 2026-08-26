@@ -47,6 +47,7 @@ export const RECIPIENT_ROLES: RecipientRole[] = [
   "second_level",
   "hr",
   "calibration",
+  "pgm",
 ];
 
 export const RECIPIENT_LABEL: Record<RecipientRole, string> = {
@@ -55,6 +56,7 @@ export const RECIPIENT_LABEL: Record<RecipientRole, string> = {
   second_level: "Second-level manager",
   hr: "HR",
   calibration: "Calibration committee",
+  pgm: "PGM",
 };
 
 export type Channel = "email" | "in_app" | "teams";

@@ -3,7 +3,8 @@ export type StageRole =
   | "line_manager"
   | "second_level"
   | "hr"
-  | "calibration";
+  | "calibration"
+  | "pgm";
 
 export const STAGE_ROLES: StageRole[] = [
   "employee",
@@ -11,6 +12,7 @@ export const STAGE_ROLES: StageRole[] = [
   "second_level",
   "hr",
   "calibration",
+  "pgm",
 ];
 
 export const STAGE_ROLE_LABEL: Record<StageRole, string> = {
@@ -19,6 +21,7 @@ export const STAGE_ROLE_LABEL: Record<StageRole, string> = {
   second_level: "Second-level manager",
   hr: "HR",
   calibration: "Calibration committee",
+  pgm: "PGM",
 };
 
 /** Fields a stage can open for editing. */
@@ -202,7 +205,7 @@ export const HOUSE_PHASES: WorkflowStage[] = [
 
   // 5 — Final Appraisal: the rating that stands once calibration has moved it,
   // recorded first, then signed by the employee and closed by the manager.
-  preset("final_appraisal_rating", "Final Appraisal — final rating recorded", "hr", 356, [
+  preset("final_appraisal_rating", "Final Appraisal — final rating recorded", "pgm", 356, [
     "overall_rating",
     "manager_comment",
   ]),

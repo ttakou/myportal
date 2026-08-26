@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   needsHrRecipients,
   pickHrRecipients,
+  pickPgmRecipients,
   type RoleHolder,
 } from "@/lib/performance/hr-recipients";
 
@@ -35,6 +36,24 @@ describe("pickHrRecipients", () => {
   });
 });
 
+describe("pickPgmRecipients", () => {
+  it("addresses whoever holds the PGM role", () => {
+    expect(pickPgmRecipients([holder("p", "pgm"), holder("h", "hr_admin")])).toEqual(["p"]);
+  });
+
+  it("falls back to HR admins, who may also record the final rating", () => {
+    expect(pickPgmRecipients([holder("h", "hr_admin")])).toEqual(["h"]);
+  });
+
+  it("falls all the way back to system admins rather than reaching nobody", () => {
+    expect(pickPgmRecipients([holder("z", "system_admin")])).toEqual(["z"]);
+  });
+
+  it("returns nobody when the tenant holds none of those roles", () => {
+    expect(pickPgmRecipients([holder("f", "finance")])).toEqual([]);
+  });
+});
+
 describe("needsHrRecipients", () => {
   it("is true when a rule is addressed to HR", () => {
     expect(needsHrRecipients([{ recipients: ["hr", "line_manager"] }])).toBe(true);
@@ -42,6 +61,10 @@ describe("needsHrRecipients", () => {
 
   it("is true for the calibration committee, which is also a role", () => {
     expect(needsHrRecipients([{ recipients: ["calibration"] }])).toBe(true);
+  });
+
+  it("is true for the PGM, which is a role too", () => {
+    expect(needsHrRecipients([{ recipients: ["pgm"] }])).toBe(true);
   });
 
   it("is false when every recipient is somebody named on the appraisal", () => {

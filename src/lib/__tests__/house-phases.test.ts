@@ -123,6 +123,8 @@ describe("calibration and the final appraisal", () => {
       "final_appraisal_signoff",
     ]);
     expect(byKey.final_appraisal_rating.editableFields).toContain("overall_rating");
+    // Recorded by the PGM — or by an HR admin, who counts as holding the role.
+    expect(byKey.final_appraisal_rating.responsibleRole).toBe("pgm");
     expect(due("annual_calibration_signoff") < due("final_appraisal_rating")).toBe(true);
   });
 });
