@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, CircleDot, Circle, CornerUpLeft, X, ArrowRight } from "lucide-react";
+import { Check, CircleDot, Circle, CornerUpLeft, X, ArrowRight, UserCog } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,8 @@ export type Actionable = {
   primaryLabel: string;
   allowReturn: boolean;
   allowReject: boolean;
+  /** Set when this step belongs to somebody else and you are standing in. */
+  actingFor: string | null;
 };
 
 export function WorkflowTimeline({
@@ -25,6 +27,7 @@ export function WorkflowTimeline({
   actionable,
   waitingOn,
   progress,
+  isProxy,
   completed,
   rejected,
 }: {
@@ -34,6 +37,8 @@ export function WorkflowTimeline({
   actionable: Actionable[];
   waitingOn: string[];
   progress: number;
+  /** True when at least one of the buttons below acts for somebody else. */
+  isProxy?: boolean;
   completed: boolean;
   rejected: boolean;
 }) {
@@ -86,9 +91,21 @@ export function WorkflowTimeline({
 
       {!completed && !rejected && (
         <div className="space-y-2 border-t pt-3">
+          {isProxy && (
+            <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <UserCog className="mt-0.5 h-4 w-4 shrink-0" />
+              You are acting for someone else. Your name and theirs are both recorded against
+              anything you do here.
+            </p>
+          )}
           {actionable.map((a) => (
             <div key={a.key} className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-muted-foreground">{a.label}:</span>
+              {a.actingFor && (
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                  as {a.actingFor}
+                </span>
+              )}
               <Button size="sm" disabled={pending} onClick={() => act(a.key, a.primaryAction)}>
                 <ArrowRight className="h-4 w-4" /> {a.primaryLabel}
               </Button>

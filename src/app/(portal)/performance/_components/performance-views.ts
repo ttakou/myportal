@@ -26,6 +26,8 @@ export function performanceSubmenu(opts: { isHr: boolean; isManager: boolean }):
   }
   if (opts.isHr) {
     items.push({ key: "hr", label: "HR console", icon: "LayoutGrid", href: "/performance/appraisals?view=hr" });
+    items.push({ key: "status", label: "Status report", icon: "ListChecks", href: "/performance/status" });
+    items.push({ key: "deadlines", label: "Deadlines", icon: "CalendarClock", href: "/performance/deadlines" });
     items.push({ key: "reports", label: "Reports", icon: "BarChart3", href: "/performance/reports" });
     items.push({ key: "settings", label: "Performance settings", icon: "Settings", href: "/performance/settings" });
   }

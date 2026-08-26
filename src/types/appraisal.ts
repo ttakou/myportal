@@ -222,6 +222,8 @@ export interface AppraisalGoal {
 export interface AppraisalEvent {
   id: string;
   actor_name: string | null;
+  /** Set when an administrator took this step for somebody else. */
+  on_behalf_of_name: string | null;
   stage: string | null;
   action: string;
   comment: string | null;

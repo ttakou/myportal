@@ -53,6 +53,8 @@ async function logEvent(
   a: AppraisalRow,
   action: string,
   comment?: string | null,
+  /** Set when an administrator took somebody else's step for them. */
+  onBehalfOf?: string | null,
 ): Promise<void> {
   const supabase = createClient();
   await supabase.from("appraisal_events").insert({
@@ -62,7 +64,32 @@ async function logEvent(
     stage: a.stage,
     action,
     comment: comment ?? null,
+    on_behalf_of: onBehalfOf ?? null,
   });
+}
+
+/** The three parties whose steps an administrator can take for them. */
+type ProxyRole = "employee" | "line_manager" | "second_level";
+
+/**
+ * Who this step belongs to, when somebody else is taking it.
+ *
+ * Administrators could already act on other people's appraisals — what was
+ * missing is the record of it, so an HR admin completing a manager's review
+ * looked exactly like the manager doing it. Returns the owner's id when the
+ * signed-in user is standing in for them, and null when they are simply doing
+ * their own work.
+ */
+async function actingFor(a: AppraisalRow, role: ProxyRole): Promise<string | null> {
+  const me = await uid();
+  const owner =
+    role === "employee"
+      ? a.employee_id
+      : role === "line_manager"
+        ? a.manager_id
+        : a.second_level_id;
+  if (!owner || !me || owner === me) return null;
+  return owner;
 }
 
 function clampWeight(v: number | undefined, fallback: number): number {
@@ -590,7 +617,7 @@ export async function submitGoals(appraisalId: string): Promise<ActionResult> {
     .update({ status: "pending_manager_review" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent(a, "goals_submitted");
+  await logEvent(a, "goals_submitted", null, await actingFor(a, "employee"));
   const { data: subEmp } = await supabase
     .from("profiles")
     .select("full_name")
@@ -637,6 +664,78 @@ async function requireManager(id: string): Promise<{ a: AppraisalRow } | ActionR
 }
 
 /**
+ * Reassign who reviews a participant, after the cycle has launched.
+ *
+ * Reviewers are taken from the reporting line when a cycle launches, and until
+ * now that was final: a transfer mid-cycle, a manager who left, or a reporting
+ * line that was simply wrong left the appraisal stuck with nobody able to act.
+ * Pass null to clear the second-level reviewer; the line manager is required.
+ */
+export async function setAppraisalReviewers(input: {
+  appraisalId: string;
+  managerId: string;
+  secondLevelId?: string | null;
+}): Promise<ActionResult> {
+  const gate = await requireHr();
+  if (gate) return gate;
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  if (!input.managerId) return { ok: false, error: "Choose a line manager." };
+  if (input.managerId === a.employee_id)
+    return { ok: false, error: "Somebody cannot review their own appraisal." };
+  if (input.secondLevelId && input.secondLevelId === a.employee_id)
+    return { ok: false, error: "Somebody cannot second-level their own appraisal." };
+  if (input.secondLevelId && input.secondLevelId === input.managerId)
+    return {
+      ok: false,
+      error: "The second-level reviewer must be somebody other than the line manager.",
+    };
+
+  const supabase = createClient();
+  const ids = [input.managerId, input.secondLevelId].filter(Boolean) as string[];
+  const { data: people } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .in("id", ids)
+    .eq("is_active", true);
+  const found = new Map(((people ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name]));
+  if (ids.some((id) => !found.has(id)))
+    return { ok: false, error: "Choose active colleagues as reviewers." };
+
+  const { error } = await supabase
+    .from("appraisals")
+    .update({
+      manager_id: input.managerId,
+      second_level_id: input.secondLevelId || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+
+  const summary = [
+    `Line manager: ${found.get(input.managerId) ?? "—"}`,
+    input.secondLevelId ? `Second-level: ${found.get(input.secondLevelId) ?? "—"}` : "Second-level: none",
+  ].join(" · ");
+  await logEvent(a, "reviewers_reassigned", summary);
+
+  // Tell the incoming reviewers — an appraisal they were never told about is an
+  // appraisal that sits still.
+  const incoming = ids.filter((id) => id !== a.manager_id && id !== a.second_level_id);
+  if (incoming.length) {
+    await notifyUsers({
+      tenantId: a.tenant_id,
+      profileIds: incoming,
+      category: "approval",
+      title: "You have been assigned an appraisal to review",
+      body: "HR has assigned you as a reviewer on a performance appraisal.",
+      url: "/performance/appraisals?view=team",
+    });
+  }
+  rev();
+  return { ok: true };
+}
+
+/**
  * A manager nominates (or clears) an appraisal delegate — a colleague who may act
  * on their team's appraisals while they're unavailable. Pass null to clear.
  */
@@ -675,7 +774,7 @@ export async function returnGoals(input: { appraisalId: string; comment: string 
     .update({ status: "returned_for_correction" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent(a, "goals_returned", input.comment);
+  await logEvent(a, "goals_returned", input.comment, await actingFor(a, "line_manager"));
   await dispatchEvent("goal_rejection", {
     tenantId: a.tenant_id,
     employeeIds: [a.employee_id],
@@ -724,7 +823,7 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
     .update({ stage: "goal_review", status: "not_started" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent({ ...a, stage: "goal_setting" }, "goals_approved", input.comment);
+  await logEvent({ ...a, stage: "goal_setting" }, "goals_approved", input.comment, await actingFor(a, "line_manager"));
   await notifyUsers({
     tenantId: a.tenant_id,
     profileIds: [a.employee_id],
@@ -818,7 +917,7 @@ export async function submitMidYear(appraisalId: string): Promise<ActionResult> 
     .update({ status: "pending_manager_review" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent(a, "midyear_submitted");
+  await logEvent(a, "midyear_submitted", null, await actingFor(a, "employee"));
   const { data: myEmp } = await supabase.from("profiles").select("full_name").eq("id", a.employee_id).maybeSingle();
   await dispatchEvent("approval_request", {
     tenantId: a.tenant_id,
@@ -847,7 +946,7 @@ export async function completeMidYear(input: {
     .update({ stage: "self_assessment", status: "not_started" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent(a, "midyear_reviewed", input.comment);
+  await logEvent(a, "midyear_reviewed", input.comment, await actingFor(a, "line_manager"));
   await notifyUsers({
     tenantId: a.tenant_id,
     profileIds: [a.employee_id],
@@ -874,7 +973,7 @@ export async function submitSelfAssessment(input: {
     .update({ employee_summary: input.summary?.trim() || null, stage: "manager_review", status: "not_started" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent({ ...a, stage: "self_assessment" }, "self_assessment_submitted");
+  await logEvent({ ...a, stage: "self_assessment" }, "self_assessment_submitted", null, await actingFor(a, "employee"));
   const { data: saEmp } = await supabase.from("profiles").select("full_name").eq("id", a.employee_id).maybeSingle();
   await dispatchEvent("approval_request", {
     tenantId: a.tenant_id,
@@ -1036,8 +1135,12 @@ export async function submitManagerEvaluation(input: {
     })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent({ ...a, stage: "manager_review" }, "manager_evaluation_submitted",
-    `Score ${Math.round(finalScore * 10) / 10}% (${label})`);
+  await logEvent(
+    { ...a, stage: "manager_review" },
+    "manager_evaluation_submitted",
+    `Score ${Math.round(finalScore * 10) / 10}% (${label})`,
+    await actingFor(a, "line_manager"),
+  );
   if (secondLevelId) {
     await notifyUsers({
       tenantId: a.tenant_id,
@@ -1143,7 +1246,7 @@ export async function recordDiscussion(input: {
     })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent({ ...a, stage: "final_discussion" }, "discussion_recorded");
+  await logEvent({ ...a, stage: "final_discussion" }, "discussion_recorded", null, await actingFor(a, "line_manager"));
   await dispatchEvent("acknowledgement_required", {
     tenantId: a.tenant_id,
     employeeIds: [a.employee_id],
@@ -1162,7 +1265,13 @@ export async function acknowledge(input: {
 }): Promise<ActionResult> {
   const a = await loadAppraisal(input.appraisalId);
   if (!a) return { ok: false, error: "Appraisal not found." };
-  if (a.employee_id !== (await uid())) return { ok: false, error: "Only the employee can acknowledge." };
+  // The employee's own act, or an administrator recording a sign-off taken
+  // offline — on paper, or over the phone from a rig. The proxy is stamped on
+  // the event either way, so the two can always be told apart.
+  const access = await getAccess();
+  const isProxy = access.isHr || access.isAdmin || access.isSystemAdmin;
+  if (a.employee_id !== (await uid()) && !isProxy)
+    return { ok: false, error: "Only the employee, or an administrator acting for them, can acknowledge." };
   if (a.stage !== "acknowledgement" || a.status !== "pending_employee_acknowledgement")
     return { ok: false, error: "Not awaiting your acknowledgement." };
   const supabase = createClient();
@@ -1184,7 +1293,12 @@ export async function acknowledge(input: {
       opened_by: await uid(),
     });
   }
-  await logEvent(a, input.agreed ? "acknowledged_agree" : "acknowledged_disagree", input.comment);
+  await logEvent(
+    a,
+    input.agreed ? "acknowledged_agree" : "acknowledged_disagree",
+    input.comment,
+    await actingFor(a, "employee"),
+  );
   const recipients = [a.manager_id].filter(Boolean) as string[];
   if (recipients.length)
     await notifyUsers({
@@ -1500,7 +1614,7 @@ export async function secondLevelApprove(appraisalId: string): Promise<ActionRes
     .update({ stage: "hr_review", status: "pending_hr_review" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent({ ...a, stage: "manager_review" }, "second_level_approved");
+  await logEvent({ ...a, stage: "manager_review" }, "second_level_approved", null, await actingFor(a, "second_level"));
   rev();
   return { ok: true };
 }
@@ -1518,7 +1632,7 @@ export async function secondLevelReturn(input: {
     .update({ status: "returned_for_correction" })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
-  await logEvent({ ...a, stage: "manager_review" }, "second_level_returned", input.comment);
+  await logEvent({ ...a, stage: "manager_review" }, "second_level_returned", input.comment, await actingFor(a, "second_level"));
   if (a.manager_id)
     await notifyUsers({
       tenantId: a.tenant_id,

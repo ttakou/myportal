@@ -656,7 +656,10 @@ async function hydrate(appraisal: Appraisal, goalsAppraisalId?: string): Promise
       .order("created_at"),
     supabase
       .from("appraisal_events")
-      .select("id, stage, action, comment, created_at, actor:profiles!actor_id(full_name)")
+      .select(
+        "id, stage, action, comment, created_at, actor:profiles!actor_id(full_name)," +
+          " on_behalf:profiles!on_behalf_of(full_name)",
+      )
       .eq("appraisal_id", appraisal.id)
       .order("created_at", { ascending: false }),
   ]);
@@ -751,6 +754,7 @@ async function hydrate(appraisal: Appraisal, goalsAppraisalId?: string): Promise
     (e): AppraisalEvent => ({
       id: e.id,
       actor_name: one<{ full_name?: string }>(e.actor)?.full_name ?? null,
+      on_behalf_of_name: one<{ full_name?: string }>(e.on_behalf)?.full_name ?? null,
       stage: e.stage ?? null,
       action: e.action,
       comment: e.comment ?? null,

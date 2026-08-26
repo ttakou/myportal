@@ -6,7 +6,10 @@ import {
   REJECTED,
   isStageOverdue,
   responsibleUserId,
+  stageDueDate,
 } from "@/lib/workflow-engine";
+import { dispatchScheduledEvent } from "@/lib/notify-dispatch";
+import { deadlineEventFor, deadlinePhrase } from "@/lib/performance/deadline-notices";
 import type { WorkflowStage } from "@/types/workflow";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -15,6 +18,8 @@ interface EscalationSummary {
   ok: boolean;
   overdue: number;
   reminded: number;
+  /** Deadline notices raised through the tenant's configured rules. */
+  notified: number;
   error?: string;
 }
 
@@ -25,7 +30,8 @@ interface EscalationSummary {
  */
 export async function runWorkflowEscalations(tenantId?: string): Promise<EscalationSummary> {
   const admin = createAdminClient();
-  if (!admin) return { ok: false, overdue: 0, reminded: 0, error: "Service-role key missing." };
+  if (!admin)
+    return { ok: false, overdue: 0, reminded: 0, notified: 0, error: "Service-role key missing." };
   const today = todayIso();
 
   let cyclesQ = admin
@@ -35,7 +41,7 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
     .not("template_id", "is", null);
   if (tenantId) cyclesQ = cyclesQ.eq("tenant_id", tenantId);
   const { data: cycles } = await cyclesQ;
-  if (!cycles?.length) return { ok: true, overdue: 0, reminded: 0 };
+  if (!cycles?.length) return { ok: true, overdue: 0, reminded: 0, notified: 0 };
 
   // Resolve each cycle's template stages once.
   const templateIds = [...new Set(cycles.map((c) => c.template_id as string))];
@@ -52,6 +58,7 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
 
   let overdue = 0;
   let reminded = 0;
+  let notified = 0;
 
   for (const c of cycles) {
     const stages = stagesByTemplate.get(c.template_id as string) ?? [];
@@ -68,6 +75,33 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
       if (key === COMPLETED || key === REJECTED) continue;
       const stage = stages.find((s) => s.key === key);
       if (!stage || !stage.notify) continue;
+
+      // Raise the tenant's configured deadline rules, whichever side of the due
+      // date today falls. These two events were configurable from the start but
+      // never raised anywhere, so every rule an administrator set was silent.
+      const dueDate = stageDueDate(stage, c.period_start as string);
+      const event = deadlineEventFor({ dueDate, today });
+      if (event) {
+        const stageOwner = responsibleUserId(stage.responsibleRole, a);
+        await dispatchScheduledEvent(
+          event,
+          {
+            tenantId: a.tenant_id as string,
+            employeeIds: a.employee_id ? [a.employee_id as string] : [],
+            managerIds: a.manager_id ? [a.manager_id as string] : [],
+            secondLevelIds: a.second_level_id ? [a.second_level_id as string] : [],
+            placeholders: {
+              stage: stage.label,
+              deadline: dueDate,
+              status: deadlinePhrase({ dueDate, today }),
+            },
+            url: "/performance/appraisals",
+          },
+          { dueDate, today },
+        );
+        if (stageOwner) notified += 1;
+      }
+
       if (!isStageOverdue(stage, c.period_start as string, today)) continue;
 
       overdue += 1;
@@ -92,5 +126,5 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
     }
   }
 
-  return { ok: true, overdue, reminded };
+  return { ok: true, overdue, reminded, notified };
 }

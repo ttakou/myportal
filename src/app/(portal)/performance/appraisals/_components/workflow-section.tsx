@@ -28,9 +28,15 @@ export async function WorkflowSection({
     status: completed.has(s.key) ? "done" : active.has(s.key) ? "active" : "upcoming",
   }));
 
-  const actionable: Actionable[] = wf.activeKeys
+  const mine = (s: WorkflowStage) => wf.userRoles.some((r) => canAct(s, r));
+  const liveStages = wf.activeKeys
     .map((k) => stageByKey(wf.stages, k))
-    .filter((s): s is WorkflowStage => !!s && wf.userRoles.some((r) => canAct(s, r)))
+    .filter((s): s is WorkflowStage => !!s);
+
+  // An administrator can take somebody else's step for them; the button says so
+  // rather than pretending the step is theirs.
+  const actionable: Actionable[] = liveStages
+    .filter((s) => mine(s) || wf.canProxy)
     .map((s) => ({
       key: s.key,
       label: s.label,
@@ -38,12 +44,12 @@ export async function WorkflowSection({
       primaryLabel: s.allowApprove ? "Approve" : "Submit",
       allowReturn: s.allowReturn,
       allowReject: s.allowReject,
+      actingFor: mine(s) ? null : STAGE_ROLE_LABEL[s.responsibleRole],
     }));
 
-  // Whom we're waiting on (active stages the viewer can't action).
-  const waitingOn = wf.activeKeys
-    .map((k) => stageByKey(wf.stages, k))
-    .filter((s): s is WorkflowStage => !!s && !wf.userRoles.some((r) => canAct(s, r)))
+  // Whom we're waiting on (active stages the viewer isn't the owner of).
+  const waitingOn = liveStages
+    .filter((s) => !mine(s))
     .map((s) => STAGE_ROLE_LABEL[s.responsibleRole]);
 
   const progress = applicable.length ? Math.round((completed.size / applicable.length) * 100) : 0;
@@ -56,6 +62,7 @@ export async function WorkflowSection({
       actionable={actionable}
       waitingOn={[...new Set(waitingOn)]}
       progress={progress}
+      isProxy={wf.canProxy && actionable.some((a) => a.actingFor)}
       completed={wf.terminal === "completed"}
       rejected={wf.terminal === "rejected"}
     />

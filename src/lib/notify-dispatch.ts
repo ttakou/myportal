@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUsers } from "@/lib/notify";
 import { isEmailConfigured, sendEmail } from "@/lib/email";
 import { renderTemplate, resolveRuleProfileIds, type DispatchContext } from "@/lib/notify-template";
+import { ruleFiresToday } from "@/lib/performance/deadline-notices";
 import type { NotificationEvent, NotificationRule, RecipientRole } from "@/types/notifications";
 
 export type { DispatchContext } from "@/lib/notify-template";
@@ -48,6 +49,29 @@ async function sendTeams(text: string): Promise<void> {
  * Best-effort — never throws into the caller.
  */
 export async function dispatchEvent(event: NotificationEvent, ctx: DispatchContext): Promise<void> {
+  return dispatch(event, ctx, null);
+}
+
+/**
+ * Dispatch a deadline-driven event from the daily sweep.
+ *
+ * The counterpart to `dispatchEvent`: those rules fire the moment somebody acts,
+ * these fire because a date arrived. Passing the due date in is what lets a
+ * "three days before" rule know whether today is that day.
+ */
+export async function dispatchScheduledEvent(
+  event: NotificationEvent,
+  ctx: DispatchContext,
+  when: { dueDate: string; today: string },
+): Promise<void> {
+  return dispatch(event, ctx, when);
+}
+
+async function dispatch(
+  event: NotificationEvent,
+  ctx: DispatchContext,
+  when: { dueDate: string; today: string } | null,
+): Promise<void> {
   try {
     const admin = createAdminClient();
     if (!admin) return;
@@ -62,7 +86,13 @@ export async function dispatchEvent(event: NotificationEvent, ctx: DispatchConte
     const values = ctx.placeholders ?? {};
 
     for (const rule of rules) {
-      if (rule.timing !== "immediate") continue; // scheduled timings handled by cron
+      // An action dispatch only ever fires immediate rules; a sweep dispatch
+      // only ever fires the scheduled ones. Neither can double up on the other.
+      if (when === null) {
+        if (rule.timing !== "immediate") continue;
+      } else if (!ruleFiresToday(rule, when)) {
+        continue;
+      }
       const title = renderTemplate(rule.subjectTemplate, values) || event.replace(/_/g, " ");
       const body = renderTemplate(rule.bodyTemplate, values);
       const wantsInApp = rule.channels.includes("in_app");
