@@ -27,6 +27,7 @@ export type FunctionalRole =
   | "campboss"
   | "oim"
   | "dispatcher"
+  | "pgm"
   | "system_admin";
 
 /**
@@ -73,6 +74,8 @@ export interface Access {
    * offshore-staff roster (full), with read-only POB & accommodation.
    */
   isDispatcher: boolean;
+  /** Records the final rating at Final Appraisal — the PGM, or an HR admin. */
+  isPgm: boolean;
 }
 
 /** Resolve the current user's base role + functional roles into capability flags. */
@@ -112,5 +115,8 @@ export const getAccess = cache(async (): Promise<Access> => {
     isCampboss: isSystemAdmin || has("campboss"),
     isOim: isSystemAdmin || has("oim"),
     isDispatcher: isSystemAdmin || has("dispatcher"),
+    // The PGM records the final rating. HR admins may record it too, so they
+    // count as holding the role rather than having to proxy for somebody.
+    isPgm: isSystemAdmin || has("pgm") || has("hr_admin"),
   };
 });

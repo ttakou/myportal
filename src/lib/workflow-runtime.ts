@@ -91,6 +91,10 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
   if (canProxy) {
     userRoles.push("hr", "calibration");
   }
+  // The final rating may be recorded by the PGM or by an HR admin, so holding
+  // either counts as holding the stage's role — recording it is their own work,
+  // not a proxy for somebody else.
+  if (access.isPgm) userRoles.push("pgm");
 
   return {
     appraisalId: ap.id as string,

@@ -10,7 +10,12 @@ import {
 } from "@/lib/workflow-engine";
 import { dispatchScheduledEvent } from "@/lib/notify-dispatch";
 import { deadlineEventFor, deadlinePhrase } from "@/lib/performance/deadline-notices";
-import { pickHrRecipients, type RoleHolder } from "@/lib/performance/hr-recipients";
+import {
+  pickHrRecipients,
+  pickPgmRecipients,
+  ROLE_HOLDER_ROLES,
+  type RoleHolder,
+} from "@/lib/performance/hr-recipients";
 import { appraisableIdsForTenant } from "@/lib/performance/roster";
 import type { WorkflowStage } from "@/types/workflow";
 
@@ -63,18 +68,23 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
   let notified = 0;
   // Both resolved per tenant, once, and only when actually needed.
   const rosterByTenant = new Map<string, Set<string>>();
-  const hrByTenant = new Map<string, string[]>();
-  async function hrFor(tenantId: string): Promise<string[]> {
-    const cached = hrByTenant.get(tenantId);
+  const holdersByTenant = new Map<string, RoleHolder[]>();
+  async function holdersFor(tenantId: string): Promise<RoleHolder[]> {
+    const cached = holdersByTenant.get(tenantId);
     if (cached) return cached;
-    const { data: holders } = await admin!
+    const { data } = await admin!
       .from("profile_roles")
       .select("profile_id, role")
       .eq("tenant_id", tenantId)
-      .in("role", ["hr_admin", "system_admin"]);
-    const ids = pickHrRecipients((holders ?? []) as RoleHolder[]);
-    hrByTenant.set(tenantId, ids);
-    return ids;
+      .in("role", ROLE_HOLDER_ROLES);
+    const holders = (data ?? []) as RoleHolder[];
+    holdersByTenant.set(tenantId, holders);
+    return holders;
+  }
+  /** Whoever should be chased for a stage nobody is named on. */
+  async function roleHoldersFor(tenantId: string, role: string): Promise<string[]> {
+    const holders = await holdersFor(tenantId);
+    return role === "pgm" ? pickPgmRecipients(holders) : pickHrRecipients(holders);
   }
 
   for (const c of cycles) {
@@ -133,7 +143,9 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
       // HR and calibration stages name no individual — the role is the owner —
       // so chase whoever holds it rather than chasing nobody.
       const owner = responsibleUserId(stage.responsibleRole, a);
-      const recipients = owner ? [owner] : await hrFor(a.tenant_id as string);
+      const recipients = owner
+        ? [owner]
+        : await roleHoldersFor(a.tenant_id as string, stage.responsibleRole);
       if (recipients.length) {
         await notifyUsers({
           tenantId: a.tenant_id as string,
