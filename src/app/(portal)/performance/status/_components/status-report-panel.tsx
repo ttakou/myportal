@@ -96,6 +96,16 @@ export function StatusReportPanel({ report }: { report: StatusReport }) {
         <Stat label="Running late" value={report.summary.overdue} tone={report.summary.overdue > 0 ? "bad" : undefined} />
       </div>
 
+      {report.outsideRoster > 0 && (
+        <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          {report.outsideRoster} appraisal{report.outsideRoster === 1 ? "" : "s"} in this cycle
+          belong to people who are no longer in the performance workflow — they cannot open the
+          module, so they are left out of every figure here and are never chased. Launched under an
+          older roster rule; clear them when convenient.
+        </p>
+      )}
+
       {report.noWorkflow && (
         <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
