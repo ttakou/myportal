@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { CalendarRange, ChevronDown, Lock, LockOpen } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,14 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <CalendarRange className="h-3.5 w-3.5" /> Phases
+          {/* The dates are set step by step on the deadlines page — the board
+              showed them with no way to get to them. */}
+          <Link
+            href="/performance/deadlines"
+            className="font-normal normal-case tracking-normal text-primary underline underline-offset-2 hover:no-underline"
+          >
+            Edit dates
+          </Link>
         </h4>
         <p className="text-[11px] text-muted-foreground">
           {followsDates
@@ -141,6 +150,14 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
         </table>
       </div>
 
+      <p className="text-[11px] text-muted-foreground">
+        A phase ends on the deadline of its last step and starts the day after the one before it
+        closed, so the dates are set step by step under{" "}
+        <Link href="/performance/deadlines" className="underline underline-offset-2 hover:text-foreground">
+          Deadlines
+        </Link>
+        , not here.
+      </p>
       <p className="text-[11px] text-muted-foreground">
         Opening a phase says where the cycle is for everybody in it. Each person still works
         through their own steps in order — it does not move anybody past theirs.
