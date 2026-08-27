@@ -11,6 +11,7 @@ import { getAppraisalCapabilities } from "@/lib/perf-permissions";
 import { ensureHousePhaseTemplate } from "@/lib/performance/house-template";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
+import { goalWeightTotal, goalsScore } from "@/lib/performance/goal-weighting";
 export type { ActionResult };
 
 const rev = () => revalidatePath("/performance/appraisals");
@@ -460,27 +461,33 @@ type GoalRuleConfig = {
   goalWeightsTotal100: boolean;
 };
 
-/** Validate objectives against the tenant's configured goal rules. */
-function objectiveWeightError(
+/**
+ * Validate the goals against the tenant's configured rules.
+ *
+ * Every goal is counted, whatever its type. Development goals used to be
+ * excluded from the count and from the 100%, so a person could hold a goal
+ * weighted 35% while the total read 65% with nothing to say where the rest had
+ * gone. A weight means the same thing on every goal now.
+ */
+function goalWeightError(
   goals: { weight: number | null; kind: string }[],
   config?: GoalRuleConfig,
 ): string | null {
-  const objectives = goals.filter((g) => g.kind === "objective");
   const min = config?.minGoals ?? 1;
-  if (objectives.length < Math.max(1, min))
-    return `Add at least ${Math.max(1, min)} objective${min === 1 ? "" : "s"} (KPI/OKR) before submitting.`;
-  if (config && objectives.length > config.maxGoals)
-    return `You can set at most ${config.maxGoals} objective${config.maxGoals === 1 ? "" : "s"}.`;
+  if (goals.length < Math.max(1, min))
+    return `Add at least ${Math.max(1, min)} goal${min === 1 ? "" : "s"} before submitting.`;
+  if (config && goals.length > config.maxGoals)
+    return `You can set at most ${config.maxGoals} goal${config.maxGoals === 1 ? "" : "s"}.`;
   if (config) {
-    for (const g of objectives) {
+    for (const g of goals) {
       const w = g.weight ?? 0;
       if (w < config.minGoalWeight || w > config.maxGoalWeight)
-        return `Each objective's weight must be between ${config.minGoalWeight}% and ${config.maxGoalWeight}%.`;
+        return `Each goal's weight must be between ${config.minGoalWeight}% and ${config.maxGoalWeight}%.`;
     }
   }
   if (!config || config.goalWeightsTotal100) {
-    const sum = objectives.reduce((s, g) => s + (g.weight ?? 0), 0);
-    if (sum !== 100) return `Objective weights must total 100% — they currently total ${sum}%.`;
+    const sum = goalWeightTotal(goals);
+    if (sum !== 100) return `Goal weights must total 100% — they currently total ${sum}%.`;
   }
   return null;
 }
@@ -503,18 +510,19 @@ export async function addGoal(input: {
   const supabase = createClient();
   const kind = input.kind === "development" ? "development" : "objective";
 
-  // Enforce the tenant's configured cap on the number of objectives.
-  if (kind === "objective") {
+  // Enforce the tenant's configured cap. Every goal counts towards it now that
+  // every goal is weighted in the same 100%; capping objectives alone let the
+  // limit be walked around by filing the next one as development.
+  {
     const config = await getPerformanceConfig();
     const { count } = await supabase
       .from("appraisal_goals")
       .select("id", { count: "exact", head: true })
-      .eq("appraisal_id", a.id)
-      .eq("kind", "objective");
+      .eq("appraisal_id", a.id);
     if ((count ?? 0) >= config.maxGoals) {
       return {
         ok: false,
-        error: `You can set at most ${config.maxGoals} objective${config.maxGoals === 1 ? "" : "s"}.`,
+        error: `You can set at most ${config.maxGoals} goal${config.maxGoals === 1 ? "" : "s"}.`,
       };
     }
   }
@@ -652,7 +660,7 @@ export async function submitGoals(appraisalId: string): Promise<ActionResult> {
     alignment: string | null;
   }[];
   if (goals.length === 0) return { ok: false, error: "Add at least one goal before submitting." };
-  const weightError = objectiveWeightError(goals, config);
+  const weightError = goalWeightError(goals, config);
   if (weightError) return { ok: false, error: weightError };
   const objectives = goals.filter((g) => g.kind === "objective");
   if (config.requireSuccessIndicator && objectives.some((g) => !g.success_indicator?.trim()))
@@ -848,7 +856,7 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
     .eq("appraisal_id", a.id);
 
   const apprConfig = await getPerformanceConfig();
-  const weightError = objectiveWeightError(
+  const weightError = goalWeightError(
     (goals ?? []) as { weight: number | null; kind: string }[],
     apprConfig,
   );
@@ -1087,30 +1095,17 @@ export async function submitManagerEvaluation(input: {
     ]),
   );
 
-  // OKR component: weighted (by goal weight) average of objective ratings, 1–5.
-  let okrW = 0;
-  let okrAcc = 0;
-  let okrCount = 0;
-  let okrPlain = 0;
-  // Development component: simple average of development-goal ratings.
-  let devAcc = 0;
-  let devCount = 0;
-  for (const g of goals ?? []) {
-    const r = g.manager_rating as number | null;
-    if (r == null) continue;
-    if ((g.kind as string) === "development") {
-      devAcc += r;
-      devCount += 1;
-    } else {
-      const w = (g.weight as number) || 0;
-      okrW += w;
-      okrAcc += w * r;
-      okrPlain += r;
-      okrCount += 1;
-    }
-  }
-  if (okrCount === 0) return { ok: false, error: "Rate at least one objective before submitting." };
-  const okrAvg = okrW > 0 ? okrAcc / okrW : okrPlain / okrCount; // 1–5
+  // Goals component: weighted (by goal weight) average of every goal's rating,
+  // 1–5. Objectives and development goals share one pot — a goal's type is a
+  // label on it, not a lever on what it is worth.
+  const { average: goalsAvg, rated: ratedGoals } = goalsScore(
+    (goals ?? []).map((g) => ({
+      weight: (g.weight as number | null) ?? null,
+      manager_rating: g.manager_rating as number | null,
+    })),
+  );
+  if (goalsAvg == null) return { ok: false, error: "Rate at least one goal before submitting." };
+  const okrAvg = goalsAvg;
 
   // Competency component: weight-weighted average of the manager ratings, 1–5
   // (each competency carries a relative weight; default 1 = equal weighting).
@@ -1130,18 +1125,17 @@ export async function submitManagerEvaluation(input: {
   // Component %s (rating/5 → %), then weight by the cycle's configured weights,
   // normalising over the components that actually have data.
   const pct = (avg: number) => (avg / 5) * 100;
-  const wOkr = (cycle?.weight_okr as number) ?? 70;
+  // The cycle's development share now belongs to the goals, since development
+  // goals are weighted among them rather than scored in a pot of their own.
+  // Adding it here keeps the split the cycle was configured with: what used to
+  // be 70 OKR + 10 development is 80 for goals, competencies untouched at 20.
+  const wGoals = ((cycle?.weight_okr as number) ?? 70) + ((cycle?.weight_development as number) ?? 10);
   const wComp = (cycle?.weight_competency as number) ?? 20;
-  const wDev = (cycle?.weight_development as number) ?? 10;
-  let num = pct(okrAvg) * wOkr;
-  let den = wOkr;
+  let num = pct(okrAvg) * wGoals;
+  let den = wGoals;
   if (compCount > 0) {
     num += pct(compAvg) * wComp;
     den += wComp;
-  }
-  if (devCount > 0) {
-    num += pct(devAcc / devCount) * wDev;
-    den += wDev;
   }
   const finalScore = den > 0 ? num / den : pct(okrAvg);
   const overall = okrAvg;

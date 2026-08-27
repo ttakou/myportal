@@ -8,53 +8,26 @@ import { cn } from "@/lib/utils";
  * grey type as the deadline and the alignment, run together after a dot. It
  * reads as filing detail rather than as the thing being agreed.
  *
- * An unweighted objective is worth nothing at all, so a zero is called out
- * rather than shown as a quiet "0%".
+ * Every goal is weighted in the same 100%, whatever its type, so the badge
+ * looks the same on all of them. A goal with no weight is worth nothing at
+ * all, so a zero is called out rather than shown as a quiet "0%".
  */
 export function GoalWeight({
   weight,
-  kind = "objective",
   className,
 }: {
   weight: number | null;
-  /** Development goals are weighted by the cycle, not against the 100%. */
-  kind?: "objective" | "development";
   className?: string;
 }) {
   const value = weight ?? 0;
-  // A development goal is weighted by the cycle, not against the objectives'
-  // 100%, so an unweighted one is normal — and a "0% weight" badge on it would
-  // say something untrue. The row already marks it as development.
-  if (kind === "development" && value === 0) return null;
-
-  // A weighted development goal is the confusing case: the figure is real but
-  // it is not part of the objectives' 100%, so somebody reading "35%" next to a
-  // total of 65% is owed the reason. Say which pot it counts in.
-  if (kind === "development") {
-    return (
-      <span
-        title={`Weighted ${value}% within the cycle's development share — not part of the objectives' 100%.`}
-        className={cn(
-          "inline-flex shrink-0 items-baseline gap-1 rounded-md bg-muted px-2 py-0.5 text-sm font-semibold tabular-nums text-muted-foreground",
-          className,
-        )}
-      >
-        {value}%
-        <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">
-          development
-        </span>
-      </span>
-    );
-  }
-
   const unweighted = value === 0;
 
   return (
     <span
       title={
         unweighted
-          ? "No weight — this objective counts for nothing until it is given one."
-          : `This goal carries ${value}% of the objectives score.`
+          ? "No weight — this goal counts for nothing until it is given one."
+          : `This goal carries ${value}% of the goals score.`
       }
       className={cn(
         "inline-flex shrink-0 items-baseline gap-1 rounded-md px-2 py-0.5 text-sm font-semibold tabular-nums",

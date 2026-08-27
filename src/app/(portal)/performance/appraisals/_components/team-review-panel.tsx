@@ -198,7 +198,7 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
                       self {g.employee_self_rating}
                     </span>
                   )}
-                  <GoalWeight weight={g.weight} kind={g.kind} />
+                  <GoalWeight weight={g.weight} />
                 </span>
               </div>
               {g.description && (
