@@ -1344,6 +1344,44 @@ export async function acknowledge(input: {
   return { ok: true };
 }
 
+/**
+ * Record the line manager's comment for the cycle.
+ *
+ * Every phase runs employee submits → manager reviews and comments → both sign
+ * off, and the comment is the whole point of the review step. It could only be
+ * written as part of the manager's full evaluation, so an administrator
+ * standing in for an absent manager could tick the step but not record what the
+ * step is for. The manager writes their own; an administrator writing it is
+ * stamped as acting for them.
+ */
+export async function setManagerComment(input: {
+  appraisalId: string;
+  comment: string;
+}): Promise<ActionResult> {
+  const a = await loadAppraisal(input.appraisalId);
+  if (!a) return { ok: false, error: "Appraisal not found." };
+  const me = await uid();
+  const access = await getAccess();
+  const isReviewer = !!me && (me === a.manager_id || me === a.second_level_id);
+  const isProxy = access.isHr || access.isAdmin || access.isSystemAdmin;
+  if (!isReviewer && !isProxy) {
+    return { ok: false, error: "Only the line manager, or an administrator acting for them, can write this." };
+  }
+  const comment = input.comment.trim();
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appraisals")
+    .update({ manager_summary: comment || null, updated_at: new Date().toISOString() })
+    .eq("id", a.id);
+  if (error) return { ok: false, error: error.message };
+
+  await logEvent(a, "manager_comment", comment || null, await actingFor(a, "line_manager"));
+  rev();
+  revalidatePath(`/performance/appraisals/${a.id}/act`);
+  return { ok: true };
+}
+
 /** HR closes the appraisal — it becomes read-only and enters performance history. */
 export async function closeAppraisal(appraisalId: string): Promise<ActionResult> {
   const denied = await requireHr();
