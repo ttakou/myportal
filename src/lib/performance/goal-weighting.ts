@@ -58,3 +58,42 @@ export function goalsScore(goals: WeightedGoal[]): GoalsScore {
   if (rated === 0) return { average: null, rated: 0 };
   return { average: weight > 0 ? weighted / weight : plain / rated, rated };
 }
+
+export interface GoalRuleConfig {
+  minGoals: number;
+  maxGoals: number;
+  minGoalWeight: number;
+  maxGoalWeight: number;
+  goalWeightsTotal100: boolean;
+}
+
+/**
+ * Validate the goals against the tenant's configured rules.
+ *
+ * Every goal is counted, whatever its type. Development goals used to be
+ * excluded from the count and from the 100%, so a person could hold a goal
+ * weighted 35% while the total read 65% with nothing to say where the rest had
+ * gone. A weight means the same thing on every goal now.
+ */
+export function goalWeightError(
+  goals: { weight: number | null; kind: string }[],
+  config?: GoalRuleConfig,
+): string | null {
+  const min = config?.minGoals ?? 1;
+  if (goals.length < Math.max(1, min))
+    return `Add at least ${Math.max(1, min)} goal${min === 1 ? "" : "s"} before submitting.`;
+  if (config && goals.length > config.maxGoals)
+    return `You can set at most ${config.maxGoals} goal${config.maxGoals === 1 ? "" : "s"}.`;
+  if (config) {
+    for (const g of goals) {
+      const w = g.weight ?? 0;
+      if (w < config.minGoalWeight || w > config.maxGoalWeight)
+        return `Each goal's weight must be between ${config.minGoalWeight}% and ${config.maxGoalWeight}%.`;
+    }
+  }
+  if (!config || config.goalWeightsTotal100) {
+    const sum = goalWeightTotal(goals);
+    if (sum !== 100) return `Goal weights must total 100% — they currently total ${sum}%.`;
+  }
+  return null;
+}

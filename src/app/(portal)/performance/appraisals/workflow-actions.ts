@@ -12,9 +12,35 @@ import {
   type StageAction,
 } from "@/lib/workflow-engine";
 import type { ActionResult } from "@/types/actions";
+import { goalWeightError } from "@/lib/performance/goal-weighting";
+import { getPerformanceConfig } from "@/lib/performance-config";
 
 const ACTIONS: StageAction[] = ["submit", "approve", "return", "reject"];
 const REJECTED = "__rejected__";
+
+/**
+ * Why the goals aren't ready for this step, or null when they are.
+ *
+ * `full` applies the tenant's configured rules — the count and the weights
+ * totalling 100% — which is what the goal-setting panel checks before it lets
+ * an employee submit. Everybody else only needs there to be goals at all:
+ * a manager reviewing, signing off or approving nothing is meaningless, but
+ * holding them to the employee's rules would trap them behind a mistake that
+ * is not theirs to fix from that step.
+ */
+async function goalsNotReady(appraisalId: string, full: boolean): Promise<string | null> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("appraisal_goals")
+    .select("weight, kind")
+    .eq("appraisal_id", appraisalId);
+  const goals = (data ?? []) as { weight: number | null; kind: string }[];
+  if (goals.length === 0) {
+    return "There are no goals on this appraisal yet, so this step has nothing to act on.";
+  }
+  if (!full) return null;
+  return goalWeightError(goals, await getPerformanceConfig());
+}
 
 /**
  * Act on a specific workflow stage. Multiple stages can be active at once when a
@@ -46,6 +72,19 @@ export async function advanceAppraisalStage(
   const onBehalfOf = mine ? null : responsibleUserId(stage.responsibleRole, wf.parties);
 
   const supabase = createClient();
+
+  // A step that works on the goals cannot be completed when there are none.
+  //
+  // The employee's submission had two doors into the same transition — the
+  // goal-setting panel, which checks the goals first, and this timeline, which
+  // did not — so a submit here marked the step done with nothing submitted, and
+  // the manager arrived at "review and comment" with nothing to review and no
+  // way to hand it back. The employee's own step is held to the full rules, the
+  // same ones the panel applies; every other step needs the goals to exist.
+  if ((action === "submit" || action === "approve") && stage.editableFields.includes("goals")) {
+    const invalid = await goalsNotReady(appraisalId, stage.responsibleRole === "employee");
+    if (invalid) return { ok: false, error: invalid };
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();

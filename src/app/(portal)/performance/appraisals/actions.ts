@@ -11,7 +11,7 @@ import { getAppraisalCapabilities } from "@/lib/perf-permissions";
 import { ensureHousePhaseTemplate } from "@/lib/performance/house-template";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
-import { goalWeightTotal, goalsScore } from "@/lib/performance/goal-weighting";
+import { goalWeightError, goalsScore } from "@/lib/performance/goal-weighting";
 export type { ActionResult };
 
 const rev = () => revalidatePath("/performance/appraisals");
@@ -453,45 +453,6 @@ async function requireEmployeeEditable(id: string): Promise<{ a: AppraisalRow } 
  * the full allocation. Development goals are weighted separately by the cycle, so
  * they're excluded here. Returns an error message, or null when valid.
  */
-type GoalRuleConfig = {
-  minGoals: number;
-  maxGoals: number;
-  minGoalWeight: number;
-  maxGoalWeight: number;
-  goalWeightsTotal100: boolean;
-};
-
-/**
- * Validate the goals against the tenant's configured rules.
- *
- * Every goal is counted, whatever its type. Development goals used to be
- * excluded from the count and from the 100%, so a person could hold a goal
- * weighted 35% while the total read 65% with nothing to say where the rest had
- * gone. A weight means the same thing on every goal now.
- */
-function goalWeightError(
-  goals: { weight: number | null; kind: string }[],
-  config?: GoalRuleConfig,
-): string | null {
-  const min = config?.minGoals ?? 1;
-  if (goals.length < Math.max(1, min))
-    return `Add at least ${Math.max(1, min)} goal${min === 1 ? "" : "s"} before submitting.`;
-  if (config && goals.length > config.maxGoals)
-    return `You can set at most ${config.maxGoals} goal${config.maxGoals === 1 ? "" : "s"}.`;
-  if (config) {
-    for (const g of goals) {
-      const w = g.weight ?? 0;
-      if (w < config.minGoalWeight || w > config.maxGoalWeight)
-        return `Each goal's weight must be between ${config.minGoalWeight}% and ${config.maxGoalWeight}%.`;
-    }
-  }
-  if (!config || config.goalWeightsTotal100) {
-    const sum = goalWeightTotal(goals);
-    if (sum !== 100) return `Goal weights must total 100% — they currently total ${sum}%.`;
-  }
-  return null;
-}
-
 export async function addGoal(input: {
   appraisalId: string;
   title: string;
