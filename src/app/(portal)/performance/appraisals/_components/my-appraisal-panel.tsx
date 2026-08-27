@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Plus, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GoalWeight } from "./goal-weight";
 import {
   STAGE_LABEL,
   STATUS_LABEL,
@@ -381,9 +382,9 @@ function MidYear({
       <h3 className="text-sm font-semibold">Mid-year progress</h3>
       {appraisal.goals.map((g) => (
         <div key={g.id} className="rounded-md border p-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="font-medium">{g.title}</span>
-            <span className="text-xs text-muted-foreground">{g.weight}%</span>
+            <GoalWeight weight={g.weight} kind={g.kind} />
           </div>
           <textarea
             defaultValue={g.employee_progress ?? ""}
@@ -543,11 +544,15 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
       <ul className="divide-y text-sm">
         {appraisal.goals.map((g) => (
           <li key={g.id} className="py-2">
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-3">
               <span className="font-medium">{g.title}</span>
-              <span className="text-xs text-muted-foreground">
-                {g.weight}%
-                {g.employee_self_rating != null ? ` · self ${g.employee_self_rating}` : ""}
+              <span className="flex shrink-0 items-center gap-2">
+                {g.employee_self_rating != null && (
+                  <span className="text-xs text-muted-foreground">
+                    self {g.employee_self_rating}
+                  </span>
+                )}
+                <GoalWeight weight={g.weight} kind={g.kind} />
               </span>
             </div>
             {g.key_results.length > 0 && (
@@ -858,12 +863,19 @@ function GoalRow({
               )}
             </div>
             {g.description && <div className="text-sm text-muted-foreground">{g.description}</div>}
+            {/* The weight has its own badge now, so it is no longer buried in
+                this run of small print. */}
             <div className="text-xs text-muted-foreground">
-              {g.weight}%{g.deadline ? ` · due ${g.deadline}` : ""}
-              {g.alignment ? ` · ${g.alignment}` : ""}
-              {g.success_indicator ? ` · ${g.success_indicator}` : ""}
+              {[
+                g.deadline ? `due ${g.deadline}` : null,
+                g.alignment,
+                g.success_indicator,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </div>
           </div>
+          <GoalWeight weight={g.weight} kind={g.kind} className="mt-0.5" />
           {editable && (
             <div className="flex shrink-0 items-center gap-2">
               <button

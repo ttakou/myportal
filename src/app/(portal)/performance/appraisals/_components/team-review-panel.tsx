@@ -6,6 +6,7 @@ import { useStatusTransition } from "@/components/activity";
 import { Check, ChevronDown, Send, Undo2, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { GoalWeight } from "./goal-weight";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type Colleague } from "@/types/appraisal";
@@ -191,9 +192,13 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
                   {g.title}
                   {g.at_risk ? <span className="ml-1 text-xs text-amber-700">(at risk)</span> : ""}
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {g.weight}%
-                  {g.employee_self_rating != null ? ` · self ${g.employee_self_rating}` : ""}
+                <span className="flex shrink-0 items-center gap-2">
+                  {g.employee_self_rating != null && (
+                    <span className="text-xs text-muted-foreground">
+                      self {g.employee_self_rating}
+                    </span>
+                  )}
+                  <GoalWeight weight={g.weight} kind={g.kind} />
                 </span>
               </div>
               {g.description && (
