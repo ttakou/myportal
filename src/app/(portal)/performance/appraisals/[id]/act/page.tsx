@@ -1,10 +1,12 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ShieldX, UserCog } from "lucide-react";
+import { ArrowLeft, ShieldX, UserCog, Users } from "lucide-react";
 import { getAppraisal } from "@/lib/appraisals";
 import { getAccess } from "@/lib/auth";
 import { proxyTrail } from "@/lib/performance/proxy";
+import { getManagerLine } from "@/lib/performance/team-line";
+import { TeamLinePanel } from "../../_components/team-line-panel";
 import { STATUS_LABEL, type Appraisal } from "@/types/appraisal";
 import { WorkflowSection } from "../../_components/workflow-section";
 import { AppraisalFormOutline } from "../../_components/appraisal-form-outline";
@@ -90,6 +92,17 @@ export default async function ActForPage({ params }: { params: Promise<{ id: str
         />
       </Suspense>
 
+      {/* Standing in for a line manager means doing their job, and their job is
+          mostly their reports' reviews and sign-offs rather than their own
+          appraisal. Self-hides for somebody who manages nobody. */}
+      <Suspense fallback={null}>
+        <TheirTeam
+          managerId={appraisal.employee_id}
+          managerName={employeeName}
+          cycleId={appraisal.cycle_id}
+        />
+      </Suspense>
+
       <ProxyManagerComment
         appraisalId={appraisal.id}
         employeeName={employeeName}
@@ -134,6 +147,42 @@ export default async function ActForPage({ params }: { params: Promise<{ id: str
         </Link>
       )}
     </div>
+  );
+}
+
+/**
+ * The reports of the person being stood in for.
+ *
+ * Reaching only their own appraisal was the smaller half of the job: a line
+ * manager owes a review, a comment and two sign-offs on every person under
+ * them, and it is those that stall when the manager is off the rig. Each row
+ * links to that report's own page, where the manager's step is taken for them
+ * and recorded the same way.
+ */
+async function TheirTeam({
+  managerId,
+  managerName,
+  cycleId,
+}: {
+  managerId: string;
+  managerName: string;
+  cycleId: string;
+}) {
+  const line = await getManagerLine(managerId, cycleId);
+  if (line.members.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <h2 className="flex items-center gap-2 text-lg font-semibold">
+        <Users className="h-5 w-5 text-muted-foreground" />
+        {managerName}&apos;s direct line ({line.members.length})
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        The reviews and sign-offs {managerName} owes. Open any of them to take the step for{" "}
+        {managerName}; your name and theirs are recorded against it, exactly as here.
+      </p>
+      <TeamLinePanel line={line} canAct heading={null} />
+    </section>
   );
 }
 

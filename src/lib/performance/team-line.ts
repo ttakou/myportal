@@ -34,12 +34,11 @@ export interface TeamLine {
  * gap is the thing worth seeing.
  */
 export async function getTeamLine(cycleId: string | null): Promise<TeamLine> {
-  const empty: TeamLine = { members: [], withoutAppraisal: 0, hasWorkflow: false };
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return empty;
+  if (!user) return EMPTY_LINE;
 
   // The same manager set the appraisal queue uses: me, plus anybody who
   // nominated me to cover for them.
@@ -48,6 +47,31 @@ export async function getTeamLine(cycleId: string | null): Promise<TeamLine> {
     .select("id")
     .eq("appraisal_delegate_id", user.id);
   const managerIds = [user.id, ...((delegators ?? []) as { id: string }[]).map((d) => d.id)];
+  return lineFor(managerIds, cycleId);
+}
+
+/**
+ * The same line, for somebody else.
+ *
+ * Standing in for a line manager means doing their job, and their job is mostly
+ * their reports' reviews and sign-offs rather than their own appraisal. An
+ * administrator opening a manager's appraisal to act for them could reach only
+ * that one record, which is the smaller half of what the manager owes.
+ */
+export async function getManagerLine(
+  managerId: string,
+  cycleId: string | null,
+): Promise<TeamLine> {
+  return lineFor([managerId], cycleId);
+}
+
+const EMPTY_LINE: TeamLine = { members: [], withoutAppraisal: 0, hasWorkflow: false };
+
+/** Everybody reporting to any of `managerIds`, with each one's phase. */
+async function lineFor(managerIds: string[], cycleId: string | null): Promise<TeamLine> {
+  const empty = EMPTY_LINE;
+  const supabase = createClient();
+  if (managerIds.length === 0) return empty;
 
   const { data: reports } = await supabase
     .from("profiles")
@@ -57,7 +81,7 @@ export async function getTeamLine(cycleId: string | null): Promise<TeamLine> {
     .order("full_name");
   const line = (reports ?? []) as { id: string; full_name: string | null; job_title: string | null }[];
 
-  // Appraisals that name me as the reviewer count too: a transfer can leave
+  // Appraisals naming them as the reviewer count too: a transfer can leave
   // somebody reviewing a person who no longer reports to them.
   const { data: mine } = cycleId
     ? await supabase
@@ -76,7 +100,7 @@ export async function getTeamLine(cycleId: string | null): Promise<TeamLine> {
   const rows = (mine ?? []) as unknown as Row[];
   const byEmployee = new Map(rows.map((r) => [r.employee_id, r]));
 
-  // Everybody in the line, plus anybody I review who is not in it.
+  // Everybody in the line, plus anybody they review who is not in it.
   const people = [...line];
   for (const r of rows) {
     if (people.some((p) => p.id === r.employee_id)) continue;
