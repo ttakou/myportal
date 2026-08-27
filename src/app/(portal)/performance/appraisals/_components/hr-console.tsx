@@ -621,8 +621,16 @@ function HrAppraisalList({
   appraisals: Appraisal[];
   cycleName: string | null;
 }) {
-  // Highest final score first; unscored staff fall to the bottom.
-  const rows = [...appraisals].sort((a, b) => (b.final_score ?? -1) - (a.final_score ?? -1));
+  // By name. It was highest score first, which ranks the workforce — useful at
+  // the end of a cycle, useless for most of one: before any rating exists every
+  // row scores nothing, so 120 people came out in no order at all and finding
+  // one meant reading the whole list. A name is what somebody arrives knowing.
+  const rows = [...appraisals].sort((a, b) =>
+    (a.employee_name ?? "").localeCompare(b.employee_name ?? "", undefined, {
+      sensitivity: "base",
+      numeric: true,
+    }),
+  );
   const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(rows.length);
   if (appraisals.length === 0) return null;
 
