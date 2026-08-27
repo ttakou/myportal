@@ -26,7 +26,28 @@ export function GoalWeight({
   // 100%, so an unweighted one is normal — and a "0% weight" badge on it would
   // say something untrue. The row already marks it as development.
   if (kind === "development" && value === 0) return null;
-  const unweighted = kind === "objective" && value === 0;
+
+  // A weighted development goal is the confusing case: the figure is real but
+  // it is not part of the objectives' 100%, so somebody reading "35%" next to a
+  // total of 65% is owed the reason. Say which pot it counts in.
+  if (kind === "development") {
+    return (
+      <span
+        title={`Weighted ${value}% within the cycle's development share — not part of the objectives' 100%.`}
+        className={cn(
+          "inline-flex shrink-0 items-baseline gap-1 rounded-md bg-muted px-2 py-0.5 text-sm font-semibold tabular-nums text-muted-foreground",
+          className,
+        )}
+      >
+        {value}%
+        <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">
+          development
+        </span>
+      </span>
+    );
+  }
+
+  const unweighted = value === 0;
 
   return (
     <span

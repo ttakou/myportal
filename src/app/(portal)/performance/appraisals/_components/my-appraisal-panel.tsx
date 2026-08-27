@@ -172,6 +172,12 @@ function GoalSetting({
   const objectiveWeight = appraisal.goals
     .filter((g) => g.kind === "objective")
     .reduce((s, g) => s + (g.weight ?? 0), 0);
+  // Weight sitting on development goals is the usual reason a total comes up
+  // short: the figure is on screen, it simply counts in another pot. Saying so
+  // beats leaving somebody to work out where their missing 35% went.
+  const developmentWeight = appraisal.goals
+    .filter((g) => g.kind === "development")
+    .reduce((s, g) => s + (g.weight ?? 0), 0);
 
   return (
     <div className="rounded-lg border bg-card p-4">
@@ -183,6 +189,17 @@ function GoalSetting({
           Objective weight: {objectiveWeight}%{objectiveWeight === 100 ? "" : " — must total 100%"}
         </span>
       </div>
+      {objectiveWeight !== 100 && developmentWeight > 0 && (
+        <p className="mb-3 rounded-md border border-muted bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          A further {developmentWeight}% sits on{" "}
+          {appraisal.goals.filter((g) => g.kind === "development" && (g.weight ?? 0) > 0).length ===
+          1
+            ? "a goal marked development"
+            : "goals marked development"}
+          , which the cycle weights separately and which therefore never counts towards this 100%.
+          If it was meant to be an objective, change its type with Edit.
+        </p>
+      )}
       {appraisal.goals.length === 0 ? (
         <p className="text-sm text-muted-foreground">No objectives yet.</p>
       ) : (
@@ -814,6 +831,7 @@ function GoalRow({
   const [weight, setWeight] = useState(String(g.weight ?? 0));
   const [deadline, setDeadline] = useState(g.deadline ?? "");
   const [indicator, setIndicator] = useState(g.success_indicator ?? "");
+  const [kind, setKind] = useState<"objective" | "development">(g.kind);
 
   return (
     <li className="py-2">
@@ -821,9 +839,20 @@ function GoalRow({
         <div className="space-y-2 rounded-md border bg-muted/30 p-3">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Objective title" className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             <input value={weight} onChange={(e) => setWeight(e.target.value)} type="number" min={0} max={100} placeholder="Weight %" className="rounded-md border bg-background px-3 py-2 text-sm" />
             <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
+            {/* Only settable at creation until now, so a goal filed under the
+                wrong heading had to be deleted and typed out again. */}
+            <select
+              value={kind}
+              onChange={(e) => setKind(e.target.value as "objective" | "development")}
+              title="Objectives share the 100%; development goals are weighted separately by the cycle."
+              className="rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="objective">Objective — counts in the 100%</option>
+              <option value="development">Development — weighted separately</option>
+            </select>
           </div>
           <textarea value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Success indicator" rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
           <div className="flex justify-end gap-2">
@@ -842,6 +871,7 @@ function GoalRow({
                       weight: Number(weight) || 0,
                       deadline: deadline || undefined,
                       successIndicator: indicator,
+                      kind,
                     }),
                   () => setEdit(false),
                 )

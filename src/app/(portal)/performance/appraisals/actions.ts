@@ -546,6 +546,13 @@ export async function updateGoal(input: {
   weight?: number;
   deadline?: string;
   successIndicator?: string;
+  /**
+   * Objective or development. It could only be chosen when the goal was
+   * created, so one filed under the wrong heading had to be deleted and typed
+   * out again — and until it was, its weight sat outside the objectives' 100%
+   * with nothing on screen to say why the total came up short.
+   */
+  kind?: "objective" | "development";
 }): Promise<ActionResult> {
   const guard = await requireEmployeeEditable(input.appraisalId);
   if ("ok" in guard) return guard;
@@ -553,6 +560,7 @@ export async function updateGoal(input: {
   const patch: Record<string, unknown> = {};
   if (input.title !== undefined) patch.title = input.title.trim();
   if (input.description !== undefined) patch.description = input.description.trim() || null;
+  if (input.kind !== undefined) patch.kind = input.kind;
   if (input.weight !== undefined) patch.weight = Math.max(0, Math.min(100, Math.floor(input.weight)));
   if (input.deadline !== undefined) patch.deadline = input.deadline || null;
   if (input.successIndicator !== undefined)
