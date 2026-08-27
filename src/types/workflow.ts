@@ -203,18 +203,17 @@ export const HOUSE_PHASES: WorkflowStage[] = [
     { approve: true },
   ),
 
-  // 5 — Final Appraisal: the rating that stands once calibration has moved it,
-  // recorded first, then signed by the employee and closed by the manager.
-  preset("final_appraisal_rating", "Final Appraisal — final rating recorded", "pgm", 356, [
-    "overall_rating",
-    "manager_comment",
-  ]),
-  preset("final_appraisal_employee_signoff", "Final Appraisal — employee sign-off", "employee", 361, [
-    "employee_comment",
-  ], { approve: true }),
-  preset("final_appraisal_signoff", "Final Appraisal — manager sign-off", "line_manager", 364, [], {
-    approve: true,
-  }),
+  // 5 — Final Appraisal: the rating that stands once calibration has moved it.
+  // Recording it ends the process — the sign-offs are already given, phase by
+  // phase, on the assessments this rating comes from.
+  preset(
+    "final_appraisal_rating",
+    "Final Appraisal — final rating recorded",
+    "pgm",
+    364,
+    ["overall_rating", "manager_comment"],
+    { approve: true },
+  ),
 ];
 
 /** The five business phases, and which stages make up each one. */
@@ -242,14 +241,7 @@ export const HOUSE_PHASE_GROUPS: { phase: string; stageKeys: string[] }[] = [
     ],
   },
   { phase: "Annual Calibration", stageKeys: ["annual_calibration_signoff"] },
-  {
-    phase: "Final Appraisal",
-    stageKeys: [
-      "final_appraisal_rating",
-      "final_appraisal_employee_signoff",
-      "final_appraisal_signoff",
-    ],
-  },
+  { phase: "Final Appraisal", stageKeys: ["final_appraisal_rating"] },
 ];
 
 /** The phase names in order, for anything that displays the sequence. */

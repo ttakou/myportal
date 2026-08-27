@@ -36,6 +36,8 @@ import { AppraisalHistory } from "./_components/appraisal-history";
 import { PipPanel } from "./_components/pip-panel";
 import { WorkflowSection } from "./_components/workflow-section";
 import { AppraisalFormOutline } from "./_components/appraisal-form-outline";
+import { MyAppraisalTabs } from "./_components/my-appraisal-tabs";
+import { ManagerComment } from "./_components/manager-comment";
 import { HrWorkflowQueue } from "./_components/hr-workflow-queue";
 import { resolveAppraisalView } from "../_components/performance-views";
 
@@ -150,12 +152,15 @@ export default async function AppraisalsPage({
       <CycleSwitcher
         cycles={visibleCycles}
         selectedId={cycle?.id ?? null}
+        canOpenPhase={access.isHr || access.isSystemAdmin || access.isAdmin}
+        pinnedPhase={cycle?.current_phase ?? null}
         phases={
           cycle
             ? cyclePhases({
                 stages: await getCyclePhaseStages(cycle.id),
                 cycleStart: cycle.period_start ?? null,
                 todayIso: new Date().toISOString().slice(0, 10),
+                openPhase: cycle.current_phase ?? null,
               })
             : []
         }
@@ -198,18 +203,32 @@ export default async function AppraisalsPage({
         <>
           {myAppraisal ? (
             <div className="space-y-3">
-              {/* Configured workflow + form outline (template-driven cycles only). */}
-              <Suspense fallback={null}>
-                <WorkflowSection appraisalId={myAppraisal.id} />
-              </Suspense>
-              <Suspense fallback={null}>
-                <AppraisalFormOutline appraisalId={myAppraisal.id} />
-              </Suspense>
-              <MyAppraisalPanel
-                appraisal={myAppraisal}
-                colleagues={colleagues}
-                deptObjectives={deptObjectives}
-                goalTemplates={goalTemplates}
+              {/* Objectives first — that is what people come here to do. The
+                  fourteen-step workflow sits behind its own tab rather than
+                  pushing the work below the fold. */}
+              <MyAppraisalTabs
+                objectives={
+                  <div className="space-y-3">
+                    <MyAppraisalPanel
+                      appraisal={myAppraisal}
+                      colleagues={colleagues}
+                      deptObjectives={deptObjectives}
+                      goalTemplates={goalTemplates}
+                    />
+                    <ManagerComment appraisal={myAppraisal} />
+                  </div>
+                }
+                workflow={
+                  <div className="space-y-3">
+                    {/* Template-driven cycles only; both render nothing without one. */}
+                    <Suspense fallback={null}>
+                      <WorkflowSection appraisalId={myAppraisal.id} />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <AppraisalFormOutline appraisalId={myAppraisal.id} />
+                    </Suspense>
+                  </div>
+                }
               />
               {COMPLETED_STATUSES.has(myAppraisal.status) && (
                 <Link

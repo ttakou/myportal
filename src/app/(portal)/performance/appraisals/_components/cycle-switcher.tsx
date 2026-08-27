@@ -1,24 +1,13 @@
 import Link from "next/link";
-import { PHASE_STATE_LABEL, type CyclePhase } from "@/lib/performance/cycle-phases";
+import type { CyclePhase } from "@/lib/performance/cycle-phases";
 import type { AppraisalCycle } from "@/types/appraisal";
 import { cn } from "@/lib/utils";
+import { PhaseRail } from "./phase-opener";
 
 const STATUS_BADGE: Record<AppraisalCycle["status"], { label: string; cls: string }> = {
   active: { label: "Active", cls: "bg-green-100 text-green-700" },
   draft: { label: "Draft", cls: "bg-amber-100 text-amber-700" },
   closed: { label: "Closed", cls: "bg-muted text-muted-foreground" },
-};
-
-const PHASE_CLS: Record<CyclePhase["state"], string> = {
-  current: "border-primary bg-primary/5 font-medium text-foreground",
-  done: "bg-card text-muted-foreground",
-  upcoming: "border-dashed bg-card text-muted-foreground",
-};
-
-const PHASE_BADGE: Record<CyclePhase["state"], string> = {
-  current: "bg-green-100 text-green-700",
-  done: "bg-muted text-muted-foreground",
-  upcoming: "bg-muted text-muted-foreground",
 };
 
 /**
@@ -33,11 +22,17 @@ export function CycleSwitcher({
   cycles,
   selectedId,
   phases,
+  canOpenPhase = false,
+  pinnedPhase = null,
 }: {
   cycles: AppraisalCycle[];
   selectedId: string | null;
   /** Phases of the selected cycle, in order. Empty when it runs no workflow. */
   phases: CyclePhase[];
+  /** HR and administrators may open a phase. */
+  canOpenPhase?: boolean;
+  /** The phase opened by hand, if any — as opposed to one read off the dates. */
+  pinnedPhase?: string | null;
 }) {
   if (cycles.length === 0) return null;
   const ordered = [...cycles].sort(
@@ -77,30 +72,12 @@ export function CycleSwitcher({
               </Link>
 
               {selected && phases.length > 0 && (
-                <ol className="flex flex-wrap gap-2 pl-2">
-                  {phases.map((p, i) => (
-                    <li key={p.name}>
-                      <div
-                        className={cn(
-                          "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm",
-                          PHASE_CLS[p.state],
-                        )}
-                        title={p.dueDate ? `Closes ${p.dueDate}` : undefined}
-                      >
-                        <span className="text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-                        <span className="max-w-[16rem] truncate">{p.name}</span>
-                        <span
-                          className={cn(
-                            "rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase",
-                            PHASE_BADGE[p.state],
-                          )}
-                        >
-                          {PHASE_STATE_LABEL[p.state]}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
+                <PhaseRail
+                  cycleId={c.id}
+                  phases={phases}
+                  canOpen={canOpenPhase}
+                  isPinned={Boolean(pinnedPhase)}
+                />
               )}
 
               {selected && phases.length === 0 && (

@@ -34,7 +34,7 @@ describe("cyclePhases", () => {
   });
 
   it("counts the steps in each phase", () => {
-    expect(phasesOn("2026-01-01").map((p) => p.stageCount)).toEqual([4, 4, 4, 1, 3]);
+    expect(phasesOn("2026-01-01").map((p) => p.stageCount)).toEqual([4, 4, 4, 1, 1]);
   });
 
   it("closes a phase on the due date of its last step", () => {
@@ -106,5 +106,63 @@ describe("cyclePhases", () => {
       { ...HOUSE_PHASES[0], key: "c", label: "Review — two" },
     ];
     expect(cyclePhases({ stages, cycleStart: CYCLE_START, todayIso: "2026-01-01" })).toHaveLength(3);
+  });
+});
+
+describe("an explicitly opened phase", () => {
+  const open = (openPhase: string | null, todayIso = "2026-08-26") =>
+    cyclePhases({ stages: HOUSE_PHASES, cycleStart: CYCLE_START, todayIso, openPhase });
+
+  it("wins over the dates", () => {
+    // The dates put the cycle in Final Review; the work is at mid-year, and it
+    // is the work that matters.
+    expect(currentOn("2026-08-26")).toBe("Final Review");
+    expect(open("Mid Year Review").find((p) => p.state === "current")?.name).toBe(
+      "Mid Year Review",
+    );
+  });
+
+  it("closes what came before it and leaves the rest upcoming", () => {
+    expect(open("Mid Year Review").map((p) => p.state)).toEqual([
+      "done",
+      "current",
+      "upcoming",
+      "upcoming",
+      "upcoming",
+    ]);
+  });
+
+  it("can hold a phase open past its own date", () => {
+    // Mid Year Review closed on 30 June. Opening it says the work is still
+    // there, which is the whole point.
+    const phases = open("Mid Year Review");
+    const mid = phases.find((p) => p.name === "Mid Year Review")!;
+    expect(mid.dueDate).toBe("2026-06-30");
+    expect(mid.state).toBe("current");
+  });
+
+  it("can open a phase whose date has not arrived", () => {
+    expect(open("Annual Calibration", "2026-02-01").map((p) => p.state)).toEqual([
+      "done",
+      "done",
+      "done",
+      "current",
+      "upcoming",
+    ]);
+  });
+
+  it("still marks exactly one phase current", () => {
+    for (const name of ["Goals Setting", "Final Appraisal", "Annual Calibration"]) {
+      expect(open(name).filter((p) => p.state === "current")).toHaveLength(1);
+    }
+  });
+
+  it("falls back to the dates when the named phase is not in this cycle", () => {
+    // A phase renamed in the template must not leave the cycle showing nothing.
+    expect(open("Nonexistent Phase").find((p) => p.state === "current")?.name).toBe("Final Review");
+  });
+
+  it("falls back to the dates when nothing is open", () => {
+    expect(open(null).find((p) => p.state === "current")?.name).toBe("Final Review");
   });
 });
