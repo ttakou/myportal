@@ -76,8 +76,14 @@ export interface AppraisalCycle {
   period_start: string;
   period_end: string;
   goal_setting_deadline: string | null;
-  /** The phase the cycle is open on, by name. Null = derive from the dates. */
+  /**
+   * The phase the cycle is open on, by name. Null derives it from the dates;
+   * `NO_PHASE_OPEN` means every phase is deliberately shut.
+   */
   current_phase: string | null;
+  /** Who last opened or closed a phase, and when. */
+  phase_set_by_name?: string | null;
+  phase_set_at?: string | null;
   status: CycleStatus;
   weight_okr: number;
   weight_competency: number;

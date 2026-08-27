@@ -126,12 +126,17 @@ export const getCycles = cache(async (): Promise<AppraisalCycle[]> => {
   const { data } = await supabase
     .from("appraisal_cycles")
     .select(
-      "id, name, year, period_start, period_end, goal_setting_deadline, status, current_phase," +
-        " weight_okr, weight_competency, weight_development, require_second_level, rating_bands, created_at",
+      "id, name, year, period_start, period_end, goal_setting_deadline, status, current_phase, phase_set_at, phase_setter:profiles!appraisal_cycles_phase_set_by_fkey(full_name), weight_okr, weight_competency, weight_development, require_second_level, rating_bands, created_at",
     )
     .order("year", { ascending: false })
     .order("created_at", { ascending: false });
-  return (data ?? []) as unknown as AppraisalCycle[];
+  type CycleRow = AppraisalCycle & {
+    phase_setter?: { full_name?: string } | { full_name?: string }[] | null;
+  };
+  return ((data ?? []) as unknown as CycleRow[]).map((c) => ({
+    ...c,
+    phase_set_by_name: one<{ full_name?: string }>(c.phase_setter)?.full_name ?? null,
+  })) as AppraisalCycle[];
 });
 
 export interface AppraisalHistoryEntry {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { cn } from "@/lib/utils";
-import { PHASE_STATE_LABEL, type CyclePhase } from "@/lib/performance/cycle-phases";
+import { NO_PHASE_OPEN, PHASE_STATE_LABEL, type CyclePhase } from "@/lib/performance/cycle-phases";
 import { setCyclePhase } from "../actions";
 
 const PHASE_CLS: Record<CyclePhase["state"], string> = {
@@ -30,6 +30,7 @@ export function PhaseRail({
   phases,
   canOpen,
   isPinned = false,
+  allClosed = false,
 }: {
   cycleId: string;
   phases: CyclePhase[];
@@ -37,6 +38,8 @@ export function PhaseRail({
   canOpen: boolean;
   /** True when a phase has been opened by hand rather than read off the dates. */
   isPinned?: boolean;
+  /** True when every phase has been deliberately shut. */
+  allClosed?: boolean;
 }) {
   const [pending, startTransition] = useStatusTransition("Opening…");
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +49,14 @@ export function PhaseRail({
     startTransition(async () => {
       const res = await setCyclePhase(cycleId, name);
       if (!res.ok) setError(res.error ?? "Couldn't open that phase.");
+    });
+  }
+
+  function closeAll() {
+    setError(null);
+    startTransition(async () => {
+      const res = await setCyclePhase(cycleId, NO_PHASE_OPEN);
+      if (!res.ok) setError(res.error ?? "Couldn't close the open phase.");
     });
   }
 
@@ -95,8 +106,23 @@ export function PhaseRail({
       </ol>
       {canOpen && (
         <p className="text-[11px] text-muted-foreground">
-          Click a phase to open it. Each person still works through their own appraisal in order —
-          opening a phase says where the cycle is, it does not move anybody past their steps.
+          {allClosed
+            ? "No phase is open. Click one to open it for everybody in the cycle."
+            : "Click a phase to open it. Each person still works through their own appraisal in order — opening a phase says where the cycle is, it does not move anybody past their steps."}
+          {!allClosed && phases.some((p) => p.state === "current") && (
+            <>
+              {" "}
+              <button
+                type="button"
+                disabled={pending}
+                onClick={closeAll}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Close the open phase
+              </button>
+              {" ·"}
+            </>
+          )}
           {isPinned ? (
             <>
               {" "}

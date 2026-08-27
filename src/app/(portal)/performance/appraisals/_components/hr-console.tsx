@@ -6,6 +6,8 @@ import { useStatusTransition } from "@/components/activity";
 import { Play, Lock, Plus, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
+import { cn } from "@/lib/utils";
+import { CyclePhaseBoard, PhaseToggle, type CyclePhaseInfo } from "./cycle-phase-board";
 import {
   RATING_BANDS,
   STATUS_LABEL,
@@ -41,6 +43,7 @@ export function HrConsole({
   cycleName = null,
   competencies,
   departmentObjectives,
+  phasesByCycle,
 }: {
   cycles: AppraisalCycle[];
   appraisals: Appraisal[];
@@ -48,6 +51,8 @@ export function HrConsole({
   cycleName?: string | null;
   competencies: AppraisalCompetency[];
   departmentObjectives: DepartmentObjective[];
+  /** The phases inside each cycle, keyed by cycle id — the expandable detail. */
+  phasesByCycle?: Record<string, CyclePhaseInfo>;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -151,43 +156,13 @@ export function HrConsole({
           </thead>
           <tbody className="divide-y">
             {cycles.map((c) => (
-              <tr key={c.id}>
-                <td className="px-4 py-2 font-medium">{c.name}</td>
-                <td className="px-4 py-2 text-muted-foreground">
-                  {c.period_start} → {c.period_end}
-                </td>
-                <td className="px-4 py-2 capitalize">{c.status}</td>
-                <td className="px-4 py-2 text-right">
-                  {c.status === "draft" && (
-                    <span className="inline-flex gap-2">
-                      <Button size="sm" disabled={pending} onClick={() => run(() => launchCycle(c.id))}>
-                        <Play className="h-4 w-4" /> Launch
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={pending}
-                        onClick={() => {
-                          if (confirm(`Delete the draft cycle "${c.name}"? This can't be undone.`))
-                            run(() => deleteCycle(c.id));
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" /> Delete
-                      </Button>
-                    </span>
-                  )}
-                  {c.status === "active" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => run(() => closeCycle(c.id))}
-                    >
-                      <Lock className="h-4 w-4" /> Close
-                    </Button>
-                  )}
-                </td>
-              </tr>
+              <CycleRow
+                key={c.id}
+                cycle={c}
+                phases={phasesByCycle?.[c.id]}
+                pending={pending}
+                run={run}
+              />
             ))}
             {cycles.length === 0 && (
               <tr>
@@ -227,6 +202,93 @@ export function HrConsole({
       <DepartmentObjectivesEditor objectives={departmentObjectives} cycles={cycles} />
       <CompetencyEditor competencies={competencies} />
     </section>
+  );
+}
+
+/**
+ * One cycle in the list, expanding into its phases.
+ *
+ * The active cycle is the one everybody in the company is working in, so it
+ * reads as live rather than as another row of text — and clicking its name
+ * opens the phases inside it, which is where the process actually is.
+ */
+function CycleRow({
+  cycle: c,
+  phases,
+  pending,
+  run,
+}: {
+  cycle: AppraisalCycle;
+  phases?: CyclePhaseInfo;
+  pending: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const isActive = c.status === "active";
+
+  return (
+    <>
+      <tr className={cn(isActive && "bg-green-50/60")}>
+        <td className="px-4 py-2 font-medium">
+          {phases ? (
+            <PhaseToggle open={open} onClick={() => setOpen((o) => !o)} cycleName={c.name} />
+          ) : (
+            c.name
+          )}
+        </td>
+        <td className="px-4 py-2 text-muted-foreground">
+          {c.period_start} → {c.period_end}
+        </td>
+        <td className="px-4 py-2">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium capitalize",
+              isActive ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground",
+            )}
+          >
+            {isActive && <span className="h-1.5 w-1.5 rounded-full bg-green-600" />}
+            {c.status}
+          </span>
+        </td>
+        <td className="px-4 py-2 text-right">
+                  {c.status === "draft" && (
+                    <span className="inline-flex gap-2">
+                      <Button size="sm" disabled={pending} onClick={() => run(() => launchCycle(c.id))}>
+                        <Play className="h-4 w-4" /> Launch
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => {
+                          if (confirm(`Delete the draft cycle "${c.name}"? This can't be undone.`))
+                            run(() => deleteCycle(c.id));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" /> Delete
+                      </Button>
+                    </span>
+                  )}
+                  {c.status === "active" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => run(() => closeCycle(c.id))}
+                    >
+                      <Lock className="h-4 w-4" /> Close
+                    </Button>
+                  )}
+        </td>
+      </tr>
+      {open && phases && (
+        <tr>
+          <td colSpan={4} className="p-0">
+            <CyclePhaseBoard cycleId={c.id} info={phases} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

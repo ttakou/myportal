@@ -23,13 +23,32 @@ export const PHASE_STATE_LABEL: Record<PhaseState, string> = {
   upcoming: "Upcoming",
 };
 
+/**
+ * Stored in a cycle's `current_phase` to say every phase is shut.
+ *
+ * Null already means something else — "read the phase off the dates" — so
+ * closing the last phase needed a value of its own. Without one, HR could open
+ * a phase and never shut it: the only way out of an open phase was to open a
+ * different one, and the final phase could not be closed at all.
+ */
+export const NO_PHASE_OPEN = "__none__";
+
 export interface CyclePhase {
   name: string;
   stageKeys: string[];
+  /** When the phase opens — the day after the previous phase's deadline. */
+  startDate: string | null;
   /** When the phase closes — the due date of its last stage. */
   dueDate: string | null;
   state: PhaseState;
   stageCount: number;
+}
+
+const DAY_MS = 86_400_000;
+
+/** The day after `iso`, in UTC — where one phase ends the next begins. */
+function nextDay(iso: string): string {
+  return new Date(new Date(`${iso}T00:00:00Z`).getTime() + DAY_MS).toISOString().slice(0, 10);
 }
 
 /** "Goals Setting — employee submits" → "Goals Setting". */
@@ -50,6 +69,10 @@ export function phaseNameOf(label: string): string {
  * With no open phase set, the dates decide: the first phase that has not closed,
  * including one whose date has passed while later phases remain — an overrun
  * phase is still where the cycle is, and somebody has to be chased for it.
+ *
+ * `NO_PHASE_OPEN` is the third case: every phase deliberately shut, which is
+ * not the same as having no preference. Between phases — after goal setting
+ * closes and before mid-year opens — nothing should read as open.
  */
 export function cyclePhases(input: {
   stages: WorkflowStage[];
@@ -72,13 +95,32 @@ export function cyclePhases(input: {
     }
   }
 
-  const phases = groups.map((g) => ({
+  const phases: CyclePhase[] = groups.map((g) => ({
     name: g.name,
     stageKeys: g.stageKeys,
     stageCount: g.stageKeys.length,
+    startDate: null,
     dueDate: input.cycleStart ? stageDueDate(g.lastStage, input.cycleStart) : null,
     state: "upcoming" as PhaseState,
   }));
+
+  // A phase runs from where the one before it left off to its own deadline, so
+  // the board can show a span rather than a single date. The first starts with
+  // the cycle.
+  let from = input.cycleStart;
+  for (const phase of phases) {
+    phase.startDate = from;
+    from = phase.dueDate ? nextDay(phase.dueDate) : from;
+  }
+
+  // Every phase explicitly shut: the dates still say which are behind us, but
+  // none of them is open and nobody is being asked to act.
+  if (input.openPhase === NO_PHASE_OPEN) {
+    for (const phase of phases) {
+      phase.state = phase.dueDate !== null && phase.dueDate < input.todayIso ? "done" : "upcoming";
+    }
+    return phases;
+  }
 
   // Somebody has said where the cycle is: that phase is open, and position in
   // the sequence decides the rest.

@@ -247,12 +247,22 @@ export async function setCyclePhase(
   const denied = await requireHr();
   if (denied) return denied;
   const supabase = createClient();
+  const now = new Date().toISOString();
+  // Opening or closing a phase moves the whole cycle for every participant, so
+  // it is stamped like any other decision: null reads the phase off the dates,
+  // NO_PHASE_OPEN shuts them all, anything else names the phase that is open.
   const { error } = await supabase
     .from("appraisal_cycles")
-    .update({ current_phase: phase?.trim() || null, updated_at: new Date().toISOString() })
+    .update({
+      current_phase: phase?.trim() || null,
+      phase_set_by: await uid(),
+      phase_set_at: now,
+      updated_at: now,
+    })
     .eq("id", cycleId);
   if (error) return { ok: false, error: error.message };
   rev();
+  revalidatePath("/performance/status");
   return { ok: true };
 }
 
