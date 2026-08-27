@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { CyclePhase } from "@/lib/performance/cycle-phases";
+import { NO_PHASE_OPEN, type CyclePhase } from "@/lib/performance/cycle-phases";
 import type { AppraisalCycle } from "@/types/appraisal";
 import { cn } from "@/lib/utils";
 import { PhaseRail } from "./phase-opener";
@@ -77,6 +77,7 @@ export function CycleSwitcher({
                   phases={phases}
                   canOpen={canOpenPhase}
                   isPinned={Boolean(pinnedPhase)}
+                  allClosed={pinnedPhase === NO_PHASE_OPEN}
                 />
               )}
 

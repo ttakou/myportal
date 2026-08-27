@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cyclePhases, phaseNameOf } from "@/lib/performance/cycle-phases";
+import { NO_PHASE_OPEN, cyclePhases, phaseNameOf } from "@/lib/performance/cycle-phases";
 import { HOUSE_PHASES } from "@/types/workflow";
 
 const CYCLE_START = "2026-01-01";
@@ -164,5 +164,64 @@ describe("an explicitly opened phase", () => {
 
   it("falls back to the dates when nothing is open", () => {
     expect(open(null).find((p) => p.state === "current")?.name).toBe("Final Review");
+  });
+});
+
+describe("cyclePhases — phase spans", () => {
+  const phases = phasesOn("2026-01-01");
+
+  it("starts the first phase with the cycle", () => {
+    expect(phases[0].startDate).toBe(CYCLE_START);
+  });
+
+  it("starts each later phase the day after the one before it closed", () => {
+    for (let i = 1; i < phases.length; i++) {
+      const prevEnd = new Date(`${phases[i - 1].dueDate}T00:00:00Z`);
+      prevEnd.setUTCDate(prevEnd.getUTCDate() + 1);
+      expect(phases[i].startDate).toBe(prevEnd.toISOString().slice(0, 10));
+    }
+  });
+
+  it("never starts a phase after it is due to close", () => {
+    for (const p of phases) {
+      expect(p.startDate! <= p.dueDate!).toBe(true);
+    }
+  });
+
+  it("has no dates at all when the cycle has no start", () => {
+    const undated = cyclePhases({ stages: HOUSE_PHASES, cycleStart: null, todayIso: "2026-06-01" });
+    expect(undated.every((p) => p.startDate === null && p.dueDate === null)).toBe(true);
+  });
+});
+
+describe("cyclePhases — every phase explicitly closed", () => {
+  const closed = (todayIso: string) =>
+    cyclePhases({
+      stages: HOUSE_PHASES,
+      cycleStart: CYCLE_START,
+      todayIso,
+      openPhase: NO_PHASE_OPEN,
+    });
+
+  it("leaves nothing open", () => {
+    expect(closed("2026-06-01").some((p) => p.state === "current")).toBe(false);
+  });
+
+  it("is not the same as having no preference — the dates would open one", () => {
+    expect(currentOn("2026-06-01")).toBeDefined();
+  });
+
+  it("still shows which phases are behind us", () => {
+    const states = closed("2026-06-01").map((p) => p.state);
+    // Goal setting closed on 2026-03-31; everything later is still ahead.
+    expect(states).toEqual(["done", "upcoming", "upcoming", "upcoming", "upcoming"]);
+  });
+
+  it("closes the final phase too, which opening another never could", () => {
+    expect(closed("2027-01-01").every((p) => p.state === "done")).toBe(true);
+  });
+
+  it("keeps the spans regardless", () => {
+    expect(closed("2026-06-01")[0].startDate).toBe(CYCLE_START);
   });
 });

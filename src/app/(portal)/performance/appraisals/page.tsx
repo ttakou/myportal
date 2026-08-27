@@ -314,6 +314,28 @@ async function HrSection({
     getDepartmentObjectives(),
   ]);
 
+  // The phases inside every cycle, so the cycle list expands into them. One
+  // query per cycle, and a tenant runs a handful.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const phasesByCycle = Object.fromEntries(
+    await Promise.all(
+      allCycles.map(async (c) => [
+        c.id,
+        {
+          phases: cyclePhases({
+            stages: await getCyclePhaseStages(c.id),
+            cycleStart: c.period_start ?? null,
+            todayIso,
+            openPhase: c.current_phase ?? null,
+          }),
+          pinned: c.current_phase ?? null,
+          setByName: c.phase_set_by_name ?? null,
+          setAt: c.phase_set_at ?? null,
+        },
+      ]),
+    ),
+  );
+
   const hrCompleted = cycleAppraisals.filter((a) => COMPLETED_STATUSES.has(a.status)).length;
   const hrCards =
     cycle
@@ -346,6 +368,7 @@ async function HrSection({
         cycleName={cycle?.name ?? null}
         competencies={competencies}
         departmentObjectives={departmentObjectives}
+        phasesByCycle={phasesByCycle}
       />
       {calibration && (
         <CalibrationPanel
