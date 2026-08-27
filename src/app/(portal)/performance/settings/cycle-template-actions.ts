@@ -11,7 +11,12 @@ import {
   type CycleVisibility,
 } from "@/types/cycle-template";
 import type { WorkflowStage } from "@/types/workflow";
-import { applyStageDates, validateStageDates } from "@/lib/performance/phase-dates";
+import {
+  applyStageDates,
+  setStageDate,
+  validateStageDates,
+  type StageShift,
+} from "@/lib/performance/phase-dates";
 
 async function ensureHr() {
   const access = await getAccess();
@@ -226,6 +231,64 @@ export async function createCycleFromTemplate(input: {
  * The dates therefore set the standard for every cycle on this template, not
  * just the one they were entered against.
  */
+/**
+ * Move a single phase boundary from the phase board.
+ *
+ * The board shows a phase's start and end, neither of which is a field of its
+ * own: a phase ends on its last step's deadline and starts the day after the
+ * previous phase ended. So both edits come down to moving one step, and the
+ * board sends that step's key. The steps around it give way as needed — see
+ * `setStageDate` — and what moved comes back so the board can say so.
+ */
+export async function setPhaseBoundary(input: {
+  cycleId: string;
+  stageKey: string;
+  date: string;
+}): Promise<ActionResult & { moved?: StageShift[] }> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can set the phase dates." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return { ok: false, error: "That isn't a valid date." };
+  const supabase = createClient();
+
+  const { data: cycle } = await supabase
+    .from("appraisal_cycles")
+    .select("id, period_start, template_id")
+    .eq("id", input.cycleId)
+    .maybeSingle();
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+  const cycleStart = (cycle.period_start as string | null) ?? null;
+  if (!cycleStart) return { ok: false, error: "Give the cycle a start date first." };
+  if (input.date < cycleStart) {
+    return { ok: false, error: `That date is before the cycle starts on ${cycleStart}.` };
+  }
+  const templateId = (cycle.template_id as string | null) ?? null;
+  if (!templateId) {
+    return { ok: false, error: "This cycle runs no workflow, so it has no phases to date." };
+  }
+
+  const { data: template } = await supabase
+    .from("cycle_templates")
+    .select("config")
+    .eq("id", templateId)
+    .maybeSingle();
+  const config = ((template?.config as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  const stages = Array.isArray(config.stages) ? (config.stages as WorkflowStage[]) : [];
+  if (!stages.length) return { ok: false, error: "This cycle's workflow has no stages." };
+
+  const { stages: next, moved } = setStageDate(stages, input.stageKey, input.date, cycleStart);
+  if (moved.length === 0) return { ok: true, moved };
+
+  const { error } = await supabase
+    .from("cycle_templates")
+    .update({ config: { ...config, stages: next }, updated_at: new Date().toISOString() })
+    .eq("id", templateId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/performance/deadlines");
+  revalidatePath("/performance/appraisals");
+  revalidatePath("/performance/settings");
+  return { ok: true, moved };
+}
+
 export async function setPhaseDeadlines(input: {
   cycleId: string;
   dates: Record<string, string>;

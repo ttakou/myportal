@@ -12,6 +12,7 @@ import {
   type CyclePhase,
 } from "@/lib/performance/cycle-phases";
 import { setCyclePhase } from "../actions";
+import { setPhaseBoundary } from "../../settings/cycle-template-actions";
 
 export interface CyclePhaseInfo {
   phases: CyclePhase[];
@@ -39,15 +40,41 @@ const STATE_PILL: Record<CyclePhase["state"], string> = {
 export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: CyclePhaseInfo }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const allClosed = info.pinned === NO_PHASE_OPEN;
   const followsDates = info.pinned == null;
 
   function set(phase: string | null, failure: string) {
     setError(null);
+    setNote(null);
     startTransition(async () => {
       const res = await setCyclePhase(cycleId, phase);
       if (!res.ok) setError(res.error ?? failure);
+    });
+  }
+
+  /**
+   * Save one boundary. A phase dragging its neighbours along is worth saying
+   * out loud, so the count of other steps that moved comes back with it.
+   */
+  function save(stageKey: string, date: string) {
+    setError(null);
+    setNote(null);
+    startTransition(async () => {
+      const res = await setPhaseBoundary({ cycleId, stageKey, date });
+      if (!res.ok) {
+        setError(res.error ?? "Couldn't save that date.");
+        return;
+      }
+      const others = (res.moved ?? []).filter((m) => m.key !== stageKey);
+      setNote(
+        others.length === 0
+          ? "Saved."
+          : `Saved — ${others.length} other step${others.length === 1 ? "" : "s"} moved to keep the order: ${others
+              .map((m) => m.label)
+              .join(", ")}.`,
+      );
     });
   }
 
@@ -56,13 +83,13 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <CalendarRange className="h-3.5 w-3.5" /> Phases
-          {/* The dates are set step by step on the deadlines page — the board
-              showed them with no way to get to them. */}
+          {/* The board moves phase boundaries; the deadlines page is still
+              where the steps inside a phase are dated one by one. */}
           <Link
             href="/performance/deadlines"
             className="font-normal normal-case tracking-normal text-primary underline underline-offset-2 hover:no-underline"
           >
-            Edit dates
+            All step deadlines
           </Link>
         </h4>
         <p className="text-[11px] text-muted-foreground">
@@ -96,11 +123,39 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
                   <span className="mr-2 text-xs tabular-nums text-muted-foreground">{i + 1}</span>
                   <span className={cn(p.state === "current" && "font-medium")}>{p.name}</span>
                 </td>
-                <td className="py-1.5 pr-2 tabular-nums text-muted-foreground">
-                  {p.startDate ?? "—"}
+                <td className="py-1.5 pr-2">
+                  {/* A phase starts the day after the one before it ended, so
+                      editing this moves that phase's last step — the same
+                      value the row above shows as its end. The first phase
+                      starts with the cycle, which is not ours to move. */}
+                  {i === 0 ? (
+                    <span
+                      className="tabular-nums text-muted-foreground"
+                      title="The first phase starts with the cycle."
+                    >
+                      {p.startDate ?? "—"}
+                    </span>
+                  ) : (
+                    <DateCell
+                      key={`start-${p.startDate}`}
+                      value={p.startDate}
+                      stageKey={lastStageKey(info.phases[i - 1])}
+                      shiftDays={-1}
+                      onSave={save}
+                      busy={pending}
+                      label={`Start of ${p.name}`}
+                    />
+                  )}
                 </td>
-                <td className="py-1.5 pr-2 tabular-nums text-muted-foreground">
-                  {p.dueDate ?? "—"}
+                <td className="py-1.5 pr-2">
+                  <DateCell
+                    key={`end-${p.dueDate}`}
+                    value={p.dueDate}
+                    stageKey={lastStageKey(p)}
+                    onSave={save}
+                    busy={pending}
+                    label={`End of ${p.name}`}
+                  />
                 </td>
                 <td className="py-1.5 pr-2 tabular-nums text-muted-foreground">{p.stageCount}</td>
                 <td className="py-1.5 pr-2">
@@ -151,12 +206,14 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        A phase ends on the deadline of its last step and starts the day after the one before it
-        closed, so the dates are set step by step under{" "}
+        Type over a date to move a phase; it saves when you leave the field. A phase ends on the
+        deadline of its last step and starts the day after the one before it closed, so the two
+        columns are the same boundary seen from either side — and the steps around it shift only
+        as far as the order requires. To date each step separately, use{" "}
         <Link href="/performance/deadlines" className="underline underline-offset-2 hover:text-foreground">
           Deadlines
         </Link>
-        , not here.
+        .
       </p>
       <p className="text-[11px] text-muted-foreground">
         Opening a phase says where the cycle is for everybody in it. Each person still works
@@ -175,8 +232,77 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
           </>
         )}
       </p>
+      {note && <p className="text-xs text-emerald-700">{note}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
+  );
+}
+
+/** The step a phase ends on — the one a boundary edit actually moves. */
+function lastStageKey(phase: CyclePhase | undefined): string | null {
+  return phase?.stageKeys[phase.stageKeys.length - 1] ?? null;
+}
+
+const DAY_MS = 86_400_000;
+
+/** Shift an ISO date by whole days, in UTC. */
+function shiftIso(iso: string, days: number): string {
+  return new Date(new Date(`${iso}T00:00:00Z`).getTime() + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * One date on the board, editable where it sits.
+ *
+ * Saves on blur rather than on every keystroke — a date input fires change on
+ * each part typed, and a half-entered year would drag the rest of the process
+ * with it. `shiftDays` is for the start column: the value shown is the day
+ * after the step being moved, so it goes back a day on the way in.
+ */
+function DateCell({
+  value,
+  stageKey,
+  shiftDays = 0,
+  onSave,
+  busy,
+  label,
+}: {
+  value: string | null;
+  stageKey: string | null;
+  shiftDays?: number;
+  onSave: (stageKey: string, date: string) => void;
+  busy: boolean;
+  label: string;
+}) {
+  // Keyed on `value` by the caller, so a saved date replaces the draft rather
+  // than the field holding what was typed over a figure the server has moved.
+  const [draft, setDraft] = useState(value ?? "");
+
+  if (!stageKey || value === null) {
+    return <span className="tabular-nums text-muted-foreground">{value ?? "—"}</span>;
+  }
+
+  return (
+    <input
+      type="date"
+      aria-label={label}
+      title={`${label} — the deadline of the step it turns on`}
+      value={draft || value}
+      disabled={busy}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        const next = draft || value;
+        if (!next || next === value) {
+          setDraft(value);
+          return;
+        }
+        onSave(stageKey, shiftIso(next, shiftDays));
+      }}
+      className={cn(
+        "w-[9.5rem] rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm tabular-nums",
+        "hover:border-input focus:border-input focus:bg-background",
+        (draft || value) !== value && "border-primary",
+      )}
+    />
   );
 }
 
