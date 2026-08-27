@@ -605,7 +605,17 @@ function HrAppraisalList({
                 a.final_score != null || a.status === "completed" || a.status === "closed";
               return (
                 <tr key={a.id}>
-                  <td className="py-2 pr-2 font-medium">{a.employee_name || "—"}</td>
+                  <td className="py-2 pr-2 font-medium">
+                    {/* The name is the way in: HR clicks it to open that person's
+                        appraisal and take an outstanding step for them. */}
+                    <Link
+                      href={`/performance/appraisals/${a.id}/act`}
+                      title={`Open ${a.employee_name || "this employee"}'s appraisal and act for them`}
+                      className="hover:underline"
+                    >
+                      {a.employee_name || "—"}
+                    </Link>
+                  </td>
                   <td className="py-2 pr-2 text-muted-foreground">{STATUS_LABEL[a.status]}</td>
                   <td className="py-2 pr-2 tabular-nums">{a.overall_rating ?? "—"}</td>
                   <td className="py-2 pr-2 tabular-nums">

@@ -28,6 +28,7 @@ export function WorkflowTimeline({
   waitingOn,
   progress,
   isProxy,
+  proxyFor,
   completed,
   rejected,
 }: {
@@ -39,6 +40,8 @@ export function WorkflowTimeline({
   progress: number;
   /** True when at least one of the buttons below acts for somebody else. */
   isProxy?: boolean;
+  /** Whose appraisal this is, when the caller knows it — names the warning. */
+  proxyFor?: string | null;
   completed: boolean;
   rejected: boolean;
 }) {
@@ -94,8 +97,18 @@ export function WorkflowTimeline({
           {isProxy && (
             <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <UserCog className="mt-0.5 h-4 w-4 shrink-0" />
-              You are acting for someone else. Your name and theirs are both recorded against
-              anything you do here.
+              {proxyFor ? (
+                <span>
+                  You are standing in on <strong className="font-semibold">{proxyFor}</strong>&apos;s
+                  appraisal. Each button below says whose step it takes, and your name and theirs are
+                  both recorded against it.
+                </span>
+              ) : (
+                <span>
+                  You are acting for someone else. Your name and theirs are both recorded against
+                  anything you do here.
+                </span>
+              )}
             </p>
           )}
           {actionable.map((a) => (

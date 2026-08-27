@@ -1,18 +1,24 @@
 import { getAppraisalWorkflow } from "@/lib/workflow-runtime";
 import { applicableStages, canAct, stageByKey } from "@/lib/workflow-engine";
+import { actingForLabel, type PartyNames } from "@/lib/performance/proxy";
 import { STAGE_ROLE_LABEL, type WorkflowStage } from "@/types/workflow";
 import { WorkflowTimeline, type Step, type Actionable } from "./workflow-timeline";
 
 /**
  * Server wrapper: resolves the configured workflow for an appraisal and renders
  * the timeline. Renders nothing for appraisals without a configured workflow.
+ *
+ * `partyNames` is for the pages that know whose appraisal this is — the proxy
+ * buttons then say whose step is being taken rather than only which role's.
  */
 export async function WorkflowSection({
   appraisalId,
   heading,
+  partyNames,
 }: {
   appraisalId: string;
   heading?: string;
+  partyNames?: PartyNames;
 }) {
   const wf = await getAppraisalWorkflow(appraisalId);
   if (!wf) return null;
@@ -44,7 +50,7 @@ export async function WorkflowSection({
       primaryLabel: s.allowApprove ? "Approve" : "Submit",
       allowReturn: s.allowReturn,
       allowReject: s.allowReject,
-      actingFor: mine(s) ? null : STAGE_ROLE_LABEL[s.responsibleRole],
+      actingFor: mine(s) ? null : actingForLabel(s.responsibleRole, partyNames),
     }));
 
   // Whom we're waiting on (active stages the viewer isn't the owner of).
@@ -63,6 +69,7 @@ export async function WorkflowSection({
       waitingOn={[...new Set(waitingOn)]}
       progress={progress}
       isProxy={wf.canProxy && actionable.some((a) => a.actingFor)}
+      proxyFor={partyNames?.employee ?? null}
       completed={wf.terminal === "completed"}
       rejected={wf.terminal === "rejected"}
     />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Download, Search, UserCog } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
@@ -191,17 +192,26 @@ function ParticipantRow({
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-lg border bg-card">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 p-3 text-left hover:bg-accent/50"
-      >
-        <span className="font-medium">{row.employeeName}</span>
+      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 p-3">
+        {/* The name opens that person's appraisal so HR can take the step that
+            is holding them up; the rest of the row still expands the detail. */}
+        <Link
+          href={`/performance/appraisals/${row.appraisalId}/act`}
+          title={`Open ${row.employeeName}'s appraisal and act for them`}
+          className="font-medium hover:underline"
+        >
+          {row.employeeName}
+        </Link>
         {row.department && (
           <span className="text-xs text-muted-foreground">{row.department}</span>
         )}
-        <span className="ml-auto flex flex-wrap items-center gap-2 text-xs">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={`${open ? "Hide" : "Show"} stage detail for ${row.employeeName}`}
+          className="ml-auto flex flex-wrap items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-accent/50"
+        >
           {row.finished ? (
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
               Complete
@@ -223,8 +233,8 @@ function ParticipantRow({
           <span className="tabular-nums text-muted-foreground">
             {row.completedCount}/{row.totalCount}
           </span>
-        </span>
-      </button>
+        </button>
+      </div>
 
       <div className="px-3 pb-3">
         <div className="flex gap-0.5" aria-hidden="true">
@@ -276,6 +286,14 @@ function ParticipantRow({
               ))}
             </tbody>
           </table>
+          {!row.finished && (
+            <Link
+              href={`/performance/appraisals/${row.appraisalId}/act`}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
+            >
+              <UserCog className="h-3.5 w-3.5" /> Act for {row.employeeName}
+            </Link>
+          )}
           {reviewers && <ReviewerEditor assignment={reviewers} colleagues={colleagues} />}
         </div>
       )}
