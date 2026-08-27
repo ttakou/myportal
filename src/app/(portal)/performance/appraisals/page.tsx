@@ -24,6 +24,8 @@ import { getGoalTemplates } from "@/lib/goal-templates";
 import type { AppraisalCycle } from "@/types/appraisal";
 import { MyAppraisalPanel } from "./_components/my-appraisal-panel";
 import { TeamReviewPanel } from "./_components/team-review-panel";
+import { TeamLinePanel } from "./_components/team-line-panel";
+import { getTeamLine } from "@/lib/performance/team-line";
 import { HrConsole } from "./_components/hr-console";
 import { CalibrationPanel } from "./_components/calibration-panel";
 import { SecondLevelPanel } from "./_components/second-level-panel";
@@ -174,7 +176,14 @@ export default async function AppraisalsPage({
 
       {/* Team review — a line manager's main task. */}
       {view === "team" && (
-        isManager ? (
+        <>
+          {/* The line comes before the appraisals: a report with none is still
+              a report, and saying nothing about them reads as "you have no
+              team" rather than "they are not in the cycle". */}
+          <Suspense fallback={<SectionSkeleton />}>
+            <TeamLineSection cycleId={cycle?.id ?? null} canAct={isHr} />
+          </Suspense>
+          {isManager ? (
           <>
             <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
             <TeamReviewPanel appraisals={team} colleagues={colleagues} currentDelegate={myDelegate} />
@@ -191,11 +200,12 @@ export default async function AppraisalsPage({
               </section>
             )}
           </>
-        ) : (
-          <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-            You have no direct reports to review in this cycle.
-          </p>
-        )
+          ) : (
+            <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              Nobody in your line holds an appraisal you need to act on in this cycle.
+            </p>
+          )}
+        </>
       )}
 
       {/* My appraisal — the employee's own evaluation for the selected year. */}
@@ -275,6 +285,12 @@ export default async function AppraisalsPage({
       )}
     </div>
   );
+}
+
+/** Streamed: the manager's direct line, each person with the phase they are in. */
+async function TeamLineSection({ cycleId, canAct }: { cycleId: string | null; canAct: boolean }) {
+  const line = await getTeamLine(cycleId);
+  return <TeamLinePanel line={line} canAct={canAct} />;
 }
 
 /** Streamed: the viewer's past appraisals across cycles. */
