@@ -72,6 +72,55 @@ export function validateStageDates(
   return null;
 }
 
+export interface StageShift {
+  key: string;
+  label: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Move one deadline, and carry the order with it.
+ *
+ * Editing a phase boundary in place is editing one step's deadline, and the
+ * steps run in a fixed order — so pulling a phase's end back before one of its
+ * own steps, or in front of the phase after it, would leave the sequence
+ * invalid. Rejecting that would make the field unusable: the whole point of
+ * typing a date on the board is not to reason about fourteen steps first.
+ *
+ * So the neighbours give way, and only as far as they must: steps before the
+ * one moved are pulled back to meet it, steps after are pushed forward. Every
+ * date that changes is reported, because a phase quietly dragging two others
+ * with it is exactly the sort of thing HR should be told about.
+ */
+export function setStageDate(
+  stages: WorkflowStage[],
+  key: string,
+  date: string,
+  cycleStart: string,
+): { stages: WorkflowStage[]; moved: StageShift[] } {
+  const before = stages.map((s) => stageDueDate(s, cycleStart));
+  const index = stages.findIndex((s) => s.key === key);
+  if (index === -1) return { stages, moved: [] };
+
+  const after = [...before];
+  after[index] = date;
+  // Backwards: nothing may sit after the step that follows it.
+  for (let i = index - 1; i >= 0; i--) if (after[i] > after[i + 1]) after[i] = after[i + 1];
+  // Forwards: nothing may sit before the step it follows.
+  for (let i = index + 1; i < after.length; i++) if (after[i] < after[i - 1]) after[i] = after[i - 1];
+
+  const moved: StageShift[] = [];
+  stages.forEach((s, i) => {
+    if (after[i] !== before[i]) moved.push({ key: s.key, label: s.label, from: before[i], to: after[i] });
+  });
+
+  return {
+    stages: stages.map((s, i) => ({ ...s, dueOffsetDays: offsetFromDate(cycleStart, after[i]) })),
+    moved,
+  };
+}
+
 /** Apply the dates to the stages, converting each back to a day offset. */
 export function applyStageDates(
   stages: WorkflowStage[],

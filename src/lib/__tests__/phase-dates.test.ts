@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyStageDates,
   offsetFromDate,
+  setStageDate,
   stageDates,
   validateStageDates,
 } from "@/lib/performance/phase-dates";
@@ -118,5 +119,71 @@ describe("applyStageDates", () => {
     const next = applyStageDates(HOUSE_PHASES, { ...current, mid_year_signoff: "2026-07-15" }, START);
     const mid = next.find((s) => s.key === "mid_year_signoff")!;
     expect(stageDueDate(mid, "2027-01-01")).toBe("2027-07-15");
+  });
+});
+
+describe("setStageDate", () => {
+  const dateOf = (stages: typeof HOUSE_PHASES, key: string) =>
+    stageDueDate(stages.find((s) => s.key === key)!, START);
+
+  it("moves the step it is asked to move", () => {
+    const { stages } = setStageDate(HOUSE_PHASES, "mid_year_signoff", "2026-07-15", START);
+    expect(dateOf(stages, "mid_year_signoff")).toBe("2026-07-15");
+  });
+
+  it("leaves everything else alone when the order still holds", () => {
+    // Mid-year sign-off is due 30 June; 15 July is after its own steps and
+    // still well before final review, so nothing else needs to give.
+    const { moved } = setStageDate(HOUSE_PHASES, "mid_year_signoff", "2026-07-15", START);
+    expect(moved.map((m) => m.key)).toEqual(["mid_year_signoff"]);
+  });
+
+  it("pulls its own earlier steps back when a phase end moves in front of them", () => {
+    // Mid-year runs submit(9 Jun) → review(16 Jun) → employee(23 Jun) → signoff(30 Jun).
+    // Ending it on 10 June has to drag the two in the middle back with it.
+    const { stages, moved } = setStageDate(HOUSE_PHASES, "mid_year_signoff", "2026-06-10", START);
+    expect(dateOf(stages, "mid_year_signoff")).toBe("2026-06-10");
+    expect(dateOf(stages, "mid_year_employee_signoff")).toBe("2026-06-10");
+    expect(dateOf(stages, "mid_year_review")).toBe("2026-06-10");
+    // Submit was already before 10 June, so it stays put.
+    expect(dateOf(stages, "mid_year_submit")).toBe("2026-06-09");
+    expect(moved.map((m) => m.key)).not.toContain("mid_year_submit");
+  });
+
+  it("pushes later steps forward when a phase end runs past them", () => {
+    const { stages } = setStageDate(HOUSE_PHASES, "mid_year_signoff", "2026-12-20", START);
+    expect(dateOf(stages, "final_review_submit")).toBe("2026-12-20");
+    expect(dateOf(stages, "annual_calibration_signoff")).toBe("2026-12-20");
+    // The last step was already later, so it holds its own date.
+    expect(dateOf(stages, "final_appraisal_rating")).toBe("2026-12-31");
+  });
+
+  it("reports every date it changed, and what it changed from", () => {
+    const { moved } = setStageDate(HOUSE_PHASES, "mid_year_signoff", "2026-06-10", START);
+    expect(moved).toContainEqual({
+      key: "mid_year_employee_signoff",
+      label: expect.any(String),
+      from: "2026-06-23",
+      to: "2026-06-10",
+    });
+  });
+
+  it("always leaves the sequence valid", () => {
+    for (const target of ["2026-01-01", "2026-06-10", "2026-12-31"]) {
+      const { stages } = setStageDate(HOUSE_PHASES, "mid_year_signoff", target, START);
+      const dates = Object.fromEntries(stageDates(stages, START).map((s) => [s.key, s.date]));
+      expect(validateStageDates(stages, dates, START)).toBeNull();
+    }
+  });
+
+  it("is a no-op for a stage the workflow does not have", () => {
+    const { stages, moved } = setStageDate(HOUSE_PHASES, "not_a_stage", "2026-06-01", START);
+    expect(moved).toEqual([]);
+    expect(stages).toBe(HOUSE_PHASES);
+  });
+
+  it("changes nothing when the date is the one already stored", () => {
+    const { moved } = setStageDate(HOUSE_PHASES, "mid_year_signoff", "2026-06-30", START);
+    expect(moved).toEqual([]);
   });
 });
