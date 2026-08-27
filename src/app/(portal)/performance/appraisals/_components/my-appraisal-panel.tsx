@@ -5,6 +5,7 @@ import { useStatusTransition } from "@/components/activity";
 import { Plus, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GoalWeight } from "./goal-weight";
+import { goalWeightTotal } from "@/lib/performance/goal-weighting";
 import {
   STAGE_LABEL,
   STATUS_LABEL,
@@ -167,17 +168,10 @@ function GoalSetting({
   const [indicator, setIndicator] = useState("");
   const [alignment, setAlignment] = useState("");
   const [kind, setKind] = useState<"objective" | "development">("objective");
-  // Objective (OKR) weights must total 100% — development goals are weighted
-  // separately by the cycle, so they're excluded from this total.
-  const objectiveWeight = appraisal.goals
-    .filter((g) => g.kind === "objective")
-    .reduce((s, g) => s + (g.weight ?? 0), 0);
-  // Weight sitting on development goals is the usual reason a total comes up
-  // short: the figure is on screen, it simply counts in another pot. Saying so
-  // beats leaving somebody to work out where their missing 35% went.
-  const developmentWeight = appraisal.goals
-    .filter((g) => g.kind === "development")
-    .reduce((s, g) => s + (g.weight ?? 0), 0);
+  // Every goal counts in the same 100%, whatever its type. Development goals
+  // were once weighted in a pot of their own, which left a goal marked 35%
+  // sitting outside a total that read 65%.
+  const objectiveWeight = goalWeightTotal(appraisal.goals);
 
   return (
     <div className="rounded-lg border bg-card p-4">
@@ -186,20 +180,9 @@ function GoalSetting({
         <span
           className={`text-xs font-medium ${objectiveWeight === 100 ? "text-green-600" : "text-amber-600"}`}
         >
-          Objective weight: {objectiveWeight}%{objectiveWeight === 100 ? "" : " — must total 100%"}
+          Total weight: {objectiveWeight}%{objectiveWeight === 100 ? "" : " — must total 100%"}
         </span>
       </div>
-      {objectiveWeight !== 100 && developmentWeight > 0 && (
-        <p className="mb-3 rounded-md border border-muted bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          A further {developmentWeight}% sits on{" "}
-          {appraisal.goals.filter((g) => g.kind === "development" && (g.weight ?? 0) > 0).length ===
-          1
-            ? "a goal marked development"
-            : "goals marked development"}
-          , which the cycle weights separately and which therefore never counts towards this 100%.
-          If it was meant to be an objective, change its type with Edit.
-        </p>
-      )}
       {appraisal.goals.length === 0 ? (
         <p className="text-sm text-muted-foreground">No objectives yet.</p>
       ) : (
@@ -217,7 +200,7 @@ function GoalSetting({
           ))}
         </ul>
       )}
-      {editable && appraisal.goals.filter((g) => g.kind === "objective").length === 0 && (
+      {editable && appraisal.goals.length === 0 && (
         <div className="mt-3 border-t pt-3">
           <button
             type="button"
@@ -401,7 +384,7 @@ function MidYear({
         <div key={g.id} className="rounded-md border p-3">
           <div className="flex items-center justify-between gap-3">
             <span className="font-medium">{g.title}</span>
-            <GoalWeight weight={g.weight} kind={g.kind} />
+            <GoalWeight weight={g.weight} />
           </div>
           <textarea
             defaultValue={g.employee_progress ?? ""}
@@ -569,7 +552,7 @@ function ReadOnlyGoals({ appraisal }: { appraisal: Appraisal }) {
                     self {g.employee_self_rating}
                   </span>
                 )}
-                <GoalWeight weight={g.weight} kind={g.kind} />
+                <GoalWeight weight={g.weight} />
               </span>
             </div>
             {g.key_results.length > 0 && (
@@ -847,11 +830,11 @@ function GoalRow({
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value as "objective" | "development")}
-              title="Objectives share the 100%; development goals are weighted separately by the cycle."
+              title="A label on the goal. Both types are weighted in the same 100%."
               className="rounded-md border bg-background px-3 py-2 text-sm"
             >
-              <option value="objective">Objective — counts in the 100%</option>
-              <option value="development">Development — weighted separately</option>
+              <option value="objective">Objective</option>
+              <option value="development">Development</option>
             </select>
           </div>
           <textarea value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Success indicator" rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
@@ -905,7 +888,7 @@ function GoalRow({
                 .join(" · ")}
             </div>
           </div>
-          <GoalWeight weight={g.weight} kind={g.kind} className="mt-0.5" />
+          <GoalWeight weight={g.weight} className="mt-0.5" />
           {editable && (
             <div className="flex shrink-0 items-center gap-2">
               <button
