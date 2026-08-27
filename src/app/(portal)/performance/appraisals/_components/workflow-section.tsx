@@ -1,3 +1,4 @@
+import { getAppraisal } from "@/lib/appraisals";
 import { getAppraisalWorkflow } from "@/lib/workflow-runtime";
 import { applicableStages, canAct, stageByKey } from "@/lib/workflow-engine";
 import { actingForLabel, type PartyNames } from "@/lib/performance/proxy";
@@ -60,8 +61,26 @@ export async function WorkflowSection({
 
   const progress = applicable.length ? Math.round((completed.size / applicable.length) * 100) : 0;
 
+  // What the live step is actually about. A manager sent to "review and
+  // comment" was shown a timeline and two buttons and nothing to review — the
+  // goals lived in another panel, on another screen for anyone reaching this
+  // card from the workflow list. Fetched only when a live step works on them.
+  const needsGoals = liveStages.some((s) => s.editableFields.includes("goals"));
+  const goals = needsGoals ? (await getAppraisal(wf.appraisalId))?.goals ?? [] : [];
+
   return (
     <WorkflowTimeline
+      goals={goals.map((g) => ({
+        id: g.id,
+        title: g.title,
+        description: g.description,
+        weight: g.weight,
+        deadline: g.deadline,
+        successIndicator: g.success_indicator,
+        selfRating: g.employee_self_rating,
+        employeeProgress: g.employee_progress,
+      }))}
+      showGoals={needsGoals}
       appraisalId={wf.appraisalId}
       heading={heading}
       steps={steps}

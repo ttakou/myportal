@@ -4,11 +4,23 @@ import { useState } from "react";
 import { Check, CircleDot, Circle, CornerUpLeft, X, ArrowRight, UserCog } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
+import { GoalWeight } from "./goal-weight";
 import { cn } from "@/lib/utils";
 import type { StageAction } from "@/lib/workflow-engine";
 import { advanceAppraisalStage } from "../workflow-actions";
 
 export type Step = { key: string; label: string; responsible: string; status: "done" | "active" | "upcoming" };
+export type ReviewGoal = {
+  id: string;
+  title: string;
+  description: string | null;
+  weight: number | null;
+  deadline: string | null;
+  successIndicator: string | null;
+  selfRating: number | null;
+  employeeProgress: string | null;
+};
+
 export type Actionable = {
   key: string;
   label: string;
@@ -31,11 +43,16 @@ export function WorkflowTimeline({
   proxyFor,
   completed,
   rejected,
+  goals = [],
+  showGoals = false,
 }: {
   appraisalId: string;
   heading?: string;
   steps: Step[];
   actionable: Actionable[];
+  /** The goals the live step is about, when it is about goals. */
+  goals?: ReviewGoal[];
+  showGoals?: boolean;
   waitingOn: string[];
   progress: number;
   /** True when at least one of the buttons below acts for somebody else. */
@@ -91,6 +108,55 @@ export function WorkflowTimeline({
           </li>
         ))}
       </ol>
+
+      {/* The step under way is about the goals, so they belong here rather than
+          on another panel the reviewer has to go and find. */}
+      {showGoals && !completed && !rejected && (
+        <div className="border-t pt-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Objectives under review ({goals.length})
+          </h3>
+          {goals.length === 0 ? (
+            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              No goals have been entered on this appraisal, so there is nothing to review yet. The
+              employee sets them at the goal-setting step; hand it back to them with Return.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {goals.map((g) => (
+                <li key={g.id} className="rounded-md border bg-background p-2.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <span className="font-medium">{g.title}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {g.selfRating != null && (
+                        <span className="text-xs text-muted-foreground">self {g.selfRating}</span>
+                      )}
+                      <GoalWeight weight={g.weight} />
+                    </span>
+                  </div>
+                  {g.description && (
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                      {g.description}
+                    </p>
+                  )}
+                  {(g.successIndicator || g.deadline) && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {[g.deadline ? `due ${g.deadline}` : null, g.successIndicator]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
+                  {g.employeeProgress && (
+                    <p className="mt-1 whitespace-pre-wrap rounded bg-muted/50 px-2 py-1 text-xs">
+                      {g.employeeProgress}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {!completed && !rejected && (
         <div className="space-y-2 border-t pt-3">
