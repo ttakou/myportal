@@ -3,6 +3,8 @@ import { AlertTriangle, ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getDeadlineBoard, type DeadlineRow } from "@/lib/performance/status-report";
 import { cn } from "@/lib/utils";
+import { stageDates } from "@/lib/performance/phase-dates";
+import { DeadlineEditor } from "./_components/deadline-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +50,15 @@ export default async function DeadlinesPage() {
           each one. Today is {board.today}.
         </p>
       </div>
+
+      {board.datable && (
+        <DeadlineEditor
+          cycleId={board.datable.cycleId}
+          cycleName={board.datable.cycleName}
+          cycleStart={board.datable.cycleStart}
+          initial={stageDates(board.datable.stages, board.datable.cycleStart)}
+        />
+      )}
 
       {board.cyclesWithoutWorkflow.length > 0 && (
         <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">

@@ -10,6 +10,8 @@ import {
   type CycleType,
   type CycleVisibility,
 } from "@/types/cycle-template";
+import type { WorkflowStage } from "@/types/workflow";
+import { applyStageDates, validateStageDates } from "@/lib/performance/phase-dates";
 
 async function ensureHr() {
   const access = await getAccess();
@@ -210,5 +212,63 @@ export async function createCycleFromTemplate(input: {
   if (error) return { ok: false, error: error.message };
   revalidatePath("/performance/settings/cycle-templates");
   revalidatePath("/performance/appraisals");
+  return { ok: true };
+}
+
+/**
+ * Set the phase deadlines by date, for the cycle they are being read against.
+ *
+ * A stage stores its deadline as days from the cycle's start, which is right for
+ * storage — the process re-dates itself every year — and unusable for editing:
+ * setting goal setting to 31 March meant working out that it is day 89. HR types
+ * the dates; the offsets are computed here.
+ *
+ * The dates therefore set the standard for every cycle on this template, not
+ * just the one they were entered against.
+ */
+export async function setPhaseDeadlines(input: {
+  cycleId: string;
+  dates: Record<string, string>;
+}): Promise<ActionResult> {
+  if (!(await ensureHr())) return { ok: false, error: "Only HR can set the phase deadlines." };
+  const supabase = createClient();
+
+  const { data: cycle } = await supabase
+    .from("appraisal_cycles")
+    .select("id, period_start, template_id")
+    .eq("id", input.cycleId)
+    .maybeSingle();
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+  const cycleStart = (cycle.period_start as string | null) ?? null;
+  if (!cycleStart) return { ok: false, error: "Give the cycle a start date first." };
+  const templateId = (cycle.template_id as string | null) ?? null;
+  if (!templateId) {
+    return { ok: false, error: "This cycle runs no workflow, so it has no phases to date." };
+  }
+
+  const { data: template } = await supabase
+    .from("cycle_templates")
+    .select("config")
+    .eq("id", templateId)
+    .maybeSingle();
+  const config = ((template?.config as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  const stages = Array.isArray(config.stages) ? (config.stages as WorkflowStage[]) : [];
+  if (!stages.length) return { ok: false, error: "This cycle's workflow has no stages." };
+
+  const invalid = validateStageDates(stages, input.dates, cycleStart);
+  if (invalid) return { ok: false, error: invalid };
+
+  const { error } = await supabase
+    .from("cycle_templates")
+    .update({
+      config: { ...config, stages: applyStageDates(stages, input.dates, cycleStart) },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", templateId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/performance/deadlines");
+  revalidatePath("/performance/appraisals");
+  revalidatePath("/performance/settings");
   return { ok: true };
 }

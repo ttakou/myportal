@@ -287,9 +287,19 @@ export interface DeadlineRow {
   daysAway: number;
 }
 
+/** The cycle HR can date, with its stages. Null when nothing is datable. */
+export interface DatableCycle {
+  cycleId: string;
+  cycleName: string;
+  cycleStart: string;
+  stages: WorkflowStage[];
+}
+
 export interface DeadlineBoard {
   rows: DeadlineRow[];
   today: string;
+  /** The live cycle whose phase dates HR can set. */
+  datable: DatableCycle | null;
   /** Active cycles running no workflow — only their goal-setting date applies. */
   cyclesWithoutWorkflow: string[];
 }
@@ -318,6 +328,7 @@ export async function getDeadlineBoard(): Promise<DeadlineBoard> {
 
   const rows: DeadlineRow[] = [];
   const cyclesWithoutWorkflow: string[] = [];
+  let datable: DatableCycle | null = null;
 
   for (const c of (cycles ?? []) as Record<string, unknown>[]) {
     const cycleId = String(c.id);
@@ -361,6 +372,11 @@ export async function getDeadlineBoard(): Promise<DeadlineBoard> {
       continue;
     }
     const cycleStart = (c.period_start as string | null) ?? today;
+    // The active cycle's dates are the ones worth editing; a draft would move
+    // the same template underneath the live one.
+    if (!datable && c.status === "active" && c.period_start) {
+      datable = { cycleId, cycleName, cycleStart, stages };
+    }
 
     const { data: appraisals } = await supabase
       .from("appraisals")
@@ -408,5 +424,5 @@ export async function getDeadlineBoard(): Promise<DeadlineBoard> {
   }
 
   rows.sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.cycleName.localeCompare(b.cycleName));
-  return { rows, today, cyclesWithoutWorkflow };
+  return { rows, today, datable, cyclesWithoutWorkflow };
 }
