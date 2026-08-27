@@ -13,23 +13,34 @@ import type { TeamLine } from "@/lib/performance/team-line";
  * the line comes first and the appraisal is overlaid, so a missing one is
  * stated rather than silently dropping the person.
  */
-export function TeamLinePanel({ line, canAct }: { line: TeamLine; canAct: boolean }) {
+export function TeamLinePanel({
+  line,
+  canAct,
+  heading = "My direct line",
+}: {
+  line: TeamLine;
+  canAct: boolean;
+  /** Null when the caller supplies its own heading. */
+  heading?: string | null;
+}) {
   if (line.members.length === 0) return null;
 
   return (
     <section className="space-y-2">
-      <h2 className="flex items-center gap-2 text-lg font-semibold">
-        <Users className="h-5 w-5 text-muted-foreground" />
-        My direct line ({line.members.length})
-      </h2>
+      {heading !== null && (
+        <h2 className="flex items-center gap-2 text-lg font-semibold">
+          <Users className="h-5 w-5 text-muted-foreground" />
+          {heading} ({line.members.length})
+        </h2>
+      )}
 
       {line.withoutAppraisal > 0 && (
         <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           {line.withoutAppraisal} of them {line.withoutAppraisal === 1 ? "holds" : "hold"} no
-          appraisal in this cycle, so there is no phase to be in and nothing for you to review.
-          They are in your reporting line but not among the cycle&apos;s participants — HR adds
-          people when the cycle is launched.
+          appraisal in this cycle, so there is no phase to be in and nothing to review. They are
+          in the reporting line but not among the cycle&apos;s participants — HR adds people when
+          the cycle is launched.
         </p>
       )}
 
