@@ -1598,7 +1598,7 @@ export async function rateCompetencySelf(input: {
   competencyId: string;
   rating: number;
 }): Promise<ActionResult> {
-  const guard = await requireEmployeeAt(input.appraisalId, ["self_assessment"]);
+  const guard = await requireEmployeeAt(input.appraisalId, ["self_assessment"], ["self_rating"]);
   if ("ok" in guard) return guard;
   const a = guard.a;
   const supabase = createClient();
