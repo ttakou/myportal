@@ -546,6 +546,16 @@ function SelfAssessment({
   return (
     <div className="rounded-lg border bg-card p-4 space-y-3">
       <h3 className="text-sm font-semibold">Year-end self-assessment</h3>
+      {appraisal.manager_summary?.trim() && (
+        <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs">
+          <p className="font-medium uppercase tracking-wide text-muted-foreground">
+            Your line manager said
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+            {appraisal.manager_summary}
+          </p>
+        </div>
+      )}
       {appraisal.goals.map((g) => (
         <div key={g.id} className="rounded-md border p-3">
           <div className="flex items-center justify-between">
@@ -562,6 +572,32 @@ function SelfAssessment({
               {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </div>
+          {/* What was said at mid-year, carried forward. The year-end note is a
+              different field, so this panel opened blank and the half-year
+              record — the progress, the figure, the risk flag — was left behind
+              on a screen nobody returns to. */}
+          {(g.employee_progress || g.progress_percent != null || g.at_risk) && (
+            <div className="mt-2 rounded-md border border-dashed bg-muted/30 px-2.5 py-2 text-xs">
+              <p className="font-medium uppercase tracking-wide text-muted-foreground">
+                At mid-year
+                {g.progress_percent != null && (
+                  <span className="ml-2 rounded bg-muted px-1.5 py-0.5 tabular-nums text-foreground">
+                    {g.progress_percent}% done
+                  </span>
+                )}
+                {g.at_risk && (
+                  <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">
+                    was at risk
+                  </span>
+                )}
+              </p>
+              {g.employee_progress && (
+                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                  {g.employee_progress}
+                </p>
+              )}
+            </div>
+          )}
           <textarea
             defaultValue={g.employee_comment ?? ""}
             disabled={!editable || pending}

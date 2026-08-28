@@ -139,70 +139,12 @@ function TeamRow({ appraisal: a, workflow }: { appraisal: Appraisal; workflow?: 
     a.stage === "final_discussion" && a.status === "ready_for_final_discussion";
   const actionNeeded = awaitingGoalReview || awaitingMidYear || evaluating || readyForDiscussion;
 
-  return (
-    <div id={`appraisal-${a.id}`} className="scroll-mt-24 rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{a.employee_name || "—"}</span>
-          {actionNeeded && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-700">
-              Action needed
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {(a.status === "completed" || a.status === "closed") && (
-            <Link
-              href={`/performance/appraisals/${a.id}/outcome`}
-              className="rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
-            >
-              Outcome
-            </Link>
-          )}
-          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-            {STAGE_LABEL[a.stage]} · {STATUS_LABEL[a.status]}
-            {a.final_score != null ? ` · ${a.final_score}% · ${a.rating_label ?? ""}` : ""}
-          </span>
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
-          >
-            {open ? "Hide" : "Show details"}
-            <ChevronDown className={cn("h-3.5 w-3.5 transition", open && "rotate-180")} />
-          </button>
-        </div>
-      </div>
-
-      {!open && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          {a.goals.length} goal{a.goals.length === 1 ? "" : "s"}
-          {a.employee_summary ? " · self-assessment submitted" : ""}
-          {actionNeeded ? " · needs your attention — open to act" : ""}
-        </p>
-      )}
-
-      {open &&
-        (workflow ? (
-          <div className="mt-3">
-            <AppraisalTabs
-              label={`${a.employee_name ?? "Report"} — appraisal`}
-              objectives={<Details />}
-              workflow={workflow}
-            />
-          </div>
-        ) : (
-          <Details />
-        ))}
-    </div>
-  );
-
-  /** Everything the card shows about the objectives themselves. */
-  function Details() {
-    return (
-      <>
-      {a.goalsReadOnly && (
+  // A plain element, not a nested component. Declaring a component inside the
+  // render body gives React a new type on every keystroke, so it unmounted and
+  // remounted the whole subtree — which is why a comment field lost focus after
+  // each letter typed.
+  const details = (
+    <>      {a.goalsReadOnly && (
         <p className="mt-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs text-muted-foreground">
           Goals for the year{a.goalsSourceName ? ` — set in ${a.goalsSourceName}` : ""}. Read-only here; rated in that cycle.
         </p>
@@ -329,18 +271,17 @@ function TeamRow({ appraisal: a, workflow }: { appraisal: Appraisal; workflow?: 
         />
       )}
 
-      {awaitingMidYear && (
-        <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t pt-3">
-          <input
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Review comment (optional)"
-            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
-          />
-          <Button size="sm" disabled={pending} onClick={() => run(() => completeMidYear({ appraisalId: a.id, comment }))}>
-            <Check className="h-4 w-4" /> Complete mid-year review
-          </Button>
-        </div>
+      {/* The manager's comment belongs under the objectives it is about, and it
+          stays there. It used to appear only while the review was awaited and
+          vanish the moment it was completed, taking what had been written with
+          it — so there was nowhere to read back what the manager had said. */}
+      {(awaitingMidYear || a.stage === "goal_review") && (
+        <ManagerReviewComment
+          appraisal={a}
+          pending={pending}
+          canComplete={awaitingMidYear}
+          run={run}
+        />
       )}
 
       {evaluating && a.competencies.length > 0 && (
@@ -428,9 +369,68 @@ function TeamRow({ appraisal: a, workflow }: { appraisal: Appraisal; workflow?: 
           </div>
         </div>
       )}
-      </>
-    );
-  }
+    </>
+  );
+
+  return (
+    <div id={`appraisal-${a.id}`} className="scroll-mt-24 rounded-lg border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{a.employee_name || "—"}</span>
+          {actionNeeded && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-700">
+              Action needed
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {(a.status === "completed" || a.status === "closed") && (
+            <Link
+              href={`/performance/appraisals/${a.id}/outcome`}
+              className="rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
+            >
+              Outcome
+            </Link>
+          )}
+          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+            {STAGE_LABEL[a.stage]} · {STATUS_LABEL[a.status]}
+            {a.final_score != null ? ` · ${a.final_score}% · ${a.rating_label ?? ""}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
+          >
+            {open ? "Hide" : "Show details"}
+            <ChevronDown className={cn("h-3.5 w-3.5 transition", open && "rotate-180")} />
+          </button>
+        </div>
+      </div>
+
+      {!open && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {a.goals.length} goal{a.goals.length === 1 ? "" : "s"}
+          {a.employee_summary ? " · self-assessment submitted" : ""}
+          {actionNeeded ? " · needs your attention — open to act" : ""}
+        </p>
+      )}
+
+      {open &&
+        (workflow ? (
+          <div className="mt-3">
+            <AppraisalTabs
+              label={`${a.employee_name ?? "Report"} — appraisal`}
+              objectives={details}
+              workflow={workflow}
+            />
+          </div>
+        ) : (
+          details
+        ))}
+    </div>
+  );
+
 }
 
 
@@ -537,6 +537,87 @@ function GoalReview({
           can leave a comment now either way.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * The line manager's mid-year comment, under the objectives it is about.
+ *
+ * It was a single-line box that appeared only while the review was awaited and
+ * disappeared the moment it was completed — so the remark could not be read
+ * back, corrected, or seen by anybody afterwards. It is a proper text area now,
+ * it saves on its own, and it stays put once the review is done.
+ */
+function ManagerReviewComment({
+  appraisal: a,
+  pending,
+  canComplete,
+  run,
+}: {
+  appraisal: Appraisal;
+  pending: boolean;
+  /** True only while the mid-year review is still this manager's to complete. */
+  canComplete: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+}) {
+  const stored = a.manager_summary ?? "";
+  const [text, setText] = useState(stored);
+  const [saved, setSaved] = useState(false);
+  const changed = text.trim() !== stored.trim();
+
+  return (
+    <div className="mt-3 border-t pt-3">
+      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Line manager comments
+      </label>
+      <textarea
+        value={text}
+        disabled={pending}
+        rows={3}
+        placeholder="Your remarks on this half-year…"
+        onChange={(e) => {
+          setSaved(false);
+          setText(e.target.value);
+        }}
+        className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+      />
+      <p className="mt-1 text-xs text-muted-foreground">
+        {a.employee_name ?? "The employee"} sees this on their own appraisal.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {canComplete && (
+          <Button
+            size="sm"
+            disabled={pending}
+            onClick={() => run(() => completeMidYear({ appraisalId: a.id, comment: text }))}
+          >
+            <Check className="h-4 w-4" /> Complete mid-year review
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending || !changed}
+          onClick={() =>
+            run(() => setManagerComment({ appraisalId: a.id, comment: text }), () => setSaved(true))
+          }
+        >
+          Save
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={pending || !changed}
+          onClick={() => {
+            setText(stored);
+            setSaved(false);
+          }}
+        >
+          Cancel
+        </Button>
+        {saved && !changed && <span className="text-xs text-emerald-700">Saved.</span>}
+      </div>
     </div>
   );
 }
