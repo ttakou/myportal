@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Check, ChevronDown, Send, Undo2, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { AppraisalTabs } from "./my-appraisal-tabs";
 import { GoalWeight } from "./goal-weight";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -26,10 +27,17 @@ export function TeamReviewPanel({
   appraisals,
   colleagues = [],
   currentDelegate = null,
+  workflowByAppraisal,
 }: {
   appraisals: Appraisal[];
   colleagues?: Colleague[];
   currentDelegate?: { id: string; name: string | null } | null;
+  /**
+   * Each report's workflow timeline, rendered on the server and handed in so
+   * it can sit behind a tab on their own card rather than in a separate list
+   * further down the page.
+   */
+  workflowByAppraisal?: Record<string, ReactNode>;
 }) {
   const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
     appraisals.length,
@@ -42,7 +50,7 @@ export function TeamReviewPanel({
       </div>
       <div className="space-y-3">
         {appraisals.slice(0, count).map((a) => (
-          <TeamRow key={a.id} appraisal={a} />
+          <TeamRow key={a.id} appraisal={a} workflow={workflowByAppraisal?.[a.id]} />
         ))}
       </div>
       <ShowMore
@@ -106,7 +114,7 @@ function DelegateControl({
   );
 }
 
-function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
+function TeamRow({ appraisal: a, workflow }: { appraisal: Appraisal; workflow?: ReactNode }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
@@ -175,7 +183,24 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
         </p>
       )}
 
-      {open && (
+      {open &&
+        (workflow ? (
+          <div className="mt-3">
+            <AppraisalTabs
+              label={`${a.employee_name ?? "Report"} — appraisal`}
+              objectives={<Details />}
+              workflow={workflow}
+            />
+          </div>
+        ) : (
+          <Details />
+        ))}
+    </div>
+  );
+
+  /** Everything the card shows about the objectives themselves. */
+  function Details() {
+    return (
       <>
       {a.goalsReadOnly && (
         <p className="mt-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs text-muted-foreground">
@@ -404,9 +429,8 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
         </div>
       )}
       </>
-      )}
-    </div>
-  );
+    );
+  }
 }
 
 
