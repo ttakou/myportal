@@ -12,6 +12,8 @@ import { ensureHousePhaseTemplate } from "@/lib/performance/house-template";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
 import { goalWeightError, goalsScore } from "@/lib/performance/goal-weighting";
+import { employeeLiveStage } from "@/lib/workflow-runtime";
+import type { StageField } from "@/types/workflow";
 export type { ActionResult };
 
 const rev = () => revalidatePath("/performance/appraisals");
@@ -911,9 +913,22 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
 
 // --- Phase 2: mid-year review, self-assessment, manager evaluation ----------
 
+/**
+ * The employee may write here — by the legacy stage, or by the workflow.
+ *
+ * Two state machines describe the same appraisal: the `stage` column, which
+ * these panels were built around, and the fourteen-step workflow, which is what
+ * the phases actually run on. Advancing a workflow step never touched `stage`,
+ * so a cycle sitting in Mid Year Review still failed this check and there was
+ * nowhere to record progress against the goals.
+ *
+ * `workflowFields` names what the caller is writing. When the employee's live
+ * step opens those fields, it is their turn whatever the legacy stage says.
+ */
 async function requireEmployeeAt(
   id: string,
   stages: string[],
+  workflowFields: StageField[] = [],
 ): Promise<{ a: AppraisalRow } | ActionResult> {
   const a = await loadAppraisal(id);
   if (!a) return { ok: false, error: "Appraisal not found." };
@@ -921,9 +936,15 @@ async function requireEmployeeAt(
   const access = await getAccess();
   const owner = a.employee_id === me || access.isHr || access.isAdmin || access.isSystemAdmin;
   if (!owner) return { ok: false, error: "Not your appraisal." };
+  if (stages.includes(a.stage) && EDITABLE.has(a.status)) return { a };
+
+  if (workflowFields.length > 0) {
+    const live = await employeeLiveStage(id);
+    if (live && workflowFields.some((f) => live.editableFields.includes(f))) return { a };
+  }
+
   if (!stages.includes(a.stage)) return { ok: false, error: "Not editable at this stage." };
-  if (!EDITABLE.has(a.status)) return { ok: false, error: "This stage has already been submitted." };
-  return { a };
+  return { ok: false, error: "This stage has already been submitted." };
 }
 
 async function requireManagerAt(
@@ -964,7 +985,10 @@ export async function updateGoalProgress(input: {
   employeeComment?: string;
   selfRating?: number;
 }): Promise<ActionResult> {
-  const guard = await requireEmployeeAt(input.appraisalId, ["goal_review", "self_assessment"]);
+  const guard = await requireEmployeeAt(input.appraisalId, ["goal_review", "self_assessment"], [
+    "self_rating",
+    "employee_comment",
+  ]);
   if ("ok" in guard) return guard;
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
@@ -1037,7 +1061,7 @@ export async function submitSelfAssessment(input: {
   appraisalId: string;
   summary?: string;
 }): Promise<ActionResult> {
-  const guard = await requireEmployeeAt(input.appraisalId, ["self_assessment"]);
+  const guard = await requireEmployeeAt(input.appraisalId, ["self_assessment"], ["self_rating"]);
   if ("ok" in guard) return guard;
   const a = guard.a;
   const supabase = createClient();
@@ -1673,7 +1697,11 @@ export async function updateKeyResultProgress(input: {
   currentValue?: string;
   progress?: number;
 }): Promise<ActionResult> {
-  const guard = await requireEmployeeAt(input.appraisalId, ["goal_review", "self_assessment"]);
+  const guard = await requireEmployeeAt(
+    input.appraisalId,
+    ["goal_review", "self_assessment"],
+    ["key_results"],
+  );
   if ("ok" in guard) return guard;
   const supabase = createClient();
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };

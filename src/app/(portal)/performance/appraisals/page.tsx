@@ -26,12 +26,13 @@ import { MyAppraisalPanel } from "./_components/my-appraisal-panel";
 import { TeamReviewPanel } from "./_components/team-review-panel";
 import { TeamLinePanel } from "./_components/team-line-panel";
 import { getTeamLine } from "@/lib/performance/team-line";
+import { employeeLiveStage } from "@/lib/workflow-runtime";
 import { HrConsole } from "./_components/hr-console";
 import { CalibrationPanel } from "./_components/calibration-panel";
 import { SecondLevelPanel } from "./_components/second-level-panel";
 import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
-import { cyclePhases } from "@/lib/performance/cycle-phases";
+import { cyclePhases, phaseNameOf } from "@/lib/performance/cycle-phases";
 import { getCyclePhaseStages } from "@/lib/performance/house-template";
 import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
@@ -112,6 +113,20 @@ export default async function AppraisalsPage({
   ).filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
 
   const isManager = team.length > 0;
+
+  // The step the workflow is waiting on this person for. It chooses which panel
+  // opens: the legacy `stage` column never moves when a workflow step is taken,
+  // so a cycle in Mid Year Review still showed goal setting and there was
+  // nowhere to record progress against the goals.
+  const myStage = myAppraisal ? await employeeLiveStage(myAppraisal.id) : null;
+  const myStep = myStage
+    ? {
+        key: myStage.key,
+        label: myStage.label,
+        phase: phaseNameOf(myStage.label),
+        fields: myStage.editableFields as string[],
+      }
+    : null;
 
   // Line-manager dashboard metrics for the selected year.
   const teamCards = isManager
@@ -245,6 +260,7 @@ export default async function AppraisalsPage({
                       colleagues={colleagues}
                       deptObjectives={deptObjectives}
                       goalTemplates={goalTemplates}
+                      step={myStep}
                     />
                     <ManagerComment appraisal={myAppraisal} />
                   </div>

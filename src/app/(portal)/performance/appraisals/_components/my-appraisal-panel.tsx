@@ -56,22 +56,47 @@ export type GoalLibraryItem = {
   level: string;
 };
 
+export interface EmployeeStep {
+  key: string;
+  label: string;
+  /** The phase it belongs to, e.g. "Mid Year Review". */
+  phase: string;
+  fields: string[];
+}
+
 export function MyAppraisalPanel({
   appraisal,
   colleagues = [],
   deptObjectives = [],
   goalTemplates = [],
+  step = null,
 }: {
   appraisal: Appraisal;
   colleagues?: Colleague[];
   deptObjectives?: DepartmentObjective[];
   goalTemplates?: GoalLibraryItem[];
+  /**
+   * The workflow step waiting on this employee, when one is. It decides which
+   * panel opens; the legacy `stage` only decides when no workflow runs.
+   */
+  step?: EmployeeStep | null;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   // In a gate cycle the year's goals are shown read-only — they're set/edited in
   // the Annual cycle — so never offer goal editing here.
-  const editable = !appraisal.goalsReadOnly && EDITABLE.has(appraisal.status);
+  const editable =
+    !appraisal.goalsReadOnly && (step ? true : EDITABLE.has(appraisal.status));
+
+  // Which panel this person needs. The workflow says what its live step opens;
+  // without one, the legacy stage decides as it always did.
+  const showGoals = step ? step.fields.includes("goals") : appraisal.stage === "goal_setting";
+  const showMidYear = step
+    ? !step.fields.includes("goals") && step.phase === "Mid Year Review"
+    : appraisal.stage === "goal_review";
+  const showSelfAssessment = step
+    ? !step.fields.includes("goals") && step.phase === "Final Review"
+    : appraisal.stage === "self_assessment";
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -103,7 +128,16 @@ export function MyAppraisalPanel({
         </p>
       )}
 
-      {appraisal.stage === "goal_setting" && (
+      {step && (
+        <p className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+          <span className="font-medium">Your step: {step.label}.</span>{" "}
+          <span className="text-muted-foreground">
+            Fill this in below, then submit it on the Workflow tab.
+          </span>
+        </p>
+      )}
+
+      {showGoals && (
         <GoalSetting
           appraisal={appraisal}
           editable={editable}
@@ -114,10 +148,16 @@ export function MyAppraisalPanel({
           goalTemplates={goalTemplates}
         />
       )}
-      {appraisal.stage === "goal_review" && (
-        <MidYear appraisal={appraisal} editable={editable} pending={pending} run={run} />
+      {showMidYear && (
+        <MidYear
+          appraisal={appraisal}
+          editable={editable}
+          pending={pending}
+          run={run}
+          workflowDriven={!!step}
+        />
       )}
-      {appraisal.stage === "self_assessment" && (
+      {showSelfAssessment && (
         <SelfAssessment
           appraisal={appraisal}
           editable={editable}
@@ -371,11 +411,14 @@ function MidYear({
   editable,
   pending,
   run,
+  workflowDriven = false,
 }: {
   appraisal: Appraisal;
   editable: boolean;
   pending: boolean;
   run: RunFn;
+  /** True when the Workflow tab owns the transition, so this panel only saves. */
+  workflowDriven?: boolean;
 }) {
   return (
     <div className="rounded-lg border bg-card p-4 space-y-3">
@@ -409,12 +452,18 @@ function MidYear({
           <KrProgress goal={g} appraisalId={appraisal.id} editable={editable} pending={pending} run={run} />
         </div>
       ))}
-      {editable && (
+      {editable && !workflowDriven && (
         <div className="flex justify-end">
           <Button disabled={pending} onClick={() => run(() => submitMidYear(appraisal.id))}>
             <Send className="h-4 w-4" /> Submit mid-year progress
           </Button>
         </div>
+      )}
+      {workflowDriven && (
+        <p className="text-xs text-muted-foreground">
+          Progress saves as you type. Submit the step itself on the Workflow tab, so the process
+          moves on once.
+        </p>
       )}
       {appraisal.status === "pending_manager_review" && (
         <p className="text-xs text-muted-foreground">Submitted — awaiting your manager&apos;s review.</p>

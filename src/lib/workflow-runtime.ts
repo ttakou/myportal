@@ -113,3 +113,25 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
     },
   };
 }
+
+/**
+ * The live step that belongs to the employee, if it is their turn.
+ *
+ * The panels an employee types into are chosen by the appraisal's legacy
+ * `stage`, which the fourteen-step workflow never touches — so a cycle sitting
+ * in Mid Year Review still showed the goal-setting panel and there was nowhere
+ * to record progress. The workflow already declares which fields each step
+ * opens; this reads that, so the two agree on whose turn it is and on what
+ * they are being asked for.
+ */
+export async function employeeLiveStage(appraisalId: string): Promise<WorkflowStage | null> {
+  const wf = await getAppraisalWorkflow(appraisalId);
+  if (!wf || wf.terminal) return null;
+  const order = new Map(wf.stages.map((s, i) => [s.key, i]));
+  return (
+    wf.activeKeys
+      .map((k) => wf.stages.find((s) => s.key === k))
+      .filter((s): s is WorkflowStage => !!s && s.responsibleRole === "employee")
+      .sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0))[0] ?? null
+  );
+}
