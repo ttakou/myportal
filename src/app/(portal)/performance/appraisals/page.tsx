@@ -38,7 +38,7 @@ import { AppraisalHistory } from "./_components/appraisal-history";
 import { PipPanel } from "./_components/pip-panel";
 import { WorkflowSection } from "./_components/workflow-section";
 import { AppraisalFormOutline } from "./_components/appraisal-form-outline";
-import { MyAppraisalTabs } from "./_components/my-appraisal-tabs";
+import { AppraisalTabs } from "./_components/my-appraisal-tabs";
 import { ManagerComment } from "./_components/manager-comment";
 import { HrWorkflowQueue } from "./_components/hr-workflow-queue";
 import { resolveAppraisalView } from "../_components/performance-views";
@@ -129,12 +129,27 @@ export default async function AppraisalsPage({
       ]
     : [];
 
-  // Reports a manager (or second-level) may need to act on in the workflow.
-  const workflowReports = isManager
-    ? [...team, ...secondLevel]
-        .map((a) => ({ id: a.id, name: a.employee_name ?? undefined }))
-        .filter((a, i, arr) => arr.findIndex((x) => x.id === a.id) === i)
-    : [];
+  // Each report's workflow, rendered here and handed to the team panel so it
+  // sits behind a tab on that person's own card. It used to be a separate list
+  // below the appraisals, which meant scrolling between somebody's objectives
+  // and the steps those objectives are moving through.
+  const teamIds = new Set(team.map((a) => a.id));
+  const workflowByAppraisal = Object.fromEntries(
+    team.map((a) => [
+      a.id,
+      <Suspense key={a.id} fallback={<SectionSkeleton />}>
+        <WorkflowSection
+          appraisalId={a.id}
+          partyNames={{ employee: a.employee_name, manager: a.manager_name }}
+        />
+      </Suspense>,
+    ]),
+  );
+
+  // Second-level reviews are a different queue and keep their own list.
+  const secondLevelWorkflow = secondLevel
+    .filter((a) => !teamIds.has(a.id))
+    .map((a) => ({ id: a.id, name: a.employee_name ?? undefined }));
 
   return (
     <div className="space-y-8">
@@ -186,13 +201,18 @@ export default async function AppraisalsPage({
           {isManager ? (
           <>
             <SummaryCards title={`Team dashboard — ${cycle?.year ?? ""}`} cards={teamCards} />
-            <TeamReviewPanel appraisals={team} colleagues={colleagues} currentDelegate={myDelegate} />
+            <TeamReviewPanel
+              appraisals={team}
+              colleagues={colleagues}
+              currentDelegate={myDelegate}
+              workflowByAppraisal={workflowByAppraisal}
+            />
             {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
             <PipPanel data={pip} employees={pipEmployees} />
-            {workflowReports.length > 0 && (
+            {secondLevelWorkflow.length > 0 && (
               <section className="space-y-3">
-                <h2 className="text-lg font-semibold">Workflow actions</h2>
-                {workflowReports.map((a) => (
+                <h2 className="text-lg font-semibold">Second-level workflow actions</h2>
+                {secondLevelWorkflow.map((a) => (
                   <Suspense key={a.id} fallback={null}>
                     <WorkflowSection appraisalId={a.id} heading={a.name} />
                   </Suspense>
@@ -216,7 +236,8 @@ export default async function AppraisalsPage({
               {/* Objectives first — that is what people come here to do. The
                   fourteen-step workflow sits behind its own tab rather than
                   pushing the work below the fold. */}
-              <MyAppraisalTabs
+              <AppraisalTabs
+                label="My appraisal"
                 objectives={
                   <div className="space-y-3">
                     <MyAppraisalPanel

@@ -838,7 +838,12 @@ export async function returnGoals(input: { appraisalId: string; comment: string 
   const supabase = createClient();
   const { error } = await supabase
     .from("appraisals")
-    .update({ status: "returned_for_correction" })
+    .update({
+      status: "returned_for_correction",
+      // The remarks are the whole point of sending it back, so they sit on the
+      // appraisal where the employee will look, not only in the event log.
+      manager_summary: input.comment?.trim() || null,
+    })
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent(a, "goals_returned", input.comment, await actingFor(a, "line_manager"));
@@ -885,10 +890,11 @@ export async function approveGoals(input: { appraisalId: string; comment?: strin
     change_note: "Goal plan approved",
     snapshot: goals ?? [],
   });
-  const { error } = await supabase
-    .from("appraisals")
-    .update({ stage: "goal_review", status: "not_started" })
-    .eq("id", a.id);
+  // The comment goes where the employee reads it, not only into the event log:
+  // approving with remarks and having them vanish is worse than not asking.
+  const approvalPatch: Record<string, unknown> = { stage: "goal_review", status: "not_started" };
+  if (input.comment?.trim()) approvalPatch.manager_summary = input.comment.trim();
+  const { error } = await supabase.from("appraisals").update(approvalPatch).eq("id", a.id);
   if (error) return { ok: false, error: error.message };
   await logEvent({ ...a, stage: "goal_setting" }, "goals_approved", input.comment, await actingFor(a, "line_manager"));
   await notifyUsers({
