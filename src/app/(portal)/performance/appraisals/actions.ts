@@ -981,6 +981,8 @@ export async function updateGoalProgress(input: {
   appraisalId: string;
   goalId: string;
   progress?: string;
+  /** How far along the goal is, 0-100. Null clears it. */
+  percent?: number | null;
   atRisk?: boolean;
   employeeComment?: string;
   selfRating?: number;
@@ -993,6 +995,12 @@ export async function updateGoalProgress(input: {
   const supabase = createClient();
   const patch: Record<string, unknown> = {};
   if (input.progress !== undefined) patch.employee_progress = input.progress.trim() || null;
+  if (input.percent !== undefined) {
+    patch.progress_percent =
+      input.percent === null || Number.isNaN(input.percent)
+        ? null
+        : Math.max(0, Math.min(100, Math.round(input.percent)));
+  }
   if (input.atRisk !== undefined) patch.at_risk = input.atRisk;
   if (input.employeeComment !== undefined) patch.employee_comment = input.employeeComment.trim() || null;
   if (input.selfRating !== undefined)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { goalWeightTotal, goalsScore } from "@/lib/performance/goal-weighting";
+import { goalWeightTotal, goalsScore, overallProgress } from "@/lib/performance/goal-weighting";
 
 describe("goalWeightTotal", () => {
   it("adds every goal's weight, whatever its type", () => {
@@ -73,5 +73,65 @@ describe("goalsScore", () => {
       { weight: 30, manager_rating: 5 },
       { weight: 40, manager_rating: null },
     ]).rated).toBe(2);
+  });
+});
+
+describe("overallProgress", () => {
+  it("weights each goal's progress by what the goal is worth", () => {
+    // 0.4·100 + 0.6·50 = 70, not the plain mean of 75.
+    expect(
+      overallProgress([
+        { weight: 40, progress_percent: 100 },
+        { weight: 60, progress_percent: 50 },
+      ]).percent,
+    ).toBe(70);
+  });
+
+  it("leaves unanswered goals out rather than scoring them zero", () => {
+    // Part-way through a review most goals are blank; counting them as zero
+    // would report a plan barely started when it may be nearly done.
+    expect(
+      overallProgress([
+        { weight: 50, progress_percent: 80 },
+        { weight: 50, progress_percent: null },
+      ]),
+    ).toEqual({ percent: 80, answered: 1, of: 2 });
+  });
+
+  it("has no figure at all before anybody answers", () => {
+    expect(overallProgress([{ weight: 100, progress_percent: null }])).toEqual({
+      percent: null,
+      answered: 0,
+      of: 1,
+    });
+    expect(overallProgress([])).toEqual({ percent: null, answered: 0, of: 0 });
+  });
+
+  it("falls back to a plain mean when the answered goals carry no weight", () => {
+    expect(
+      overallProgress([
+        { weight: 0, progress_percent: 20 },
+        { weight: null, progress_percent: 60 },
+      ]).percent,
+    ).toBe(40);
+  });
+
+  it("rounds to a whole percent", () => {
+    expect(
+      overallProgress([
+        { weight: 30, progress_percent: 33 },
+        { weight: 70, progress_percent: 66 },
+      ]).percent,
+    ).toBe(56);
+  });
+
+  it("counts how many of the goals have been answered", () => {
+    expect(
+      overallProgress([
+        { weight: 25, progress_percent: 10 },
+        { weight: 25, progress_percent: 20 },
+        { weight: 50, progress_percent: null },
+      ]),
+    ).toMatchObject({ answered: 2, of: 3 });
   });
 });

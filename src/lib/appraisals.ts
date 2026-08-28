@@ -692,7 +692,7 @@ async function hydrate(appraisal: Appraisal, goalsAppraisalId?: string): Promise
       .from("appraisal_goals")
       .select(
         "id, title, description, weight, deadline, success_indicator, alignment, evidence_required, kind," +
-          " employee_progress, employee_self_rating, employee_comment, manager_rating, manager_comment, at_risk, status",
+          " employee_progress, progress_percent, employee_self_rating, employee_comment, manager_rating, manager_comment, at_risk, status",
       )
       .eq("appraisal_id", gid)
       .order("created_at"),

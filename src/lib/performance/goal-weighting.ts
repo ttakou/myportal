@@ -59,6 +59,38 @@ export function goalsScore(goals: WeightedGoal[]): GoalsScore {
   return { average: weight > 0 ? weighted / weight : plain / rated, rated };
 }
 
+/**
+ * How far through the whole plan somebody is, weighted by each goal.
+ *
+ * A goal at 100% that carries 5% of the plan is not the same achievement as one
+ * at 50% carrying 40%, so a plain average would flatter the wrong person.
+ * Goals with no percentage yet are left out rather than counted as zero: at the
+ * start of a review everything is unanswered, and a plan reading 0% because
+ * nobody has typed in it says nothing.
+ */
+export function overallProgress(
+  goals: { weight: number | null; progress_percent?: number | null }[],
+): { percent: number | null; answered: number; of: number } {
+  let weight = 0;
+  let weighted = 0;
+  let plain = 0;
+  let answered = 0;
+
+  for (const g of goals) {
+    const p = g.progress_percent;
+    if (p == null) continue;
+    const w = g.weight ?? 0;
+    weight += w;
+    weighted += w * p;
+    plain += p;
+    answered += 1;
+  }
+
+  if (answered === 0) return { percent: null, answered: 0, of: goals.length };
+  const raw = weight > 0 ? weighted / weight : plain / answered;
+  return { percent: Math.round(raw), answered, of: goals.length };
+}
+
 export interface GoalRuleConfig {
   minGoals: number;
   maxGoals: number;
