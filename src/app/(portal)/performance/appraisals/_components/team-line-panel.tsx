@@ -34,6 +34,15 @@ export function TeamLinePanel({
         </h2>
       )}
 
+      {line.withoutReviewer > 0 && (
+        <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          {line.withoutReviewer} of them {line.withoutReviewer === 1 ? "has" : "have"} no reviewer
+          named on the appraisal, so the manager steps of every phase belong to nobody and cannot
+          be taken. HR assigns the reviewer from the status report.
+        </p>
+      )}
+
       {line.withoutAppraisal > 0 && (
         <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -103,6 +112,14 @@ export function TeamLinePanel({
                   >
                     {m.owner ? STAGE_ROLE_LABEL[m.owner] : ""}
                   </span>
+                  {m.appraisalId && !m.reviewerAssigned && (
+                    <span
+                      title="No reviewer is named on this appraisal, so its manager steps belong to nobody."
+                      className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                    >
+                      no reviewer
+                    </span>
+                  )}
                   {canAct && m.appraisalId && (
                     <Link
                       href={`/performance/appraisals/${m.appraisalId}/act`}

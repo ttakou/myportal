@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Play, Lock, Plus, Trash2, Download } from "lucide-react";
+import { Play, Lock, Plus, Trash2, Download, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,7 @@ import {
 } from "@/types/appraisal";
 import {
   addCompetency,
+  addMissingParticipants,
   addDepartmentObjective,
   closeAppraisal,
   closeCycle,
@@ -56,6 +57,7 @@ export function HrConsole({
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
+  const [addedNote, setAddedNote] = useState<string | null>(null);
   const year = new Date().getFullYear();
   const [name, setName] = useState(`${year} Annual Appraisal`);
   const [start, setStart] = useState(`${year}-01-01`);
@@ -78,6 +80,23 @@ export function HrConsole({
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) setError(res.error ?? "Action failed.");
+    });
+  }
+
+  function addParticipants(cycleId: string) {
+    setError(null);
+    setAddedNote(null);
+    startTransition(async () => {
+      const res = await addMissingParticipants(cycleId);
+      if (!res.ok) {
+        setError(res.error ?? "Couldn't add the missing people.");
+        return;
+      }
+      setAddedNote(
+        res.added
+          ? `Added ${res.added} ${res.added === 1 ? "person" : "people"} to the cycle.`
+          : "Everybody appraisable already holds an appraisal in this cycle.",
+      );
     });
   }
 
@@ -162,6 +181,8 @@ export function HrConsole({
                 phases={phasesByCycle?.[c.id]}
                 pending={pending}
                 run={run}
+                addParticipants={addParticipants}
+                note={addedNote}
               />
             ))}
             {cycles.length === 0 && (
@@ -217,11 +238,15 @@ function CycleRow({
   phases,
   pending,
   run,
+  addParticipants,
+  note,
 }: {
   cycle: AppraisalCycle;
   phases?: CyclePhaseInfo;
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>) => void;
+  addParticipants: (cycleId: string) => void;
+  note: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const isActive = c.status === "active";
@@ -270,17 +295,37 @@ function CycleRow({
                     </span>
                   )}
                   {c.status === "active" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => run(() => closeCycle(c.id))}
-                    >
-                      <Lock className="h-4 w-4" /> Close
-                    </Button>
+                    <span className="inline-flex gap-2">
+                      {/* Launch only exists while a cycle is a draft, so a late
+                          joiner had no way into a running one. */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending}
+                        title="Give an appraisal to anybody appraisable who does not yet hold one"
+                        onClick={() => addParticipants(c.id)}
+                      >
+                        <UserPlus className="h-4 w-4" /> Add missing people
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => run(() => closeCycle(c.id))}
+                      >
+                        <Lock className="h-4 w-4" /> Close
+                      </Button>
+                    </span>
                   )}
         </td>
       </tr>
+      {isActive && note && (
+        <tr>
+          <td colSpan={4} className="px-4 pb-2 text-xs text-muted-foreground">
+            {note}
+          </td>
+        </tr>
+      )}
       {open && phases && (
         <tr>
           <td colSpan={4} className="p-0">

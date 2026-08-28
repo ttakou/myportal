@@ -10,12 +10,16 @@ export interface TeamLineMember extends MemberPhase {
   jobTitle: string | null;
   /** Null when this report holds no appraisal in the cycle. */
   appraisalId: string | null;
+  /** False when the appraisal names no reviewer, so nobody owns its steps. */
+  reviewerAssigned: boolean;
 }
 
 export interface TeamLine {
   members: TeamLineMember[];
   /** Reports in the line who hold no appraisal — they are not participants. */
   withoutAppraisal: number;
+  /** In the cycle, but with no reviewer on the appraisal to act on it. */
+  withoutReviewer: number;
   /** True when the cycle runs a workflow, so a phase can be named at all. */
   hasWorkflow: boolean;
 }
@@ -65,7 +69,12 @@ export async function getManagerLine(
   return lineFor([managerId], cycleId);
 }
 
-const EMPTY_LINE: TeamLine = { members: [], withoutAppraisal: 0, hasWorkflow: false };
+const EMPTY_LINE: TeamLine = {
+  members: [],
+  withoutAppraisal: 0,
+  withoutReviewer: 0,
+  hasWorkflow: false,
+};
 
 /** Everybody reporting to any of `managerIds`, with each one's phase. */
 async function lineFor(managerIds: string[], cycleId: string | null): Promise<TeamLine> {
@@ -81,23 +90,39 @@ async function lineFor(managerIds: string[], cycleId: string | null): Promise<Te
     .order("full_name");
   const line = (reports ?? []) as { id: string; full_name: string | null; job_title: string | null }[];
 
-  // Appraisals naming them as the reviewer count too: a transfer can leave
-  // somebody reviewing a person who no longer reports to them.
-  const { data: mine } = cycleId
-    ? await supabase
-        .from("appraisals")
-        .select("id, employee_id, completed_stages, employee:profiles!employee_id(full_name, job_title)")
-        .eq("cycle_id", cycleId)
-        .in("manager_id", managerIds)
-    : { data: [] };
-
   type Row = {
     id: string;
     employee_id: string;
+    manager_id: string | null;
     completed_stages: unknown;
     employee?: { full_name?: string; job_title?: string | null } | { full_name?: string }[] | null;
   };
-  const rows = (mine ?? []) as unknown as Row[];
+  const SELECT =
+    "id, employee_id, manager_id, completed_stages, employee:profiles!employee_id(full_name, job_title)";
+
+  // Two ways in, and both are needed.
+  //
+  // By employee, because the reporting line is the question being asked: an
+  // appraisal naming no reviewer — and most of them name none — matched
+  // nothing when the lookup went by manager alone, so a person sitting in the
+  // cycle was reported as not being in it.
+  //
+  // By manager, because a transfer can leave somebody reviewing a person who
+  // no longer reports to them, and that work is still theirs.
+  const lineIds = line.map((p) => p.id);
+  const [byEmp, byMgr] = cycleId
+    ? await Promise.all([
+        lineIds.length
+          ? supabase.from("appraisals").select(SELECT).eq("cycle_id", cycleId).in("employee_id", lineIds)
+          : Promise.resolve({ data: [] }),
+        supabase.from("appraisals").select(SELECT).eq("cycle_id", cycleId).in("manager_id", managerIds),
+      ])
+    : [{ data: [] }, { data: [] }];
+
+  const rows: Row[] = [];
+  for (const r of [...((byEmp.data ?? []) as unknown as Row[]), ...((byMgr.data ?? []) as unknown as Row[])]) {
+    if (!rows.some((x) => x.id === r.id)) rows.push(r);
+  }
   const byEmployee = new Map(rows.map((r) => [r.employee_id, r]));
 
   // Everybody in the line, plus anybody they review who is not in it.
@@ -127,6 +152,7 @@ async function lineFor(managerIds: string[], cycleId: string | null): Promise<Te
       name: p.full_name ?? "—",
       jobTitle: p.job_title ?? null,
       appraisalId: row?.id ?? null,
+      reviewerAssigned: row?.manager_id != null,
       ...(row ? memberPhase(stages, ctx, completed) : memberPhase([], ctx, [])),
     };
   });
@@ -134,6 +160,7 @@ async function lineFor(managerIds: string[], cycleId: string | null): Promise<Te
   return {
     members,
     withoutAppraisal: members.filter((m) => m.appraisalId === null).length,
+    withoutReviewer: members.filter((m) => m.appraisalId !== null && !m.reviewerAssigned).length,
     hasWorkflow: stages.length > 0,
   };
 }

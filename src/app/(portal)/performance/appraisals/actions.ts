@@ -267,6 +267,57 @@ export async function setCyclePhase(
   return { ok: true };
 }
 
+/**
+ * Bring a live cycle's participants back in line with the roster.
+ *
+ * Launching a cycle creates an appraisal for everybody appraisable at that
+ * moment, and there it stopped: somebody who joined, or who gained access to
+ * the module afterwards, had no appraisal and no way to be given one — the
+ * Launch button only exists while a cycle is still a draft. This is the same
+ * roster diff, runnable while the cycle is running.
+ *
+ * Anybody who already holds an appraisal is left exactly as they are.
+ */
+export async function addMissingParticipants(
+  cycleId: string,
+): Promise<ActionResult & { added?: number }> {
+  const denied = await requireHr();
+  if (denied) return denied;
+  const supabase = createClient();
+  const { data: cycle } = await supabase
+    .from("appraisal_cycles")
+    .select("id, tenant_id, status")
+    .eq("id", cycleId)
+    .maybeSingle();
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+  if ((cycle.status as string) === "closed") {
+    return { ok: false, error: "This cycle is closed, so nobody can be added to it." };
+  }
+
+  const [{ data: profiles }, { data: existing }] = await Promise.all([
+    supabase.rpc("appraisable_profiles"),
+    supabase.from("appraisals").select("employee_id").eq("cycle_id", cycleId),
+  ]);
+  const have = new Set((existing ?? []).map((e) => e.employee_id as string));
+  const rows = ((profiles ?? []) as { id: string; manager_id: string | null }[])
+    .filter((p) => !have.has(p.id))
+    .map((p) => ({
+      tenant_id: cycle.tenant_id as string,
+      cycle_id: cycleId,
+      employee_id: p.id,
+      manager_id: p.manager_id ?? null,
+      stage: "goal_setting",
+      status: "not_started",
+    }));
+  if (rows.length === 0) return { ok: true, added: 0 };
+
+  const { error } = await supabase.from("appraisals").insert(rows);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  revalidatePath("/performance/status");
+  return { ok: true, added: rows.length };
+}
+
 export async function closeCycle(cycleId: string): Promise<ActionResult> {
   const denied = await requireHr();
   if (denied) return denied;
