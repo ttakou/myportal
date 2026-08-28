@@ -3,12 +3,18 @@ import { ArrowRight, Users } from "lucide-react";
 import { STAGE_LABEL, STATUS_LABEL, type DirectReport } from "@/types/appraisal";
 import { cn } from "@/lib/utils";
 
-/** Where a manager goes to act on a report — the report's appraisal record,
- *  deep-linked so it scrolls straight to the right row in the team panel. */
+/**
+ * Where a manager goes to act on a report.
+ *
+ * The anchor it scrolls to lives in the team panel, which only renders under
+ * `?view=team` — and the link carried no view, so it landed on the default one:
+ * the manager's own appraisal, with the anchor matching nothing on the page.
+ * Clicking a report opened your own record instead of theirs.
+ */
 function actHref(r: DirectReport): string {
   return r.appraisal_id
-    ? `/performance/appraisals#appraisal-${r.appraisal_id}`
-    : "/performance/appraisals";
+    ? `/performance/appraisals?view=team#appraisal-${r.appraisal_id}`
+    : "/performance/appraisals?view=team";
 }
 
 function initials(name: string): string {

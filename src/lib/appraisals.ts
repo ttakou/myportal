@@ -349,11 +349,16 @@ export async function getMyDirectLine(cycleId: string | null): Promise<DirectRep
     { id: string; stage: Appraisal["stage"]; status: Appraisal["status"] }
   >();
   if (cycleId) {
+    // By employee, not by manager: an appraisal naming no reviewer would not
+    // match, and the report then showed as having no appraisal at all.
     const { data: aps } = await supabase
       .from("appraisals")
       .select("id, employee_id, stage, status")
       .eq("cycle_id", cycleId)
-      .eq("manager_id", user.id);
+      .in(
+        "employee_id",
+        reportRows.map((r) => r.id as string),
+      );
     for (const a of (aps ?? []) as Record<string, any>[])
       byEmployee.set(a.employee_id, { id: a.id, stage: a.stage, status: a.status });
   }
@@ -387,13 +392,45 @@ export async function getTeamAppraisals(cycleId: string): Promise<Appraisal[]> {
     .select("id")
     .eq("appraisal_delegate_id", user.id);
   const managerIds = [user.id, ...((delegators ?? []) as { id: string }[]).map((d) => d.id)];
-  const { data } = await supabase
-    .from("appraisals")
-    .select(APPRAISAL_SELECT)
-    .eq("cycle_id", cycleId)
+
+  // Two ways in, and both are needed. By manager, because a transfer can leave
+  // somebody reviewing a person who no longer reports to them. By employee,
+  // because an appraisal that names no reviewer belongs to nobody by manager —
+  // and most name none, so a report sitting in the cycle was missing from their
+  // own manager's team entirely.
+  const { data: reports } = await supabase
+    .from("profiles")
+    .select("id")
     .in("manager_id", managerIds)
-    .order("status");
-  const list = (data ?? []).map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
+    .eq("is_active", true);
+  const reportIds = ((reports ?? []) as { id: string }[]).map((r) => r.id);
+
+  const [byMgr, byEmp] = await Promise.all([
+    supabase
+      .from("appraisals")
+      .select(APPRAISAL_SELECT)
+      .eq("cycle_id", cycleId)
+      .in("manager_id", managerIds)
+      .order("status"),
+    reportIds.length
+      ? supabase
+          .from("appraisals")
+          .select(APPRAISAL_SELECT)
+          .eq("cycle_id", cycleId)
+          .in("employee_id", reportIds)
+          .order("status")
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const seen = new Set<string>();
+  const rows: unknown[] = [];
+  for (const r of [...(byMgr.data ?? []), ...(byEmp.data ?? [])]) {
+    const id = (r as unknown as { id: string }).id;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    rows.push(r);
+  }
+  const list = rows.map((r) => mapAppraisal(r as unknown as RawAppraisalRow));
   await hydrateWithYearGoals(list, cycleId);
   return list;
 }
