@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
+import { getActiveCycle, getMyAppraisal } from "@/lib/appraisals";
 import {
   getActivitiesByKind,
   getContinuousConfig,
@@ -42,12 +43,18 @@ export default async function ContinuousPage() {
     return <p className="p-8 text-center text-muted-foreground">Please sign in.</p>;
   }
 
-  const [config, directory, items, access] = await Promise.all([
+  const [config, directory, items, access, cycle] = await Promise.all([
     getContinuousConfig(),
     getDirectory(),
     getActivitiesByKind(BATCH),
     getAccess(),
+    getActiveCycle(),
   ]);
+
+  // The poster's own objectives, so an update can name the one it is about
+  // rather than describing it in a sentence nothing can gather.
+  const mine = cycle ? await getMyAppraisal(cycle.id) : null;
+  const myGoals = (mine?.goals ?? []).map((g) => ({ id: g.id, title: g.title }));
 
   // Manager-oriented note panels only for those with reports (or HR).
   const supabase = createClient();
@@ -109,8 +116,9 @@ export default async function ContinuousPage() {
           allowPrivate={false}
           withBadge={false}
           withTitle
+          goals={myGoals}
           composerCta="Post update"
-          placeholder="Which goal, and where does it stand?"
+          placeholder="Where does it stand?"
           subjectLabel=""
         />
       ),

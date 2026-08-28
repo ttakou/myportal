@@ -41,6 +41,8 @@ import { WorkflowSection } from "./_components/workflow-section";
 import { AppraisalFormOutline } from "./_components/appraisal-form-outline";
 import { AppraisalTabs } from "./_components/my-appraisal-tabs";
 import { ManagerComment } from "./_components/manager-comment";
+import { ActivityRecap } from "./_components/activity-recap";
+import { personActivity } from "@/lib/performance/person-activity";
 import { HrWorkflowQueue } from "./_components/hr-workflow-queue";
 import { resolveAppraisalView } from "../_components/performance-views";
 
@@ -114,6 +116,12 @@ export default async function AppraisalsPage({
 
   const isManager = team.length > 0;
 
+  // What this person posted on Continuous during the cycle, read back where the
+  // review happens. It was written to a table the appraisal never queried.
+  const myActivity = myAppraisal
+    ? await personActivity(myAppraisal.employee_id, cycle?.period_start ?? null)
+    : null;
+
   // The step the workflow is waiting on this person for. It chooses which panel
   // opens: the legacy `stage` column never moves when a workflow step is taken,
   // so a cycle in Mid Year Review still showed goal setting and there was
@@ -143,6 +151,17 @@ export default async function AppraisalsPage({
         { label: "Avg rating", value: avgRating(team.map((a) => a.overall_rating)), hint: "out of 5" },
       ]
     : [];
+
+  // Each report's updates and recognition, so a manager reviewing somebody sees
+  // what they posted rather than only what they typed into the review box.
+  const teamActivity = Object.fromEntries(
+    await Promise.all(
+      team.map(async (a) => [
+        a.id,
+        await personActivity(a.employee_id, cycle?.period_start ?? null),
+      ]),
+    ),
+  ) as Record<string, Awaited<ReturnType<typeof personActivity>>>;
 
   // Each report's workflow, rendered here and handed to the team panel so it
   // sits behind a tab on that person's own card. It used to be a separate list
@@ -221,6 +240,7 @@ export default async function AppraisalsPage({
               colleagues={colleagues}
               currentDelegate={myDelegate}
               workflowByAppraisal={workflowByAppraisal}
+              activityByAppraisal={teamActivity}
             />
             {secondLevel.length > 0 && <SecondLevelPanel appraisals={secondLevel} />}
             <PipPanel data={pip} employees={pipEmployees} />
@@ -263,6 +283,12 @@ export default async function AppraisalsPage({
                       step={myStep}
                     />
                     <ManagerComment appraisal={myAppraisal} />
+                    {myActivity && (
+                      <ActivityRecap
+                        activity={myActivity}
+                        goals={myAppraisal.goals.map((g) => ({ id: g.id, title: g.title }))}
+                      />
+                    )}
                   </div>
                 }
                 workflow={

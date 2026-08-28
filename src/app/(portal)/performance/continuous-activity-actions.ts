@@ -19,6 +19,8 @@ export interface CreateActivityInput {
   isAnonymous?: boolean;
   dueDate?: string | null;
   status?: string | null;
+  /** The objective this is about, when it is about one. */
+  goalId?: string | null;
 }
 
 /** Create a continuous-performance activity, enforcing the tenant config. */
@@ -57,13 +59,20 @@ export async function createActivity(input: CreateActivityInput): Promise<Action
     data: input.data ?? {},
     is_private: isPrivate,
     is_anonymous: isAnonymous,
-    in_appraisal: feature === "feedback" ? config.feedbackInAppraisal : false,
+    goal_id: input.goalId || null,
+    // Goal updates and recognition are read back at review time, so they are
+    // part of the appraisal in the sense that matters — somebody sees them.
+    in_appraisal:
+      feature === "feedback"
+        ? config.feedbackInAppraisal
+        : input.kind === "goal_update" || input.kind === "recognition",
     status: input.status ?? null,
     due_date: input.dueDate || null,
   });
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/performance/continuous");
+  revalidatePath("/performance/appraisals");
   return { ok: true };
 }
 

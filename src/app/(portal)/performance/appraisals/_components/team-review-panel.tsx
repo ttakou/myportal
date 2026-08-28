@@ -7,6 +7,8 @@ import { Check, ChevronDown, Send, Undo2, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AppraisalTabs } from "./my-appraisal-tabs";
+import { ActivityRecap } from "./activity-recap";
+import type { PersonActivity } from "@/lib/performance/goal-activity";
 import { GoalWeight } from "./goal-weight";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -28,6 +30,7 @@ export function TeamReviewPanel({
   colleagues = [],
   currentDelegate = null,
   workflowByAppraisal,
+  activityByAppraisal,
 }: {
   appraisals: Appraisal[];
   colleagues?: Colleague[];
@@ -38,6 +41,12 @@ export function TeamReviewPanel({
    * further down the page.
    */
   workflowByAppraisal?: Record<string, ReactNode>;
+  /**
+   * What each report posted on Continuous this cycle. A manager reviewing
+   * somebody could not see any of it: the updates and the recognition were
+   * written to a table the appraisal never queried.
+   */
+  activityByAppraisal?: Record<string, PersonActivity>;
 }) {
   const { count, hasMore, remaining, showMore, sentinelRef } = useProgressiveReveal(
     appraisals.length,
@@ -50,7 +59,12 @@ export function TeamReviewPanel({
       </div>
       <div className="space-y-3">
         {appraisals.slice(0, count).map((a) => (
-          <TeamRow key={a.id} appraisal={a} workflow={workflowByAppraisal?.[a.id]} />
+          <TeamRow
+            key={a.id}
+            appraisal={a}
+            workflow={workflowByAppraisal?.[a.id]}
+            activity={activityByAppraisal?.[a.id]}
+          />
         ))}
       </div>
       <ShowMore
@@ -114,7 +128,15 @@ function DelegateControl({
   );
 }
 
-function TeamRow({ appraisal: a, workflow }: { appraisal: Appraisal; workflow?: ReactNode }) {
+function TeamRow({
+  appraisal: a,
+  workflow,
+  activity,
+}: {
+  appraisal: Appraisal;
+  workflow?: ReactNode;
+  activity?: PersonActivity;
+}) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
@@ -269,6 +291,19 @@ function TeamRow({ appraisal: a, workflow }: { appraisal: Appraisal; workflow?: 
           canDecide={awaitingGoalReview}
           run={run}
         />
+      )}
+
+      {/* What the report posted between reviews. A manager reviewing somebody
+          saw only what they typed into the review box; the updates and the
+          recognition sat on a page the appraisal never read. */}
+      {activity && (
+        <div className="mt-3">
+          <ActivityRecap
+            activity={activity}
+            goals={a.goals.map((g) => ({ id: g.id, title: g.title }))}
+            heading={`${a.employee_name ?? "They"} posted this cycle`}
+          />
+        </div>
       )}
 
       {/* The manager's comment belongs under the objectives it is about, and it
