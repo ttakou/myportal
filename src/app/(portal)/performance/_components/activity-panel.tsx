@@ -24,6 +24,7 @@ export function ActivityPanel({
   composerCta,
   placeholder,
   subjectLabel,
+  goals = [],
 }: {
   kind: ActivityKind;
   items: ContinuousActivity[];
@@ -36,6 +37,11 @@ export function ActivityPanel({
   composerCta: string;
   placeholder: string;
   subjectLabel: string;
+  /**
+   * The poster's own objectives, so an update can name the goal it is about.
+   * Empty hides the picker — nothing to choose from is not a choice.
+   */
+  goals?: { id: string; title: string }[];
 }) {
   const colleagues = directory.filter((d) => d.id !== myId);
   const [subjectId, setSubjectId] = useState("");
@@ -43,6 +49,7 @@ export function ActivityPanel({
   const [body, setBody] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [badge, setBadge] = useState(withBadge ? BADGES[0] : "");
+  const [goalId, setGoalId] = useState("");
   const [pending, startTransition] = useStatusTransition("Posting…");
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +62,7 @@ export function ActivityPanel({
         title: withTitle ? title : null,
         body,
         isPrivate: allowPrivate ? isPrivate : false,
+        goalId: goalId || null,
         data: withBadge && badge ? { badge } : {},
       });
       if (!res.ok) {
@@ -64,6 +72,7 @@ export function ActivityPanel({
       setTitle("");
       setBody("");
       setSubjectId("");
+      setGoalId("");
       setIsPrivate(false);
     });
   }
@@ -108,6 +117,24 @@ export function ActivityPanel({
               </button>
             ))}
           </div>
+        )}
+        {goals.length > 0 && (
+          <label className="block text-xs text-muted-foreground">
+            {/* The free-text box asked which goal, so the answer was a sentence
+                nothing could gather. Named here, the update reaches the review
+                it is about. */}
+            Which objective?
+            <select
+              value={goalId}
+              onChange={(e) => setGoalId(e.target.value)}
+              className={cn(field, "mt-0.5 block w-full py-1.5")}
+            >
+              <option value="">Not about a specific objective</option>
+              {goals.map((g) => (
+                <option key={g.id} value={g.id}>{g.title}</option>
+              ))}
+            </select>
+          </label>
         )}
         {withTitle && (
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" className={cn(field, "block w-full py-1.5")} />
