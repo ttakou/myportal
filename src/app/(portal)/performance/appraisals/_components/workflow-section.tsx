@@ -79,6 +79,7 @@ export async function WorkflowSection({
         successIndicator: g.success_indicator,
         selfRating: g.employee_self_rating,
         employeeProgress: g.employee_progress,
+        progressPercent: g.progress_percent,
       }))}
       showGoals={needsGoals}
       appraisalId={wf.appraisalId}

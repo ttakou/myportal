@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getAppraisalWorkflow } from "@/lib/workflow-runtime";
+import { getAppraisalWorkflow, type AppraisalWorkflow } from "@/lib/workflow-runtime";
 import {
   activeStageKeys,
   canAct,
@@ -14,6 +14,9 @@ import {
 import type { ActionResult } from "@/types/actions";
 import { goalWeightError } from "@/lib/performance/goal-weighting";
 import { getPerformanceConfig } from "@/lib/performance-config";
+import { dispatchEvent } from "@/lib/notify-dispatch";
+import type { NotificationEvent } from "@/types/notifications";
+import type { WorkflowStage } from "@/types/workflow";
 
 const ACTIONS: StageAction[] = ["submit", "approve", "return", "reject"];
 const REJECTED = "__rejected__";
@@ -126,6 +129,65 @@ export async function advanceAppraisalStage(
     on_behalf_of: onBehalfOf,
   });
 
+  await notifyNextOwner(wf, completed, action, stage.label);
+
   revalidatePath("/performance/appraisals");
   return { ok: true };
+}
+
+/**
+ * Tell whoever the step lands on that it is theirs now.
+ *
+ * Every notification the module sends is raised from a legacy transition, and
+ * advancing a workflow step raised none — so under the five-phase process the
+ * system moved people's work along in silence and waited for them to notice.
+ *
+ * The event is chosen from who owns the next step rather than from a table of
+ * sixteen stage keys: there are three employee sign-offs and one
+ * acknowledgement event, so a per-stage mapping would be guesswork. Who is
+ * being asked, and for what, is the thing a person needs told.
+ */
+async function notifyNextOwner(
+  wf: AppraisalWorkflow,
+  completed: string[],
+  action: StageAction,
+  fromLabel: string,
+): Promise<void> {
+  if (!wf.tenantId) return;
+  const tenantId = wf.tenantId;
+  const nextKeys = activeStageKeys(wf.stages, wf.ctx, completed);
+  const next = nextKeys.map((k) => stageByKey(wf.stages, k)).filter((s): s is WorkflowStage => !!s);
+
+  // Nothing left to do: the last step just closed the process.
+  if (action !== "reject" && next.length === 0) {
+    await dispatchEvent("review_completed", {
+      tenantId,
+      employeeIds: wf.parties.employee_id ? [wf.parties.employee_id] : [],
+      managerIds: wf.parties.manager_id ? [wf.parties.manager_id] : [],
+      placeholders: { stage: fromLabel },
+      url: "/performance/appraisals",
+    });
+    return;
+  }
+
+  for (const stage of next) {
+    if (!stage.notify) continue;
+    const owner = responsibleUserId(stage.responsibleRole, wf.parties);
+    // A step handed back is a rejection to the person receiving it; a step
+    // handed on is a request. The same move reads differently at each end.
+    const event: NotificationEvent =
+      action === "return"
+        ? "goal_rejection"
+        : stage.responsibleRole === "employee"
+          ? "approval_request"
+          : "goal_submission";
+    await dispatchEvent(event, {
+      tenantId,
+      employeeIds: wf.parties.employee_id ? [wf.parties.employee_id] : [],
+      managerIds: owner && owner !== wf.parties.employee_id ? [owner] : [],
+      secondLevelIds: wf.parties.second_level_id ? [wf.parties.second_level_id] : [],
+      placeholders: { stage: stage.label, reason: fromLabel },
+      url: "/performance/appraisals",
+    });
+  }
 }

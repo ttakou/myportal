@@ -19,6 +19,7 @@ export type ReviewGoal = {
   successIndicator: string | null;
   selfRating: number | null;
   employeeProgress: string | null;
+  progressPercent: number | null;
 };
 
 export type Actionable = {
@@ -128,6 +129,11 @@ export function WorkflowTimeline({
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <span className="font-medium">{g.title}</span>
                     <span className="flex shrink-0 items-center gap-2">
+                      {g.progressPercent != null && (
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium tabular-nums">
+                          {g.progressPercent}% done
+                        </span>
+                      )}
                       {g.selfRating != null && (
                         <span className="text-xs text-muted-foreground">self {g.selfRating}</span>
                       )}

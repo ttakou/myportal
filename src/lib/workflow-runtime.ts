@@ -125,13 +125,33 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
  * they are being asked for.
  */
 export async function employeeLiveStage(appraisalId: string): Promise<WorkflowStage | null> {
+  return liveStageFor(appraisalId, ["employee"]);
+}
+
+/**
+ * The live step that belongs to the reviewer, if it is their turn.
+ *
+ * The employee side gained a workflow fallback and the manager side did not, so
+ * a reviewer whose workflow step was live but whose legacy `stage` was stale —
+ * which is most of them, since taking a workflow step never moves it — was
+ * refused by every manager action.
+ */
+export async function managerLiveStage(appraisalId: string): Promise<WorkflowStage | null> {
+  return liveStageFor(appraisalId, ["line_manager", "second_level"]);
+}
+
+/** The earliest live stage owned by any of `roles` — the one holding things up. */
+async function liveStageFor(
+  appraisalId: string,
+  roles: StageRole[],
+): Promise<WorkflowStage | null> {
   const wf = await getAppraisalWorkflow(appraisalId);
   if (!wf || wf.terminal) return null;
   const order = new Map(wf.stages.map((s, i) => [s.key, i]));
   return (
     wf.activeKeys
       .map((k) => wf.stages.find((s) => s.key === k))
-      .filter((s): s is WorkflowStage => !!s && s.responsibleRole === "employee")
+      .filter((s): s is WorkflowStage => !!s && roles.includes(s.responsibleRole))
       .sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0))[0] ?? null
   );
 }

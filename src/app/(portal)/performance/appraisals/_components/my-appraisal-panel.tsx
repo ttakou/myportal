@@ -5,7 +5,7 @@ import { useStatusTransition } from "@/components/activity";
 import { Plus, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GoalWeight } from "./goal-weight";
-import { goalWeightTotal } from "@/lib/performance/goal-weighting";
+import { goalWeightTotal, overallProgress } from "@/lib/performance/goal-weighting";
 import {
   STAGE_LABEL,
   STATUS_LABEL,
@@ -166,9 +166,16 @@ export function MyAppraisalPanel({
           colleagues={colleagues}
         />
       )}
-      {["manager_review", "hr_review", "final_discussion", "acknowledgement", "closed"].includes(
-        appraisal.stage,
-      ) && <ReadOnlyGoals appraisal={appraisal} />}
+      {/* A sign-off step asks somebody to agree to their objectives, so the
+          objectives have to be on the screen. Under the workflow none of the
+          panels above matches a sign-off, and this list was gated on legacy
+          stages the workflow never sets — so the employee was asked to sign off
+          against a blank page. */}
+      {(step
+        ? !showGoals && !showMidYear && !showSelfAssessment
+        : ["manager_review", "hr_review", "final_discussion", "acknowledgement", "closed"].includes(
+            appraisal.stage,
+          )) && <ReadOnlyGoals appraisal={appraisal} />}
 
       {appraisal.stage === "acknowledgement" &&
         appraisal.status === "pending_employee_acknowledgement" && (
@@ -420,15 +427,65 @@ function MidYear({
   /** True when the Workflow tab owns the transition, so this panel only saves. */
   workflowDriven?: boolean;
 }) {
+  const overall = overallProgress(appraisal.goals);
   return (
     <div className="rounded-lg border bg-card p-4 space-y-3">
-      <h3 className="text-sm font-semibold">Mid-year progress</h3>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold">Mid-year progress</h3>
+        {/* Weighted by each goal, so a small goal finished does not read the
+            same as a large one half done. */}
+        <span className="text-xs text-muted-foreground">
+          {overall.percent == null
+            ? "No progress recorded yet"
+            : `Overall ${overall.percent}% · ${overall.answered} of ${overall.of} goals answered`}
+        </span>
+      </div>
       {appraisal.goals.map((g) => (
         <div key={g.id} className="rounded-md border p-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="font-medium">{g.title}</span>
-            <GoalWeight weight={g.weight} />
+            <span className="flex shrink-0 items-center gap-2">
+              {/* How far along, as a figure. The note beside it says how it is
+                  going; this says how much of it is done, which is the part a
+                  report can add up. */}
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                Progress
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  defaultValue={g.progress_percent ?? ""}
+                  disabled={!editable || pending}
+                  placeholder="—"
+                  aria-label={`Percent complete for ${g.title}`}
+                  onBlur={(e) => {
+                    const raw = e.target.value.trim();
+                    const next = raw === "" ? null : Number(raw);
+                    if (next !== (g.progress_percent ?? null))
+                      run(() =>
+                        updateGoalProgress({
+                          appraisalId: appraisal.id,
+                          goalId: g.id,
+                          percent: next,
+                        }),
+                      );
+                  }}
+                  className="w-16 rounded-md border bg-background px-2 py-1 text-sm tabular-nums"
+                />
+                %
+              </label>
+              <GoalWeight weight={g.weight} />
+            </span>
           </div>
+          {g.progress_percent != null && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${Math.max(0, Math.min(100, g.progress_percent))}%` }}
+              />
+            </div>
+          )}
           <textarea
             defaultValue={g.employee_progress ?? ""}
             disabled={!editable || pending}

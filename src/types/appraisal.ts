@@ -217,6 +217,8 @@ export interface AppraisalGoal {
   evidence_required: string | null;
   kind: "objective" | "development";
   employee_progress: string | null;
+  /** How far along the goal is, 0-100. Null until the employee says. */
+  progress_percent: number | null;
   employee_self_rating: number | null;
   employee_comment: string | null;
   manager_rating: number | null;
