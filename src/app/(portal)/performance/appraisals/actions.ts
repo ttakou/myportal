@@ -12,7 +12,7 @@ import { ensureHousePhaseTemplate } from "@/lib/performance/house-template";
 import { ratingLabelFromBands, type RatingBand } from "@/types/appraisal";
 import type { ActionResult } from "@/types/actions";
 import { goalWeightError, goalsScore } from "@/lib/performance/goal-weighting";
-import { employeeLiveStage } from "@/lib/workflow-runtime";
+import { employeeLiveStage, managerLiveStage } from "@/lib/workflow-runtime";
 import type { StageField } from "@/types/workflow";
 export type { ActionResult };
 
@@ -947,14 +947,29 @@ async function requireEmployeeAt(
   return { ok: false, error: "This stage has already been submitted." };
 }
 
+/**
+ * The reviewer may act here — by the legacy stage, or by the workflow.
+ *
+ * The mirror of `requireEmployeeAt`. The employee side gained the workflow
+ * fallback and this side did not, so five manager actions were refused whenever
+ * the legacy stage was stale — which is most of the time, since taking a
+ * workflow step never moves it.
+ */
 async function requireManagerAt(
   id: string,
   stages: string[],
+  workflowFields: StageField[] = [],
 ): Promise<{ a: AppraisalRow } | ActionResult> {
   const guard = await requireManager(id);
   if ("ok" in guard) return guard;
-  if (!stages.includes(guard.a.stage)) return { ok: false, error: "Not your stage to action." };
-  return guard;
+  if (stages.includes(guard.a.stage)) return guard;
+
+  if (workflowFields.length > 0) {
+    const live = await managerLiveStage(id);
+    if (live && workflowFields.some((f) => live.editableFields.includes(f))) return guard;
+  }
+
+  return { ok: false, error: "Not your stage to action." };
 }
 
 /**
@@ -1040,7 +1055,7 @@ export async function completeMidYear(input: {
   appraisalId: string;
   comment?: string;
 }): Promise<ActionResult> {
-  const guard = await requireManagerAt(input.appraisalId, ["goal_review"]);
+  const guard = await requireManagerAt(input.appraisalId, ["goal_review"], ["manager_comment"]);
   if ("ok" in guard) return guard;
   const a = guard.a;
   if (a.status !== "pending_manager_review")
@@ -1098,7 +1113,7 @@ export async function setManagerRating(input: {
   rating?: number;
   comment?: string;
 }): Promise<ActionResult> {
-  const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
+  const guard = await requireManagerAt(input.appraisalId, ["manager_review"], ["manager_rating"]);
   if ("ok" in guard) return guard;
   const denied = await requireRatingsEdit(guard.a);
   if (denied) return denied;
@@ -1117,7 +1132,11 @@ export async function submitManagerEvaluation(input: {
   appraisalId: string;
   summary?: string;
 }): Promise<ActionResult> {
-  const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
+  const guard = await requireManagerAt(input.appraisalId, ["manager_review"], [
+    "manager_rating",
+    "overall_rating",
+    "manager_comment",
+  ]);
   if ("ok" in guard) return guard;
   const a = guard.a;
   const denied = await requireRatingsEdit(a);
@@ -1623,7 +1642,7 @@ export async function rateCompetencyManager(input: {
   rating?: number;
   comment?: string;
 }): Promise<ActionResult> {
-  const guard = await requireManagerAt(input.appraisalId, ["manager_review"]);
+  const guard = await requireManagerAt(input.appraisalId, ["manager_review"], ["competencies"]);
   if ("ok" in guard) return guard;
   const a = guard.a;
   const denied = await requireRatingsEdit(a);

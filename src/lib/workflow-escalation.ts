@@ -4,6 +4,7 @@ import { notifyUsers } from "@/lib/notify";
 import {
   COMPLETED,
   REJECTED,
+  activeStageKeys,
   isStageOverdue,
   responsibleUserId,
   stageDueDate,
@@ -97,18 +98,26 @@ export async function runWorkflowEscalations(tenantId?: string): Promise<Escalat
     }
     const roster = rosterByTenant.get(cycleTenant)!;
 
+    // `current_stage_key` is only written once somebody acts, so filtering on
+    // it excluded every appraisal nobody had touched — which is exactly the
+    // population that needs chasing. Where it is unset the live stage is read
+    // from the completed steps, the same way every screen reads it.
     const { data: appraisals } = await admin
       .from("appraisals")
-      .select("id, tenant_id, employee_id, manager_id, second_level_id, current_stage_key")
-      .eq("cycle_id", c.id)
-      .not("current_stage_key", "is", null);
+      .select(
+        "id, tenant_id, employee_id, manager_id, second_level_id, current_stage_key, completed_stages",
+      )
+      .eq("cycle_id", c.id);
 
     for (const a of appraisals ?? []) {
       // Somebody outside the workflow's population can act on nothing here.
       if (!roster.has(a.employee_id as string)) continue;
-      const key = a.current_stage_key as string;
+      const key = a.current_stage_key as string | null;
       if (key === COMPLETED || key === REJECTED) continue;
-      const stage = stages.find((s) => s.key === key);
+      const done = Array.isArray(a.completed_stages) ? (a.completed_stages as string[]) : [];
+      const liveKey = key ?? activeStageKeys(stages, {}, done)[0] ?? null;
+      if (!liveKey) continue;
+      const stage = stages.find((s) => s.key === liveKey);
       if (!stage || !stage.notify) continue;
 
       // Raise the tenant's configured deadline rules, whichever side of the due

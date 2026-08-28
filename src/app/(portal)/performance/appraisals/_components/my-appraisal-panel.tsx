@@ -166,9 +166,16 @@ export function MyAppraisalPanel({
           colleagues={colleagues}
         />
       )}
-      {["manager_review", "hr_review", "final_discussion", "acknowledgement", "closed"].includes(
-        appraisal.stage,
-      ) && <ReadOnlyGoals appraisal={appraisal} />}
+      {/* A sign-off step asks somebody to agree to their objectives, so the
+          objectives have to be on the screen. Under the workflow none of the
+          panels above matches a sign-off, and this list was gated on legacy
+          stages the workflow never sets — so the employee was asked to sign off
+          against a blank page. */}
+      {(step
+        ? !showGoals && !showMidYear && !showSelfAssessment
+        : ["manager_review", "hr_review", "final_discussion", "acknowledgement", "closed"].includes(
+            appraisal.stage,
+          )) && <ReadOnlyGoals appraisal={appraisal} />}
 
       {appraisal.stage === "acknowledgement" &&
         appraisal.status === "pending_employee_acknowledgement" && (
