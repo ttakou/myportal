@@ -9,6 +9,7 @@ import { getManagerLine } from "@/lib/performance/team-line";
 import { TeamLinePanel } from "../../_components/team-line-panel";
 import { STATUS_LABEL, type Appraisal } from "@/types/appraisal";
 import { WorkflowSection } from "../../_components/workflow-section";
+import { AppraisalTabs } from "../../_components/my-appraisal-tabs";
 import { AppraisalFormOutline } from "../../_components/appraisal-form-outline";
 import { ProxyManagerComment } from "./proxy-manager-comment";
 
@@ -84,36 +85,47 @@ export default async function ActForPage({ params }: { params: Promise<{ id: str
         </span>
       </p>
 
-      <Suspense fallback={<div className="h-40 animate-pulse rounded-lg border bg-muted/30" />}>
-        <WorkflowSection
-          appraisalId={appraisal.id}
-          heading={`${employeeName} — workflow`}
-          partyNames={partyNames}
-        />
-      </Suspense>
+      {/* The same two tabs the employee and the manager see, so standing in for
+          somebody looks like the screen you are standing in on. The objectives
+          were below the workflow and below their team, which put the thing a
+          step is about further down the page than the button that takes it. */}
+      <AppraisalTabs
+        label={`${employeeName} — appraisal`}
+        objectives={
+          <div className="space-y-3">
+            <Objectives appraisal={appraisal} />
+            <ProxyManagerComment
+              appraisalId={appraisal.id}
+              employeeName={employeeName}
+              managerName={appraisal.manager_name}
+              initial={appraisal.manager_summary}
+            />
+            <Suspense fallback={null}>
+              <AppraisalFormOutline appraisalId={appraisal.id} />
+            </Suspense>
+          </div>
+        }
+        workflow={
+          <Suspense fallback={<div className="h-40 animate-pulse rounded-lg border bg-muted/30" />}>
+            <WorkflowSection
+              appraisalId={appraisal.id}
+              heading={`${employeeName} — workflow`}
+              partyNames={partyNames}
+            />
+          </Suspense>
+        }
+      />
 
       {/* Standing in for a line manager means doing their job, and their job is
           mostly their reports' reviews and sign-offs rather than their own
-          appraisal. Self-hides for somebody who manages nobody. */}
+          appraisal. Outside the tabs: it is about them, not about this record.
+          Self-hides for somebody who manages nobody. */}
       <Suspense fallback={null}>
         <TheirTeam
           managerId={appraisal.employee_id}
           managerName={employeeName}
           cycleId={appraisal.cycle_id}
         />
-      </Suspense>
-
-      <ProxyManagerComment
-        appraisalId={appraisal.id}
-        employeeName={employeeName}
-        managerName={appraisal.manager_name}
-        initial={appraisal.manager_summary}
-      />
-
-      <Objectives appraisal={appraisal} />
-
-      <Suspense fallback={null}>
-        <AppraisalFormOutline appraisalId={appraisal.id} />
       </Suspense>
 
       {stoodIn.length > 0 && (
