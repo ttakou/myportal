@@ -12,6 +12,7 @@ import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list
 import { STAGE_LABEL, STATUS_LABEL, type Appraisal, type Colleague } from "@/types/appraisal";
 import {
   approveGoals,
+  setManagerComment,
   completeMidYear,
   rateCompetencyManager,
   recordDiscussion,
@@ -108,7 +109,6 @@ function DelegateControl({
 function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
-  const [returning, setReturning] = useState(false);
   const [comment, setComment] = useState("");
   const [summary, setSummary] = useState(a.manager_summary ?? "");
   const [discDate, setDiscDate] = useState("");
@@ -295,16 +295,12 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
       {/* Stage actions */}
-      {awaitingGoalReview && (
-        <ReviewButtons
+      {a.goals.length > 0 && a.stage === "goal_setting" && (
+        <GoalReview
+          appraisal={a}
           pending={pending}
-          returning={returning}
-          comment={comment}
-          setReturning={setReturning}
-          setComment={setComment}
-          onApprove={() => run(() => approveGoals({ appraisalId: a.id }))}
-          onReturn={() => run(() => returnGoals({ appraisalId: a.id, comment }), () => setReturning(false))}
-          approveLabel="Approve goals"
+          canDecide={awaitingGoalReview}
+          run={run}
         />
       )}
 
@@ -413,51 +409,109 @@ function TeamRow({ appraisal: a }: { appraisal: Appraisal }) {
   );
 }
 
-function ReviewButtons({
+
+/**
+ * The line manager's verdict on a report's goals, under the goals themselves.
+ *
+ * Reviewing meant a bare Approve and a Return that only revealed its comment
+ * box once pressed — so the remarks were an afterthought to the decision rather
+ * than the substance of it, and there was nowhere to write a comment without
+ * also deciding something. The box is now open by default and the decisions
+ * read as what they mean rather than as verbs.
+ *
+ * Approving and sending back both carry the comment onto the appraisal, which
+ * is where the employee reads it.
+ */
+function GoalReview({
+  appraisal: a,
   pending,
-  returning,
-  comment,
-  setReturning,
-  setComment,
-  onApprove,
-  onReturn,
-  approveLabel,
+  canDecide,
+  run,
 }: {
+  appraisal: Appraisal;
   pending: boolean;
-  returning: boolean;
-  comment: string;
-  setReturning: (v: boolean) => void;
-  setComment: (v: string) => void;
-  onApprove: () => void;
-  onReturn: () => void;
-  approveLabel: string;
+  /** Only true while the goals actually sit with this manager. */
+  canDecide: boolean;
+  run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
+  const stored = a.manager_summary ?? "";
+  const [text, setText] = useState(stored);
+  const [saved, setSaved] = useState(false);
+  const changed = text.trim() !== stored.trim();
+
   return (
     <div className="mt-3 border-t pt-3">
-      {returning ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="What needs changing?"
-            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
-          />
-          <Button variant="outline" size="sm" disabled={pending || !comment.trim()} onClick={onReturn}>
-            Send back
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setReturning(false)}>
-            Cancel
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="outline" size="sm" disabled={pending} onClick={() => setReturning(true)}>
-            <Undo2 className="h-4 w-4" /> Return
-          </Button>
-          <Button size="sm" disabled={pending} onClick={onApprove}>
-            <Check className="h-4 w-4" /> {approveLabel}
-          </Button>
-        </div>
+      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Line manager comments
+      </label>
+      <textarea
+        value={text}
+        disabled={pending}
+        rows={3}
+        placeholder="Your remarks on these objectives…"
+        onChange={(e) => {
+          setSaved(false);
+          setText(e.target.value);
+        }}
+        className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+      />
+      <p className="mt-1 text-xs text-muted-foreground">
+        {a.employee_name ?? "The employee"} sees this on their own appraisal.
+      </p>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          disabled={pending || !canDecide}
+          title={canDecide ? undefined : "These goals are not awaiting your review."}
+          onClick={() => run(() => approveGoals({ appraisalId: a.id, comment: text }))}
+        >
+          <Check className="h-4 w-4" /> OK for me
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending || !canDecide || !text.trim()}
+          title={
+            !canDecide
+              ? "These goals are not awaiting your review."
+              : !text.trim()
+                ? "Say what needs changing first."
+                : undefined
+          }
+          onClick={() => run(() => returnGoals({ appraisalId: a.id, comment: text }))}
+        >
+          <Undo2 className="h-4 w-4" /> Modify according to my remarks
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending || !changed}
+          onClick={() =>
+            run(() => setManagerComment({ appraisalId: a.id, comment: text }), () => setSaved(true))
+          }
+        >
+          Save
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={pending || !changed}
+          onClick={() => {
+            setText(stored);
+            setSaved(false);
+          }}
+        >
+          Cancel
+        </Button>
+        {saved && !changed && <span className="text-xs text-emerald-700">Saved.</span>}
+      </div>
+
+      {!canDecide && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          The decisions are available once the employee submits these goals for your review. You
+          can leave a comment now either way.
+        </p>
       )}
     </div>
   );
