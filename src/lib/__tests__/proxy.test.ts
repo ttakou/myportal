@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actingForLabel, proxyTrail } from "@/lib/performance/proxy";
+import { actingForLabel, mayProxy, proxyTrail } from "@/lib/performance/proxy";
 
 describe("actingForLabel", () => {
   const names = { employee: "Flora Tankoua", manager: "Eban Bate", secondLevel: "Qinghe Xing" };
@@ -51,5 +51,36 @@ describe("proxyTrail", () => {
 
   it("is empty when nobody has stood in", () => {
     expect(proxyTrail([{ on_behalf_of_name: null, created_at: "2026-01-01T00:00:00Z" }])).toEqual([]);
+  });
+});
+
+describe("mayProxy", () => {
+  const admin = "admin-1";
+  const someone = "employee-9";
+
+  it("lets an administrator act for somebody else", () => {
+    expect(mayProxy({ isAdmin: true, viewerId: admin, employeeId: someone })).toBe(true);
+  });
+
+  it("refuses on their own appraisal", () => {
+    // The case that prompted this: an HR admin approved the manager's review
+    // step on their own record. The audit trail named them as acting for their
+    // own manager, which describes the problem rather than preventing it.
+    expect(mayProxy({ isAdmin: true, viewerId: admin, employeeId: admin })).toBe(false);
+  });
+
+  it("gives nothing to somebody who is not an administrator", () => {
+    expect(mayProxy({ isAdmin: false, viewerId: admin, employeeId: someone })).toBe(false);
+  });
+
+  it("refuses when nobody is signed in", () => {
+    expect(mayProxy({ isAdmin: true, viewerId: null, employeeId: someone })).toBe(false);
+  });
+
+  it("does not treat an unowned appraisal as the viewer's own", () => {
+    // employeeId null must not collapse into "this is mine" and grant proxy by
+    // accident — nor deny it: an appraisal with no employee is somebody else's
+    // problem, and an administrator may still act.
+    expect(mayProxy({ isAdmin: true, viewerId: admin, employeeId: null })).toBe(true);
   });
 });

@@ -717,10 +717,26 @@ async function isDelegateOf(managerId: string | null, me: string | null): Promis
   return (data?.appraisal_delegate_id ?? null) === me;
 }
 
+/**
+ * Nobody reviews their own appraisal.
+ *
+ * Administrator powers exist to act for somebody who cannot act for themselves.
+ * On your own record there is nobody to act for: taking the reviewer's step
+ * there is signing off your own work, whatever the audit trail says afterwards.
+ * An HR admin who is also an employee holds both, and until this check they
+ * could approve their own manager review.
+ */
+function reviewingSelf(a: AppraisalRow, me: string | null): boolean {
+  return !!me && a.employee_id === me;
+}
+
 async function requireManager(id: string): Promise<{ a: AppraisalRow } | ActionResult> {
   const a = await loadAppraisal(id);
   if (!a) return { ok: false, error: "Appraisal not found." };
   const me = await uid();
+  if (reviewingSelf(a, me)) {
+    return { ok: false, error: "You cannot review your own appraisal." };
+  }
   const access = await getAccess();
   const isReviewer =
     a.manager_id === me ||
@@ -1379,7 +1395,9 @@ export async function acknowledge(input: {
   // offline — on paper, or over the phone from a rig. The proxy is stamped on
   // the event either way, so the two can always be told apart.
   const access = await getAccess();
-  const isProxy = access.isHr || access.isAdmin || access.isSystemAdmin;
+  const isProxy =
+    (access.isHr || access.isAdmin || access.isSystemAdmin) &&
+    a.employee_id !== (await uid());
   if (a.employee_id !== (await uid()) && !isProxy)
     return { ok: false, error: "Only the employee, or an administrator acting for them, can acknowledge." };
   if (a.stage !== "acknowledgement" || a.status !== "pending_employee_acknowledgement")
@@ -1444,7 +1462,10 @@ export async function setManagerComment(input: {
   const me = await uid();
   const access = await getAccess();
   const isReviewer = !!me && (me === a.manager_id || me === a.second_level_id);
-  const isProxy = access.isHr || access.isAdmin || access.isSystemAdmin;
+  // Standing in for the manager on your own appraisal is writing your own
+  // review, so administrator powers stop at your own record.
+  const isProxy =
+    (access.isHr || access.isAdmin || access.isSystemAdmin) && !reviewingSelf(a, me);
   if (!isReviewer && !isProxy) {
     return { ok: false, error: "Only the line manager, or an administrator acting for them, can write this." };
   }

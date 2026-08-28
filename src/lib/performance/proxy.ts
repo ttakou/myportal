@@ -39,6 +39,28 @@ export function actingForLabel(role: StageRole, names: PartyNames = {}): string 
   return clean ? `${clean} · ${label}` : label;
 }
 
+/**
+ * May this person stand in for somebody on this appraisal?
+ *
+ * Administrator powers exist to act for somebody who cannot act for themselves.
+ * On your own record there is nobody to act for, so taking the reviewer's step
+ * is signing off your own work — and an audit entry naming you as acting for
+ * your own manager records that fact without preventing it.
+ *
+ * Somebody who is both an HR admin and an employee holds both hats. On anybody
+ * else's appraisal they hold the administrator's; on their own, only the
+ * employee's.
+ */
+export function mayProxy(input: {
+  isAdmin: boolean;
+  viewerId: string | null;
+  employeeId: string | null;
+}): boolean {
+  if (!input.isAdmin) return false;
+  if (!input.viewerId) return false;
+  return input.viewerId !== input.employeeId;
+}
+
 export interface ProxyEventLike {
   on_behalf_of_name: string | null;
   created_at: string;

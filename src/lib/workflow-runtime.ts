@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
+import { mayProxy } from "@/lib/performance/proxy";
 import { activeStageKeys, type EmployeeContext } from "@/lib/workflow-engine";
 import type { StageRole, WorkflowStage } from "@/types/workflow";
 
@@ -87,14 +88,27 @@ export async function getAppraisalWorkflow(appraisalId: string): Promise<Apprais
     if (user.id === ap.manager_id) userRoles.push("line_manager");
     if (user.id === ap.second_level_id) userRoles.push("second_level");
   }
-  const canProxy = access.isHr || access.isSystemAdmin || access.isAdmin;
+  // Nobody reviews their own appraisal.
+  //
+  // Administrator powers exist to act for somebody who cannot act for
+  // themselves. On your own record there is nobody to act for, so taking the
+  // reviewer's step is signing off your own work — the audit trail naming you
+  // as acting for your own manager records the fact without preventing it.
+  // Somebody who is both an HR admin and an employee holds both hats; on their
+  // own appraisal only the employee one applies.
+  const isOwnAppraisal = !!user && user.id === (ap.employee_id as string | null);
+  const canProxy = mayProxy({
+    isAdmin: access.isHr || access.isSystemAdmin || access.isAdmin,
+    viewerId: user?.id ?? null,
+    employeeId: (ap.employee_id as string | null) ?? null,
+  });
   if (canProxy) {
     userRoles.push("hr", "calibration");
   }
   // The final rating may be recorded by the PGM or by an HR admin, so holding
   // either counts as holding the stage's role — recording it is their own work,
-  // not a proxy for somebody else.
-  if (access.isPgm) userRoles.push("pgm");
+  // not a proxy for somebody else. Not on their own rating, though.
+  if (access.isPgm && !isOwnAppraisal) userRoles.push("pgm");
 
   return {
     appraisalId: ap.id as string,
