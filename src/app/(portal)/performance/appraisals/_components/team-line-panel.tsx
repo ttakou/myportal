@@ -17,11 +17,19 @@ export function TeamLinePanel({
   line,
   canAct,
   heading = "My direct line",
+  actingForId = null,
 }: {
   line: TeamLine;
   canAct: boolean;
   /** Null when the caller supplies its own heading. */
   heading?: string | null;
+  /**
+   * The manager whose line this is, when the panel is being read by somebody
+   * standing in for them. Carried through the link so the report's page knows
+   * whose job the visitor came to do, rather than re-titling itself after the
+   * report and reading as though the stand-in had been switched.
+   */
+  actingForId?: string | null;
 }) {
   if (line.members.length === 0) return null;
 
@@ -122,7 +130,11 @@ export function TeamLinePanel({
                   )}
                   {canAct && m.appraisalId && (
                     <Link
-                      href={`/performance/appraisals/${m.appraisalId}/act`}
+                      href={
+                        actingForId
+                          ? `/performance/appraisals/${m.appraisalId}/act?as=${actingForId}`
+                          : `/performance/appraisals/${m.appraisalId}/act`
+                      }
                       className="ml-3 text-xs text-primary underline underline-offset-2 hover:no-underline"
                     >
                       Open
