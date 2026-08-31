@@ -201,6 +201,28 @@ export function legacyCompletedStages(stage: string | null, status: string | nul
   return LEGACY_STAGE_LADDER.slice(0, index).map((s) => s.key);
 }
 
+/**
+ * How one participant's progress reads in a list.
+ *
+ * "Not started" is worth saying plainly for somebody who has done nothing; for
+ * everyone else the step they are actually on says more than "In progress",
+ * which is what a status column derived from the legacy column could manage at
+ * best. A person mid-cycle reads as the stage holding them up, not as a state.
+ */
+export function progressLabel(row: ParticipantProgress): string {
+  if (row.finished) return "Complete";
+  if (row.completedCount === 0) return "Not started";
+  return row.currentStageLabel ?? "In progress";
+}
+
+/** Which of the three buckets a row falls in, matching `summarise`. */
+export function progressBucket(
+  row: ParticipantProgress,
+): "complete" | "not_started" | "in_progress" {
+  if (row.finished) return "complete";
+  return row.completedCount === 0 ? "not_started" : "in_progress";
+}
+
 export interface ProgressSummary {
   participants: number;
   finished: number;

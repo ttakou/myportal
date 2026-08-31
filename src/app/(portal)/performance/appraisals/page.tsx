@@ -33,6 +33,7 @@ import { SecondLevelPanel } from "./_components/second-level-panel";
 import { RaterInbox } from "./_components/rater-inbox";
 import { CycleSwitcher } from "./_components/cycle-switcher";
 import { cyclePhases, phaseNameOf } from "@/lib/performance/cycle-phases";
+import { getCycleProgress } from "@/lib/performance/status-report";
 import { getCyclePhaseStages } from "@/lib/performance/house-template";
 import { SummaryCards } from "./_components/summary-cards";
 import { AppraisalHistory } from "./_components/appraisal-history";
@@ -384,6 +385,7 @@ async function HrSection({
     calibrationRoster,
     calibrationAdjustments,
     departmentObjectives,
+    cycleProgress,
   ] = await Promise.all([
     cycle ? getCycleAppraisals(cycle.id) : Promise.resolve([]),
     getCompetencies(),
@@ -391,7 +393,15 @@ async function HrSection({
     cycle ? getCalibrationRoster(cycle.id) : Promise.resolve([]),
     cycle ? getCalibrationAdjustments(cycle.id) : Promise.resolve([]),
     getDepartmentObjectives(),
+    cycle ? getCycleProgress(cycle.id) : Promise.resolve(null),
   ]);
+
+  // Where each participant actually stands, keyed by appraisal. The console
+  // counted `appraisals.status`, which the configured workflow never writes, so
+  // a cycle at its final review still reported every row as "Not started".
+  const progressByAppraisal = Object.fromEntries(
+    (cycleProgress?.rows ?? []).map((r) => [r.appraisalId, r]),
+  );
 
   // The phases inside every cycle, so the cycle list expands into them. One
   // query per cycle, and a tenant runs a handful.
@@ -415,7 +425,9 @@ async function HrSection({
     ),
   );
 
-  const hrCompleted = cycleAppraisals.filter((a) => COMPLETED_STATUSES.has(a.status)).length;
+  const hrCompleted = cycleProgress
+    ? cycleProgress.rows.filter((r) => r.finished).length
+    : cycleAppraisals.filter((a) => COMPLETED_STATUSES.has(a.status)).length;
   const hrCards =
     cycle
       ? [
@@ -448,6 +460,7 @@ async function HrSection({
         competencies={competencies}
         departmentObjectives={departmentObjectives}
         phasesByCycle={phasesByCycle}
+        progress={progressByAppraisal}
       />
       {calibration && (
         <CalibrationPanel
