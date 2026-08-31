@@ -4,6 +4,8 @@ import {
   legacyCompletedStages,
   legacyStages,
   participantProgress,
+  progressBucket,
+  progressLabel,
   progressSheetRows,
   rankForReview,
   summarise,
@@ -279,5 +281,48 @@ describe("the legacy ladder — cycles with no workflow template", () => {
     expect(p.stages.every((s) => s.dueDate === null)).toBe(true);
     expect(p.stages.some((s) => s.overdue)).toBe(false);
     expect(p.daysLate).toBe(0);
+  });
+});
+
+describe("progressLabel / progressBucket", () => {
+  it("reads a person who has done nothing as not started", () => {
+    const row = participantProgress(base(), "2026-01-02");
+    expect(progressLabel(row)).toBe("Not started");
+    expect(progressBucket(row)).toBe("not_started");
+  });
+
+  it("names the step somebody is actually on, not a state", () => {
+    // The whole point: "In progress" is what a legacy status column could
+    // manage; the step holding them up is what an administrator needs.
+    const row = participantProgress(base({ completedStages: ["goals"] }), "2026-01-20");
+    expect(progressLabel(row)).toBe("Manager reviews goals");
+    expect(progressBucket(row)).toBe("in_progress");
+  });
+
+  it("reads a finished appraisal as complete", () => {
+    const row = participantProgress(
+      base({ completedStages: ["goals", "review", "final"] }),
+      "2026-12-31",
+    );
+    expect(progressLabel(row)).toBe("Complete");
+    expect(progressBucket(row)).toBe("complete");
+  });
+
+  it("agrees with summarise about which bucket everyone is in", () => {
+    // The console's tally and the row labels are read from one function each;
+    // they disagreed before because they came off different columns.
+    const rows = [
+      participantProgress(base({ appraisalId: "a" }), "2026-06-01"),
+      participantProgress(base({ appraisalId: "b", completedStages: ["goals"] }), "2026-06-01"),
+      participantProgress(
+        base({ appraisalId: "c", completedStages: ["goals", "review", "final"] }),
+        "2026-06-01",
+      ),
+    ];
+    const s = summarise(rows);
+    const count = (b: string) => rows.filter((r) => progressBucket(r) === b).length;
+    expect(count("not_started")).toBe(s.notStarted);
+    expect(count("in_progress")).toBe(s.inProgress);
+    expect(count("complete")).toBe(s.finished);
   });
 });

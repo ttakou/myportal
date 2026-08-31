@@ -7,6 +7,11 @@ import { Play, Lock, Plus, Trash2, Download, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { cn } from "@/lib/utils";
+import {
+  progressLabel,
+  summarise,
+  type ParticipantProgress,
+} from "@/lib/performance/stage-progress";
 import { CyclePhaseBoard, PhaseToggle, type CyclePhaseInfo } from "./cycle-phase-board";
 import {
   RATING_BANDS,
@@ -45,6 +50,7 @@ export function HrConsole({
   competencies,
   departmentObjectives,
   phasesByCycle,
+  progress,
 }: {
   cycles: AppraisalCycle[];
   appraisals: Appraisal[];
@@ -54,6 +60,12 @@ export function HrConsole({
   departmentObjectives: DepartmentObjective[];
   /** The phases inside each cycle, keyed by cycle id — the expandable detail. */
   phasesByCycle?: Record<string, CyclePhaseInfo>;
+  /**
+   * Where each participant actually stands, keyed by appraisal id. Read in
+   * preference to `appraisals[].status`, which the configured workflow never
+   * writes — see `getCycleProgress`.
+   */
+  progress?: Record<string, ParticipantProgress>;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -69,11 +81,28 @@ export function HrConsole({
   const [requireSecond, setRequireSecond] = useState(false);
   const [bands, setBands] = useState<RatingBand[]>(RATING_BANDS);
 
-  const counts = useMemo(() => {
-    const m = new Map<AppraisalStatus, number>();
-    for (const a of appraisals) m.set(a.status, (m.get(a.status) ?? 0) + 1);
-    return [...m.entries()];
-  }, [appraisals]);
+  // Counted from the workflow where the cycle has one. Counting `a.status`
+  // reported a cycle at its final review as "Not started: 121", because the
+  // workflow writes `completed_stages` and leaves that column where the launch
+  // put it. Falls back to the legacy column for a cycle with no progress rows.
+  const counts = useMemo<[string, number][]>(() => {
+    const rows = appraisals.map((a) => progress?.[a.id]).filter(Boolean) as ParticipantProgress[];
+    if (rows.length === 0) {
+      const m = new Map<AppraisalStatus, number>();
+      for (const a of appraisals) m.set(a.status, (m.get(a.status) ?? 0) + 1);
+      return [...m.entries()].map(([s, n]) => [STATUS_LABEL[s], n]);
+    }
+    const s = summarise(rows);
+    const late = rows.filter((r) => r.daysLate > 0).length;
+    return (
+      [
+        ["Not started", s.notStarted],
+        ["In progress", s.inProgress],
+        ["Complete", s.finished],
+        ["Running late", late],
+      ] as [string, number][]
+    ).filter(([, n]) => n > 0);
+  }, [appraisals, progress]);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -205,9 +234,9 @@ export function HrConsole({
             </Button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {counts.map(([status, n]) => (
-              <span key={status} className="rounded-full bg-muted px-2.5 py-1 text-xs">
-                {STATUS_LABEL[status]}: <span className="font-semibold">{n}</span>
+            {counts.map(([label, n]) => (
+              <span key={label} className="rounded-full bg-muted px-2.5 py-1 text-xs">
+                {label}: <span className="font-semibold">{n}</span>
               </span>
             ))}
           </div>
@@ -215,7 +244,7 @@ export function HrConsole({
       )}
 
       {activeCycleId && appraisals.length > 0 && (
-        <HrAppraisalList appraisals={appraisals} cycleName={cycleName} />
+        <HrAppraisalList appraisals={appraisals} cycleName={cycleName} progress={progress} />
       )}
 
       <HrQueue appraisals={appraisals} />
@@ -662,10 +691,17 @@ function downloadCsv(filename: string, table: string[][]) {
 function HrAppraisalList({
   appraisals,
   cycleName,
+  progress,
 }: {
   appraisals: Appraisal[];
   cycleName: string | null;
+  progress?: Record<string, ParticipantProgress>;
 }) {
+  // The step somebody is on, not the column the workflow stopped writing.
+  const statusOf = (a: Appraisal) => {
+    const row = progress?.[a.id];
+    return row ? progressLabel(row) : STATUS_LABEL[a.status];
+  };
   // By name. It was highest score first, which ranks the workforce — useful at
   // the end of a cycle, useless for most of one: before any rating exists every
   // row scores nothing, so 120 people came out in no order at all and finding
@@ -683,7 +719,7 @@ function HrAppraisalList({
     const header = ["Employee", "Status", "Manager rating", "Final score", "Rating"];
     const body = rows.map((a) => [
       a.employee_name ?? "",
-      STATUS_LABEL[a.status],
+      statusOf(a),
       a.overall_rating != null ? String(a.overall_rating) : "",
       a.final_score != null ? String(a.final_score) : "",
       a.rating_label ?? "",
@@ -731,7 +767,14 @@ function HrAppraisalList({
                       {a.employee_name || "—"}
                     </Link>
                   </td>
-                  <td className="py-2 pr-2 text-muted-foreground">{STATUS_LABEL[a.status]}</td>
+                  <td className="py-2 pr-2 text-muted-foreground">
+                    {statusOf(a)}
+                    {(progress?.[a.id]?.daysLate ?? 0) > 0 && (
+                      <span className="ml-1.5 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive">
+                        {progress?.[a.id]?.daysLate}d late
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 pr-2 tabular-nums">{a.overall_rating ?? "—"}</td>
                   <td className="py-2 pr-2 tabular-nums">
                     {a.final_score != null ? `${a.final_score}%` : "—"}

@@ -153,7 +153,6 @@ export async function getReportableCycles(): Promise<CycleOption[]> {
  * date when the template carries none, so due dates are never silently absent.
  */
 export async function getStatusReport(cycleId?: string | null): Promise<StatusReport> {
-  const supabase = createClient();
   const cycles = await getReportableCycles();
   const selected =
     (cycleId && cycles.find((c) => c.id === cycleId)?.id) ??
@@ -176,17 +175,60 @@ export async function getStatusReport(cycleId?: string | null): Promise<StatusRe
   };
   if (!selected) return empty;
 
+  const progress = await getCycleProgress(selected);
+  if (!progress) return empty;
+
+  return {
+    cycles,
+    selectedCycleId: selected,
+    selectedCycleName: progress.cycleName,
+    rows: rankForReview(progress.rows),
+    summary: summarise(progress.rows),
+    generatedAt: progress.generatedAt,
+    noWorkflow: progress.noWorkflow,
+    outsideRoster: progress.outsideRoster,
+    reviewers: progress.reviewers,
+    colleagues: await activeColleagues(),
+  };
+}
+
+export interface CycleProgress {
+  cycleName: string;
+  /** One row per participant, in no particular order. */
+  rows: ParticipantProgress[];
+  reviewers: Record<string, ReviewerAssignment>;
+  /** True when the cycle predates the workflow designer and runs the ladder. */
+  noWorkflow: boolean;
+  outsideRoster: number;
+  generatedAt: string;
+}
+
+/**
+ * Where everyone in one cycle stands — the single reading of cycle progress.
+ *
+ * Both the status report and the HR console answer "how far has this cycle
+ * got", and until they shared this they answered it from different columns.
+ * The console counted `appraisals.status`, which only the legacy actions ever
+ * write; an appraisal driven through the configured workflow updates
+ * `completed_stages` and leaves `status` at whatever it was launched with. So a
+ * cycle could run to its final review with every row on the console still
+ * reading "Not started" — not a stale figure, one that would never move.
+ */
+export async function getCycleProgress(cycleId: string): Promise<CycleProgress | null> {
+  const supabase = createClient();
+  const today = todayIso();
+  const selected = cycleId;
+
   const { data: cycle } = await supabase
     .from("appraisal_cycles")
     .select("id, name, period_start, goal_setting_deadline, template_id")
     .eq("id", selected)
     .maybeSingle();
-  if (!cycle) return empty;
+  if (!cycle) return null;
 
-  const [stages, managers, colleagues, appraisable] = await Promise.all([
+  const [stages, managers, appraisable] = await Promise.all([
     stagesForTemplate((cycle.template_id as string | null) ?? null),
     managerIdSet(),
-    activeColleagues(),
     appraisableIds(),
   ]);
   const cycleName = String(cycle.name ?? "Cycle");
@@ -254,16 +296,12 @@ export async function getStatusReport(cycleId?: string | null): Promise<StatusRe
   });
 
   return {
-    cycles,
-    selectedCycleId: selected,
-    selectedCycleName: cycleName,
-    rows: rankForReview(rows),
-    summary: summarise(rows),
-    generatedAt: today,
+    cycleName,
+    rows,
+    reviewers,
     noWorkflow: usingLegacy,
     outsideRoster: all.length - inWorkflow.length,
-    reviewers,
-    colleagues,
+    generatedAt: today,
   };
 }
 
