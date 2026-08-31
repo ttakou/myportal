@@ -5,6 +5,11 @@ import { ArrowLeft, ShieldX, UserCog, Users } from "lucide-react";
 import { getAppraisal } from "@/lib/appraisals";
 import { getAccess } from "@/lib/auth";
 import { proxyTrail } from "@/lib/performance/proxy";
+import {
+  actingHeading,
+  actingSubject,
+  resolveActingFor,
+} from "@/lib/performance/acting-context";
 import { getManagerLine } from "@/lib/performance/team-line";
 import { TeamLinePanel } from "../../_components/team-line-panel";
 import { STATUS_LABEL, type Appraisal } from "@/types/appraisal";
@@ -27,8 +32,15 @@ export const dynamic = "force-dynamic";
  * The stand-in is confined to this appraisal: it is not a way to sign in as
  * somebody, and nothing outside the performance module is touched.
  */
-export default async function ActForPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ActForPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ as?: string }>;
+}) {
   const { id } = await params;
+  const { as } = await searchParams;
   const access = await getAccess();
 
   if (!(access.isHr || access.isSystemAdmin || access.isAdmin)) {
@@ -55,6 +67,19 @@ export default async function ActForPage({ params }: { params: Promise<{ id: str
     manager: appraisal.manager_name,
     secondLevel: appraisal.second_level_name ?? null,
   };
+  // Arriving from a manager's direct line means coming to do the manager's job
+  // on somebody else's appraisal. Only somebody this appraisal actually
+  // recognises as a reviewer may be named, so a query parameter cannot put an
+  // arbitrary name in the heading.
+  const actingFor = resolveActingFor({
+    requested: as,
+    employeeId: appraisal.employee_id,
+    candidates: [
+      { id: appraisal.manager_id, name: appraisal.manager_name },
+      { id: appraisal.second_level_id, name: appraisal.second_level_name },
+    ],
+  });
+  const standInFor = actingFor?.name ?? employeeName;
   const stoodIn = proxyTrail(appraisal.events);
 
   return (
@@ -68,7 +93,12 @@ export default async function ActForPage({ params }: { params: Promise<{ id: str
         </Link>
         <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
           <UserCog className="h-6 w-6 text-amber-600" />
-          Acting for {employeeName}
+          {actingHeading(actingFor, employeeName)}
+          {actingSubject(actingFor, employeeName) && (
+            <span className="text-lg font-normal text-muted-foreground">
+              {actingSubject(actingFor, employeeName)}
+            </span>
+          )}
         </h1>
         <p className="text-muted-foreground">
           {appraisal.cycle_name ?? "Appraisal"} · {STATUS_LABEL[appraisal.status]}
@@ -79,11 +109,25 @@ export default async function ActForPage({ params }: { params: Promise<{ id: str
       <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
         <UserCog className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          You are standing in on this one appraisal — not signed in as {employeeName}. Nothing
+          You are standing in on this one appraisal — not signed in as {standInFor}. Nothing
           outside the performance module is affected, and every step you take here records your
           name alongside the name of whoever the step belonged to.
         </span>
       </p>
+
+      {!appraisal.manager_id && (
+        <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <ShieldX className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            No reviewer is named on {employeeName}&apos;s appraisal, so its line-manager steps
+            belong to nobody and cannot be taken — by them or on their behalf. Name one on the{" "}
+            <Link href="/performance/status" className="font-medium underline underline-offset-2">
+              status report
+            </Link>{" "}
+            first.
+          </span>
+        </p>
+      )}
 
       {/* The same two tabs the employee and the manager see, so standing in for
           somebody looks like the screen you are standing in on. The objectives
@@ -193,7 +237,7 @@ async function TheirTeam({
         The reviews and sign-offs {managerName} owes. Open any of them to take the step for{" "}
         {managerName}; your name and theirs are recorded against it, exactly as here.
       </p>
-      <TeamLinePanel line={line} canAct heading={null} />
+      <TeamLinePanel line={line} canAct heading={null} actingForId={managerId} />
     </section>
   );
 }
