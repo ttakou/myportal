@@ -12,10 +12,13 @@ import {
 } from "@/lib/performance/acting-context";
 import { getManagerLine } from "@/lib/performance/team-line";
 import { TeamLinePanel } from "../../_components/team-line-panel";
-import { STATUS_LABEL, type Appraisal } from "@/types/appraisal";
+import { STATUS_LABEL } from "@/types/appraisal";
 import { WorkflowSection } from "../../_components/workflow-section";
 import { AppraisalTabs } from "../../_components/my-appraisal-tabs";
 import { AppraisalFormOutline } from "../../_components/appraisal-form-outline";
+import { ReportReview } from "../../_components/report-review";
+import { personActivity } from "@/lib/performance/person-activity";
+import { createClient } from "@/lib/supabase/server";
 import { ProxyManagerComment } from "./proxy-manager-comment";
 
 export const dynamic = "force-dynamic";
@@ -82,6 +85,20 @@ export default async function ActForPage({
   const standInFor = actingFor?.name ?? employeeName;
   const stoodIn = proxyTrail(appraisal.events);
 
+  // What the employee achieved: their goal updates and any recognition, from
+  // the start of this cycle. The manager's own card has shown this since the
+  // Continuous page was wired to the appraisal; the stand-in's page never did.
+  const supabase = createClient();
+  const { data: cycleRow } = await supabase
+    .from("appraisal_cycles")
+    .select("period_start")
+    .eq("id", appraisal.cycle_id)
+    .maybeSingle();
+  const activity = await personActivity(
+    appraisal.employee_id,
+    (cycleRow?.period_start as string | null) ?? null,
+  );
+
   return (
     <div className="space-y-5">
       <div>
@@ -137,13 +154,32 @@ export default async function ActForPage({
         label={`${employeeName} — appraisal`}
         objectives={
           <div className="space-y-3">
-            <Objectives appraisal={appraisal} />
-            <ProxyManagerComment
-              appraisalId={appraisal.id}
-              employeeName={employeeName}
-              managerName={appraisal.manager_name}
-              initial={appraisal.manager_summary}
-            />
+            {/* The manager's own card, exactly as the manager sees it: the
+                goals with the progress the employee reported, their notes,
+                what they posted on Continuous, the self-assessment — and, when
+                you came here as the manager, the manager's decisions. Somebody
+                covering for a manager on rotation used to get a table of
+                titles and weights, and could neither see what had been
+                achieved nor act on it. */}
+            <section className="rounded-lg border bg-card p-4">
+              <h2 className="text-sm font-semibold">
+                {actingFor ? `${employeeName}'s objectives — reviewing as ${actingFor.name}` : "Objectives"}
+              </h2>
+              <ReportReview
+                appraisal={appraisal}
+                activity={activity}
+                canReview={actingFor !== null}
+                reviewerName={appraisal.manager_name}
+              />
+            </section>
+            {actingFor === null && (
+              <ProxyManagerComment
+                appraisalId={appraisal.id}
+                employeeName={employeeName}
+                managerName={appraisal.manager_name}
+                initial={appraisal.manager_summary}
+              />
+            )}
             <Suspense fallback={null}>
               <AppraisalFormOutline appraisalId={appraisal.id} />
             </Suspense>
@@ -238,52 +274,6 @@ async function TheirTeam({
         {managerName}; your name and theirs are recorded against it, exactly as here.
       </p>
       <TeamLinePanel line={line} canAct heading={null} actingForId={managerId} />
-    </section>
-  );
-}
-
-/**
- * The person's objectives, as they stand.
- *
- * Read-only on purpose: the goals are the employee's own writing, and an
- * administrator taking a step for them should not be quietly rewriting what
- * they are being measured against.
- */
-function Objectives({ appraisal }: { appraisal: Appraisal }) {
-  return (
-    <section className="rounded-lg border bg-card p-4">
-      <h2 className="text-sm font-semibold">Objectives</h2>
-      {appraisal.goals.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">
-          No objectives recorded yet. These are the employee&apos;s own to write — if they cannot
-          reach the system, the goals have to come from them before the phase can move.
-        </p>
-      ) : (
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="py-1.5 pr-2 font-medium">Objective</th>
-                <th className="py-1.5 pr-2 font-medium">Weight</th>
-                <th className="py-1.5 pr-2 font-medium">Self rating</th>
-                <th className="py-1.5 font-medium">Manager rating</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {appraisal.goals.map((g) => (
-                <tr key={g.id}>
-                  <td className="py-1.5 pr-2">{g.title}</td>
-                  <td className="py-1.5 pr-2 tabular-nums">
-                    {g.weight != null ? `${g.weight}%` : "—"}
-                  </td>
-                  <td className="py-1.5 pr-2 tabular-nums">{g.employee_self_rating ?? "—"}</td>
-                  <td className="py-1.5 tabular-nums">{g.manager_rating ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </section>
   );
 }
