@@ -43,7 +43,8 @@ import { AppraisalFormOutline } from "./_components/appraisal-form-outline";
 import { AppraisalTabs } from "./_components/my-appraisal-tabs";
 import { ManagerComment } from "./_components/manager-comment";
 import { ActivityRecap } from "./_components/activity-recap";
-import { personActivity } from "@/lib/performance/person-activity";
+import { personActivity, personActivityMany } from "@/lib/performance/person-activity";
+import { getAppraisalWorkflows } from "@/lib/workflow-runtime";
 import { HrWorkflowQueue } from "./_components/hr-workflow-queue";
 import { resolveAppraisalView } from "../_components/performance-views";
 import { resolveHrTab, type HrConsoleTab } from "@/lib/performance/hr-console-tabs";
@@ -161,13 +162,17 @@ export default async function AppraisalsPage({
 
   // Each report's updates and recognition, so a manager reviewing somebody sees
   // what they posted rather than only what they typed into the review box.
-  const teamActivity = Object.fromEntries(
-    await Promise.all(
-      team.map(async (a) => [
-        a.id,
-        await personActivity(a.employee_id, cycle?.period_start ?? null),
-      ]),
+  // One query for the whole team, not one per report: the database is far
+  // enough away that round trips, not rows, are what a page waits on.
+  const [activityByEmployee, teamWorkflows] = await Promise.all([
+    personActivityMany(
+      team.map((a) => a.employee_id),
+      cycle?.period_start ?? null,
     ),
+    getAppraisalWorkflows(team.map((a) => a.id)),
+  ]);
+  const teamActivity = Object.fromEntries(
+    team.map((a) => [a.id, activityByEmployee[a.employee_id]]),
   ) as Record<string, Awaited<ReturnType<typeof personActivity>>>;
 
   // Each report's workflow, rendered here and handed to the team panel so it
@@ -182,6 +187,8 @@ export default async function AppraisalsPage({
         <WorkflowSection
           appraisalId={a.id}
           partyNames={{ employee: a.employee_name, manager: a.manager_name }}
+          workflow={teamWorkflows[a.id] ?? null}
+          goals={a.goals}
         />
       </Suspense>,
     ]),

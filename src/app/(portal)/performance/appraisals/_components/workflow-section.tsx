@@ -1,5 +1,6 @@
 import { getAppraisal } from "@/lib/appraisals";
-import { getAppraisalWorkflow } from "@/lib/workflow-runtime";
+import { getAppraisalWorkflow, type AppraisalWorkflow } from "@/lib/workflow-runtime";
+import type { AppraisalGoal } from "@/types/appraisal";
 import { applicableStages, canAct, stageByKey } from "@/lib/workflow-engine";
 import { actingForLabel, type PartyNames } from "@/lib/performance/proxy";
 import { STAGE_ROLE_LABEL, type WorkflowStage } from "@/types/workflow";
@@ -16,12 +17,22 @@ export async function WorkflowSection({
   appraisalId,
   heading,
   partyNames,
+  workflow,
+  goals: givenGoals,
 }: {
   appraisalId: string;
   heading?: string;
   partyNames?: PartyNames;
+  /**
+   * Already resolved by the caller — a page listing several appraisals
+   * resolves them all in one pass rather than one round trip each here.
+   * `null` means resolved and found to have no workflow.
+   */
+  workflow?: AppraisalWorkflow | null;
+  /** The goals, when the caller already holds them. */
+  goals?: AppraisalGoal[];
 }) {
-  const wf = await getAppraisalWorkflow(appraisalId);
+  const wf = workflow === undefined ? await getAppraisalWorkflow(appraisalId) : workflow;
   if (!wf) return null;
 
   const applicable = applicableStages(wf.stages, wf.ctx);
@@ -66,7 +77,9 @@ export async function WorkflowSection({
   // goals lived in another panel, on another screen for anyone reaching this
   // card from the workflow list. Fetched only when a live step works on them.
   const needsGoals = liveStages.some((s) => s.editableFields.includes("goals"));
-  const goals = needsGoals ? (await getAppraisal(wf.appraisalId))?.goals ?? [] : [];
+  const goals = !needsGoals
+    ? []
+    : (givenGoals ?? (await getAppraisal(wf.appraisalId))?.goals ?? []);
 
   return (
     <WorkflowTimeline
