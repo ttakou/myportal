@@ -31,10 +31,18 @@ export interface CycleOption {
 export interface ReviewerAssignment {
   appraisalId: string;
   employeeId: string;
+  employeeName: string;
   managerId: string | null;
   managerName: string | null;
   secondLevelId: string | null;
   secondLevelName: string | null;
+  /**
+   * The line manager on the person's profile — the reporting line, as
+   * distinct from who reviews this one appraisal. The two drift apart, and
+   * the editor shows both so a mismatch can be fixed where it is noticed.
+   */
+  profileManagerId: string | null;
+  profileManagerName: string | null;
 }
 
 export interface Colleague {
@@ -254,6 +262,27 @@ export async function getCycleProgress(cycleId: string): Promise<CycleProgress |
   const reviewers: Record<string, ReviewerAssignment> = {};
   const all = (data ?? []) as Record<string, unknown>[];
   const inWorkflow = all.filter((r) => appraisable.has(String(r.employee_id)));
+
+  // The reporting line from the profiles, keyed by employee. Read separately:
+  // a second hop through the same relation in one select is more than the
+  // literal-typed select will infer.
+  const { data: lines } = await supabase
+    .from("profiles")
+    .select("id, manager_id, manager:profiles!manager_id(full_name)")
+    .in(
+      "id",
+      inWorkflow.map((r) => String(r.employee_id)),
+    );
+  const reportingLine = new Map(
+    ((lines ?? []) as Record<string, unknown>[]).map((p) => [
+      String(p.id),
+      {
+        id: (p.manager_id as string | null) ?? null,
+        name: one<{ full_name?: string }>(p.manager as { full_name?: string } | null)?.full_name ?? null,
+      },
+    ]),
+  );
+
   const rows = inWorkflow.map((r) => {
     const employee = one<{ full_name?: string; department?: string }>(
       r.employee as { full_name?: string; department?: string } | null,
@@ -263,13 +292,17 @@ export async function getCycleProgress(cycleId: string): Promise<CycleProgress |
       r.second_level as { full_name?: string } | null,
     );
     const department = employee?.department ?? null;
+    const line = reportingLine.get(String(r.employee_id));
     reviewers[String(r.id)] = {
       appraisalId: String(r.id),
       employeeId: String(r.employee_id),
+      employeeName: employee?.full_name || "—",
       managerId: (r.manager_id as string | null) ?? null,
       managerName: manager?.full_name ?? null,
       secondLevelId: (r.second_level_id as string | null) ?? null,
       secondLevelName: secondLevel?.full_name ?? null,
+      profileManagerId: line?.id ?? null,
+      profileManagerName: line?.name ?? null,
     };
     return participantProgress(
       {

@@ -761,11 +761,18 @@ async function requireManager(id: string): Promise<{ a: AppraisalRow } | ActionR
  * now that was final: a transfer mid-cycle, a manager who left, or a reporting
  * line that was simply wrong left the appraisal stuck with nobody able to act.
  * Pass null to clear the second-level reviewer; the line manager is required.
+ *
+ * `updateProfile` also makes the chosen line manager the person's manager on
+ * their profile — the reporting line, which Team review and the next cycle
+ * read. The two fields drift, and HR used to fix one here and the other in the
+ * admin centre, usually remembering only one. Written through the same client
+ * as the appraisal so the profile's audit trigger records who changed it.
  */
 export async function setAppraisalReviewers(input: {
   appraisalId: string;
   managerId: string;
   secondLevelId?: string | null;
+  updateProfile?: boolean;
 }): Promise<ActionResult> {
   const gate = await requireHr();
   if (gate) return gate;
@@ -803,10 +810,26 @@ export async function setAppraisalReviewers(input: {
     .eq("id", a.id);
   if (error) return { ok: false, error: error.message };
 
-  const summary = [
-    `Line manager: ${found.get(input.managerId) ?? "—"}`,
-    input.secondLevelId ? `Second-level: ${found.get(input.secondLevelId) ?? "—"}` : "Second-level: none",
-  ].join(" · ");
+  let profileNote = "";
+  if (input.updateProfile) {
+    const { error: pErr } = await supabase
+      .from("profiles")
+      .update({ manager_id: input.managerId })
+      .eq("id", a.employee_id);
+    if (pErr) {
+      return {
+        ok: false,
+        error: `Reviewers saved, but the profile's line manager was not updated: ${pErr.message}`,
+      };
+    }
+    profileNote = " · also set as line manager on the profile";
+  }
+
+  const summary =
+    [
+      `Line manager: ${found.get(input.managerId) ?? "—"}`,
+      input.secondLevelId ? `Second-level: ${found.get(input.secondLevelId) ?? "—"}` : "Second-level: none",
+    ].join(" · ") + profileNote;
   await logEvent(a, "reviewers_reassigned", summary);
 
   // Tell the incoming reviewers — an appraisal they were never told about is an
