@@ -17,6 +17,7 @@ export type HrConsoleTab =
   | "dashboard"
   | "cycle"
   | "appraisals"
+  | "managers"
   | "competencies"
   | "objectives"
   | "bands"
@@ -44,6 +45,11 @@ export const HR_CONSOLE_TABS: HrConsoleTabItem[] = [
     key: "appraisals",
     label: "Appraisals",
     description: "Every participant in the cycle with their stage and rating; export to CSV.",
+  },
+  {
+    key: "managers",
+    label: "Line managers",
+    description: "Who each member of staff reports to, beside who reviews them this cycle.",
   },
   {
     key: "competencies",
