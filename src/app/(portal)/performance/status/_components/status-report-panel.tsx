@@ -9,6 +9,12 @@ import { Button } from "@/components/ui/button";
 import { SearchSelect } from "@/components/ui/search-select";
 import { clearStrayAppraisals, setAppraisalReviewers } from "../../appraisals/actions";
 import type { KeptAppraisal } from "@/lib/performance/stray-appraisals";
+import {
+  offerProfileSync,
+  reportingLineHint,
+  reportingLineState,
+  reviewerDefaults,
+} from "@/lib/performance/reviewer-sync";
 import { cn } from "@/lib/utils";
 import {
   STAGE_STATE_LABEL,
@@ -313,8 +319,15 @@ function ReviewerEditor({
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [managerId, setManagerId] = useState(assignment.managerId ?? "");
+  // An appraisal naming nobody starts on the profile's line manager, so the
+  // usual fix is one click. Nothing is written by the suggestion itself.
+  const defaults = reviewerDefaults({
+    appraisalManagerId: assignment.managerId,
+    profileManagerId: assignment.profileManagerId,
+  });
+  const [managerId, setManagerId] = useState(defaults.initialManagerId);
   const [secondLevelId, setSecondLevelId] = useState(assignment.secondLevelId ?? "");
+  const [syncProfile, setSyncProfile] = useState(false);
 
   // Nobody reviews their own appraisal, so keep the employee out of both lists.
   const options = useMemo(
@@ -322,8 +335,15 @@ function ReviewerEditor({
     [colleagues, assignment.employeeId],
   );
 
+  const lineState = reportingLineState({
+    chosenManagerId: managerId,
+    profileManagerId: assignment.profileManagerId,
+  });
+  const canSync = offerProfileSync(lineState);
   const changed =
-    managerId !== (assignment.managerId ?? "") || secondLevelId !== (assignment.secondLevelId ?? "");
+    managerId !== (assignment.managerId ?? "") ||
+    secondLevelId !== (assignment.secondLevelId ?? "") ||
+    (canSync && syncProfile);
 
   function save() {
     setError(null);
@@ -333,6 +353,7 @@ function ReviewerEditor({
         appraisalId: assignment.appraisalId,
         managerId,
         secondLevelId: secondLevelId || null,
+        updateProfile: canSync && syncProfile,
       });
       if (res.ok) setSaved(true);
       else setError(res.error ?? "Couldn't reassign the reviewers.");
@@ -375,6 +396,39 @@ function ReviewerEditor({
           Save reviewers
         </Button>
         {saved && !changed && <span className="text-xs text-emerald-700">Saved.</span>}
+      </div>
+
+      {/* The reporting line beside the reviewer, and the offer to make them
+          agree. The appraisal's reviewer and the profile's manager are two
+          fields for nearly one fact; fixing one and forgetting the other is
+          how they drifted in the first place. */}
+      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+        {defaults.suggestedFromProfile && managerId === defaults.initialManagerId && (
+          <p>Suggested from {assignment.employeeName}&apos;s profile — save to make it the reviewer.</p>
+        )}
+        <p>
+          {reportingLineHint({
+            state: lineState,
+            employeeName: assignment.employeeName,
+            profileManagerName: assignment.profileManagerName,
+          })}
+        </p>
+        {canSync && (
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={syncProfile}
+              disabled={pending}
+              onChange={(e) => setSyncProfile(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Also set as {assignment.employeeName}&apos;s line manager on their profile. This is
+              the reporting line: it decides who sees them on Team review and who the next cycle
+              assigns.
+            </span>
+          </label>
+        )}
       </div>
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
