@@ -412,35 +412,73 @@ function StrayBanner({ count, cycleId }: { count: number; cycleId: string }) {
 
   return (
     <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-      <div className="flex flex-wrap items-start gap-2">
+      <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p className="min-w-0 flex-1">
-          {count} appraisal{count === 1 ? "" : "s"} in this cycle belong to people who are no
+          {count} appraisal{count === 1 ? " belongs" : "s belong"} to {count === 1 ? "somebody" : "people"} who {count === 1 ? "is" : "are"} no
           longer in the performance workflow — they cannot open the module, so they are left out of
           every figure here and are never chased. Usually somebody made a contractor, deactivated, or
           without a Performance role since the cycle launched.
         </p>
-        {!armed ? (
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => setArmed(true)}>
+      </div>
+
+      {/* Each button says what it does beside it, so the choice is read before
+          it is made rather than discovered afterwards. The destructive one is
+          two clicks away: the first click only opens the choice. */}
+      {!armed ? (
+        <div className="mt-2 flex flex-wrap items-center gap-3 pl-6">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            title="Opens a confirmation. Nothing is removed until you confirm."
+            onClick={() => setArmed(true)}
+          >
             Clear the empty ones
           </Button>
-        ) : (
-          <span className="flex items-center gap-2">
-            <Button size="sm" variant="destructive" disabled={pending} onClick={clear}>
+          <span className="text-xs">
+            Removes only appraisals with nothing in them. You will be asked to confirm first.
+          </span>
+        </div>
+      ) : (
+        <div className="mt-2 space-y-2 pl-6">
+          <p className="text-xs">
+            Only an appraisal with nothing in it goes — no goal, no step taken, no comment, no plan,
+            no rating. Anything with content stays and is listed here with what it holds.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={pending}
+              title="Deletes the empty appraisals now. This cannot be undone."
+              onClick={clear}
+            >
               {pending ? "Clearing…" : "Remove"}
             </Button>
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => setArmed(false)}>
+            <span className="text-xs">
+              <span className="font-medium">Remove</span> deletes the empty appraisals now and
+              records each one in the audit log under your name. Cannot be undone.
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              title="Closes this without changing anything."
+              onClick={() => setArmed(false)}
+            >
               Keep them
             </Button>
-          </span>
-        )}
-      </div>
-      {armed && (
-        <p className="mt-1.5 pl-6 text-xs">
-          Only an appraisal with nothing in it goes — no goal, no step taken, no comment, no plan,
-          no rating. Anything with content stays and is listed here with what it holds.
-        </p>
+            <span className="text-xs">
+              <span className="font-medium">Keep them</span> changes nothing. The appraisals stay
+              as they are and this notice remains.
+            </span>
+          </div>
+        </div>
       )}
+
       {result && (
         <div className="mt-1.5 pl-6 text-xs">
           <p>
