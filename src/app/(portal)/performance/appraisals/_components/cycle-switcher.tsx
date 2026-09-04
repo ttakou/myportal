@@ -24,6 +24,7 @@ export function CycleSwitcher({
   phases,
   canOpenPhase = false,
   pinnedPhase = null,
+  participants = null,
 }: {
   cycles: AppraisalCycle[];
   selectedId: string | null;
@@ -33,6 +34,8 @@ export function CycleSwitcher({
   canOpenPhase?: boolean;
   /** The phase opened by hand, if any — as opposed to one read off the dates. */
   pinnedPhase?: string | null;
+  /** How many people the selected cycle holds, for the confirmation to say so. */
+  participants?: number | null;
 }) {
   if (cycles.length === 0) return null;
   const ordered = [...cycles].sort(
@@ -78,6 +81,8 @@ export function CycleSwitcher({
                   canOpen={canOpenPhase}
                   isPinned={Boolean(pinnedPhase)}
                   allClosed={pinnedPhase === NO_PHASE_OPEN}
+                  participants={participants}
+                  cycleName={c.name}
                 />
               )}
 

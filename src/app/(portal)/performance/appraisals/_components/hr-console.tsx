@@ -14,6 +14,8 @@ import {
 } from "@/lib/performance/stage-progress";
 import { CyclePhaseBoard, PhaseToggle, type CyclePhaseInfo } from "./cycle-phase-board";
 import type { HrConsoleTab } from "@/lib/performance/hr-console-tabs";
+import type { CycleChange } from "@/lib/performance/cycle-change";
+import { ConfirmChange } from "./confirm-change";
 import {
   RATING_BANDS,
   STATUS_LABEL,
@@ -311,6 +313,20 @@ function CycleRow({
 }) {
   const [open, setOpen] = useState(false);
   const isActive = c.status === "active";
+  // Launching and closing reach everybody in the cycle, so both are proposed
+  // first and written only on confirmation.
+  const [proposed, setProposed] = useState<CycleChange | null>(null);
+
+  function confirmProposed() {
+    if (!proposed) return;
+    const change = proposed;
+    run(async () => {
+      const res =
+        change.kind === "launch_cycle" ? await launchCycle(c.id) : await closeCycle(c.id);
+      if (res.ok) setProposed(null);
+      return res;
+    });
+  }
 
   return (
     <>
@@ -339,7 +355,11 @@ function CycleRow({
         <td className="px-4 py-2 text-right">
                   {c.status === "draft" && (
                     <span className="inline-flex gap-2">
-                      <Button size="sm" disabled={pending} onClick={() => run(() => launchCycle(c.id))}>
+                      <Button
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => setProposed({ kind: "launch_cycle", cycle: c.name })}
+                      >
                         <Play className="h-4 w-4" /> Launch
                       </Button>
                       <Button
@@ -372,7 +392,7 @@ function CycleRow({
                         size="sm"
                         variant="outline"
                         disabled={pending}
-                        onClick={() => run(() => closeCycle(c.id))}
+                        onClick={() => setProposed({ kind: "close_cycle", cycle: c.name })}
                       >
                         <Lock className="h-4 w-4" /> Close
                       </Button>
@@ -380,6 +400,20 @@ function CycleRow({
                   )}
         </td>
       </tr>
+      {proposed && (
+        <tr>
+          <td colSpan={4} className="px-4 pb-2">
+            <ConfirmChange
+              change={proposed}
+              participants={phases?.participants ?? null}
+              cycleName={c.name}
+              pending={pending}
+              onConfirm={confirmProposed}
+              onCancel={() => setProposed(null)}
+            />
+          </td>
+        </tr>
+      )}
       {isActive && note && (
         <tr>
           <td colSpan={4} className="px-4 pb-2 text-xs text-muted-foreground">

@@ -447,6 +447,10 @@ async function HrSection({
           pinned: c.current_phase ?? null,
           setByName: c.phase_set_by_name ?? null,
           setAt: c.phase_set_at ?? null,
+          // The confirmation says how many people a change reaches. Known for
+          // the selected cycle; other cycles fall back to "everybody".
+          participants: c.id === cycle?.id ? cycleAppraisals.length : null,
+          cycleName: c.name,
         },
       ]),
     ),
