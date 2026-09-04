@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { cn } from "@/lib/utils";
 import { NO_PHASE_OPEN, PHASE_STATE_LABEL, type CyclePhase } from "@/lib/performance/cycle-phases";
+import type { CycleChange } from "@/lib/performance/cycle-change";
+import { ConfirmChange } from "./confirm-change";
 import { setCyclePhase } from "../actions";
 
 const PHASE_CLS: Record<CyclePhase["state"], string> = {
@@ -31,6 +33,8 @@ export function PhaseRail({
   canOpen,
   isPinned = false,
   allClosed = false,
+  participants = null,
+  cycleName = null,
 }: {
   cycleId: string;
   phases: CyclePhase[];
@@ -40,23 +44,28 @@ export function PhaseRail({
   isPinned?: boolean;
   /** True when every phase has been deliberately shut. */
   allClosed?: boolean;
+  /** How many people the change reaches, for the confirmation to say so. */
+  participants?: number | null;
+  cycleName?: string | null;
 }) {
   const [pending, startTransition] = useStatusTransition("Opening…");
   const [error, setError] = useState<string | null>(null);
+  // A click proposes; the confirmation below disposes. Opening a phase moves
+  // the whole cycle, and a misclick on this strip once re-opened goal setting
+  // for the entire company.
+  const [proposed, setProposed] = useState<CycleChange | null>(null);
+  const openPhase = phases.find((p) => p.state === "current")?.name ?? null;
 
-  function open(name: string) {
+  function apply(change: CycleChange) {
     setError(null);
+    const value =
+      change.kind === "open_phase" ? change.phase
+      : change.kind === "close_phase" ? NO_PHASE_OPEN
+      : null;
     startTransition(async () => {
-      const res = await setCyclePhase(cycleId, name);
-      if (!res.ok) setError(res.error ?? "Couldn't open that phase.");
-    });
-  }
-
-  function closeAll() {
-    setError(null);
-    startTransition(async () => {
-      const res = await setCyclePhase(cycleId, NO_PHASE_OPEN);
-      if (!res.ok) setError(res.error ?? "Couldn't close the open phase.");
+      const res = await setCyclePhase(cycleId, value);
+      if (!res.ok) setError(res.error ?? "Couldn't change the phase.");
+      else setProposed(null);
     });
   }
 
@@ -89,7 +98,7 @@ export function PhaseRail({
                 <button
                   type="button"
                   disabled={pending}
-                  onClick={() => open(p.name)}
+                  onClick={() => setProposed({ kind: "open_phase", phase: p.name })}
                   title={`${title ? `${title}. ` : ""}Open this phase`}
                   className={cn(cls, "transition hover:bg-accent hover:text-foreground")}
                 >
@@ -115,7 +124,9 @@ export function PhaseRail({
               <button
                 type="button"
                 disabled={pending}
-                onClick={closeAll}
+                onClick={() =>
+                  setProposed({ kind: "close_phase", phase: openPhase ?? "the open phase" })
+                }
                 className="underline underline-offset-2 hover:text-foreground"
               >
                 Close the open phase
@@ -129,13 +140,7 @@ export function PhaseRail({
               <button
                 type="button"
                 disabled={pending}
-                onClick={() => {
-                  setError(null);
-                  startTransition(async () => {
-                    const res = await setCyclePhase(cycleId, null);
-                    if (!res.ok) setError(res.error ?? "Couldn't clear the open phase.");
-                  });
-                }}
+                onClick={() => setProposed({ kind: "follow_dates" })}
                 className="underline underline-offset-2 hover:text-foreground"
               >
                 Follow the dates instead
@@ -145,6 +150,19 @@ export function PhaseRail({
             " The phase is currently read from the stage dates."
           )}
         </p>
+      )}
+      {proposed && (
+        <ConfirmChange
+          change={proposed}
+          participants={participants}
+          cycleName={cycleName}
+          pending={pending}
+          onConfirm={() => apply(proposed)}
+          onCancel={() => {
+            setProposed(null);
+            setError(null);
+          }}
+        />
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>

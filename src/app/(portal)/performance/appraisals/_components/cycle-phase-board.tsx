@@ -11,6 +11,9 @@ import {
   PHASE_STATE_LABEL,
   type CyclePhase,
 } from "@/lib/performance/cycle-phases";
+import type { CycleChange } from "@/lib/performance/cycle-change";
+import { cycleChangeDone } from "@/lib/performance/cycle-change";
+import { ConfirmChange } from "./confirm-change";
 import { setCyclePhase } from "../actions";
 import { setPhaseBoundary } from "../../settings/cycle-template-actions";
 
@@ -20,6 +23,9 @@ export interface CyclePhaseInfo {
   pinned: string | null;
   setByName: string | null;
   setAt: string | null;
+  /** How many people a change reaches, for the confirmation to say so. */
+  participants?: number | null;
+  cycleName?: string | null;
 }
 
 const STATE_PILL: Record<CyclePhase["state"], string> = {
@@ -45,37 +51,74 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
   const allClosed = info.pinned === NO_PHASE_OPEN;
   const followsDates = info.pinned == null;
 
-  function set(phase: string | null, failure: string) {
+  // Every change to the process goes through one confirmation. A proposal
+  // carries what to do once confirmed; the board writes nothing until then.
+  const [proposed, setProposed] = useState<
+    | { change: CycleChange; run: () => Promise<{ ok: boolean; error?: string; note?: string }> }
+    | null
+  >(null);
+
+  function propose(change: CycleChange, run: () => Promise<{ ok: boolean; error?: string; note?: string }>) {
     setError(null);
     setNote(null);
+    setProposed({ change, run });
+  }
+
+  function confirmProposed() {
+    if (!proposed) return;
+    const { change, run } = proposed;
     startTransition(async () => {
-      const res = await setCyclePhase(cycleId, phase);
-      if (!res.ok) setError(res.error ?? failure);
+      const res = await run();
+      if (!res.ok) {
+        setError(res.error ?? "Couldn't make that change.");
+        return;
+      }
+      setProposed(null);
+      setNote(res.note ?? cycleChangeDone(change));
     });
+  }
+
+  function setPhase(phase: string | null) {
+    return async () => {
+      const res = await setCyclePhase(cycleId, phase);
+      return res.ok ? { ok: true } : { ok: false, error: res.error };
+    };
   }
 
   /**
    * Save one boundary. A phase dragging its neighbours along is worth saying
    * out loud, so the count of other steps that moved comes back with it.
    */
-  function save(stageKey: string, date: string) {
-    setError(null);
-    setNote(null);
-    startTransition(async () => {
+  function saveBoundary(stageKey: string, date: string) {
+    return async () => {
       const res = await setPhaseBoundary({ cycleId, stageKey, date });
-      if (!res.ok) {
-        setError(res.error ?? "Couldn't save that date.");
-        return;
-      }
+      if (!res.ok) return { ok: false, error: res.error ?? "Couldn't save that date." };
       const others = (res.moved ?? []).filter((m) => m.key !== stageKey);
-      setNote(
-        others.length === 0
-          ? "Saved."
-          : `Saved — ${others.length} other step${others.length === 1 ? "" : "s"} moved to keep the order: ${others
-              .map((m) => m.label)
-              .join(", ")}.`,
-      );
-    });
+      return {
+        ok: true,
+        note:
+          others.length === 0
+            ? "Saved."
+            : `Saved — ${others.length} other step${others.length === 1 ? "" : "s"} moved to keep the order: ${others
+                .map((m) => m.label)
+                .join(", ")}.`,
+      };
+    };
+  }
+
+  /**
+   * A date typed over: proposed, not saved, until confirmed. `shown` is the
+   * date as typed; `date` is what the step actually receives, which for the
+   * start column is a day earlier.
+   */
+  function proposeBoundary(
+    label: string,
+    from: string | null,
+    stageKey: string,
+    date: string,
+    shown: string,
+  ) {
+    propose({ kind: "move_boundary", label, from, to: shown }, saveBoundary(stageKey, date));
   }
 
   return (
@@ -137,11 +180,13 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
                     </span>
                   ) : (
                     <DateCell
-                      key={`start-${p.startDate}`}
+                      key={`start-${p.startDate}-${proposed ? "p" : ""}`}
                       value={p.startDate}
                       stageKey={lastStageKey(info.phases[i - 1])}
                       shiftDays={-1}
-                      onSave={save}
+                      onSave={(key, date, shown) =>
+                        proposeBoundary(`Start of ${p.name}`, p.startDate, key, date, shown)
+                      }
                       busy={pending}
                       label={`Start of ${p.name}`}
                     />
@@ -149,10 +194,12 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
                 </td>
                 <td className="py-1.5 pr-2">
                   <DateCell
-                    key={`end-${p.dueDate}`}
+                    key={`end-${p.dueDate}-${proposed ? "p" : ""}`}
                     value={p.dueDate}
                     stageKey={lastStageKey(p)}
-                    onSave={save}
+                    onSave={(key, date, shown) =>
+                      proposeBoundary(`End of ${p.name}`, p.dueDate, key, date, shown)
+                    }
                     busy={pending}
                     label={`End of ${p.name}`}
                   />
@@ -174,7 +221,9 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
                       size="sm"
                       variant="outline"
                       disabled={pending}
-                      onClick={() => set(NO_PHASE_OPEN, "Couldn't close that phase.")}
+                      onClick={() =>
+                        propose({ kind: "close_phase", phase: p.name }, setPhase(NO_PHASE_OPEN))
+                      }
                       title={`Close ${p.name} for everybody`}
                     >
                       <Lock className="mr-1 h-3.5 w-3.5" /> Close
@@ -184,7 +233,7 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
                       size="sm"
                       variant="outline"
                       disabled={pending}
-                      onClick={() => set(p.name, "Couldn't open that phase.")}
+                      onClick={() => propose({ kind: "open_phase", phase: p.name }, setPhase(p.name))}
                       title={`Open ${p.name} for everybody`}
                     >
                       <LockOpen className="mr-1 h-3.5 w-3.5" /> Open
@@ -224,7 +273,7 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
             <button
               type="button"
               disabled={pending}
-              onClick={() => set(null, "Couldn't clear the open phase.")}
+              onClick={() => propose({ kind: "follow_dates" }, setPhase(null))}
               className="underline underline-offset-2 hover:text-foreground"
             >
               Follow the dates instead
@@ -232,6 +281,19 @@ export function CyclePhaseBoard({ cycleId, info }: { cycleId: string; info: Cycl
           </>
         )}
       </p>
+      {proposed && (
+        <ConfirmChange
+          change={proposed.change}
+          participants={info.participants ?? null}
+          cycleName={info.cycleName ?? null}
+          pending={pending}
+          onConfirm={confirmProposed}
+          onCancel={() => {
+            setProposed(null);
+            setError(null);
+          }}
+        />
+      )}
       {note && <p className="text-xs text-emerald-700">{note}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
@@ -269,7 +331,8 @@ function DateCell({
   value: string | null;
   stageKey: string | null;
   shiftDays?: number;
-  onSave: (stageKey: string, date: string) => void;
+  /** (stage to move, date the step receives, date as typed) */
+  onSave: (stageKey: string, date: string, shown: string) => void;
   busy: boolean;
   label: string;
 }) {
@@ -295,7 +358,7 @@ function DateCell({
           setDraft(value);
           return;
         }
-        onSave(stageKey, shiftIso(next, shiftDays));
+        onSave(stageKey, shiftIso(next, shiftDays), next);
       }}
       className={cn(
         "w-[9.5rem] rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm tabular-nums",
