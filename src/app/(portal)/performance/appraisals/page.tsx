@@ -46,6 +46,8 @@ import { ActivityRecap } from "./_components/activity-recap";
 import { personActivity } from "@/lib/performance/person-activity";
 import { HrWorkflowQueue } from "./_components/hr-workflow-queue";
 import { resolveAppraisalView } from "../_components/performance-views";
+import { resolveHrTab, type HrConsoleTab } from "@/lib/performance/hr-console-tabs";
+import { HrConsoleTabBar } from "./_components/hr-console-tab-bar";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
 
@@ -63,7 +65,7 @@ function SectionSkeleton() {
 export default async function AppraisalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cycle?: string; view?: string }>;
+  searchParams: Promise<{ cycle?: string; view?: string; tab?: string }>;
 }) {
   const access = await getAccess();
   const isHr = access.isHr || access.isAdmin || access.isSystemAdmin;
@@ -77,8 +79,9 @@ export default async function AppraisalsPage({
 
   // Default to the current cycle; `?cycle=` lets the user jump to a past year.
   // `?view=` selects which single view renders (driven by the sidebar submenu).
-  const { cycle: requestedId, view: rawView } = await searchParams;
+  const { cycle: requestedId, view: rawView, tab: rawTab } = await searchParams;
   const view = resolveAppraisalView(rawView);
+  const hrTab = resolveHrTab(rawTab);
   const cycle =
     (requestedId ? visibleCycles.find((c) => c.id === requestedId) : null) ?? activeCycle;
   const isCurrent = !!cycle && cycle.status === "active";
@@ -339,11 +342,9 @@ export default async function AppraisalsPage({
       {/* HR console — org-wide dashboard + calibration for the selected year. */}
       {view === "hr" && isHr && (
         <>
-          <Suspense fallback={null}>
-            <HrWorkflowQueue cycleId={cycle?.id ?? null} />
-          </Suspense>
+          <HrConsoleTabBar current={hrTab} cycleId={cycle?.id ?? null} />
           <Suspense fallback={<SectionSkeleton />}>
-            <HrSection cycle={cycle} allCycles={allCycles} />
+            <HrSection cycle={cycle} allCycles={allCycles} tab={hrTab} />
           </Suspense>
         </>
       )}
@@ -374,9 +375,11 @@ async function RaterSection() {
 async function HrSection({
   cycle,
   allCycles,
+  tab,
 }: {
   cycle: AppraisalCycle | null;
   allCycles: AppraisalCycle[];
+  tab: HrConsoleTab;
 }) {
   const [
     cycleAppraisals,
@@ -449,26 +452,41 @@ async function HrSection({
 
   return (
     <>
-      {cycle && cycleAppraisals.length > 0 && (
-        <SummaryCards title={`HR dashboard — ${cycle.year}`} cards={hrCards} />
+      {tab === "dashboard" && (
+        <>
+          {cycle && cycleAppraisals.length > 0 && (
+            <SummaryCards title={`HR dashboard — ${cycle.year}`} cards={hrCards} />
+          )}
+          <Suspense fallback={null}>
+            <HrWorkflowQueue cycleId={cycle?.id ?? null} />
+          </Suspense>
+        </>
       )}
-      <HrConsole
-        cycles={allCycles}
-        appraisals={cycleAppraisals}
-        activeCycleId={cycle?.id ?? null}
-        cycleName={cycle?.name ?? null}
-        competencies={competencies}
-        departmentObjectives={departmentObjectives}
-        phasesByCycle={phasesByCycle}
-        progress={progressByAppraisal}
-      />
-      {calibration && (
-        <CalibrationPanel
-          data={calibration}
-          roster={calibrationRoster}
-          adjustments={calibrationAdjustments}
+      {tab !== "calibration" && (
+        <HrConsole
+          cycles={allCycles}
+          appraisals={cycleAppraisals}
+          activeCycleId={cycle?.id ?? null}
+          cycleName={cycle?.name ?? null}
+          competencies={competencies}
+          departmentObjectives={departmentObjectives}
+          phasesByCycle={phasesByCycle}
+          progress={progressByAppraisal}
+          tab={tab}
         />
       )}
+      {tab === "calibration" &&
+        (calibration ? (
+          <CalibrationPanel
+            data={calibration}
+            roster={calibrationRoster}
+            adjustments={calibrationAdjustments}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Nothing to calibrate yet — ratings appear here once managers have submitted them.
+          </p>
+        ))}
     </>
   );
 }

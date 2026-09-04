@@ -13,6 +13,7 @@ import {
   type ParticipantProgress,
 } from "@/lib/performance/stage-progress";
 import { CyclePhaseBoard, PhaseToggle, type CyclePhaseInfo } from "./cycle-phase-board";
+import type { HrConsoleTab } from "@/lib/performance/hr-console-tabs";
 import {
   RATING_BANDS,
   STATUS_LABEL,
@@ -51,6 +52,7 @@ export function HrConsole({
   departmentObjectives,
   phasesByCycle,
   progress,
+  tab = "cycle",
 }: {
   cycles: AppraisalCycle[];
   appraisals: Appraisal[];
@@ -66,6 +68,11 @@ export function HrConsole({
    * writes — see `getCycleProgress`.
    */
   progress?: Record<string, ParticipantProgress>;
+  /**
+   * Which of the console's sections to show. It was one long page; each
+   * concern is a tab now, and this component renders the one asked for.
+   */
+  tab?: HrConsoleTab;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -129,128 +136,153 @@ export function HrConsole({
     });
   }
 
+  const cycleForm = (
+    <form
+      className="grid gap-2 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        run(() =>
+          createCycle({
+            name,
+            year,
+            periodStart: start,
+            periodEnd: end,
+            goalSettingDeadline: deadline || undefined,
+            weightOkr: Number(wOkr),
+            weightCompetency: Number(wComp),
+            weightDevelopment: Number(wDev),
+            requireSecondLevel: requireSecond,
+            ratingBands: bands,
+          }),
+        );
+      }}
+    >
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Cycle name" required className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
+      <input value={start} onChange={(e) => setStart(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
+      <input value={end} onChange={(e) => setEnd(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
+      <Button type="submit" disabled={pending}>
+        <Plus className="h-4 w-4" /> Create
+      </Button>
+      <label className="text-xs text-muted-foreground lg:col-span-2">
+        Goal-setting deadline
+        <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" className="mt-1 block w-full rounded-md border bg-background px-3 py-1.5 text-sm" />
+      </label>
+      <div className="flex items-end gap-2 lg:col-span-3">
+        <label className="text-xs text-muted-foreground">
+          OKR %
+          <input value={wOkr} onChange={(e) => setWOkr(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-20 rounded-md border bg-background px-2 py-1.5 text-sm" />
+        </label>
+        <label className="text-xs text-muted-foreground">
+          Competency %
+          <input value={wComp} onChange={(e) => setWComp(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-24 rounded-md border bg-background px-2 py-1.5 text-sm" />
+        </label>
+        <label className="text-xs text-muted-foreground">
+          Development %
+          <input value={wDev} onChange={(e) => setWDev(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-24 rounded-md border bg-background px-2 py-1.5 text-sm" />
+        </label>
+        <label className="flex items-center gap-2 self-end text-xs text-muted-foreground">
+          <input type="checkbox" checked={requireSecond} onChange={(e) => setRequireSecond(e.target.checked)} />
+          Require second-level approval
+        </label>
+      </div>
+      <div className="lg:col-span-5">
+        <p className="mb-1 text-xs font-medium text-muted-foreground">
+          Rating bands — final score (%) maps to the highest threshold it meets
+        </p>
+        <BandsEditor value={bands} onChange={setBands} disabled={pending} />
+      </div>
+    </form>
+  );
+
+  const cycleTable = (
+    <div className="overflow-x-auto rounded-lg border">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="px-4 py-2 font-medium">Cycle</th>
+            <th className="px-4 py-2 font-medium">Period</th>
+            <th className="px-4 py-2 font-medium">Status</th>
+            <th className="px-4 py-2" />
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {cycles.map((c) => (
+            <CycleRow
+              key={c.id}
+              cycle={c}
+              phases={phasesByCycle?.[c.id]}
+              pending={pending}
+              run={run}
+              addParticipants={addParticipants}
+              note={addedNote}
+            />
+          ))}
+          {cycles.length === 0 && (
+            <tr>
+              <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
+                No cycles yet — create one to begin.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const completion = activeCycleId && appraisals.length > 0 && (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Completion — {cycleName ?? "selected cycle"} ({appraisals.length} employees)</h3>
+        <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => sendAppraisalReminders())}>
+          Send reminders
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {counts.map(([label, n]) => (
+          <span key={label} className="rounded-full bg-muted px-2.5 py-1 text-xs">
+            {label}: <span className="font-semibold">{n}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold">HR — appraisal cycles</h2>
       {error && (
         <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
       )}
 
-      <form
-        className="grid gap-2 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(() =>
-            createCycle({
-              name,
-              year,
-              periodStart: start,
-              periodEnd: end,
-              goalSettingDeadline: deadline || undefined,
-              weightOkr: Number(wOkr),
-              weightCompetency: Number(wComp),
-              weightDevelopment: Number(wDev),
-              requireSecondLevel: requireSecond,
-              ratingBands: bands,
-            }),
-          );
-        }}
-      >
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Cycle name" required className="rounded-md border bg-background px-3 py-2 text-sm lg:col-span-2" />
-        <input value={start} onChange={(e) => setStart(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
-        <input value={end} onChange={(e) => setEnd(e.target.value)} type="date" className="rounded-md border bg-background px-3 py-2 text-sm" />
-        <Button type="submit" disabled={pending}>
-          <Plus className="h-4 w-4" /> Create
-        </Button>
-        <label className="text-xs text-muted-foreground lg:col-span-2">
-          Goal-setting deadline
-          <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" className="mt-1 block w-full rounded-md border bg-background px-3 py-1.5 text-sm" />
-        </label>
-        <div className="flex items-end gap-2 lg:col-span-3">
-          <label className="text-xs text-muted-foreground">
-            OKR %
-            <input value={wOkr} onChange={(e) => setWOkr(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-20 rounded-md border bg-background px-2 py-1.5 text-sm" />
-          </label>
-          <label className="text-xs text-muted-foreground">
-            Competency %
-            <input value={wComp} onChange={(e) => setWComp(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-24 rounded-md border bg-background px-2 py-1.5 text-sm" />
-          </label>
-          <label className="text-xs text-muted-foreground">
-            Development %
-            <input value={wDev} onChange={(e) => setWDev(e.target.value)} type="number" min={0} max={100} className="mt-1 block w-24 rounded-md border bg-background px-2 py-1.5 text-sm" />
-          </label>
-          <label className="flex items-center gap-2 self-end text-xs text-muted-foreground">
-            <input type="checkbox" checked={requireSecond} onChange={(e) => setRequireSecond(e.target.checked)} />
-            Require second-level approval
-          </label>
-        </div>
-        <div className="lg:col-span-5">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">
-            Rating bands — final score (%) maps to the highest threshold it meets
-          </p>
-          <BandsEditor value={bands} onChange={setBands} disabled={pending} />
-        </div>
-      </form>
-
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2 font-medium">Cycle</th>
-              <th className="px-4 py-2 font-medium">Period</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2" />
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {cycles.map((c) => (
-              <CycleRow
-                key={c.id}
-                cycle={c}
-                phases={phasesByCycle?.[c.id]}
-                pending={pending}
-                run={run}
-                addParticipants={addParticipants}
-                note={addedNote}
-              />
-            ))}
-            {cycles.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
-                  No cycles yet — create one to begin.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {activeCycleId && appraisals.length > 0 && (
-        <div className="rounded-lg border bg-card p-4">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">Completion — {cycleName ?? "selected cycle"} ({appraisals.length} employees)</h3>
-            <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => sendAppraisalReminders())}>
-              Send reminders
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {counts.map(([label, n]) => (
-              <span key={label} className="rounded-full bg-muted px-2.5 py-1 text-xs">
-                {label}: <span className="font-semibold">{n}</span>
-              </span>
-            ))}
-          </div>
-        </div>
+      {tab === "dashboard" && (
+        <>
+          {completion}
+          <HrQueue appraisals={appraisals} />
+        </>
       )}
 
-      {activeCycleId && appraisals.length > 0 && (
-        <HrAppraisalList appraisals={appraisals} cycleName={cycleName} progress={progress} />
+      {tab === "cycle" && (
+        <>
+          <h2 className="text-lg font-semibold">Appraisal cycles</h2>
+          {cycleTable}
+          <h3 className="pt-2 text-sm font-semibold">Create a cycle</h3>
+          {cycleForm}
+        </>
       )}
 
-      <HrQueue appraisals={appraisals} />
-      {cycles.length > 0 && <RatingBandsManager cycles={cycles} />}
-      <DepartmentObjectivesEditor objectives={departmentObjectives} cycles={cycles} />
-      <CompetencyEditor competencies={competencies} />
+      {tab === "appraisals" && (
+        <>
+          {completion}
+          {activeCycleId && appraisals.length > 0 ? (
+            <HrAppraisalList appraisals={appraisals} cycleName={cycleName} progress={progress} />
+          ) : (
+            <p className="text-sm text-muted-foreground">No appraisals in this cycle yet.</p>
+          )}
+        </>
+      )}
+
+      {tab === "bands" && cycles.length > 0 && <RatingBandsManager cycles={cycles} />}
+      {tab === "objectives" && <DepartmentObjectivesEditor objectives={departmentObjectives} cycles={cycles} />}
+      {tab === "competencies" && <CompetencyEditor competencies={competencies} />}
     </section>
   );
 }
