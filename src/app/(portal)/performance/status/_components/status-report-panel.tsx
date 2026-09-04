@@ -7,7 +7,8 @@ import { AlertTriangle, Download, Search, UserCog } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { Button } from "@/components/ui/button";
 import { SearchSelect } from "@/components/ui/search-select";
-import { setAppraisalReviewers } from "../../appraisals/actions";
+import { clearStrayAppraisals, setAppraisalReviewers } from "../../appraisals/actions";
+import type { KeptAppraisal } from "@/lib/performance/stray-appraisals";
 import { cn } from "@/lib/utils";
 import {
   STAGE_STATE_LABEL,
@@ -97,14 +98,8 @@ export function StatusReportPanel({ report }: { report: StatusReport }) {
         <Stat label="Running late" value={report.summary.overdue} tone={report.summary.overdue > 0 ? "bad" : undefined} />
       </div>
 
-      {report.outsideRoster > 0 && (
-        <p className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          {report.outsideRoster} appraisal{report.outsideRoster === 1 ? "" : "s"} in this cycle
-          belong to people who are no longer in the performance workflow — they cannot open the
-          module, so they are left out of every figure here and are never chased. Launched under an
-          older roster rule; clear them when convenient.
-        </p>
+      {report.outsideRoster > 0 && report.selectedCycleId && (
+        <StrayBanner count={report.outsideRoster} cycleId={report.selectedCycleId} />
       )}
 
       {report.noWorkflow && (
@@ -382,6 +377,89 @@ function ReviewerEditor({
         {saved && !changed && <span className="text-xs text-emerald-700">Saved.</span>}
       </div>
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+
+/**
+ * The appraisals of people who left the roster, and the way to clear them.
+ *
+ * The banner used to end "clear them when convenient" and offer nothing to do
+ * it with, so it stood for weeks. The button removes only the empty ones and
+ * says what it kept and why; there is a second click before anything goes.
+ */
+function StrayBanner({ count, cycleId }: { count: number; cycleId: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useStatusTransition("Clearing…");
+  const [armed, setArmed] = useState(false);
+  const [result, setResult] = useState<{ removed: number; kept: KeptAppraisal[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function clear() {
+    setError(null);
+    startTransition(async () => {
+      const res = await clearStrayAppraisals(cycleId);
+      setArmed(false);
+      if (!res.ok) {
+        setError(res.error ?? "Couldn't clear them.");
+        return;
+      }
+      setResult({ removed: res.removed, kept: res.kept });
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <div className="flex flex-wrap items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <p className="min-w-0 flex-1">
+          {count} appraisal{count === 1 ? "" : "s"} in this cycle belong to people who are no
+          longer in the performance workflow — they cannot open the module, so they are left out of
+          every figure here and are never chased. Usually somebody made a contractor, deactivated, or
+          without a Performance role since the cycle launched.
+        </p>
+        {!armed ? (
+          <Button size="sm" variant="outline" disabled={pending} onClick={() => setArmed(true)}>
+            Clear the empty ones
+          </Button>
+        ) : (
+          <span className="flex items-center gap-2">
+            <Button size="sm" variant="destructive" disabled={pending} onClick={clear}>
+              {pending ? "Clearing…" : "Remove"}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => setArmed(false)}>
+              Keep them
+            </Button>
+          </span>
+        )}
+      </div>
+      {armed && (
+        <p className="mt-1.5 pl-6 text-xs">
+          Only an appraisal with nothing in it goes — no goal, no step taken, no comment, no plan,
+          no rating. Anything with content stays and is listed here with what it holds.
+        </p>
+      )}
+      {result && (
+        <div className="mt-1.5 pl-6 text-xs">
+          <p>
+            {result.removed === 0
+              ? "Nothing was removed."
+              : `Removed ${result.removed} empty appraisal${result.removed === 1 ? "" : "s"}.`}
+          </p>
+          {result.kept.length > 0 && (
+            <ul className="mt-1 list-disc pl-4">
+              {result.kept.map((k) => (
+                <li key={k.appraisalId}>
+                  <span className="font-medium">{k.employeeName}</span> kept — holds {k.holds}.
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {error && <p className="mt-1.5 pl-6 text-xs text-destructive">{error}</p>}
     </div>
   );
 }

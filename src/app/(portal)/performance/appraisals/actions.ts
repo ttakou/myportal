@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAccess } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  partitionStray,
+  type ClearStrayResult,
+  type StrayAppraisal,
+} from "@/lib/performance/stray-appraisals";
 import { notifyUsers } from "@/lib/notify";
 import { runAppraisalReminders } from "@/lib/appraisal-reminders";
 import { dispatchEvent } from "@/lib/notify-dispatch";
@@ -2013,4 +2019,133 @@ export async function submitGoalRating(input: {
   }
   rev();
   return { ok: true };
+}
+
+// --- Stray appraisals --------------------------------------------------------
+
+/**
+ * Remove the empty appraisals of people who are no longer in the workflow.
+ *
+ * A cycle creates a row for everyone on the roster at launch and nothing takes
+ * it away when the person leaves the roster — made a contractor, deactivated,
+ * stripped of the module. The status report left them out of every figure and
+ * said "clear them when convenient", and there was no way to, so the banner
+ * stood for weeks.
+ *
+ * Only an appraisal holding nothing at all is removed: no goal, no step, no
+ * comment, no plan, no rating. Anything with content stays and is reported
+ * with what it holds. Continuous entries tied to a removed appraisal are
+ * unlinked, not deleted — they belong to the person. Each removal is written
+ * to the audit log against the person it belonged to.
+ */
+export async function clearStrayAppraisals(cycleId: string): Promise<ClearStrayResult> {
+  const gate = await requireHr();
+  if (gate) return { ...gate, removed: 0, kept: [] };
+
+  const supabase = createClient();
+  const { data: cycle } = await supabase
+    .from("appraisal_cycles")
+    .select("id, tenant_id, status")
+    .eq("id", cycleId)
+    .maybeSingle();
+  if (!cycle) return { ok: false, error: "Cycle not found.", removed: 0, kept: [] };
+
+  const [{ data: roster }, { data: rows }] = await Promise.all([
+    supabase.rpc("appraisable_profiles"),
+    supabase
+      .from("appraisals")
+      .select(
+        "id, employee_id, manager_summary, employee_summary, overall_rating, final_score, discussion_date, acknowledged_at, employee:profiles!employee_id(full_name)",
+      )
+      .eq("cycle_id", cycleId),
+  ]);
+  const inWorkflow = new Set(((roster ?? []) as { id: string }[]).map((p) => p.id));
+  const stray = ((rows ?? []) as Record<string, unknown>[]).filter(
+    (r) => !inWorkflow.has(String(r.employee_id)),
+  );
+  if (stray.length === 0) return { ok: true, removed: 0, kept: [] };
+
+  const ids = stray.map((r) => String(r.id));
+  const count = async (table: string) => {
+    const { data } = await supabase.from(table).select("appraisal_id").in("appraisal_id", ids);
+    const m = new Map<string, number>();
+    for (const d of (data ?? []) as { appraisal_id: string }[])
+      m.set(d.appraisal_id, (m.get(d.appraisal_id) ?? 0) + 1);
+    return m;
+  };
+  const [goals, events, plans, comps, appeals, adjustments, continuous] = await Promise.all([
+    count("appraisal_goals"),
+    count("appraisal_events"),
+    count("appraisal_development_plans"),
+    count("appraisal_competency_ratings"),
+    count("appraisal_appeals"),
+    count("appraisal_calibration_adjustments"),
+    count("continuous_activities"),
+  ]);
+
+  const candidates: StrayAppraisal[] = stray.map((r) => {
+    const id = String(r.id);
+    const employee = r.employee as { full_name?: string } | { full_name?: string }[] | null;
+    const name = (Array.isArray(employee) ? employee[0] : employee)?.full_name ?? "—";
+    return {
+      appraisalId: id,
+      employeeName: name,
+      content: {
+        goals: goals.get(id) ?? 0,
+        events: events.get(id) ?? 0,
+        developmentPlans: plans.get(id) ?? 0,
+        competencyRatings: comps.get(id) ?? 0,
+        appeals: appeals.get(id) ?? 0,
+        calibrationAdjustments: adjustments.get(id) ?? 0,
+        continuousLinks: continuous.get(id) ?? 0,
+        managerSummary: !!r.manager_summary,
+        employeeSummary: !!r.employee_summary,
+        rated: r.overall_rating != null || r.final_score != null,
+        discussed: !!r.discussion_date,
+        acknowledged: !!r.acknowledged_at,
+      },
+    };
+  });
+  const { clearable, kept } = partitionStray(candidates);
+  if (clearable.length === 0) return { ok: true, removed: 0, kept };
+
+  const { error } = await supabase
+    .from("appraisals")
+    .delete()
+    .in(
+      "id",
+      clearable.map((c) => c.appraisalId),
+    );
+  if (error) return { ok: false, error: error.message, removed: 0, kept };
+
+  // The row is gone, so its own history cannot carry the record. The audit log
+  // is trigger-fed and closed to the app client; the service role writes there
+  // the way the impersonation trail does. Best-effort: the removal has already
+  // happened and is the thing that matters.
+  try {
+    const admin = createAdminClient();
+    if (admin) {
+      const actor = await uid();
+      await admin.from("audit_log").insert(
+        clearable.map((c) => ({
+          tenant_id: cycle.tenant_id,
+          actor_id: actor,
+          table_name: "appraisals",
+          op: "DELETE",
+          row_id: c.appraisalId,
+          changes: {
+            reason: "outside the performance roster, and empty",
+            employee: c.employeeName,
+            cycle_id: cycleId,
+          },
+        })),
+      );
+    }
+  } catch {
+    // ignore — see above
+  }
+
+  rev();
+  revalidatePath("/performance/status");
+  return { ok: true, removed: clearable.length, kept };
 }
