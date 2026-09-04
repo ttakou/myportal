@@ -116,9 +116,13 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
   }
 
   // Poll the feed; on a *new* unread, chime and (if the tab is hidden) flash the
-  // title. Runs regardless of visibility so a backgrounded tab still alerts.
+  // title. Once a minute, and only while the tab is visible: every poll is a
+  // server action that runs the middleware's auth and role checks, and a tab
+  // left open all day was doing that every twenty seconds for nobody. A hidden
+  // tab catches up the moment it is looked at again.
   useEffect(() => {
     const tick = async () => {
+      if (document.hidden) return;
       const f = await fetchMyNotifications();
       const emergencyUnread = f.items.filter((n) => n.category === "emergency" && !n.read_at).length;
       if (f.unread > prevUnread.current) {
@@ -130,8 +134,15 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
       prevEmergency.current = emergencyUnread;
       setFeed(f);
     };
-    const id = setInterval(() => void tick(), 20000);
-    return () => clearInterval(id);
+    const id = setInterval(() => void tick(), 60_000);
+    const onVisible = () => {
+      if (!document.hidden) void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   // Stop the title flash as soon as the user looks back at the tab.
