@@ -125,8 +125,8 @@ async function appraisableIds(): Promise<Set<string>> {
   return new Set(((data ?? []) as { id: string }[]).map((p) => p.id));
 }
 
-/** Active people HR can name as a reviewer. */
-async function activeColleagues(): Promise<Colleague[]> {
+/** Active people HR can name as a reviewer or a line manager. */
+export async function activeColleagues(): Promise<Colleague[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("profiles")

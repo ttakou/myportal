@@ -48,6 +48,9 @@ import { HrWorkflowQueue } from "./_components/hr-workflow-queue";
 import { resolveAppraisalView } from "../_components/performance-views";
 import { resolveHrTab, type HrConsoleTab } from "@/lib/performance/hr-console-tabs";
 import { HrConsoleTabBar } from "./_components/hr-console-tab-bar";
+import { LineManagersPanel } from "./_components/line-managers-panel";
+import { getReportingLines } from "@/lib/performance/reporting-lines-data";
+import { activeColleagues } from "@/lib/performance/status-report";
 
 const COMPLETED_STATUSES = new Set(["completed", "closed"]);
 
@@ -352,6 +355,20 @@ export default async function AppraisalsPage({
   );
 }
 
+/** Streamed: every member of staff with their reporting line and this cycle's reviewer. */
+async function LineManagersSection({
+  cycleId,
+  cycleName,
+}: {
+  cycleId: string | null;
+  cycleName: string | null;
+}) {
+  const [rows, colleagues] = await Promise.all([getReportingLines(cycleId), activeColleagues()]);
+  return (
+    <LineManagersPanel rows={rows} colleagues={colleagues} cycleId={cycleId} cycleName={cycleName} />
+  );
+}
+
 /** Streamed: the manager's direct line, each person with the phase they are in. */
 async function TeamLineSection({ cycleId, canAct }: { cycleId: string | null; canAct: boolean }) {
   const line = await getTeamLine(cycleId);
@@ -462,7 +479,12 @@ async function HrSection({
           </Suspense>
         </>
       )}
-      {tab !== "calibration" && (
+      {tab === "managers" && (
+        <Suspense fallback={<SectionSkeleton />}>
+          <LineManagersSection cycleId={cycle?.id ?? null} cycleName={cycle?.name ?? null} />
+        </Suspense>
+      )}
+      {tab !== "calibration" && tab !== "managers" && (
         <HrConsole
           cycles={allCycles}
           appraisals={cycleAppraisals}

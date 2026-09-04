@@ -2172,3 +2172,74 @@ export async function clearStrayAppraisals(cycleId: string): Promise<ClearStrayR
   revalidatePath("/performance/status");
   return { ok: true, removed: clearable.length, kept };
 }
+
+
+/**
+ * Set who a member of staff reports to, and optionally who reviews them this
+ * cycle, from the HR console's Line managers tab.
+ *
+ * The reporting line is written through the caller's own session so the
+ * profile's audit trigger records who changed it — the 30 July bulk edit that
+ * turned five employees into contractors carried no actor, and this must not
+ * add to that pattern. Clearing the manager (null) is allowed on the profile;
+ * the appraisal keeps its reviewer in that case, since an appraisal with nobody
+ * to review it is the problem this tab exists to fix.
+ */
+export async function setStaffLineManager(input: {
+  profileId: string;
+  managerId: string | null;
+  cycleId?: string | null;
+  updateAppraisal?: boolean;
+}): Promise<ActionResult> {
+  const gate = await requireHr();
+  if (gate) return gate;
+  if (input.managerId && input.managerId === input.profileId)
+    return { ok: false, error: "Somebody cannot be their own line manager." };
+
+  const supabase = createClient();
+  if (input.managerId) {
+    const { data: m } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", input.managerId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!m) return { ok: false, error: "Choose an active colleague as line manager." };
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ manager_id: input.managerId })
+    .eq("id", input.profileId);
+  if (error) return { ok: false, error: error.message };
+
+  if (input.updateAppraisal && input.managerId && input.cycleId) {
+    const { data: ap } = await supabase
+      .from("appraisals")
+      .select("id, second_level_id")
+      .eq("cycle_id", input.cycleId)
+      .eq("employee_id", input.profileId)
+      .maybeSingle();
+    if (ap) {
+      // Only the line manager changes; a second-level reviewer already named
+      // stays named. Passing nothing here would clear them.
+      const secondLevel = (ap.second_level_id as string | null) ?? null;
+      const res = await setAppraisalReviewers({
+        appraisalId: String(ap.id),
+        managerId: input.managerId,
+        secondLevelId: secondLevel === input.managerId ? null : secondLevel,
+      });
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: `Line manager saved, but the appraisal's reviewer was not: ${res.error ?? "unknown error"}`,
+        };
+      }
+    }
+  }
+
+  rev();
+  revalidatePath("/performance/status");
+  revalidatePath("/admin");
+  return { ok: true };
+}

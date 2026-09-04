@@ -12,6 +12,7 @@ describe("HR_CONSOLE_TABS", () => {
       "dashboard",
       "cycle",
       "appraisals",
+      "managers",
       "competencies",
       "objectives",
       "bands",
