@@ -10,6 +10,7 @@ import {
   getRotationReport,
 } from "@/lib/offshore";
 import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
+import { MUSTER_OUTCOME_LABEL } from "@/lib/offshore/muster-closeout";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -169,11 +170,18 @@ export async function GET(req: NextRequest) {
       ["Muster roll-call", d.kind],
       ["Started", d.started_at],
       ["Ended", d.ended_at],
+      ["Closed out", d.voided ? "VOID" : d.closed_out_at],
+      ["Note", d.close_note],
       [],
-      ["Muster", "Name", "Status"],
+      ["Muster", "Name", "Outcome", "Accounted at"],
     ];
     for (const c of [...d.checkins].sort((a, b) => (a.lifeboat ?? "").localeCompare(b.lifeboat ?? "") || a.name.localeCompare(b.name)))
-      rows.push([c.lifeboat ?? "Unassigned", c.name, c.accounted ? "Accounted" : "UNACCOUNTED"]);
+      rows.push([
+        c.lifeboat ?? "Unassigned",
+        c.name,
+        c.outcome ? MUSTER_OUTCOME_LABEL[c.outcome] : "OPEN",
+        c.accounted_at,
+      ]);
     return csvResponse(`muster-${d.started_at.slice(0, 10)}.csv`, rows);
   }
 

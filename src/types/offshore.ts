@@ -338,6 +338,12 @@ export interface MusterDrill {
   started_at: string;
   ended_at: string | null;
   kind: string;
+  /** Set when every person has an outcome and the roll-call is final. */
+  closed_out_at: string | null;
+  closed_out_by_name: string | null;
+  close_note: string | null;
+  /** A test run or an abandoned roll-call, kept for the record but not counted. */
+  voided: boolean;
   checkins: MusterCheckin[];
 }
 export interface MusterCheckin {
@@ -346,6 +352,9 @@ export interface MusterCheckin {
   name: string;
   lifeboat: string | null;
   accounted: boolean;
+  /** Recorded at close-out: accounted, no-show, or never on board. Null while open. */
+  outcome: "accounted" | "no_show" | "not_on_board" | null;
+  accounted_at: string | null;
 }
 
 export interface CertAlert {
