@@ -15,7 +15,7 @@ import {
   getActiveMusterDrill,
   getMusterDrills,
   getCrewChangeSuggestions,
-  getOffshoreDefaultMode,
+  getOffshoreScheduleSettings,
   getCrews,
   getEmergencyRoles,
   getEmergencyTeams,
@@ -120,8 +120,8 @@ export default async function OffshorePage({
     musterDrillHistory,
     trips,
     flights,
-    // Tenant default for how crew changes open (auto vs manual).
-    defaultMode,
+    // Tenant defaults: how crew changes open, and whether the nightly job acts.
+    schedule,
   ] = await Promise.all([
     want("crews", getCrews, []),
     want("rooms", getRooms, []),
@@ -143,7 +143,7 @@ export default async function OffshorePage({
     want("musterDrillHistory", getMusterDrills, []),
     want("trips", getAllOffshoreTrips, []),
     want("flights", getFlights, []),
-    want("defaultMode", getOffshoreDefaultMode, "auto" as const),
+    want("schedule", getOffshoreScheduleSettings, { mode: "auto" as const, nightly: "prompt" as const }),
   ]);
 
   return (
@@ -168,9 +168,9 @@ export default async function OffshorePage({
       {managementView === "dashboard" && (
         <div className="space-y-4">
           {/* The tenant-wide default crew-change mode is a manager setting. */}
-          {offshoreManager && <DefaultModeToggle mode={defaultMode} />}
+          {offshoreManager && <DefaultModeToggle mode={schedule.mode} nightly={schedule.nightly} />}
           {suggestions.length > 0 && (
-            <CrewChangeSuggestions items={suggestions} defaultMode={defaultMode} />
+            <CrewChangeSuggestions items={suggestions} defaultMode={schedule.mode} />
           )}
         </div>
       )}
