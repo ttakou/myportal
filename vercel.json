@@ -5,6 +5,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron/offshore-schedule",
+      "schedule": "0 4 * * *"
+    },
+    {
       "path": "/api/cron/flights",
       "schedule": "0 6 * * *"
     },

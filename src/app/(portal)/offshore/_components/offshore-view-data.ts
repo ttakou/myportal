@@ -36,7 +36,7 @@ export type ManagementDataKey =
   | "musterDrillHistory"
   | "trips"
   | "flights"
-  | "defaultMode";
+  | "schedule";
 
 export const VIEW_DATA: Record<OffshoreViewKey, readonly ManagementDataKey[]> = {
   // Self-service and "Where is…" load their own data on the page.
@@ -51,10 +51,10 @@ export const VIEW_DATA: Record<OffshoreViewKey, readonly ManagementDataKey[]> = 
     "roster",
     "visits",
     "trips",
-    // The crew-change suggestions and the tenant's default mode sit above
-    // the overview on the page.
+    // The crew-change suggestions and the schedule settings sit above the
+    // overview on the page.
     "suggestions",
-    "defaultMode",
+    "schedule",
   ],
   board: ["pob", "emergencyRoles", "emergencyTeams", "musterGroups"],
   installations: ["manageInstallations"],

@@ -8,6 +8,7 @@ import type {
   TripMode,
 } from "@/types/offshore";
 import { DAY_MS, one, todayIso } from "./_shared";
+import type { OffshoreScheduleSettings } from "./schedule-settings";
 import { nextChangeDate } from "./rotation-math";
 import { getRoster } from "./roster";
 
@@ -17,15 +18,27 @@ import { getRoster } from "./roster";
  * changes due" prompts open. Defaults to 'auto' when unset. RLS-scoped.
  */
 export async function getOffshoreDefaultMode(): Promise<TripMode> {
+  return (await getOffshoreScheduleSettings()).mode;
+}
+
+/**
+ * The two switches behind the nightly job: the crew-change mode, and whether
+ * the schedule may open crew changes itself overnight ("act") or only prompt
+ * and remind ("prompt", the default). Both live on the offshore module's
+ * tenant_services.settings. RLS-scoped.
+ */
+export async function getOffshoreScheduleSettings(): Promise<OffshoreScheduleSettings> {
   const supabase = createClient();
   const { data } = await supabase
     .from("tenant_services")
     .select("settings, services_catalog!inner(slug)")
     .eq("services_catalog.slug", "offshore")
     .maybeSingle();
-  const mode = (data?.settings as { default_crew_change_mode?: string } | null)
-    ?.default_crew_change_mode;
-  return mode === "manual" ? "manual" : "auto";
+  const s = (data?.settings ?? {}) as { default_crew_change_mode?: string; nightly_crew_changes?: string };
+  return {
+    mode: s.default_crew_change_mode === "manual" ? "manual" : "auto",
+    nightly: s.nightly_crew_changes === "act" ? "act" : "prompt",
+  };
 }
 
 
