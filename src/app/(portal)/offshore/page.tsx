@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { FileBarChart } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
@@ -41,6 +40,8 @@ import { PendingApprovals } from "./_components/pending-approvals";
 import { WhereIsPicker } from "./_components/where-is";
 import { WhereIsCard } from "./_components/where-is-card";
 import { getWhereabouts, getWhereaboutsPeople } from "@/lib/offshore/whereabouts";
+import { effectiveManagementView, managementDataFor, type ManagementDataKey } from "./_components/offshore-view-data";
+import type { AccommodationSummary, PobBreakdown } from "@/types/offshore";
 
 export default async function OffshorePage({
   searchParams,
@@ -73,14 +74,22 @@ export default async function OffshorePage({
   // needs none of the management area's data, so that is not loaded for it.
   const showWhereIs = showManagement && activeView === "whereis";
   const showMonolith = showManagement && !showWhereIs;
+  // The view that will render, after the role fallback — so the data loaded
+  // below is the data that view needs, not the data a deep link asked for.
+  const managementView = showMonolith ? effectiveManagementView(activeView, offshoreFlags) : null;
+  const need = managementView ? managementDataFor(managementView) : new Set<ManagementDataKey>();
+  // Load a dataset only when the view on screen needs it; otherwise hand the
+  // component the empty value so the props stay simple.
+  const want = <T,>(key: ManagementDataKey, load: () => Promise<T>, empty: T): Promise<T> =>
+    need.has(key) ? load() : Promise.resolve(empty);
 
   const [mine, installations, myVisits, suggestionLists, boardPeople, me, approvalVisits, approvalTrips] =
     await Promise.all([
-      getMyOffshoreTrips(),
+      showMyTrips ? getMyOffshoreTrips() : Promise.resolve([]),
       getInstallations(),
-      getMyVisitRequests(),
-      getVisitorSuggestions(),
-      getAssignableEmployees(),
+      showMyTrips ? getMyVisitRequests() : Promise.resolve([]),
+      showMyTrips ? getVisitorSuggestions() : Promise.resolve({ names: [], companies: [] }),
+      showMyTrips ? getAssignableEmployees() : Promise.resolve([]),
       createClient().auth.getUser().then((r) => r.data.user),
       // Approvers landing on "My trips" see their pending queue without having
       // to open the management area (fetched there separately when shown).
@@ -113,31 +122,29 @@ export default async function OffshorePage({
     flights,
     // Tenant default for how crew changes open (auto vs manual).
     defaultMode,
-  ] = showMonolith
-    ? await Promise.all([
-        getCrews(),
-        getRooms(),
-        getRoster(),
-        getAddableProfiles(),
-        getPobBreakdown(),
-        getAccommodationSummary(),
-        getCertAlerts(),
-        getAllVisitRequests(),
-        getManifests(),
-        getAllInstallations(),
-        getRotationCalendar(8),
-        getAssignableEmployees(),
-        getCrewChangeSuggestions(),
-        getEmergencyRoles(),
-        getEmergencyTeams(),
-        getMusterGroups(),
-        getActiveMusterDrill(),
-        getMusterDrills(),
-        getAllOffshoreTrips(),
-        getFlights(),
-        getOffshoreDefaultMode(),
-      ])
-    : [[], [], [], [], null, null, [], [], [], [], { days: [], crews: [] }, [], [], [], [], [], null, [], [], [], "auto" as const];
+  ] = await Promise.all([
+    want("crews", getCrews, []),
+    want("rooms", getRooms, []),
+    want("roster", getRoster, []),
+    want("addable", getAddableProfiles, []),
+    want("pob", getPobBreakdown, null as PobBreakdown | null),
+    want("accommodation", getAccommodationSummary, null as AccommodationSummary | null),
+    want("certAlerts", getCertAlerts, []),
+    want("visits", getAllVisitRequests, []),
+    want("manifests", getManifests, []),
+    want("manageInstallations", getAllInstallations, []),
+    want("calendar", () => getRotationCalendar(8), { days: [], crews: [] }),
+    want("employees", getAssignableEmployees, []),
+    want("suggestions", getCrewChangeSuggestions, []),
+    want("emergencyRoles", getEmergencyRoles, []),
+    want("emergencyTeams", getEmergencyTeams, []),
+    want("musterGroups", getMusterGroups, []),
+    want("musterDrill", getActiveMusterDrill, null),
+    want("musterDrillHistory", getMusterDrills, []),
+    want("trips", getAllOffshoreTrips, []),
+    want("flights", getFlights, []),
+    want("defaultMode", getOffshoreDefaultMode, "auto" as const),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -158,7 +165,7 @@ export default async function OffshorePage({
         )}
       </div>
 
-      {showManagement && activeView === "dashboard" && (
+      {managementView === "dashboard" && (
         <div className="space-y-4">
           {/* The tenant-wide default crew-change mode is a manager setting. */}
           {offshoreManager && <DefaultModeToggle mode={defaultMode} />}
@@ -172,9 +179,9 @@ export default async function OffshorePage({
         <WhereIsSection selectedId={person ?? null} />
       )}
 
-      {showMonolith && pobBreakdown && accommodation && (
-        <Suspense fallback={null}>
+      {managementView && (
         <OffshoreManagement
+          view={managementView}
           flags={offshoreFlags}
           crews={crews}
           rooms={rooms}
@@ -199,7 +206,6 @@ export default async function OffshorePage({
           musterDrill={musterDrill}
           musterDrillHistory={musterDrillHistory}
         />
-        </Suspense>
       )}
 
       {/* "My trips" lands on top — the user's own trips first, then the request forms. */}
