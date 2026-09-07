@@ -38,13 +38,16 @@ import { CrewChangeSuggestions } from "./_components/crew-change-suggestions";
 import { DefaultModeToggle } from "./_components/default-mode-toggle";
 import { VisitorRequestForm } from "./_components/visitor-request-form";
 import { PendingApprovals } from "./_components/pending-approvals";
+import { WhereIsPicker } from "./_components/where-is";
+import { WhereIsCard } from "./_components/where-is-card";
+import { getWhereabouts, getWhereaboutsPeople } from "@/lib/offshore/whereabouts";
 
 export default async function OffshorePage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; person?: string }>;
 }) {
-  const { view } = await searchParams;
+  const { view, person } = await searchParams;
   const access = await getAccess();
   const isAdmin = isAdminRole(await getCurrentRole());
   // Full managers see and edit everything; the Dispatcher also reaches the
@@ -66,6 +69,10 @@ export default async function OffshorePage({
   const activeView = view ?? "mytrips";
   const showManagement = canManage && activeView !== "mytrips";
   const showMyTrips = !showManagement;
+  // "Where is…" is answered here on the server for one person at a time; it
+  // needs none of the management area's data, so that is not loaded for it.
+  const showWhereIs = showManagement && activeView === "whereis";
+  const showMonolith = showManagement && !showWhereIs;
 
   const [mine, installations, myVisits, suggestionLists, boardPeople, me, approvalVisits, approvalTrips] =
     await Promise.all([
@@ -106,7 +113,7 @@ export default async function OffshorePage({
     flights,
     // Tenant default for how crew changes open (auto vs manual).
     defaultMode,
-  ] = showManagement
+  ] = showMonolith
     ? await Promise.all([
         getCrews(),
         getRooms(),
@@ -161,7 +168,11 @@ export default async function OffshorePage({
         </div>
       )}
 
-      {showManagement && pobBreakdown && accommodation && (
+      {showWhereIs && (
+        <WhereIsSection selectedId={person ?? null} />
+      )}
+
+      {showMonolith && pobBreakdown && accommodation && (
         <Suspense fallback={null}>
         <OffshoreManagement
           flags={offshoreFlags}
@@ -217,6 +228,34 @@ export default async function OffshorePage({
           />
         </>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * "Where is…": pick a name, read where the schedule puts them and which bed is
+ * theirs. The picker is the only client piece; the answer is rendered here.
+ */
+async function WhereIsSection({ selectedId }: { selectedId: string | null }) {
+  const [people, found] = await Promise.all([
+    getWhereaboutsPeople(),
+    selectedId ? getWhereabouts(selectedId) : Promise.resolve(null),
+  ]);
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">Where is…</h2>
+        <p className="text-sm text-muted-foreground">
+          Where the rotation schedule puts somebody today, what the trips record, and the bed that
+          is theirs — the one in use while on board, otherwise their default.
+        </p>
+      </div>
+      <WhereIsPicker people={people} selectedId={selectedId} />
+      {selectedId && !found && (
+        <p className="text-sm text-muted-foreground">Nobody with that id.</p>
+      )}
+      {found && <WhereIsCard w={found} />}
     </div>
   );
 }

@@ -23,6 +23,7 @@ export type OffshoreViewKey =
   | "installations"
   | "history"
   | "staff-history"
+  | "whereis"
   | "mytrips";
 
 export interface OffshoreView {
@@ -49,6 +50,7 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "bedboard", label: "Bed board", icon: "BedSingle" },
   { key: "catering", label: "Catering", icon: "UtensilsCrossed" },
   { key: "roster", label: "Offshore staff", icon: "Users" },
+  { key: "whereis", label: "Where is…", icon: "MapPin" },
   { key: "assign", label: "Assign crews", icon: "UserCog" },
   { key: "register", label: "Register staff", icon: "UserPlus" },
   { key: "visitors", label: "Visitors", icon: "Plane" },
@@ -139,6 +141,8 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
   installations: "none",
   history: "none",
   "staff-history": "none",
+  // Finding somebody is reading, not dispatching.
+  whereis: "view",
 };
 
 /** The Dispatcher's (or full manager's) access level for one management view. */
@@ -204,6 +208,7 @@ export const OFFSHORE_HUBS: OffshoreHub[] = [
       { key: "register", label: "Register staff" },
     ],
   },
+  { key: "whereis", label: "Where is…", icon: "MapPin" },
   {
     key: "rooms", label: "Accommodation", icon: "BedDouble",
     tabs: [
