@@ -4,6 +4,8 @@ import { getAccess } from "@/lib/auth";
 import { OFFSHORE_STATUS_LABEL, type OffshoreStatus } from "@/types/offshore";
 import { isWorkingDay } from "@/lib/canteen-entitlements";
 import { one } from "@/lib/supabase/row-helpers";
+import { crewStatus, currentCrewChange, type CrewChange, type CrewStatus } from "@/lib/offshore/crew-change";
+import { getOffshoreDefaultInstallation } from "@/lib/offshore/crews";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -20,6 +22,11 @@ export interface DashboardOffshore {
     statusLabel: string;
     active: boolean;
   } | null;
+  /**
+   * Where the crew's schedule puts this person today, and the record read
+   * against it. Null for somebody on no crew, or a crew with no cycle.
+   */
+  crewChange: (CrewChange & { installation: string | null; status: CrewStatus }) | null;
 }
 
 export interface DashboardCount {
@@ -92,7 +99,7 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
     supabase
       .from("offshore_staff")
       .select(
-        "fixed_bed, lifeboat, crew:offshore_crews(name)," +
+        "fixed_bed, lifeboat, crew:offshore_crews(name, offshore_days, onshore_days, cycle_start_date, installation:offshore_installations(name))," +
           " room:offshore_rooms(room_number, block, lifeboat)",
       )
       .eq("profile_id", user.id)
@@ -116,20 +123,70 @@ export async function getMyDashboard(): Promise<DashboardData | null> {
   const s = (staff ?? null) as Record<string, any> | null;
   if (s || tripRows.length > 0) {
     const room = one<{ room_number?: string; block?: string; lifeboat?: string }>(s?.room);
+    const crew = one<{
+      name?: string;
+      offshore_days?: number;
+      onshore_days?: number;
+      cycle_start_date?: string | null;
+      installation?: { name?: string } | { name?: string }[] | null;
+    }>(s?.crew);
     // Current/next trip: first one still running or upcoming, else the latest.
     const upcoming =
       tripRows.find((t) => ((t.demob_date as string) ?? (t.mobilize_date as string)) >= today) ??
       tripRows[tripRows.length - 1] ??
       null;
+    // Where a crew change goes: the trip's installation, else the crew's, else
+    // the tenant's default — every crew change here goes to Juliet, and most
+    // rows named nothing.
+    const fallbackInstallation =
+      one<{ name?: string }>(crew?.installation ?? null)?.name ??
+      (await getOffshoreDefaultInstallation())?.name ??
+      null;
+    const tripInstallation =
+      one<{ name?: string }>(upcoming?.installation)?.name ?? fallbackInstallation;
+
+    // The schedule's reading of today, read against the latest recorded trip.
+    // Late and early comings and goings do not move the schedule.
+    let crewChange: DashboardOffshore["crewChange"] = null;
+    if (crew && crew.offshore_days != null && crew.onshore_days != null) {
+      const change = currentCrewChange(
+        {
+          offshore_days: Number(crew.offshore_days),
+          onshore_days: Number(crew.onshore_days),
+          cycle_start_date: crew.cycle_start_date ?? null,
+        },
+        today,
+      );
+      if (change) {
+        const latest = tripRows[tripRows.length - 1] ?? null;
+        crewChange = {
+          ...change,
+          installation: fallbackInstallation,
+          status: crewStatus(
+            change,
+            latest
+              ? {
+                  mobilize: latest.mobilize_date as string,
+                  demob: (latest.demob_date as string | null) ?? null,
+                  status: String(latest.status),
+                }
+              : null,
+            today,
+          ),
+        };
+      }
+    }
+
     offshore = {
       isStaff: Boolean(s),
       station: (room?.lifeboat as string | null) ?? (s?.lifeboat as string | null) ?? null,
-      crew: one<{ name?: string }>(s?.crew)?.name ?? null,
+      crew: crew?.name ?? null,
       room: room ? [room.block, room.room_number].filter(Boolean).join(" ") || null : null,
       bed: (upcoming?.bed_no as string | null) ?? (s?.fixed_bed as string | null) ?? null,
+      crewChange,
       trip: upcoming
         ? {
-            installation: one<{ name?: string }>(upcoming.installation)?.name ?? null,
+            installation: tripInstallation,
             mobilize: upcoming.mobilize_date as string,
             demob: (upcoming.demob_date as string | null) ?? null,
             statusLabel: OFFSHORE_STATUS_LABEL[upcoming.status as OffshoreStatus] ?? upcoming.status,
