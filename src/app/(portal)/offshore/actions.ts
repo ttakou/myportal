@@ -17,3 +17,4 @@ export * from "./_actions/muster";
 export * from "./_actions/emergency";
 export * from "./_actions/mobilise";
 export * from "./_actions/settings";
+export * from "./_actions/self-declare";

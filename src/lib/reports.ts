@@ -1036,7 +1036,16 @@ export interface OffshoreCertRow {
 
 export interface OffshoreCertReport {
   rows: OffshoreCertRow[];
-  summary: { nonCompliant: number; expiring: number; valid: number; total: number };
+  summary: {
+    nonCompliant: number;
+    expiring: number;
+    valid: number;
+    total: number;
+    /** Everyone on the roster in scope, listed or not. */
+    roster: number;
+    /** Of those, people with no certificate date of any kind recorded. */
+    undeclared: number;
+  };
 }
 
 export interface OffshoreCertFilters {
@@ -1082,10 +1091,16 @@ export async function getOffshoreCertReport(
   const in30 = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
 
   const rows: OffshoreCertRow[] = [];
+  let roster = 0;
+  let undeclared = 0;
   for (const r of (data ?? []) as Record<string, any>[]) {
     const prof = one<{ full_name?: string; department?: string }>(r.profile);
     const department = prof?.department ?? null;
     if (filters.department && department !== filters.department) continue;
+    roster += 1;
+    // No date at all is a blank on the roster, not a lapsed certificate; the
+    // report must say how much of its red is that.
+    if (!r.medical_expiry && !r.bosiet_expiry && !r.huet_expiry) undeclared += 1;
 
     const medical = classify(r.medical_expiry ?? null, today, in30);
     const bosiet = classify(r.bosiet_expiry ?? null, today, in30);
@@ -1119,6 +1134,8 @@ export async function getOffshoreCertReport(
       expiring: rows.filter((r) => r.worst === "expiring").length,
       valid: rows.filter((r) => r.worst === "valid").length,
       total: rows.length,
+      roster,
+      undeclared,
     },
   };
 }

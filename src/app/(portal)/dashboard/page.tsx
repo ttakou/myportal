@@ -19,6 +19,8 @@ import { VISIT_LABEL } from "@/types/medical";
 import { getMyAttendance } from "@/lib/staff-attendance";
 import { getMenu, today } from "@/lib/canteen";
 import { SelfCheckIn } from "./_components/self-check-in";
+import { OffshoreProfilePrompt } from "./_components/offshore-profile-prompt";
+import { getMyOffshoreProfile } from "@/lib/offshore/my-profile";
 import { MEAL_PERIODS, MEAL_PERIOD_LABEL } from "@/types/canteen";
 import { cn } from "@/lib/utils";
 
@@ -85,6 +87,8 @@ export default async function DashboardPage() {
   // shown as an add-on section below.
   const isStaff = Boolean(offshore?.isStaff);
   const isOffshore = isStaff;
+  // The safety details only the person can supply, asked for right here.
+  const myProfile = isStaff ? await getMyOffshoreProfile() : null;
   const focusServices = isOffshore
     ? []
     : FOCUS_SLUGS.map((slug) => services.find((s) => s.slug === slug)).filter(
@@ -148,6 +152,9 @@ export default async function DashboardPage() {
 
       {/* Self check-in — geofenced to the base ("I'm in") */}
       <SelfCheckIn initial={myAttendance} />
+
+      {/* Offshore staff: the safety fields the roster has no record of. */}
+      {myProfile && myProfile.gaps.length > 0 && <OffshoreProfilePrompt profile={myProfile} />}
 
       {/* Offshore personalization */}
       {offshore && (
