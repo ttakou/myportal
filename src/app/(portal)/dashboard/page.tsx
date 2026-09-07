@@ -158,20 +158,37 @@ export default async function DashboardPage() {
           <div className="rounded-lg border bg-card p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="grid flex-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Stat
-                  icon={<Ship className="h-4 w-4" />}
-                  label="Rotation"
-                  value={
-                    offshore.trip
-                      ? `${offshore.trip.installation ?? "—"}`
-                      : "No trip scheduled"
-                  }
-                  sub={
-                    offshore.trip
-                      ? `${offshore.trip.mobilize}${offshore.trip.demob ? ` → ${offshore.trip.demob}` : ""} · ${offshore.trip.statusLabel}`
-                      : undefined
-                  }
-                />
+                {/* The crew change from the schedule leads; the last recorded
+                    trip sits beneath it. The schedule is the source for the
+                    dates — a late demob or an early return is noted, not
+                    used to move the next crew change. */}
+                {offshore.crewChange ? (
+                  <Stat
+                    icon={<Ship className="h-4 w-4" />}
+                    label={offshore.crewChange.phase === "offshore" ? "Current crew change" : "Next crew change"}
+                    value={`${offshore.crewChange.installation ?? "—"} · ${offshore.crewChange.hitchFrom} → ${offshore.crewChange.hitchTo}`}
+                    sub={
+                      offshore.trip
+                        ? `Last trip ${offshore.trip.mobilize}${offshore.trip.demob ? ` → ${offshore.trip.demob}` : ""} · ${offshore.trip.statusLabel}`
+                        : "No trip recorded yet"
+                    }
+                  />
+                ) : (
+                  <Stat
+                    icon={<Ship className="h-4 w-4" />}
+                    label="Rotation"
+                    value={
+                      offshore.trip
+                        ? `${offshore.trip.installation ?? "—"}`
+                        : "No trip scheduled"
+                    }
+                    sub={
+                      offshore.trip
+                        ? `${offshore.trip.mobilize}${offshore.trip.demob ? ` → ${offshore.trip.demob}` : ""} · ${offshore.trip.statusLabel}`
+                        : undefined
+                    }
+                  />
+                )}
                 {/* Muster station, cabin and crew are roster concepts — only
                     meaningful for offshore staff, so hide them for trip-only users. */}
                 {isStaff && (
@@ -201,10 +218,29 @@ export default async function DashboardPage() {
                 <Siren className="h-4 w-4" /> Emergency support
               </Link>
             </div>
-            {offshore.trip?.active && (
-              <p className="mt-3 rounded-md bg-green-50 px-3 py-1.5 text-xs font-medium text-green-800">
-                You are currently mobilised offshore.
-              </p>
+            {offshore.crewChange ? (
+              <div
+                className={cn(
+                  "mt-3 rounded-md px-3 py-1.5 text-xs font-medium",
+                  offshore.crewChange.status.kind === "offshore" && "bg-green-50 text-green-800",
+                  offshore.crewChange.status.kind === "onshore" && "bg-muted text-muted-foreground",
+                  (offshore.crewChange.status.kind === "overdue_off" ||
+                    offshore.crewChange.status.kind === "due_offshore" ||
+                    offshore.crewChange.status.kind === "off_early") &&
+                    "bg-amber-50 text-amber-800",
+                )}
+              >
+                <p>{offshore.crewChange.status.line}</p>
+                {offshore.crewChange.status.note && (
+                  <p className="mt-0.5 font-normal">{offshore.crewChange.status.note}</p>
+                )}
+              </div>
+            ) : (
+              offshore.trip?.active && (
+                <p className="mt-3 rounded-md bg-green-50 px-3 py-1.5 text-xs font-medium text-green-800">
+                  You are currently mobilised offshore.
+                </p>
+              )
             )}
           </div>
         </section>

@@ -6,6 +6,7 @@ import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import type { CrewChangePrefill, CrewChangePrefillMember } from "@/types/offshore";
 import { scheduleWindow } from "@/lib/offshore/rotation-math";
+import { getOffshoreDefaultInstallation } from "@/lib/offshore/crews";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -96,6 +97,8 @@ export async function boardMember(
       toIso = window.toIso;
     }
   }
+  // A crew that names no installation goes where every crew change goes.
+  installationId = installationId ?? (await getOffshoreDefaultInstallation())?.id ?? null;
 
   const { error } = await supabase.from("offshore_trips").insert({
     tenant_id: tenant,
@@ -140,6 +143,8 @@ export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
     .eq("id", crewId)
     .maybeSingle();
   if (!crew) return { ok: false, error: "Crew not found." };
+  const defaultInstallationId =
+    (crew.installation_id as string | null) ?? (await getOffshoreDefaultInstallation())?.id ?? null;
 
   const { fromIso, toIso } = scheduleWindow(
     {
@@ -170,7 +175,7 @@ export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
     .map((m) => ({
       tenant_id: tenant,
       profile_id: m.profile_id,
-      installation_id: crew.installation_id,
+      installation_id: defaultInstallationId,
       crew_id: crewId,
       category: "staff",
       trip_type: "crew_change_out",
@@ -318,6 +323,8 @@ export async function mobiliseCrewManual(input: {
     .eq("id", input.crewId)
     .maybeSingle();
   if (!crew) return { ok: false, error: "Crew not found." };
+  const defaultInstallationId =
+    (crew.installation_id as string | null) ?? (await getOffshoreDefaultInstallation())?.id ?? null;
 
   // Never double-board anyone already on board.
   const ids = chosen.map((m) => m.profileId);
@@ -334,7 +341,7 @@ export async function mobiliseCrewManual(input: {
     .map((m) => ({
       tenant_id: tenant,
       profile_id: m.profileId,
-      installation_id: crew.installation_id,
+      installation_id: defaultInstallationId,
       crew_id: input.crewId,
       category: "staff",
       trip_type: "crew_change_out",

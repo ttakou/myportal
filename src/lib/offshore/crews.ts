@@ -29,6 +29,31 @@ export async function getOffshoreDefaultMode(): Promise<TripMode> {
 }
 
 
+/**
+ * The installation a crew change goes to when the crew names none.
+ *
+ * Every crew change here goes to Juliet, and eleven of fourteen crews and
+ * nearly four hundred trips said nothing at all, so the dashboard read "—"
+ * where the platform's name belongs. Stored on the offshore module's tenant
+ * settings, beside the default crew-change mode. RLS-scoped.
+ */
+export async function getOffshoreDefaultInstallation(): Promise<{ id: string; name: string } | null> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("tenant_services")
+    .select("settings, services_catalog!inner(slug)")
+    .eq("services_catalog.slug", "offshore")
+    .maybeSingle();
+  const id = (data?.settings as { default_installation_id?: string } | null)?.default_installation_id;
+  if (!id) return null;
+  const { data: inst } = await supabase
+    .from("offshore_installations")
+    .select("id, name")
+    .eq("id", id)
+    .maybeSingle();
+  return inst ? { id: String(inst.id), name: String(inst.name) } : null;
+}
+
 export async function getCrews(): Promise<Crew[]> {
   const supabase = createClient();
   const { data, error } = await supabase
