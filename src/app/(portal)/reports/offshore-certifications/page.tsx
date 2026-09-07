@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ShieldX } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getDepartments, getOffshoreCertReport, type CertCell, type CertStatus } from "@/lib/reports";
 import { cn } from "@/lib/utils";
@@ -115,6 +115,28 @@ export default async function OffshoreCertReportPage({
         <Kpi label="Valid" value={report.summary.valid} tone="green" />
         <Kpi label="In scope" value={report.summary.total} />
       </div>
+
+      {/* Red for a blank is not red for a lapse. Say how much of the report is
+          the roster having no record at all, and where the record gets filled. */}
+      {report.summary.undeclared > 0 && (
+        <div className="flex flex-wrap items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">
+              {report.summary.undeclared} of {report.summary.roster} people have no certificate dates recorded at all.
+            </p>
+            <p className="mt-0.5">
+              They are counted as non-compliant because the roster holds nothing, not because a
+              certificate has lapsed. Each of them sees a &ldquo;Complete your offshore profile&rdquo;
+              prompt on their dashboard and can declare their own dates; the offshore staff roster
+              also takes a CSV import with medical, BOSIET and HUET columns.
+            </p>
+            <Link href="/offshore?view=roster" className="mt-1 inline-block font-medium underline print:hidden">
+              Open the offshore staff roster
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
