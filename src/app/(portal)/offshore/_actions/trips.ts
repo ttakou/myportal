@@ -222,6 +222,7 @@ export async function archivePastRequests(input: {
     supabase
       .from("offshore_trips")
       .select("id, mobilize_date, demob_date, status")
+      .not("requester_id", "is", null)
       .in("status", ["requested", "hse_cleared", "manifested"]),
     supabase
       .from("offshore_visit_requests")

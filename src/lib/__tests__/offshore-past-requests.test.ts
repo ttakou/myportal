@@ -17,6 +17,12 @@ describe("isPastTripRequest", () => {
     expect(isPastTripRequest({ status: "onboard", mobilize_date: "2026-08-01", demob_date: "2026-08-20" }, today)).toBe(false);
     expect(isPastTripRequest({ status: "cancelled", mobilize_date: "2026-08-01", demob_date: null }, today)).toBe(false);
   });
+
+  it("leaves a crew-change trip alone even when its dates passed", () => {
+    expect(
+      isPastTripRequest({ status: "hse_cleared", mobilize_date: "2026-06-01", demob_date: "2026-06-20", is_request: false }, today),
+    ).toBe(false);
+  });
 });
 
 describe("isPastVisitRequest", () => {
