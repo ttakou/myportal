@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { bedLabel } from "@/lib/offshore/bed-for";
 import { useStatusTransition } from "@/components/activity";
 import { Ship, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -93,7 +94,7 @@ export function OffshoreBoard({
                 <tr key={t.id}>
                   <td className="px-4 py-3 font-medium">{t.installation_name ?? "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{t.mobilize_date}{t.demob_date ? ` → ${t.demob_date}` : ""}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{[t.flight_label, t.bed_no && `Bed ${t.bed_no}`].filter(Boolean).join(" · ") || "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{[t.flight_label, bedLabel(t.bed_no)].filter(Boolean).join(" · ") || "—"}</td>
                   <td className="px-4 py-3"><Badge status={t.status} /></td>
                 </tr>
               ))}
