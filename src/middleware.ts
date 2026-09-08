@@ -16,6 +16,16 @@ function isPublic(pathname: string) {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Vercel Cron calls carry a bearer secret and no session. The auth gate
+  // below sent every one of them to /login with a 307, so no scheduled job
+  // ever ran: not the flight tracker, not the appraisal reminders, not the
+  // offshore schedule. The cron routes check CRON_SECRET themselves; the
+  // matcher keeps them out of here, and this guard does the same in case
+  // the matcher changes.
+  if (pathname.startsWith("/api/cron/")) {
+    return NextResponse.next();
+  }
+
   // Always refresh the session so server components see a valid token.
   const { supabase, supabaseResponse } = createMiddlewareClient(request);
   const {
@@ -182,8 +192,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except static assets / images.
+  // Run on everything except static assets / images and the cron routes
+  // (which guard themselves with CRON_SECRET and have no session).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/cron/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
