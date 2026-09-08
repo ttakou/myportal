@@ -42,6 +42,8 @@ export const VIEW_DATA: Record<OffshoreViewKey, readonly ManagementDataKey[]> = 
   // Self-service and "Where is…" load their own data on the page.
   mytrips: [],
   whereis: [],
+  // Visit and trip requests, plus the rooms the Campboss can put people in.
+  requests: ["visits", "trips", "rooms"],
   dashboard: [
     "pob",
     "accommodation",

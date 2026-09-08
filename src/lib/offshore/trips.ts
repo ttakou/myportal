@@ -3,8 +3,9 @@ import type { OffshoreTrip } from "@/types/offshore";
 import { one } from "./_shared";
 
 const SELECT =
-  "id, installation_id, mobilize_date, demob_date, status, hse_cleared_at, flight_id, bed_no, person_name, mode," +
+  "id, installation_id, mobilize_date, demob_date, status, hse_cleared_at, flight_id, bed_no, person_name, mode, room_id," +
   " person:profiles!offshore_trips_profile_id_fkey(full_name)," +
+  " room:offshore_rooms(room_number, block)," +
   " installation:offshore_installations(name)," +
   " flight:helicopter_flights(flight_date, route)";
 
@@ -24,6 +25,11 @@ function mapTrip(row: Record<string, any>): OffshoreTrip {
     flight_id: row.flight_id,
     flight_label: flight ? `${flight.route} · ${flight.flight_date}` : null,
     bed_no: row.bed_no,
+    room_id: row.room_id ?? null,
+    room_label: (() => {
+      const r = one<{ room_number?: string; block?: string }>(row.room);
+      return r ? [r.block, r.room_number].filter(Boolean).join(" ") || null : null;
+    })(),
     mode: row.mode === "manual" ? "manual" : "auto",
   };
 }

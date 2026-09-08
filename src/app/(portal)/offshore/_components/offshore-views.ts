@@ -24,6 +24,7 @@ export type OffshoreViewKey =
   | "history"
   | "staff-history"
   | "whereis"
+  | "requests"
   | "mytrips";
 
 export interface OffshoreView {
@@ -53,6 +54,8 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "whereis", label: "Where is…", icon: "MapPin" },
   { key: "assign", label: "Assign crews", icon: "UserCog" },
   { key: "register", label: "Register staff", icon: "UserPlus" },
+  // After "register" so a registrar still lands on the view they act in.
+  { key: "requests", label: "Trip Requests", icon: "Inbox" },
   { key: "visitors", label: "Visitors", icon: "Plane" },
   { key: "emergency", label: "Muster roles", icon: "LifeBuoy" },
   { key: "drill", label: "Muster drill", icon: "Siren" },
@@ -107,6 +110,12 @@ export type OffshorePerm = "none" | "view" | "full";
 export interface OffshoreRoleFlags {
   /** admin / Campboss / OIM — full control of every offshore view. */
   manager: boolean;
+  /**
+   * Which manager, where it matters: on Trip Requests the OIM approves and
+   * the Campboss assigns rooms. Admins carry both. Absent means neither.
+   */
+  oim?: boolean;
+  campboss?: boolean;
   /** Offshore Dispatcher — full crew/travel/roster, read-only POB & rooms. */
   dispatcher: boolean;
   /**
@@ -143,15 +152,20 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
   "staff-history": "none",
   // Finding somebody is reading, not dispatching.
   whereis: "view",
+  // Trip Requests is the OIM's and the Campboss's desk; the Dispatcher has
+  // Visitors and All trips for the same rows.
+  requests: "none",
 };
 
 /** The Dispatcher's (or full manager's) access level for one management view. */
 export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags): OffshorePerm {
   if (flags.manager) return "full";
   if (flags.dispatcher) return DISPATCHER_VIEW_PERMS[key] ?? "none";
-  // A registrar reaches exactly one view. Checked after the two role flags so
-  // that holding the verb as well as a role never *narrows* what they see.
-  if (flags.registrar) return key === "register" ? "full" : "none";
+  // A registrar acts in one view and reads one more: they register people,
+  // and they may follow the trip requests without deciding them. Checked
+  // after the two role flags so that holding the verb as well as a role
+  // never *narrows* what they see.
+  if (flags.registrar) return key === "register" ? "full" : key === "requests" ? "view" : "none";
   return "none";
 }
 
@@ -184,6 +198,7 @@ export interface OffshoreHub {
 
 export const OFFSHORE_HUBS: OffshoreHub[] = [
   { key: "mytrips", label: "My trips & requests", icon: "Ship" },
+  { key: "requests", label: "Trip Requests", icon: "Inbox" },
   {
     key: "dashboard", label: "POB & Live Board", icon: "LayoutGrid",
     tabs: [

@@ -165,10 +165,10 @@ export function PendingApprovals({
             </div>
           ))}
           <Link
-            href="/offshore?view=trips"
+            href="/offshore?view=requests"
             className="inline-block text-xs font-medium text-primary hover:underline"
           >
-            Open all trips →
+            Open Trip Requests →
           </Link>
         </div>
       )}
