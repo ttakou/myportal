@@ -16,6 +16,10 @@
     --foreground: 0 0% 9%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 9%;
+    /* Floating surfaces (dropdown lists). Was never defined, so every
+       `bg-popover` list drew transparent over whatever sat beneath it. */
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
 
     /* Addax red */
     --primary: 353 100% 44%;
