@@ -4,6 +4,7 @@ import { one, todayIso } from "./_shared";
 import { bedFor, type BedShown } from "./bed-for";
 import { crewStatus, currentCrewChange, tripOnBoard, type CrewChange, type CrewStatus } from "./crew-change";
 import { getOffshoreDefaultInstallation } from "./crews";
+import type { BoardRow } from "./where-board";
 
 /**
  * Where one member of the offshore workforce is, and which bed is theirs.
@@ -187,4 +188,115 @@ export async function getWhereaboutsPeople(): Promise<{ id: string; name: string
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+
+/**
+ * Everyone on the roster at once, for the board: the same reading as
+ * `getWhereabouts` for one person, from four queries instead of four per
+ * person. The latest non-cancelled trip per person comes from one ordered
+ * scan of the trips, taking the first row seen for each profile.
+ */
+export async function getWhereaboutsBoard(): Promise<BoardRow[]> {
+  const supabase = createClient();
+  const today = todayIso();
+  const [{ data: staffRows }, { data: tripRows }, fallbackInstallation] = await Promise.all([
+    supabase
+      .from("offshore_staff")
+      .select(
+        "profile_id, fixed_bed, lifeboat, is_rotational, profile:profiles!offshore_staff_profile_id_fkey(full_name, email), crew:offshore_crews(name, offshore_days, onshore_days, cycle_start_date, installation:offshore_installations(name)), room:offshore_rooms(room_number, block, lifeboat)",
+      ),
+    supabase
+      .from("offshore_trips")
+      .select(
+        "profile_id, mobilize_date, demob_date, status, bed_no, lifeboat, installation:offshore_installations(name), room:offshore_rooms(room_number, block)",
+      )
+      .neq("status", "cancelled")
+      .not("profile_id", "is", null)
+      .order("mobilize_date", { ascending: false }),
+    getOffshoreDefaultInstallation(),
+  ]);
+
+  const latestByProfile = new Map<string, Record<string, unknown>>();
+  for (const t of (tripRows ?? []) as unknown as Record<string, unknown>[]) {
+    const pid = String(t.profile_id);
+    if (!latestByProfile.has(pid)) latestByProfile.set(pid, t);
+  }
+  const roomLabel = (r: { room_number?: string; block?: string } | null) =>
+    r ? [r.block, r.room_number].filter(Boolean).join(" ") || null : null;
+
+  const rows: BoardRow[] = [];
+  for (const s of (staffRows ?? []) as unknown as Record<string, unknown>[]) {
+    const pid = String(s.profile_id);
+    const profile = one<{ full_name?: string; email?: string }>((s.profile as never) ?? null);
+    const crew = one<{
+      name?: string;
+      offshore_days?: number;
+      onshore_days?: number;
+      cycle_start_date?: string | null;
+      installation?: { name?: string } | { name?: string }[] | null;
+    }>((s.crew as never) ?? null);
+    const fixedRoom = one<{ room_number?: string; block?: string; lifeboat?: string }>((s.room as never) ?? null);
+    const latest = latestByProfile.get(pid) ?? null;
+    const tripRoom = latest ? one<{ room_number?: string; block?: string }>((latest.room as never) ?? null) : null;
+    const lastTrip = latest
+      ? {
+          mobilize: String(latest.mobilize_date),
+          demob: (latest.demob_date as string | null) ?? null,
+          status: String(latest.status),
+          installation: one<{ name?: string }>((latest.installation as never) ?? null)?.name ?? null,
+        }
+      : null;
+    const onBoard = tripOnBoard(lastTrip, today);
+
+    let kind: BoardRow["kind"] = "no_schedule";
+    let nextChange: string | null = null;
+    let daysToChange: number | null = null;
+    if (crew && crew.offshore_days != null && crew.onshore_days != null) {
+      const change = currentCrewChange(
+        {
+          offshore_days: Number(crew.offshore_days),
+          onshore_days: Number(crew.onshore_days),
+          cycle_start_date: crew.cycle_start_date ?? null,
+        },
+        today,
+      );
+      if (change) {
+        kind = crewStatus(change, lastTrip, today).kind;
+        nextChange = change.nextChange;
+        daysToChange = change.daysToChange;
+      }
+    }
+
+    const bed = bedFor({
+      onBoard,
+      tripRoom: roomLabel(tripRoom),
+      tripBed: (latest?.bed_no as string | null) ?? null,
+      fixedRoom: roomLabel(fixedRoom),
+      fixedBed: (s.fixed_bed as string | null) ?? null,
+    });
+
+    rows.push({
+      id: pid,
+      name: profile?.full_name || profile?.email || "—",
+      crew: crew?.name ?? null,
+      lifeboat:
+        (onBoard ? ((latest?.lifeboat as string | null) ?? null) : null) ??
+        (fixedRoom?.lifeboat as string | null) ??
+        (s.lifeboat as string | null) ??
+        null,
+      bed: bed.label,
+      bedSource: bed.source,
+      installation:
+        lastTrip?.installation ??
+        one<{ name?: string }>((crew?.installation as never) ?? null)?.name ??
+        fallbackInstallation?.name ??
+        null,
+      onBoard,
+      kind,
+      nextChange,
+      daysToChange,
+      isRotational: (s.is_rotational as boolean | null) ?? true,
+    });
+  }
+  return rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
