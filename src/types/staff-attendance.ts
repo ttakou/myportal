@@ -30,6 +30,8 @@ export type MyAttendance = {
   status: AttendanceStatus;
   check_in_at: string | null;
   check_out_at: string | null;
+  /** "guard" when security recorded it at the gate, "self" from the app. */
+  check_in_method: "guard" | "self" | null;
 };
 
 /** A staff member currently checked in — for the emergency muster. */

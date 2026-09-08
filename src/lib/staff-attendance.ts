@@ -108,15 +108,21 @@ export async function getStaffOnSite(date: string = today()): Promise<StaffOnSit
 /** The signed-in user's own attendance for `date` — for the "I'm in" card. */
 export async function getMyAttendance(date: string = today()): Promise<MyAttendance> {
   const user = await getCachedUser();
-  if (!user) return { status: "away", check_in_at: null, check_out_at: null };
+  if (!user) return { status: "away", check_in_at: null, check_out_at: null, check_in_method: null };
   const supabase = createClient();
   const { data } = await supabase
     .from("staff_attendance")
-    .select("check_in_at, check_out_at")
+    .select("check_in_at, check_out_at, check_in_method")
     .eq("profile_id", user.id)
     .eq("attendance_date", date)
     .maybeSingle();
   const checkIn = (data?.check_in_at as string | null) ?? null;
   const checkOut = (data?.check_out_at as string | null) ?? null;
-  return { status: deriveStatus(checkIn, checkOut), check_in_at: checkIn, check_out_at: checkOut };
+  const method = data?.check_in_method === "guard" || data?.check_in_method === "self" ? data.check_in_method : null;
+  return {
+    status: deriveStatus(checkIn, checkOut),
+    check_in_at: checkIn,
+    check_out_at: checkOut,
+    check_in_method: method,
+  };
 }

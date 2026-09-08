@@ -109,7 +109,7 @@ export function WhereIsCard({ w }: { w: Whereabouts }) {
           sub={
             w.lastCheckIn
               ? `In ${w.lastCheckIn.at.slice(11, 16)}${w.lastCheckIn.out ? ` · out ${w.lastCheckIn.out.slice(11, 16)}` : ""} UTC`
-              : "The base only knows somebody is there when they press “I’m in”."
+              : "Security records arrivals at the gate; nothing recorded means they have not passed it."
           }
         />
       </div>
