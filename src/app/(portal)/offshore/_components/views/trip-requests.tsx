@@ -4,8 +4,6 @@ import { useState } from "react";
 import { BedDouble, CheckCircle2, Inbox, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { SearchSelect } from "@/components/ui/search-select";
-import { roomLabel } from "@/lib/offshore/room-order";
 import {
   canApproveRequests,
   canAssignRooms,
@@ -28,7 +26,8 @@ import {
   decideVisitGroup,
   decideVisitRequest,
   findAvailableBeds,
-  reassignTripRoom,
+  findStaffBeds,
+  placeTripInRoom,
   setOffshoreStatus,
 } from "../../actions";
 import type { OffshoreRoleFlags } from "../offshore-views";
@@ -319,7 +318,6 @@ function TripRow({
   t,
   approve,
   bed,
-  rooms,
   pending,
   run,
 }: {
@@ -330,8 +328,18 @@ function TripRow({
   pending: boolean;
   run: Run;
 }) {
-  const [picking, setPicking] = useState(false);
-  const usable = rooms.filter((r) => r.status !== "blocked");
+  const [options, setOptions] = useState<RoomAvailability[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  async function search() {
+    setSearchError(null);
+    setSearching(true);
+    const res = await findStaffBeds(t.id);
+    setSearching(false);
+    if (!res.ok) setSearchError(res.error);
+    else setOptions(res.rooms);
+  }
   return (
     <div className="rounded-lg border bg-card p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
@@ -377,32 +385,44 @@ function TripRow({
         )}
         {t.status !== "requested" && (
           bed ? (
-            <Button size="sm" variant={t.room_id ? "outline" : "default"} disabled={pending} onClick={() => setPicking((p) => !p)}>
-              {t.room_id ? "Change room" : "Assign a room"}
+            <Button size="sm" variant={t.room_id ? "outline" : "default"} disabled={pending || searching} onClick={() => (options ? setOptions(null) : search())}>
+              {searching ? "Searching…" : options ? "Cancel" : t.room_id ? "Change room" : "Assign a room"}
             </Button>
           ) : !t.room_id ? (
             <span className="text-xs text-muted-foreground">awaiting the Campboss</span>
           ) : null
         )}
       </div>
-      {picking && (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <SearchSelect
-            value={t.room_id}
-            onChange={(v) => {
-              if (v) run(() => reassignTripRoom(t.id, v), () => setPicking(false));
-            }}
-            options={usable}
-            getOptionValue={(r) => r.id}
-            getOptionLabel={(r) => `${roomLabel(r)} · ${r.bed_count} bed${r.bed_count === 1 ? "" : "s"}`}
-            placeholder="Type a room…"
-            wrapperClassName="w-64"
-            className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
-          />
-          <span className="text-xs text-muted-foreground">The bed is numbered on the bed board.</span>
-          <Button size="sm" variant="ghost" disabled={pending} onClick={() => setPicking(false)}>
-            Cancel
-          </Button>
+      {searchError && <p className="mt-1 text-xs text-destructive">{searchError}</p>}
+      {options && (
+        <div className="mt-2 rounded-md border p-2">
+          <p className="mb-1.5 text-xs text-muted-foreground">
+            Rooms with a free bed for {t.mobilize_date}
+            {t.demob_date ? ` → ${t.demob_date}` : ""}. The lowest free berth is given on pick.
+          </p>
+          {options.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No free beds for the full stay.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {options.map((r) => (
+                <button
+                  key={r.room_id}
+                  type="button"
+                  disabled={pending || r.free_beds === 0}
+                  onClick={() => run(() => placeTripInRoom(t.id, r.room_id), () => setOptions(null))}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50",
+                    r.own_cabin && "border-primary/50 bg-primary/5",
+                    r.room_id === t.room_id && "font-semibold",
+                  )}
+                  title={`${r.bed_count} beds · ${r.owners} cabin owner${r.owners === 1 ? "" : "s"}`}
+                >
+                  {r.label} · {r.free_beds} free
+                  {r.own_cabin ? " · own cabin" : ""}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

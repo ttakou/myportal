@@ -8,6 +8,7 @@ import type {
   RoomHistoryRow,
 } from "@/types/offshore";
 import { one, todayIso } from "./_shared";
+import { freeBedsFor } from "./bed-availability";
 
 export async function getRooms(): Promise<Room[]> {
   const supabase = createClient();
@@ -238,25 +239,54 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
 
 /**
  * Rooms with free beds across the full [from, to] stay on an installation.
- * Free = bed_count − fixed staff reservations − overlapping active allocations.
- * Blocked/maintenance rooms and incompatible gender rooms are excluded.
+ *
+ * Free = bed_count − staff trips in the room that overlap the stay (cleared,
+ * manifested or on board) − visitor allocations that overlap it. Cabin owners
+ * are counted for information only: owning a cabin occupies nothing, and the
+ * old rule of subtracting every owner hid Door 3 (12 beds, 21 owners on
+ * alternating crews) from everybody. Blocked and maintenance rooms and
+ * incompatible gender rooms are excluded; the person's own fixed cabin, when
+ * given, is listed first even when it is full, so the Campboss sees it.
  */
 export async function searchBedAvailability(input: {
   installationId: string;
   from: string;
   to: string;
   gender?: string;
+  /** The traveller, when a member of staff: their fixed cabin comes first. */
+  profileId?: string | null;
 }): Promise<RoomAvailability[]> {
   const supabase = createClient();
-  const { data: rooms } = await supabase
-    .from("offshore_rooms")
-    .select(
-      "id, room_number, block, room_type, bed_count, gender_restriction, status," +
-        " offshore_staff(count)," +
-        " offshore_bed_allocations(id, from_date, to_date, status)",
-    )
-    .eq("installation_id", input.installationId)
-    .eq("is_active", true);
+  const stay = { from: input.from, to: input.to };
+  const [{ data: rooms }, { data: trips }, { data: own }] = await Promise.all([
+    supabase
+      .from("offshore_rooms")
+      .select(
+        "id, room_number, block, room_type, bed_count, gender_restriction, status," +
+          " offshore_staff(count)," +
+          " offshore_bed_allocations(id, from_date, to_date, status)",
+      )
+      .eq("installation_id", input.installationId)
+      .eq("is_active", true),
+    supabase
+      .from("offshore_trips")
+      .select("room_id, mobilize_date, demob_date, profile_id")
+      .in("status", ["hse_cleared", "manifested", "onboard"])
+      .not("room_id", "is", null)
+      .lte("mobilize_date", input.to),
+    input.profileId
+      ? supabase.from("offshore_staff").select("fixed_room_id").eq("profile_id", input.profileId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const ownRoom = (own?.fixed_room_id as string | null) ?? null;
+  const tripsByRoom = new Map<string, { from: string; to: string | null }[]>();
+  for (const t of (trips ?? []) as Record<string, any>[]) {
+    // The traveller's own current trip must not count against them.
+    if (input.profileId && t.profile_id === input.profileId) continue;
+    const list = tripsByRoom.get(t.room_id as string) ?? [];
+    list.push({ from: t.mobilize_date as string, to: (t.demob_date as string | null) ?? null });
+    tripsByRoom.set(t.room_id as string, list);
+  }
 
   const out: RoomAvailability[] = [];
   for (const r of (rooms ?? []) as Record<string, any>[]) {
@@ -270,23 +300,28 @@ export async function searchBedAvailability(input: {
     ) {
       continue;
     }
-    const fixed = r.offshore_staff?.[0]?.count ?? 0;
-    const overlapping = ((r.offshore_bed_allocations as any[]) ?? []).filter(
-      (a) =>
-        a.status !== "checked_out" && a.from_date <= input.to && a.to_date >= input.from,
-    ).length;
-    const free = (r.bed_count ?? 0) - fixed - overlapping;
-    if (free > 0) {
+    const occupants = [
+      ...(tripsByRoom.get(r.id as string) ?? []),
+      ...((r.offshore_bed_allocations as any[]) ?? [])
+        .filter((a) => a.status !== "checked_out")
+        .map((a) => ({ from: a.from_date as string, to: a.to_date as string })),
+    ];
+    const free = freeBedsFor(r.bed_count ?? 0, occupants, stay);
+    const isOwn = ownRoom != null && r.id === ownRoom;
+    if (free > 0 || isOwn) {
       out.push({
         room_id: r.id,
         label: [r.block, r.room_number].filter(Boolean).join(" "),
         room_type: r.room_type,
         gender_restriction: r.gender_restriction,
+        bed_count: r.bed_count ?? 0,
         free_beds: free,
+        owners: r.offshore_staff?.[0]?.count ?? 0,
+        own_cabin: isOwn || undefined,
       });
     }
   }
-  return out.sort((a, b) => a.label.localeCompare(b.label));
+  return out.sort((a, b) => Number(Boolean(b.own_cabin)) - Number(Boolean(a.own_cabin)) || compareRoomLabels(a.label, b.label));
 }
 
 /** Who occupied which room over [from, to] — staff (fixed room on trips) + visitors (allocations). */
