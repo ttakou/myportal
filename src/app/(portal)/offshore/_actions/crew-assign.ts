@@ -2,6 +2,10 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { planBedAllocation } from "@/lib/offshore/allocation";
+import { lowestFreeBed, staysOverlap } from "@/lib/offshore/bed-availability";
+import { getOffshoreDefaultInstallation } from "@/lib/offshore/crews";
+import { searchBedAvailability } from "@/lib/offshore/rooms";
+import type { RoomAvailability } from "@/types/offshore";
 import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshore, requireOffshoreDispatch, rev, tenantId } from "./_shared";
@@ -378,4 +382,76 @@ export async function renumberRoomBeds(input: {
   if (error) return { ok: false, error: error.message };
   if (input.apply) rev();
   return { ok: true, rows: (data ?? []) as RenumberBedsRow[] };
+}
+
+/**
+ * Rooms with a free bed for a staff trip request, the traveller's own cabin
+ * first. Dates come from the trip; an open demob is read as the mobilise
+ * day, so a request with no return date still finds a bed for the day it
+ * arrives.
+ */
+export async function findStaffBeds(
+  tripId: string,
+): Promise<{ ok: true; rooms: RoomAvailability[] } | { ok: false; error: string }> {
+  const gate = await requireOffshore("operate");
+  if (gate) return { ok: false, error: gate.error ?? "Not authorized." };
+  const supabase = createClient();
+  const { data: trip } = await supabase
+    .from("offshore_trips")
+    .select("installation_id, mobilize_date, demob_date, profile_id")
+    .eq("id", tripId)
+    .maybeSingle();
+  if (!trip) return { ok: false, error: "Trip not found." };
+  const installationId =
+    (trip.installation_id as string | null) ?? (await getOffshoreDefaultInstallation())?.id ?? null;
+  if (!installationId) return { ok: false, error: "Set the destination installation first." };
+  const from = trip.mobilize_date as string;
+  const rooms = await searchBedAvailability({
+    installationId,
+    from,
+    to: (trip.demob_date as string | null) ?? from,
+    profileId: (trip.profile_id as string | null) ?? null,
+  });
+  return { ok: true, rooms };
+}
+
+/**
+ * Put a staff trip in a room and give it the lowest free berth, "Bed k".
+ * Re-checks the room has a bed for the stay so two Campbosses cannot fill
+ * the same berth from stale lists.
+ */
+export async function placeTripInRoom(tripId: string, roomId: string): Promise<ActionResult> {
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { data: trip } = await supabase
+    .from("offshore_trips")
+    .select("installation_id, mobilize_date, demob_date, profile_id")
+    .eq("id", tripId)
+    .maybeSingle();
+  if (!trip) return { ok: false, error: "Trip not found." };
+  const from = trip.mobilize_date as string;
+  const to = (trip.demob_date as string | null) ?? from;
+  const [{ data: room }, { data: others }] = await Promise.all([
+    supabase.from("offshore_rooms").select("bed_count, status").eq("id", roomId).maybeSingle(),
+    supabase
+      .from("offshore_trips")
+      .select("id, bed_no, mobilize_date, demob_date")
+      .eq("room_id", roomId)
+      .in("status", ["hse_cleared", "manifested", "onboard"])
+      .neq("id", tripId)
+      .lte("mobilize_date", to),
+  ]);
+  if (!room) return { ok: false, error: "Room not found." };
+  if (["blocked", "maintenance"].includes(String(room.status)))
+    return { ok: false, error: "That room is out of service." };
+  const overlapping = ((others ?? []) as Record<string, any>[]).filter((o) =>
+    staysOverlap({ from: o.mobilize_date, to: o.demob_date ?? null }, { from, to }),
+  );
+  const bed = lowestFreeBed(Number(room.bed_count ?? 0), overlapping.map((o) => o.bed_no as string | null));
+  if (!bed) return { ok: false, error: "No bed is free in that room for the stay — refresh the list." };
+  const { error } = await supabase.from("offshore_trips").update({ room_id: roomId, bed_no: bed }).eq("id", tripId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
 }

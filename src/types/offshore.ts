@@ -442,7 +442,13 @@ export interface RoomAvailability {
   label: string;
   room_type: string;
   gender_restriction: GenderRestriction;
+  bed_count: number;
+  /** Beds not taken by anybody whose trip or allocation overlaps the stay. */
   free_beds: number;
+  /** Cabin owners on the roster, for information: they occupy nothing by owning. */
+  owners: number;
+  /** True when the room is the person's own fixed cabin. */
+  own_cabin?: boolean;
 }
 
 // --- Trip manifests (Phase 3) ------------------------------------------------
