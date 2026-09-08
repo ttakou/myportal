@@ -346,3 +346,36 @@ export async function mergeCrews(targetId: string, sourceIds: string[]): Promise
   rev();
   return { ok: true };
 }
+
+export interface RenumberBedsRow {
+  kind: "trip" | "trip_overflow" | "owner" | "owner_overflow";
+  room_label: string;
+  person: string;
+  old_bed: string | null;
+  new_bed: string | null;
+}
+
+/**
+ * Rename the beds of one room, or every room, "Bed 1" to "Bed N".
+ *
+ * The estate had three bed conventions at once and most people on board had
+ * none. The database function keeps a valid label, gives blanks and clashes
+ * the lowest free berth, anchors a cabin owner's fixed bed on the bed they
+ * are in today, and lets back-to-backs share one. `apply: false` returns the
+ * plan without writing, so the panel can show it before the confirmation.
+ */
+export async function renumberRoomBeds(input: {
+  roomId?: string | null;
+  apply: boolean;
+}): Promise<{ ok: true; rows: RenumberBedsRow[] } | { ok: false; error: string }> {
+  const gate = await requireOffshore("edit");
+  if (gate) return { ok: false, error: gate.error ?? "Not authorized." };
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("offshore_renumber_beds", {
+    p_room_id: input.roomId ?? null,
+    p_apply: input.apply,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (input.apply) rev();
+  return { ok: true, rows: (data ?? []) as RenumberBedsRow[] };
+}

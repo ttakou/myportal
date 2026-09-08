@@ -28,8 +28,15 @@ export interface BedShown {
   differsFromDefault: string | null;
 }
 
+/** "Bed 1" as stored, or "Bed " in front of a bare number or bunk letter. */
+export function bedLabel(bed: string | null | undefined): string | null {
+  const b = (bed ?? "").trim();
+  if (!b) return null;
+  return /^bed\b/i.test(b) ? b : `Bed ${b}`;
+}
+
 function label(room: string | null, bed: string | null): string | null {
-  const parts = [room, bed ? `Bed ${bed}` : null].filter(Boolean);
+  const parts = [room, bedLabel(bed)].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }
 

@@ -21,6 +21,7 @@ import { getMenu, today } from "@/lib/canteen";
 import { SelfCheckIn } from "./_components/self-check-in";
 import { OffshoreProfilePrompt } from "./_components/offshore-profile-prompt";
 import { getMyOffshoreProfile } from "@/lib/offshore/my-profile";
+import { bedLabel } from "@/lib/offshore/bed-for";
 import { MEAL_PERIODS, MEAL_PERIOD_LABEL } from "@/types/canteen";
 import { cn } from "@/lib/utils";
 
@@ -208,7 +209,7 @@ export default async function DashboardPage() {
                     <Stat
                       icon={<BedDouble className="h-4 w-4" />}
                       label="Cabin / bed"
-                      value={[offshore.room, offshore.bed && `Bed ${offshore.bed}`].filter(Boolean).join(" · ") || "Not assigned"}
+                      value={[offshore.room, bedLabel(offshore.bed)].filter(Boolean).join(" · ") || "Not assigned"}
                     />
                     <Stat
                       icon={<Users className="h-4 w-4" />}

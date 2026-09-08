@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bedFor } from "@/lib/offshore/bed-for";
+import { bedFor, bedLabel } from "@/lib/offshore/bed-for";
 
 const base = { onBoard: false, tripRoom: null, tripBed: null, fixedRoom: "Room 308", fixedBed: "1" };
 
@@ -43,5 +43,22 @@ describe("bedFor", () => {
       label: null,
       differsFromDefault: null,
     });
+  });
+});
+
+describe("bedLabel", () => {
+  it("keeps a stored 'Bed 1' as it is and prefixes a bare number or bunk letter", () => {
+    expect(bedLabel("Bed 1")).toBe("Bed 1");
+    expect(bedLabel("bed 3")).toBe("bed 3");
+    expect(bedLabel("1")).toBe("Bed 1");
+    expect(bedLabel("T")).toBe("Bed T");
+    expect(bedLabel(" ")).toBeNull();
+    expect(bedLabel(null)).toBeNull();
+  });
+
+  it("never reads 'Bed Bed 1'", () => {
+    expect(bedFor({ onBoard: false, tripRoom: null, tripBed: null, fixedRoom: "Room 220", fixedBed: "Bed 1" }).label).toBe(
+      "Room 220 · Bed 1",
+    );
   });
 });
