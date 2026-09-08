@@ -39,16 +39,18 @@ import { VisitorRequestForm } from "./_components/visitor-request-form";
 import { PendingApprovals } from "./_components/pending-approvals";
 import { WhereIsPicker } from "./_components/where-is";
 import { WhereIsCard } from "./_components/where-is-card";
-import { getWhereabouts, getWhereaboutsPeople } from "@/lib/offshore/whereabouts";
+import { getWhereabouts, getWhereaboutsBoard, getWhereaboutsPeople } from "@/lib/offshore/whereabouts";
+import { WhereIsBoard } from "./_components/where-is-board";
+import type { BoardFilter, BoardGrouping } from "@/lib/offshore/where-board";
 import { effectiveManagementView, managementDataFor, type ManagementDataKey } from "./_components/offshore-view-data";
 import type { AccommodationSummary, PobBreakdown } from "@/types/offshore";
 
 export default async function OffshorePage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; person?: string }>;
+  searchParams: Promise<{ view?: string; person?: string; by?: string; only?: string }>;
 }) {
-  const { view, person } = await searchParams;
+  const { view, person, by, only } = await searchParams;
   const access = await getAccess();
   const isAdmin = isAdminRole(await getCurrentRole());
   // Full managers see and edit everything; the Dispatcher also reaches the
@@ -176,7 +178,7 @@ export default async function OffshorePage({
       )}
 
       {showWhereIs && (
-        <WhereIsSection selectedId={person ?? null} />
+        <WhereIsSection selectedId={person ?? null} by={by} only={only} />
       )}
 
       {managementView && (
@@ -243,10 +245,21 @@ export default async function OffshorePage({
  * "Where is…": pick a name, read where the schedule puts them and which bed is
  * theirs. The picker is the only client piece; the answer is rendered here.
  */
-async function WhereIsSection({ selectedId }: { selectedId: string | null }) {
-  const [people, found] = await Promise.all([
+async function WhereIsSection({
+  selectedId,
+  by,
+  only,
+}: {
+  selectedId: string | null;
+  by?: string;
+  only?: string;
+}) {
+  const grouping: BoardGrouping = by === "cabin" || by === "crew" ? by : "lifeboat";
+  const filter: BoardFilter = only === "onboard" || only === "exceptions" ? only : "all";
+  const [people, found, board] = await Promise.all([
     getWhereaboutsPeople(),
     selectedId ? getWhereabouts(selectedId) : Promise.resolve(null),
+    getWhereaboutsBoard(),
   ]);
   return (
     <div className="space-y-4">
@@ -254,7 +267,8 @@ async function WhereIsSection({ selectedId }: { selectedId: string | null }) {
         <h2 className="text-lg font-semibold">Where is…</h2>
         <p className="text-sm text-muted-foreground">
           Where the rotation schedule puts somebody today, what the trips record, and the bed that
-          is theirs — the one in use while on board, otherwise their default.
+          is theirs — the one in use while on board, otherwise their default. Pick a name for one
+          person; the board below shows everyone.
         </p>
       </div>
       <WhereIsPicker people={people} selectedId={selectedId} />
@@ -262,6 +276,7 @@ async function WhereIsSection({ selectedId }: { selectedId: string | null }) {
         <p className="text-sm text-muted-foreground">Nobody with that id.</p>
       )}
       {found && <WhereIsCard w={found} />}
+      <WhereIsBoard rows={board} by={grouping} only={filter} />
     </div>
   );
 }
