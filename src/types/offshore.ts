@@ -51,6 +51,8 @@ export interface OffshoreTrip {
   flight_id: string | null;
   flight_label: string | null;
   bed_no: string | null;
+  room_id: string | null;
+  room_label: string | null;
   mode: TripMode;
 }
 

@@ -63,6 +63,10 @@ export default async function OffshorePage({
   const canManage = offshoreManager || access.isDispatcher || offshoreRegistrar;
   const offshoreFlags = {
     manager: offshoreManager,
+    // On Trip Requests the OIM approves and the Campboss assigns rooms;
+    // admins carry both.
+    oim: access.isAdmin || access.isOim,
+    campboss: access.isAdmin || access.isCampboss,
     dispatcher: access.isDispatcher,
     registrar: offshoreRegistrar,
   };

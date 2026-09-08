@@ -46,6 +46,7 @@ const VisitorsPanel = dynamic(() => import("./views/visitors").then((m) => m.Vis
 const ManifestsPanel = dynamic(() => import("./views/manifests").then((m) => m.ManifestsPanel), { loading });
 const EmergencyRolesPanel = dynamic(() => import("./views/emergency-roles").then((m) => m.EmergencyRolesPanel), { loading });
 const MusterDrillPanel = dynamic(() => import("./views/muster-drill").then((m) => m.MusterDrillPanel), { loading });
+const TripRequestsPanel = dynamic(() => import("./views/trip-requests").then((m) => m.TripRequestsPanel), { loading });
 const CateringPanel = dynamic(() => import("./catering-panel").then((m) => m.CateringPanel), { loading });
 const HistoryPanel = dynamic(() => import("./history-panel").then((m) => m.HistoryPanel), { loading });
 const StaffRotationPanel = dynamic(() => import("./staff-rotation-panel").then((m) => m.StaffRotationPanel), { loading });
@@ -193,6 +194,9 @@ export function OffshoreManagement(props: {
         />
       )}
       {tab === "visitors" && <VisitorsPanel visits={props.visits} />}
+      {tab === "requests" && (
+        <TripRequestsPanel visits={props.visits} trips={props.trips} rooms={props.rooms} flags={props.flags} />
+      )}
       {tab === "manifests" && (
         <ManifestsPanel
           manifests={props.manifests}

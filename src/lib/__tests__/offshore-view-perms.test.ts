@@ -14,9 +14,10 @@ const REGISTRAR: OffshoreRoleFlags = { manager: false, dispatcher: false, regist
 const NOBODY: OffshoreRoleFlags = { manager: false, dispatcher: false, registrar: false };
 
 describe("offshoreViewPerm — registrar", () => {
-  it("grants the registrar exactly one view", () => {
-    const full = OFFSHORE_VIEW_KEYS.filter((k) => offshoreViewPerm(k, REGISTRAR) !== "none");
+  it("grants the registrar one view to act in and one to read", () => {
+    const full = OFFSHORE_VIEW_KEYS.filter((k) => offshoreViewPerm(k, REGISTRAR) === "full");
     expect(full).toEqual(["register"]);
+    expect(offshoreViewPerm("requests", REGISTRAR)).toBe("view");
   });
 
   it("keeps POB, crews, manifests and accommodation hidden from a registrar", () => {
@@ -57,14 +58,19 @@ describe("management entry points", () => {
     expect(firstOffshoreManagementView(REGISTRAR)).toBe("register");
   });
 
-  it("shows a registrar a single sidebar hub pointing at that view", () => {
+  it("shows a registrar Trip Requests and the register view, nothing else", () => {
     const items = offshoreHubSubmenu(REGISTRAR);
-    // "My trips" is the self-service hub everyone gets; the only management hub
-    // is Offshore Staff, trimmed to its register tab.
+    // "My trips" is the self-service hub everyone gets; the management hubs
+    // are Trip Requests (read-only) and Offshore Staff, trimmed to its
+    // register tab.
     const management = items.filter((i) => i.key !== "mytrips");
-    expect(management).toHaveLength(1);
-    expect(management[0].key).toBe("register");
-    expect(management[0].href).toBe("/offshore?view=register");
+    expect(management.map((i) => i.key)).toEqual(["requests", "register"]);
+    expect(management[1].href).toBe("/offshore?view=register");
+  });
+
+  it("keeps Trip Requests off the Dispatcher's menu", () => {
+    expect(offshoreViewPerm("requests", DISPATCHER)).toBe("none");
+    expect(offshoreViewPerm("requests", MANAGER)).toBe("full");
   });
 
   it("still gives a manager every hub", () => {
