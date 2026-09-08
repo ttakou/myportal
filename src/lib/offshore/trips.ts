@@ -3,7 +3,7 @@ import type { OffshoreTrip } from "@/types/offshore";
 import { one } from "./_shared";
 
 const SELECT =
-  "id, installation_id, mobilize_date, demob_date, status, hse_cleared_at, flight_id, bed_no, person_name, mode, room_id," +
+  "id, installation_id, mobilize_date, demob_date, status, hse_cleared_at, flight_id, bed_no, person_name, mode, room_id, requester_id," +
   " person:profiles!offshore_trips_profile_id_fkey(full_name)," +
   " room:offshore_rooms(room_number, block)," +
   " installation:offshore_installations(name)," +
@@ -31,6 +31,7 @@ function mapTrip(row: Record<string, any>): OffshoreTrip {
       return r ? [r.block, r.room_number].filter(Boolean).join(" ") || null : null;
     })(),
     mode: row.mode === "manual" ? "manual" : "auto",
+    is_request: row.requester_id != null,
   };
 }
 

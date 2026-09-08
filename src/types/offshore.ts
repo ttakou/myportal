@@ -54,6 +54,12 @@ export interface OffshoreTrip {
   room_id: string | null;
   room_label: string | null;
   mode: TripMode;
+  /**
+   * True when somebody raised this trip through the request form. A crew
+   * change opened from the schedule is a trip, not a request, and stays off
+   * the Trip Requests desk.
+   */
+  is_request: boolean;
 }
 
 // --- Crew change, roster & accommodation (Phase 1) ---------------------------

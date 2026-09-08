@@ -16,7 +16,11 @@ const TRIP_OPEN = new Set(["requested", "hse_cleared", "manifested"]);
 const VISIT_OPEN = new Set(["requested", "approved"]);
 
 /** True when the request is still open and its whole stay is before today. */
-export function isPastTripRequest(t: Pick<OffshoreTrip, "status" | "mobilize_date" | "demob_date">, todayIso: string): boolean {
+export function isPastTripRequest(
+  t: Pick<OffshoreTrip, "status" | "mobilize_date" | "demob_date"> & { is_request?: boolean },
+  todayIso: string,
+): boolean {
+  if (t.is_request === false) return false;
   return TRIP_OPEN.has(t.status) && (t.demob_date ?? t.mobilize_date) < todayIso;
 }
 

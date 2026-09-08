@@ -61,6 +61,9 @@ export function requestQueues(visits: VisitRequest[], trips: OffshoreTrip[]): Re
     } else q.visitsHistory.push(v);
   }
   for (const t of trips) {
+    // A crew change opened from the schedule is not a request: it never
+    // waited on the OIM, and 600 of them would bury the history.
+    if (!t.is_request) continue;
     if (t.status === "requested") q.tripsToApprove.push(t);
     else if (t.status === "hse_cleared" || t.status === "manifested") {
       if (t.room_id) q.tripsReady.push(t);

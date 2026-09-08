@@ -45,6 +45,7 @@ const trip = (over: Partial<OffshoreTrip> & { id: string }): OffshoreTrip => ({
   room_id: null,
   room_label: null,
   mode: "auto",
+  is_request: true,
   ...over,
 });
 
@@ -83,6 +84,19 @@ describe("requestQueues", () => {
     expect(q.tripsToBed.map((t) => t.id)).toEqual(["b"]);
     expect(q.tripsReady.map((t) => t.id)).toEqual(["c"]);
     expect(q.tripsHistory.map((t) => t.id)).toEqual(["d", "e"]);
+  });
+
+  it("ignores crew-change trips: they were never requests", () => {
+    const q = requestQueues(
+      [],
+      [
+        trip({ id: "req" }),
+        trip({ id: "crew", is_request: false }),
+        trip({ id: "crew-done", is_request: false, status: "demobilised" }),
+      ],
+    );
+    expect(q.tripsToApprove.map((t) => t.id)).toEqual(["req"]);
+    expect(q.tripsHistory).toEqual([]);
   });
 
   it("counts across both kinds", () => {
