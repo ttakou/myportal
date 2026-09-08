@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { EmergencyRole, EmergencyTeamKind, EmergencyTeamMember, MusterDrill } from "@/types/offshore";
+import type { EmergencyRole, EmergencyTeamKind, EmergencyTeamMember, MusterCheckin, MusterDrill } from "@/types/offshore";
 import { one } from "./_shared";
 
 /** Distinct muster / lifeboat groups configured on rooms (e.g. LB-1, LB-2). */
@@ -14,37 +14,85 @@ export async function getMusterGroups(): Promise<string[]> {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
-/** Recent muster roll-calls (active + ended) with accounted/total, for the archive. */
-export async function getMusterDrills(limit = 20): Promise<
-  { id: string; started_at: string; ended_at: string | null; kind: string; total: number; accounted: number }[]
-> {
+export interface MusterDrillSummary {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  kind: string;
+  closed_out_at: string | null;
+  voided: boolean;
+  total: number;
+  accounted: number;
+  no_show: number;
+  not_on_board: number;
+}
+
+/** Recent muster roll-calls (open, ended, closed out, voided) with their tallies, for the archive. */
+export async function getMusterDrills(limit = 20): Promise<MusterDrillSummary[]> {
   const supabase = createClient();
   const { data: drills } = await supabase
     .from("offshore_muster_drills")
-    .select("id, started_at, ended_at, kind")
+    .select("id, started_at, ended_at, kind, closed_out_at, voided")
     .order("started_at", { ascending: false })
     .limit(limit);
   if (!drills?.length) return [];
   const ids = drills.map((d) => d.id as string);
   const { data: checks } = await supabase
     .from("offshore_muster_checkins")
-    .select("drill_id, accounted")
+    .select("drill_id, accounted, outcome")
     .in("drill_id", ids);
-  const totals = new Map<string, { total: number; accounted: number }>();
+  const totals = new Map<string, { total: number; accounted: number; no_show: number; not_on_board: number }>();
   for (const c of checks ?? []) {
-    const t = totals.get(c.drill_id as string) ?? { total: 0, accounted: 0 };
+    const t = totals.get(c.drill_id as string) ?? { total: 0, accounted: 0, no_show: 0, not_on_board: 0 };
     t.total++;
-    if (c.accounted) t.accounted++;
+    if (c.outcome === "no_show") t.no_show++;
+    else if (c.outcome === "not_on_board") t.not_on_board++;
+    else if (c.accounted || c.outcome === "accounted") t.accounted++;
     totals.set(c.drill_id as string, t);
   }
-  return drills.map((d) => ({
-    id: d.id as string,
-    started_at: d.started_at as string,
-    ended_at: (d.ended_at as string | null) ?? null,
-    kind: d.kind as string,
-    total: totals.get(d.id as string)?.total ?? 0,
-    accounted: totals.get(d.id as string)?.accounted ?? 0,
-  }));
+  return drills.map((d) => {
+    const t = totals.get(d.id as string);
+    return {
+      id: d.id as string,
+      started_at: d.started_at as string,
+      ended_at: (d.ended_at as string | null) ?? null,
+      kind: d.kind as string,
+      closed_out_at: (d.closed_out_at as string | null) ?? null,
+      voided: Boolean(d.voided),
+      total: t?.total ?? 0,
+      accounted: t?.accounted ?? 0,
+      no_show: t?.no_show ?? 0,
+      not_on_board: t?.not_on_board ?? 0,
+    };
+  });
+}
+
+const DRILL_SELECT =
+  "id, started_at, ended_at, kind, closed_out_at, close_note, voided, closer:profiles!offshore_muster_drills_closed_out_by_fkey(full_name)";
+const CHECKIN_SELECT = "id, profile_id, name, lifeboat, accounted, outcome, accounted_at";
+
+function toDrill(drill: Record<string, any>, checkins: Record<string, any>[]): MusterDrill {
+  return {
+    id: drill.id as string,
+    started_at: drill.started_at as string,
+    ended_at: (drill.ended_at as string | null) ?? null,
+    kind: drill.kind as string,
+    closed_out_at: (drill.closed_out_at as string | null) ?? null,
+    closed_out_by_name: one<{ full_name?: string }>(drill.closer)?.full_name ?? null,
+    close_note: (drill.close_note as string | null) ?? null,
+    voided: Boolean(drill.voided),
+    checkins: checkins
+      .map((c) => ({
+        id: c.id as string,
+        profile_id: (c.profile_id as string | null) ?? null,
+        name: c.name as string,
+        lifeboat: (c.lifeboat as string | null) ?? null,
+        accounted: Boolean(c.accounted),
+        outcome: (c.outcome as MusterCheckin["outcome"]) ?? (c.accounted ? "accounted" : null),
+        accounted_at: (c.accounted_at as string | null) ?? null,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
 }
 
 /** A specific muster roll-call with its check-ins (for the report/export). */
@@ -52,29 +100,15 @@ export async function getMusterDrill(id: string): Promise<MusterDrill | null> {
   const supabase = createClient();
   const { data: drill } = await supabase
     .from("offshore_muster_drills")
-    .select("id, started_at, ended_at, kind")
+    .select(DRILL_SELECT)
     .eq("id", id)
     .maybeSingle();
   if (!drill) return null;
   const { data: checkins } = await supabase
     .from("offshore_muster_checkins")
-    .select("id, profile_id, name, lifeboat, accounted")
+    .select(CHECKIN_SELECT)
     .eq("drill_id", id);
-  return {
-    id: drill.id as string,
-    started_at: drill.started_at as string,
-    ended_at: (drill.ended_at as string | null) ?? null,
-    kind: drill.kind as string,
-    checkins: ((checkins ?? []) as Record<string, any>[])
-      .map((c) => ({
-        id: c.id as string,
-        profile_id: (c.profile_id as string | null) ?? null,
-        name: c.name as string,
-        lifeboat: (c.lifeboat as string | null) ?? null,
-        accounted: Boolean(c.accounted),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
-  };
+  return toDrill(drill as Record<string, any>, (checkins ?? []) as Record<string, any>[]);
 }
 
 /** The currently-open muster roll-call (if any) with its check-ins. */
@@ -82,7 +116,7 @@ export async function getActiveMusterDrill(): Promise<MusterDrill | null> {
   const supabase = createClient();
   const { data: drill } = await supabase
     .from("offshore_muster_drills")
-    .select("id, started_at, ended_at, kind")
+    .select(DRILL_SELECT)
     .is("ended_at", null)
     .order("started_at", { ascending: false })
     .limit(1)
@@ -90,23 +124,9 @@ export async function getActiveMusterDrill(): Promise<MusterDrill | null> {
   if (!drill) return null;
   const { data: checkins } = await supabase
     .from("offshore_muster_checkins")
-    .select("id, profile_id, name, lifeboat, accounted")
-    .eq("drill_id", drill.id);
-  return {
-    id: drill.id as string,
-    started_at: drill.started_at as string,
-    ended_at: (drill.ended_at as string | null) ?? null,
-    kind: drill.kind as string,
-    checkins: ((checkins ?? []) as Record<string, any>[])
-      .map((c) => ({
-        id: c.id as string,
-        profile_id: (c.profile_id as string | null) ?? null,
-        name: c.name as string,
-        lifeboat: (c.lifeboat as string | null) ?? null,
-        accounted: Boolean(c.accounted),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
-  };
+    .select(CHECKIN_SELECT)
+    .eq("drill_id", (drill as Record<string, any>).id);
+  return toDrill(drill as Record<string, any>, (checkins ?? []) as Record<string, any>[]);
 }
 
 /** Evacuation / head-count role holders per rotation window + muster group. */
