@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
+import { ARCHIVE_REASON, isPastTripRequest, isPastVisitRequest } from "@/lib/offshore/past-requests";
 import { requireOffshoreDispatch, rev } from "./_shared";
 
 export async function requestOffshoreTrip(input: {
@@ -201,4 +202,54 @@ export async function addFlight(input: {
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
+}
+
+/**
+ * Archive every request whose dates passed with nobody travelling: open
+ * staff trips and undecided or unbedded visit requests are cancelled, the
+ * visit with a note saying why. `apply: false` only counts, for the
+ * confirmation. The OIM's call, like any other decision on a request.
+ */
+export async function archivePastRequests(input: {
+  apply: boolean;
+}): Promise<{ ok: true; trips: number; visits: number } | { ok: false; error: string }> {
+  const gate = await requireOffshoreDispatch("approve");
+  if (gate) return { ok: false, error: gate.error ?? "Not authorized." };
+  const supabase = createClient();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [{ data: trips }, { data: visits }] = await Promise.all([
+    supabase
+      .from("offshore_trips")
+      .select("id, mobilize_date, demob_date, status")
+      .in("status", ["requested", "hse_cleared", "manifested"]),
+    supabase
+      .from("offshore_visit_requests")
+      .select("id, depart_date, return_date, status")
+      .in("status", ["requested", "approved"]),
+  ]);
+  const pastTrips = ((trips ?? []) as Record<string, any>[]).filter((t) =>
+    isPastTripRequest({ status: t.status, mobilize_date: t.mobilize_date, demob_date: t.demob_date ?? null }, today),
+  );
+  const pastVisits = ((visits ?? []) as Record<string, any>[]).filter((v) =>
+    isPastVisitRequest({ status: v.status, depart_date: v.depart_date, return_date: v.return_date ?? null }, today),
+  );
+  if (!input.apply) return { ok: true, trips: pastTrips.length, visits: pastVisits.length };
+
+  if (pastTrips.length) {
+    const { error } = await supabase
+      .from("offshore_trips")
+      .update({ status: "cancelled" })
+      .in("id", pastTrips.map((t) => t.id));
+    if (error) return { ok: false, error: error.message };
+  }
+  if (pastVisits.length) {
+    const { error } = await supabase
+      .from("offshore_visit_requests")
+      .update({ status: "cancelled", reject_reason: ARCHIVE_REASON })
+      .in("id", pastVisits.map((v) => v.id));
+    if (error) return { ok: false, error: error.message };
+  }
+  rev();
+  return { ok: true, trips: pastTrips.length, visits: pastVisits.length };
 }

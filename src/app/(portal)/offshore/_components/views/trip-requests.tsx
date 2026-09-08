@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BedDouble, CheckCircle2, Inbox, ShieldCheck } from "lucide-react";
+import { Archive, BedDouble, CheckCircle2, Inbox, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +11,7 @@ import {
   requestCounts,
   requestQueues,
 } from "@/lib/offshore/trip-requests";
+import { pastRequests } from "@/lib/offshore/past-requests";
 import {
   OFFSHORE_STATUS_LABEL,
   VISIT_STATUS_LABEL,
@@ -22,6 +23,7 @@ import {
 } from "@/types/offshore";
 import {
   allocateVisitorBed,
+  archivePastRequests,
   clearHse,
   decideVisitGroup,
   decideVisitRequest,
@@ -59,10 +61,14 @@ export function TripRequestsPanel({
   const counts = requestCounts(q);
   const approve = canApproveRequests(flags);
   const bed = canAssignRooms(flags);
+  const past = pastRequests(visits, trips, new Date().toISOString().slice(0, 10));
+  const pastCount = past.trips.length + past.visits.length;
 
   return (
     <div className="space-y-4">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+
+      {pastCount > 0 && <ArchivePast count={pastCount} approve={approve} pending={pending} run={run} />}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Tile
@@ -449,6 +455,39 @@ function Tile({
       </p>
       <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+
+/**
+ * Requests whose dates passed with nobody travelling, cleared in one go.
+ * They are cancelled and drop into History; nothing is written until the
+ * OIM confirms the count.
+ */
+function ArchivePast({ count, approve, pending, run }: { count: number; approve: boolean; pending: boolean; run: Run }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <Archive className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1">
+        <strong>{count}</strong> request{count === 1 ? "" : "s"} whose dates have passed with nobody travelling.
+        {approve ? " Archive them to clear the queue; they move to History as cancelled." : " The OIM can archive them."}
+      </span>
+      {approve && !confirming && (
+        <Button size="sm" variant="outline" disabled={pending} onClick={() => setConfirming(true)}>
+          Archive past requests
+        </Button>
+      )}
+      {approve && confirming && (
+        <span className="flex items-center gap-2">
+          <Button size="sm" disabled={pending} onClick={() => run(() => archivePastRequests({ apply: true }).then((r) => (r.ok ? { ok: true } : r)), () => setConfirming(false))}>
+            {pending ? "Archiving…" : `Archive ${count}`}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={pending} onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+        </span>
+      )}
     </div>
   );
 }
