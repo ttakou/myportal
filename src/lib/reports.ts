@@ -3,6 +3,7 @@ import { cache } from "react";
 import { idDocLabel } from "@/types/visitors";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
+import { summariseTrips, type TripSummary } from "@/lib/transport/trip-log";
 
 /** Distinct, non-empty departments in the tenant — for the report filter bar.
  *  Request-cached: read by the filter bar on every report page. */
@@ -159,10 +160,15 @@ export interface TransportReport {
     total: number;
     completed: number;
     cancelled: number;
+    noShows: number;
     active: number;
     overdue: number;
     completionRate: number;
+    /** Minutes from departure to the driver setting off, averaged over started trips. */
+    avgStartDelayMin: number | null;
   };
+  /** Kilometres, fuel and ratings from the drivers' trip logs. */
+  trips: TripSummary;
   byStatus: { status: string; count: number }[];
   byDept: { department: string; count: number }[];
   byTaskType: { taskType: string; count: number }[];
@@ -174,7 +180,7 @@ export interface TransportReportFilters {
   department: string | null;
 }
 
-const TRANSPORT_ACTIVE = new Set(["pending", "assigned", "in_progress"]);
+const TRANSPORT_ACTIVE = new Set(["pending", "assigned", "in_progress", "arrived"]);
 
 /**
  * Transportation requests over a period (by departure time): completion vs
@@ -187,8 +193,9 @@ export async function getTransportReport(f: TransportReportFilters): Promise<Tra
   const { data } = await supabase
     .from("transport_requests")
     .select(
-      "status, task_type, depart_at," +
-        " requester:profiles!transport_requests_requester_id_fkey(department)",
+      "status, task_type, depart_at, started_at, odometer_start, odometer_end, fuel_litres, fuel_cost, rating," +
+        " requester:profiles!transport_requests_requester_id_fkey(department)," +
+        " driver:transport_drivers(full_name), vehicle:transport_vehicles(name)",
     )
     .gte("depart_at", `${f.from}T00:00:00`)
     .lte("depart_at", `${f.to}T23:59:59`);
@@ -196,18 +203,40 @@ export async function getTransportReport(f: TransportReportFilters): Promise<Tra
   const now = new Date().toISOString();
   let completed = 0;
   let cancelled = 0;
+  let noShows = 0;
   let active = 0;
   let overdue = 0;
+  let delaySum = 0;
+  let delayCount = 0;
   const statusMap = new Map<string, number>();
   const deptMap = new Map<string, number>();
   const taskMap = new Map<string, number>();
+  const tripRows: Parameters<typeof summariseTrips>[0] = [];
 
   for (const r of (data ?? []) as Record<string, any>[]) {
     const department = one<{ department?: string }>(r.requester)?.department ?? null;
     if (f.department && department !== f.department) continue;
 
+    tripRows.push({
+      status: r.status,
+      driver_name: one<{ full_name?: string }>(r.driver)?.full_name ?? null,
+      vehicle_name: one<{ name?: string }>(r.vehicle)?.name ?? null,
+      log: {
+        odometer_start: r.odometer_start ?? null,
+        odometer_end: r.odometer_end ?? null,
+        fuel_litres: r.fuel_litres == null ? null : Number(r.fuel_litres),
+        fuel_cost: r.fuel_cost == null ? null : Number(r.fuel_cost),
+      },
+      rating: r.rating ?? null,
+    });
+    if (r.started_at) {
+      delaySum += (Date.parse(r.started_at) - Date.parse(r.depart_at)) / 60_000;
+      delayCount += 1;
+    }
+
     if (r.status === "completed") completed += 1;
     else if (r.status === "cancelled") cancelled += 1;
+    else if (r.status === "no_show") noShows += 1;
     else if (TRANSPORT_ACTIVE.has(r.status)) {
       active += 1;
       if ((r.status === "pending" || r.status === "assigned") && r.depart_at < now) overdue += 1;
@@ -225,10 +254,13 @@ export async function getTransportReport(f: TransportReportFilters): Promise<Tra
       total,
       completed,
       cancelled,
+      noShows,
       active,
       overdue,
       completionRate: decided ? Math.round((completed / decided) * 100) : 0,
+      avgStartDelayMin: delayCount ? Math.round(delaySum / delayCount) : null,
     },
+    trips: summariseTrips(tripRows),
     byStatus: [...statusMap.entries()]
       .map(([status, count]) => ({ status, count }))
       .sort((a, b) => b.count - a.count),

@@ -95,7 +95,7 @@ export default async function TransportationPage({
       active === "fleet" ? getAllVehicles() : Promise.resolve([]),
       active === "fleet" ? getProfilesForLinking() : Promise.resolve([]),
       active === "shuttles" || active === "planner" ? getShuttles() : Promise.resolve([]),
-      active === "new" || active === "dispatch" || active === "shuttles" || active === "fleet" ? getPlaces() : Promise.resolve([]),
+      active === "new" || active === "requests" || active === "dispatch" || active === "shuttles" || active === "fleet" ? getPlaces() : Promise.resolve([]),
       active === "driver" ? getMyDriverTasks() : Promise.resolve([]),
     ]);
 
@@ -142,13 +142,19 @@ export default async function TransportationPage({
       )}
 
       {active === "requests" && (
-        <RequestsList requests={requests} scope={isAdmin ? "all" : "mine"} canCreate={flags.canCreate} canDispatch={isAdmin} />
+        <RequestsList requests={requests} scope={isAdmin ? "all" : "mine"} canCreate={flags.canCreate} canDispatch={isAdmin} places={places} />
       )}
       {active === "new" && <RequestForm places={places} />}
       {active === "approvals" && (
         <ApprovalsPanel requests={approvals} approvalOn={approvalOn} escalationHours={Number(cfg.approval_escalation_hours ?? 24)} />
       )}
-      {active === "dispatch" && <DispatchBoard all={requests} drivers={drivers} vehicles={vehicles} places={places} />}
+      {active === "dispatch" && <DispatchBoard
+          all={requests}
+          drivers={drivers}
+          vehicles={vehicles}
+          places={places}
+          lateMinutes={Number(cfg.late_start_alert_minutes ?? 15)}
+        />}
       {active === "planner" && (
         <DayPlanner
           date={plannerDate}
