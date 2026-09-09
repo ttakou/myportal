@@ -11,6 +11,8 @@ import { emergencySubmenu } from "@/app/(portal)/emergency/_components/emergency
 import { visitorsSubmenu } from "@/app/(portal)/visitors/_components/visitors-views";
 import { medicalSubmenu } from "@/app/(portal)/medical/_components/medical-views";
 import { savingsSubmenu } from "@/app/(portal)/savings/_components/savings-views";
+import { transportSubmenu } from "@/app/(portal)/transportation/_components/transport-views";
+import { getMyDriver } from "@/lib/transport";
 import { isSavingsApprover as getIsSavingsApprover } from "@/lib/savings";
 import { adminSubmenu, canSeeAdminConsole, type AdminFlags } from "@/app/(portal)/admin/_components/admin-views";
 import { isTrainingAdmin as getIsTrainingAdmin } from "@/lib/training";
@@ -33,13 +35,14 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const [services, access, isManager, isTrainingAdmin, perms, isSavingsApprover] = await Promise.all([
+  const [services, access, isManager, isTrainingAdmin, perms, isSavingsApprover, myDriver] = await Promise.all([
     getActiveServices(),
     getAccess(),
     hasDirectReports(),
     getIsTrainingAdmin(),
     getMyPermissions(),
     getIsSavingsApprover(),
+    getMyDriver(),
   ]);
   // Full offshore managers drive the admin console's offshore section; the
   // Dispatcher additionally gets the (scoped) offshore submenu but not the
@@ -145,26 +148,29 @@ export async function Sidebar({
     return base;
   });
 
-  // Merge the two travel modules — "Transportation Request" (/transportation)
-  // and "Out of Town Trip" (/out-of-town) — under a single "Transportation"
-  // parent with an indented submenu (like Training/Canteen). The parent stays
-  // highlighted on either route. Only merges when the tenant has both enabled.
+  // The transportation module carries its own submenu — the requests list,
+  // the request form, the dispatch board for admins, a driver's tasks — and
+  // absorbs "Out of Town Trip" (/out-of-town) as a last entry when the tenant
+  // has that module too. The parent stays highlighted on either route.
   const transport = links.find((l) => l.href === "/transportation");
   const outOfTown = links.find((l) => l.href === "/out-of-town");
-  if (transport && outOfTown) {
+  if (transport) {
     const merged: NavLink = {
       // Inherit the (renamed) module label from the catalog, else a sensible default.
       name: transport.name ?? "My Transportation",
       href: "/transportation",
       icon: transport.icon ?? "Car",
-      matchPaths: ["/transportation", "/out-of-town"],
-      subItems: [
-        { key: "transportation", label: "Transportation Request", icon: transport.icon ?? "Car", href: "/transportation" },
-        { key: "out-of-town", label: "Out of Town Trip", icon: outOfTown.icon ?? "Plane", href: "/out-of-town" },
-      ],
+      matchPaths: outOfTown ? ["/transportation", "/out-of-town"] : ["/transportation"],
+      defaultSubKey: myDriver && !isOrgAdmin ? "driver" : "requests",
+      subItems: transportSubmenu({
+        admin: isOrgAdmin,
+        driver: Boolean(myDriver),
+        canCreate: isOrgAdmin || hasPermission(perms, "transportation", "create"),
+        outOfTown: Boolean(outOfTown),
+      }),
     };
     links = links.flatMap((l) =>
-      l.href === "/transportation" ? [merged] : l.href === "/out-of-town" ? [] : [l],
+      l.href === "/transportation" ? [merged] : l.href === "/out-of-town" && outOfTown ? [] : [l],
     );
   }
 
