@@ -121,12 +121,21 @@ export interface Shuttle {
   is_active: boolean;
 }
 
+/** A saved pickup or drop-off point the tenant names once. */
+export interface Place {
+  id: string;
+  name: string;
+}
+
 export interface TransportRequest {
   id: string;
   requester_id: string | null;
   requester_name: string | null;
   /** Set when the request came from a recurring shuttle. */
   shuttle_id: string | null;
+  /** Set on a return leg: the outbound request it comes back from. */
+  return_of: string | null;
+  created_at: string;
   pickup: string;
   dropoff: string;
   depart_at: string;

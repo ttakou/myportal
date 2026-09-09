@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useStatusTransition } from "@/components/activity";
-import { Car, Truck } from "lucide-react";
+import { Car, Truck, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -57,6 +57,13 @@ export function RequestsList({
     });
   }, [requests, filter]);
   const reveal = useProgressiveReveal(shown.length);
+
+  // Outbound id → its return leg, for the "return booked" line.
+  const returnOf = useMemo(() => {
+    const m = new Map<string, TransportRequest>();
+    for (const r of requests) if (r.return_of) m.set(r.return_of, r);
+    return m;
+  }, [requests]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { open: 0, all: requests.length };
@@ -125,6 +132,11 @@ export function RequestsList({
               <StatusBadge status={r.status} />
               <TypeBadge type={r.task_type} />
               {r.priority !== "normal" && <PriorityBadge priority={r.priority} />}
+              {r.return_of && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium">
+                  <Undo2 className="h-3 w-3" /> Return leg
+                </span>
+              )}
               <span className="font-medium">
                 {r.pickup} → {r.dropoff}
               </span>
@@ -139,6 +151,11 @@ export function RequestsList({
                 </Button>
               )}
             </div>
+            {returnOf.get(r.id) && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Return booked: {returnOf.get(r.id)!.pickup} → {returnOf.get(r.id)!.dropoff} · {fmt(returnOf.get(r.id)!.depart_at)}
+              </p>
+            )}
             {(r.driver_name || r.vehicle_name) ? (
               <p className="mt-1 text-sm">
                 <span className="text-muted-foreground">Driver:</span>{" "}

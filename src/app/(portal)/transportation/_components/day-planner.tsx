@@ -3,9 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useStatusTransition } from "@/components/activity";
-import { CalendarClock, ChevronLeft, ChevronRight, TriangleAlert } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Play, Repeat, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
+import { ghostShuttles } from "@/lib/transport/shuttles";
 import {
   localTime,
   PLANNER_END_HOUR,
@@ -14,32 +16,49 @@ import {
   shiftDate,
   timelinePct,
 } from "@/lib/transport/day-plan";
-import type { Driver, TransportRequest, Vehicle } from "@/types/transport";
-import { assignTransport } from "../actions";
+import type { Driver, Shuttle, TransportRequest, Vehicle } from "@/types/transport";
+import { assignTransport, runShuttlesNow } from "../actions";
 import { STATUS_STYLE } from "./task-bits";
 
 /**
  * The dispatcher's day on a clock: one lane per driver, each task a block
  * at its departure time, clashes marked, the unassigned in a pile with an
- * assign picker. Yesterday and tomorrow are one click away.
+ * assign picker. Shuttle runs the nightly job has not created yet are
+ * drawn as ghosts in their driver's lane, so tomorrow is never blank.
+ * Yesterday and tomorrow are one click away.
  */
 export function DayPlanner({
   date,
   requests,
   drivers,
   vehicles,
+  shuttles,
   clashMinutes,
 }: {
   date: string;
   requests: TransportRequest[];
   drivers: Driver[];
   vehicles: Vehicle[];
+  shuttles: Shuttle[];
   clashMinutes: number;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const plan = planDay(requests, drivers, clashMinutes);
+  const ghosts = ghostShuttles(shuttles, requests, date);
+  const laneIds = new Set(drivers.map((d) => d.id));
+  const ghostsWithoutLane = ghosts.filter((g) => !g.shuttle.driver_id || !laneIds.has(g.shuttle.driver_id));
+
+  function createRuns() {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const res = await runShuttlesNow(date);
+      if (!res.ok) setError(res.error ?? "Could not create the runs.");
+      else setNotice(`${res.created ?? 0} shuttle run(s) created for the day.`);
+    });
+  }
   const hours = Array.from({ length: PLANNER_END_HOUR - PLANNER_START_HOUR + 1 }, (_, i) => PLANNER_START_HOUR + i);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -88,7 +107,17 @@ export function DayPlanner({
         )}
       </p>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
-      {notice && <p className="rounded-md bg-amber-100 px-4 py-2 text-sm text-amber-800">⚠ Assigned, but heads-up: {notice}</p>}
+      {notice && <p className="rounded-md bg-amber-100 px-4 py-2 text-sm text-amber-800">{notice}</p>}
+      {ghosts.length > 0 && (
+        <p className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+          <Repeat className="h-3.5 w-3.5" />
+          {ghosts.length} shuttle run{ghosts.length === 1 ? "" : "s"} scheduled for the day but not created yet (the job runs at 03:30
+          local); shown dashed.
+          <Button size="sm" variant="outline" className="ml-auto" disabled={pending} onClick={createRuns}>
+            <Play className="h-3.5 w-3.5" /> Create them now
+          </Button>
+        </p>
+      )}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <div className="min-w-[860px]">
@@ -143,6 +172,21 @@ export function DayPlanner({
                     <p className="truncate">→ {t.dropoff}</p>
                   </div>
                 ))}
+                {ghosts
+                  .filter((g) => g.shuttle.driver_id === lane.driver.id)
+                  .map((g) => (
+                    <div
+                      key={`ghost-${g.shuttle.id}`}
+                      title={`${localTime(g.departAt)} · ${g.shuttle.name} (shuttle, not created yet)`}
+                      className="absolute top-2 h-10 w-36 -translate-x-1 overflow-hidden rounded-md border border-dashed border-muted-foreground/60 bg-muted/40 px-2 py-1 text-[11px] leading-tight text-muted-foreground"
+                      style={{ left: `${timelinePct(g.departAt)}%` }}
+                    >
+                      <p className="truncate font-semibold">
+                        {localTime(g.departAt)} {g.shuttle.pickup}
+                      </p>
+                      <p className="truncate">→ {g.shuttle.dropoff}</p>
+                    </div>
+                  ))}
               </div>
             </div>
           ))}
@@ -190,6 +234,21 @@ export function DayPlanner({
               )}
             </div>
           ))
+        )}
+        {ghostsWithoutLane.length > 0 && (
+          <div className="space-y-1">
+            {ghostsWithoutLane.map((g) => (
+              <div key={`ghost-${g.shuttle.id}`} className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                <span className="font-mono text-xs">{localTime(g.departAt)}</span>
+                <Repeat className="h-3.5 w-3.5" />
+                <span className="font-medium">{g.shuttle.name}</span>
+                <span>
+                  {g.shuttle.pickup} → {g.shuttle.dropoff}
+                </span>
+                <span className="text-xs">{g.shuttle.driver_name ? `${g.shuttle.driver_name} (not on the active list)` : "no driver on the schedule"} · not created yet</span>
+              </div>
+            ))}
+          </div>
         )}
         {plan.orphaned.length > 0 && (
           <p className="text-xs text-amber-800">

@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Truck, UserPlus, Wrench } from "lucide-react";
+import { MapPin, Truck, UserPlus, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
-import { VEHICLE_STATUS_LABEL, type Driver, type Vehicle, type VehicleStatus } from "@/types/transport";
-import { addDriver, addVehicle, linkDriverProfile, setDriverActive, setDriverDuty, setVehicleStatus } from "../actions";
+import { VEHICLE_STATUS_LABEL, type Driver, type Place, type Vehicle, type VehicleStatus } from "@/types/transport";
+import { addDriver, addPlace, addVehicle, linkDriverProfile, removePlace, setDriverActive, setDriverDuty, setVehicleStatus } from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -15,19 +15,22 @@ type Runner = (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => 
 
 /**
  * The fleet, out of the dispatch board's way: vehicles and their status,
- * drivers with their portal account, duty and active flags. Setting a
- * driver off duty keeps them off the top of the assign lists; retiring
- * them takes them off the lists entirely without losing their history.
+ * drivers with their portal account, duty and active flags, and the saved
+ * places every form offers. Setting a driver off duty keeps them off the
+ * top of the assign lists; retiring them takes them off the lists entirely
+ * without losing their history.
  */
 export function FleetPanel({
   drivers,
   vehicles,
   profiles,
+  places,
   approvalOn,
 }: {
   drivers: (Driver & { is_active: boolean })[];
   vehicles: Vehicle[];
   profiles: { id: string; full_name: string }[];
+  places: Place[];
   approvalOn: boolean;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -55,7 +58,59 @@ export function FleetPanel({
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
       <DriversSection drivers={drivers} profiles={profiles} pending={pending} run={run} />
       <VehiclesSection vehicles={vehicles} pending={pending} run={run} />
+      <PlacesSection places={places} pending={pending} run={run} />
     </div>
+  );
+}
+
+function PlacesSection({ places, pending, run }: { places: Place[]; pending: boolean; run: Runner }) {
+  const [name, setName] = useState("");
+
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+        <MapPin className="h-4 w-4" /> Saved places ({places.length})
+      </h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        The usual pickup and drop-off points. Forms offer them as you type, and a request that names one
+        takes this spelling, so the planner and the reports count one place once.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {places.map((p) => (
+          <span key={p.id} className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-0.5 text-xs">
+            {p.name}
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                if (confirm(`Forget "${p.name}"? Requests that name it keep their text.`)) run(() => removePlace(p.id));
+              }}
+              className="ml-0.5 text-muted-foreground hover:text-destructive"
+              aria-label={`Remove ${p.name}`}
+              title="Remove"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {places.length === 0 && <p className="text-xs text-muted-foreground">No saved places yet.</p>}
+      </div>
+      <form
+        className="mt-3 flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(
+            () => addPlace(name),
+            () => setName(""),
+          );
+        }}
+      >
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New place (e.g. Douala airport)" required className={field} />
+        <Button type="submit" variant="outline" disabled={pending}>
+          Save place
+        </Button>
+      </form>
+    </section>
   );
 }
 

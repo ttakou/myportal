@@ -39,6 +39,15 @@ export const MODULE_PARAMS: Record<string, ModuleParamDef[]> = {
   ],
   transportation: [
     {
+      key: "approval_escalation_hours",
+      label: "Escalate unanswered approvals after (hours)",
+      help: "A request the line manager has not decided within this time goes to the dispatch desk. 0 never escalates.",
+      type: "number",
+      default: 24,
+      min: 0,
+      max: 336,
+    },
+    {
       key: "require_approval",
       label: "Line manager approves ride requests",
       help: "A request waits on the requester's line manager before the dispatch desk sees it. People with no manager on file go straight to dispatch.",

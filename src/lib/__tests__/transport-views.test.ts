@@ -37,6 +37,13 @@ describe("transportViewAllowed", () => {
       expect(transportViewAllowed(k, MANAGER)).toBe(false);
     }
   });
+
+  it("hides approvals from everyone when approval is off and nothing waits", () => {
+    expect(transportViewAllowed("approvals", { ...MANAGER, approvals: false })).toBe(false);
+    expect(transportViewAllowed("approvals", { ...ADMIN, approvals: false })).toBe(false);
+    expect(transportSubmenu({ ...MANAGER, approvals: false }).map((i) => i.key)).toEqual(["requests", "new"]);
+    expect(resolveTransportView("approvals", { ...ADMIN, approvals: false })).toBe("requests");
+  });
 });
 
 describe("resolveTransportView", () => {

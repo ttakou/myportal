@@ -48,3 +48,12 @@ export function shuttlesDue(shuttles: Shuttle[], dateIso: string) {
     .map((s) => ({ shuttle: s, departAt: shuttleDepartAt(s, dateIso) }))
     .sort((a, b) => a.departAt.localeCompare(b.departAt));
 }
+
+/**
+ * The day's shuttle runs the job has not made tasks for yet — what the
+ * planner draws as ghosts so tomorrow is not blank before 02:30.
+ */
+export function ghostShuttles(shuttles: Shuttle[], requests: { shuttle_id: string | null }[], dateIso: string) {
+  const made = new Set(requests.map((r) => r.shuttle_id).filter((id): id is string => Boolean(id)));
+  return shuttlesDue(shuttles, dateIso).filter((d) => !made.has(d.shuttle.id));
+}

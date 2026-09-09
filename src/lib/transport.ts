@@ -1,17 +1,23 @@
 import { createClient } from "@/lib/supabase/server";
+import { cache } from "react";
 import type {
   ChecklistItem,
   Driver,
+  Place,
   Shuttle,
   TaskUpdate,
   TransportRequest,
   Vehicle,
 } from "@/types/transport";
 import { dayRangeIso } from "@/lib/transport/day-plan";
+import { showApprovalsView } from "@/lib/transport/approvals";
+import { getModuleSettings } from "@/lib/module-settings";
+import { hasDirectReports } from "@/lib/appraisals";
+import { getActiveDelegatorIds } from "@/lib/delegation";
 import { one } from "@/lib/supabase/row-helpers";
 
 const REQ_SELECT =
-  "id, requester_id, shuttle_id, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
+  "id, requester_id, shuttle_id, return_of, created_at, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
   " task_type, priority, notes," +
   " requester:profiles!transport_requests_requester_id_fkey(full_name)," +
   " driver:transport_drivers(full_name, phone), vehicle:transport_vehicles(name)," +
@@ -34,6 +40,8 @@ function mapReq(row: Record<string, any>): TransportRequest {
     id: row.id,
     requester_id: row.requester_id ?? null,
     shuttle_id: row.shuttle_id ?? null,
+    return_of: row.return_of ?? null,
+    created_at: row.created_at,
     requester_name: one<{ full_name?: string }>(row.requester)?.full_name ?? null,
     pickup: row.pickup,
     dropoff: row.dropoff,
@@ -244,3 +252,47 @@ export async function getShuttles(): Promise<Shuttle[]> {
   }
   return (data ?? []).map((r) => mapShuttle(r as Record<string, any>));
 }
+
+/** The tenant's saved places, alphabetical. */
+export async function getPlaces(): Promise<Place[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("transport_places").select("id, name").order("name");
+  if (error) {
+    console.error("getPlaces:", error.message);
+    return [];
+  }
+  return (data ?? []) as Place[];
+}
+
+/**
+ * Whether the signed-in user decides ride requests, and whether the
+ * Approvals view earns its menu entry. An approver is a line manager, or
+ * the delegate of one for the delegation window; the view shows while
+ * approval is switched on or something still waits in the queue. Cached
+ * per request: the sidebar and the page both ask.
+ */
+export const getApprovalAccess = cache(
+  async (): Promise<{ approver: boolean; approvalOn: boolean; queued: number; showApprovals: boolean }> => {
+    const supabase = createClient();
+    const [cfg, direct, delegators] = await Promise.all([
+      getModuleSettings("transportation"),
+      hasDirectReports(),
+      getActiveDelegatorIds(),
+    ]);
+    let approver = direct;
+    if (!approver && delegators.length > 0) {
+      const { count } = await supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .in("manager_id", delegators)
+        .eq("is_active", true);
+      approver = (count ?? 0) > 0;
+    }
+    const { count: queued } = await supabase
+      .from("transport_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "awaiting_approval");
+    const approvalOn = cfg.require_approval === true;
+    return { approver, approvalOn, queued: queued ?? 0, showApprovals: showApprovalsView(approvalOn, queued ?? 0) };
+  },
+);
