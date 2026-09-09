@@ -16,6 +16,7 @@ import {
 import { addChecklistItem, addTaskFollowUp, toggleChecklistItem } from "../actions";
 
 export const STATUS_STYLE: Record<TransportStatus, string> = {
+  awaiting_approval: "bg-amber-100 text-amber-800",
   pending: "bg-muted text-muted-foreground",
   assigned: "bg-accent text-accent-foreground",
   in_progress: "bg-primary/10 text-primary",

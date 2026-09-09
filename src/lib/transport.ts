@@ -2,14 +2,16 @@ import { createClient } from "@/lib/supabase/server";
 import type {
   ChecklistItem,
   Driver,
+  Shuttle,
   TaskUpdate,
   TransportRequest,
   Vehicle,
 } from "@/types/transport";
+import { dayRangeIso } from "@/lib/transport/day-plan";
 import { one } from "@/lib/supabase/row-helpers";
 
 const REQ_SELECT =
-  "id, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
+  "id, requester_id, shuttle_id, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
   " task_type, priority, notes," +
   " requester:profiles!transport_requests_requester_id_fkey(full_name)," +
   " driver:transport_drivers(full_name, phone), vehicle:transport_vehicles(name)," +
@@ -30,6 +32,8 @@ function mapReq(row: Record<string, any>): TransportRequest {
   const driver = one<{ full_name?: string; phone?: string | null }>(row.driver);
   return {
     id: row.id,
+    requester_id: row.requester_id ?? null,
+    shuttle_id: row.shuttle_id ?? null,
     requester_name: one<{ full_name?: string }>(row.requester)?.full_name ?? null,
     pickup: row.pickup,
     dropoff: row.dropoff,
@@ -157,4 +161,86 @@ export async function getProfilesForLinking(): Promise<{ id: string; full_name: 
     .select("id, full_name")
     .order("full_name");
   return (data ?? []) as { id: string; full_name: string }[];
+}
+
+/**
+ * Requests waiting on an approval. RLS decides whose: a line manager sees
+ * their direct reports', an admin everyone's.
+ */
+export async function getApprovalQueue(): Promise<TransportRequest[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("transport_requests")
+    .select(REQ_SELECT)
+    .eq("status", "awaiting_approval")
+    .order("depart_at", { ascending: true });
+  if (error) {
+    console.error("getApprovalQueue:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => mapReq(r as Record<string, any>));
+}
+
+/** Every request departing on one local day, for the planner. */
+export async function getRequestsForDay(dateIso: string): Promise<TransportRequest[]> {
+  const supabase = createClient();
+  const { from, to } = dayRangeIso(dateIso);
+  const { data, error } = await supabase
+    .from("transport_requests")
+    .select(REQ_SELECT)
+    .gte("depart_at", from)
+    .lt("depart_at", to)
+    .order("depart_at", { ascending: true });
+  if (error) {
+    console.error("getRequestsForDay:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => mapReq(r as Record<string, any>));
+}
+
+/** Every driver, active or not, for the fleet view. */
+export async function getAllDrivers(): Promise<(Driver & { is_active: boolean })[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("transport_drivers")
+    .select("id, full_name, phone, profile_id, on_duty, is_active")
+    .order("is_active", { ascending: false })
+    .order("full_name");
+  return (data ?? []) as (Driver & { is_active: boolean })[];
+}
+
+const SHUTTLE_SELECT =
+  "id, name, pickup, dropoff, depart_time, days_of_week, passengers, task_type, driver_id, vehicle_id, is_active," +
+  " driver:transport_drivers(full_name), vehicle:transport_vehicles(name)";
+
+function mapShuttle(row: Record<string, any>): Shuttle {
+  return {
+    id: row.id,
+    name: row.name,
+    pickup: row.pickup,
+    dropoff: row.dropoff,
+    depart_time: String(row.depart_time).slice(0, 5),
+    days_of_week: (row.days_of_week as number[]) ?? [],
+    passengers: row.passengers ?? 1,
+    task_type: row.task_type ?? "passenger",
+    driver_id: row.driver_id ?? null,
+    driver_name: one<{ full_name?: string }>(row.driver)?.full_name ?? null,
+    vehicle_id: row.vehicle_id ?? null,
+    vehicle_name: one<{ name?: string }>(row.vehicle)?.name ?? null,
+    is_active: Boolean(row.is_active),
+  };
+}
+
+export async function getShuttles(): Promise<Shuttle[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("transport_shuttles")
+    .select(SHUTTLE_SELECT)
+    .order("is_active", { ascending: false })
+    .order("depart_time");
+  if (error) {
+    console.error("getShuttles:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => mapShuttle(r as Record<string, any>));
 }

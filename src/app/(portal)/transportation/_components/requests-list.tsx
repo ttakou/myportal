@@ -15,6 +15,7 @@ type Filter = "open" | "all" | TransportStatus;
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "open", label: "Open" },
+  { key: "awaiting_approval", label: TRANSPORT_STATUS_LABEL.awaiting_approval },
   { key: "pending", label: TRANSPORT_STATUS_LABEL.pending },
   { key: "assigned", label: TRANSPORT_STATUS_LABEL.assigned },
   { key: "in_progress", label: TRANSPORT_STATUS_LABEL.in_progress },
@@ -23,7 +24,7 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
 ];
 
-const OPEN: TransportStatus[] = ["pending", "assigned", "in_progress"];
+const OPEN: TransportStatus[] = ["awaiting_approval", "pending", "assigned", "in_progress"];
 
 /**
  * Every transportation request: all of them for an admin, your own for
@@ -132,7 +133,7 @@ export function RequestsList({
                 {r.purpose ? ` · ${r.purpose}` : ""}
                 {scope === "all" && r.requester_name ? ` · for ${r.requester_name}` : ""}
               </span>
-              {(r.status === "pending" || r.status === "assigned") && (
+              {(r.status === "awaiting_approval" || r.status === "pending" || r.status === "assigned") && (
                 <Button size="sm" variant="outline" disabled={pending} className="ml-auto" onClick={() => cancel(r.id)}>
                   Cancel
                 </Button>
@@ -146,7 +147,11 @@ export function RequestsList({
                 {r.vehicle_name ? ` · ${r.vehicle_name}` : ""}
               </p>
             ) : (
-              OPEN.includes(r.status) && <p className="mt-1 text-xs text-muted-foreground">No driver assigned yet.</p>
+              OPEN.includes(r.status) && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {r.status === "awaiting_approval" ? "Waiting for your line manager's approval." : "No driver assigned yet."}
+                </p>
+              )
             )}
             <Checklist task={r} canTick={false} />
             <FollowUps task={r} canPost />

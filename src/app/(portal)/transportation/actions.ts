@@ -4,8 +4,13 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
 import { notifyProfiles } from "@/lib/eess-notify";
+import { notifyUsers } from "@/lib/notify";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { seedTaskChecklist } from "@/lib/task-checklist";
 import { getModuleSettings } from "@/lib/module-settings";
+import { shuttleDepartAt, shuttleRunsOn } from "@/lib/transport/shuttles";
+import { runTransportShuttles } from "@/lib/transport-shuttle-run";
 import type {
   TransportPriority,
   TransportStatus,
@@ -87,6 +92,18 @@ export async function createTransportRequest(input: {
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // With approval on, a request waits on the requester's line manager; a
+  // requester with no manager on file goes straight to dispatch.
+  let managerId: string | null = null;
+  if (cfg.require_approval === true && user) {
+    const { data: me } = await supabase.from("profiles").select("manager_id, full_name").eq("id", user.id).maybeSingle();
+    managerId = (me?.manager_id as string | null) ?? null;
+  }
+  const status = managerId ? "awaiting_approval" : "pending";
 
   const { data, error } = await supabase
     .from("transport_requests")
@@ -98,12 +115,134 @@ export async function createTransportRequest(input: {
       passengers: Math.max(1, Math.floor(input.passengers || 1)),
       purpose: input.purpose?.trim() || null,
       task_type: input.taskType ?? "passenger",
+      status,
     })
     .select("id")
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (data && cfg.seed_checklists !== false) {
     await seedTaskChecklist(supabase, tenant, data.id, input.taskType ?? "passenger");
+  }
+  if (data) {
+    const route = `${input.pickup.trim()} → ${input.dropoff.trim()}`;
+    if (managerId) {
+      await notifyUsers({
+        tenantId: tenant,
+        profileIds: [managerId],
+        category: "approval",
+        title: "Ride request to approve",
+        body: `${route} · ${fmtLocal(input.departAt)}. Approve or reject on the Transportation approvals view.`,
+        url: "/transportation?view=approvals",
+      });
+    } else {
+      await notifyUsers({
+        tenantId: tenant,
+        profileIds: await dispatchDeskIds(),
+        category: "transport",
+        title: "New transport request",
+        body: `${route} · ${fmtLocal(input.departAt)}. Assign a driver on the dispatch board.`,
+        url: "/transportation?view=dispatch",
+      });
+    }
+  }
+  rev();
+  return { ok: true };
+}
+
+/** The tenant's admins: the dispatch desk, until a dispatcher role exists. */
+async function dispatchDeskIds(): Promise<string[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("is_active", true)
+    .in("role", ["tenant_admin", "super_admin"]);
+  return (data ?? []).map((p) => p.id as string);
+}
+
+/** A pickup time on the tenant's clock, for a notification body. */
+function fmtLocal(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Africa/Douala",
+  });
+}
+
+/**
+ * A line manager (or an admin) decides a request waiting on approval.
+ * Approve sends it to the dispatch desk; reject cancels it with the reason
+ * on the follow-up trail. Either way the requester is told.
+ */
+export async function decideTransportRequest(
+  id: string,
+  decision: "approve" | "reject",
+  reason?: string,
+): Promise<ActionResult> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const { data: req } = await supabase
+    .from("transport_requests")
+    .select("id, tenant_id, status, requester_id, pickup, dropoff, depart_at, requester:profiles!transport_requests_requester_id_fkey(manager_id)")
+    .eq("id", id)
+    .maybeSingle();
+  if (!req) return { ok: false, error: "Request not found." };
+  if (req.status !== "awaiting_approval") return { ok: false, error: "This request is not waiting for approval." };
+  const requester = (Array.isArray(req.requester) ? req.requester[0] : req.requester) as { manager_id?: string | null } | null;
+  const isManager = requester?.manager_id === user.id;
+  const admin = isAdminRole(await getCurrentRole());
+  if (!isManager && !admin) return { ok: false, error: "Only the requester's line manager can decide this." };
+
+  const next = decision === "approve" ? "pending" : "cancelled";
+  const { error } = await supabase
+    .from("transport_requests")
+    .update(
+      decision === "approve"
+        ? { status: next, approved_by: user.id, approved_at: new Date().toISOString() }
+        : { status: next },
+    )
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  // The trail entry is written with the service role: the manager may decide
+  // the request but is not one of the people RLS lets post on its thread.
+  const adminCli = createAdminClient();
+  if (adminCli) {
+    await adminCli.from("transport_task_updates").insert({
+      tenant_id: req.tenant_id,
+      request_id: id,
+      author_id: user.id,
+      note: decision === "approve" ? "Approved by line manager." : `Rejected by line manager${reason?.trim() ? `: ${reason.trim()}` : "."}`,
+      new_status: next,
+    });
+  }
+
+  const route = `${req.pickup} → ${req.dropoff}`;
+  await notifyUsers({
+    tenantId: req.tenant_id,
+    profileIds: [req.requester_id as string | null],
+    category: "transport",
+    title: decision === "approve" ? "Ride request approved" : "Ride request rejected",
+    body:
+      decision === "approve"
+        ? `${route} · ${fmtLocal(req.depart_at as string)}. The dispatch desk will assign a driver.`
+        : `${route} · ${fmtLocal(req.depart_at as string)}.${reason?.trim() ? ` Reason: ${reason.trim()}` : ""}`,
+    url: "/transportation?view=requests",
+  });
+  if (decision === "approve") {
+    await notifyUsers({
+      tenantId: req.tenant_id,
+      profileIds: await dispatchDeskIds(),
+      category: "transport",
+      title: "Approved transport request",
+      body: `${route} · ${fmtLocal(req.depart_at as string)}. Assign a driver on the dispatch board.`,
+      url: "/transportation?view=dispatch",
+    });
   }
   rev();
   return { ok: true };
@@ -235,15 +374,51 @@ export async function assignTransport(
     : null;
 
   const status = driverId ? "assigned" : "pending";
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("transport_requests")
     .update({ driver_id: driverId, vehicle_id: vehicleId, status })
     .eq("id", id)
-    .in("status", ["pending", "assigned"]);
+    .in("status", ["pending", "assigned"])
+    .select("tenant_id, requester_id, pickup, dropoff, depart_at, driver:transport_drivers(full_name, phone), vehicle:transport_vehicles(name)")
+    .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (driverId && cfg.push_on_assignment !== false) await pushTaskToDriver(id);
+  if (driverId && updated?.requester_id) {
+    const d = (Array.isArray(updated.driver) ? updated.driver[0] : updated.driver) as { full_name?: string; phone?: string | null } | null;
+    const v = (Array.isArray(updated.vehicle) ? updated.vehicle[0] : updated.vehicle) as { name?: string } | null;
+    await notifyUsers({
+      tenantId: updated.tenant_id as string,
+      profileIds: [updated.requester_id as string],
+      category: "transport",
+      title: `Driver assigned: ${d?.full_name ?? "a driver"}`,
+      body: `${updated.pickup} → ${updated.dropoff} · ${fmtLocal(updated.depart_at as string)}${d?.phone ? ` · ${d.phone}` : ""}${v?.name ? ` · ${v.name}` : ""}`,
+      url: "/transportation?view=requests",
+    });
+  }
   rev();
   return { ok: true, warning: warning ?? undefined };
+}
+
+/** The desk sets a driver on or off duty (a driver can also do it themselves). */
+export async function setDriverDuty(driverId: string, onDuty: boolean): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("transport_drivers").update({ on_duty: onDuty }).eq("id", driverId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Retire a driver from the assign lists, or bring them back. */
+export async function setDriverActive(driverId: string, active: boolean): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("transport_drivers").update({ is_active: active }).eq("id", driverId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
 }
 
 /** A driver toggles their own on/off-duty status. */
@@ -304,11 +479,14 @@ export async function setTransportStatus(
   note?: string,
 ): Promise<ActionResult> {
   const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("transport_requests")
     .update({ status })
     .eq("id", id)
-    .select("id, tenant_id")
+    .select("id, tenant_id, requester_id, pickup, dropoff, depart_at, driver:transport_drivers(full_name, phone)")
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "Task not found or not yours to update." };
@@ -319,6 +497,31 @@ export async function setTransportStatus(
     note: note?.trim() || null,
     new_status: status,
   });
+
+  // The requester hears about the moments that matter to them, unless they
+  // caused the change themselves.
+  const requesterId = data.requester_id as string | null;
+  if (requesterId && requesterId !== user?.id) {
+    const d = (Array.isArray(data.driver) ? data.driver[0] : data.driver) as { full_name?: string; phone?: string | null } | null;
+    const route = `${data.pickup} → ${data.dropoff}`;
+    const text =
+      status === "in_progress"
+        ? { title: "Your driver is on the way", body: `${d?.full_name ?? "Your driver"}${d?.phone ? ` (${d.phone})` : ""} has started ${route}.` }
+        : status === "completed"
+          ? { title: "Trip completed", body: `${route} · ${fmtLocal(data.depart_at as string)}.` }
+          : status === "cancelled"
+            ? { title: "Ride request cancelled", body: `${route} · ${fmtLocal(data.depart_at as string)}${note?.trim() ? ` · ${note.trim()}` : ""}.` }
+            : null;
+    if (text) {
+      await notifyUsers({
+        tenantId: data.tenant_id as string,
+        profileIds: [requesterId],
+        category: "transport",
+        ...text,
+        url: "/transportation?view=requests",
+      });
+    }
+  }
   rev();
   return { ok: true };
 }
@@ -501,3 +704,96 @@ export async function linkDriverProfile(
   rev();
   return { ok: true };
 }
+
+
+// ---- Recurring shuttles ------------------------------------------------------
+
+export async function createShuttle(input: {
+  name: string;
+  pickup: string;
+  dropoff: string;
+  departTime: string;
+  daysOfWeek: number[];
+  passengers?: number;
+  taskType?: TransportTaskType;
+  driverId?: string | null;
+  vehicleId?: string | null;
+}): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  if (!input.name.trim() || !input.pickup.trim() || !input.dropoff.trim())
+    return { ok: false, error: "Name, pickup and drop-off are required." };
+  if (!/^\d{2}:\d{2}$/.test(input.departTime)) return { ok: false, error: "Departure time must be HH:MM." };
+  const days = [...new Set(input.daysOfWeek.filter((d) => d >= 0 && d <= 6))].sort();
+  if (days.length === 0) return { ok: false, error: "Pick at least one day." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { error } = await supabase.from("transport_shuttles").insert({
+    tenant_id: tenant,
+    name: input.name.trim(),
+    pickup: input.pickup.trim(),
+    dropoff: input.dropoff.trim(),
+    depart_time: input.departTime,
+    days_of_week: days,
+    passengers: Math.max(1, Math.floor(input.passengers || 1)),
+    task_type: input.taskType ?? "passenger",
+    driver_id: input.driverId || null,
+    vehicle_id: input.vehicleId || null,
+    created_by: user?.id ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function updateShuttle(
+  id: string,
+  patch: { isActive?: boolean; driverId?: string | null; vehicleId?: string | null },
+): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const row: Record<string, unknown> = {};
+  if (patch.isActive !== undefined) row.is_active = patch.isActive;
+  if (patch.driverId !== undefined) row.driver_id = patch.driverId || null;
+  if (patch.vehicleId !== undefined) row.vehicle_id = patch.vehicleId || null;
+  const { error } = await supabase.from("transport_shuttles").update(row).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+export async function deleteShuttle(id: string): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("transport_shuttles").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Create today's (or a given day's) shuttle tasks now, without waiting for
+ * the nightly job — after adding a shuttle mid-morning, say. Idempotent:
+ * a run that already has its task is skipped.
+ */
+export async function runShuttlesNow(dateIso: string): Promise<ActionResult & { created?: number }> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return { ok: false, error: "Pick a date." };
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const res = await runTransportShuttles(dateIso, tenant);
+  if (!res.ok) return { ok: false, error: res.error ?? "Could not create the runs." };
+  rev();
+  return { ok: true, created: res.created };
+}
+
+// Keep the pure helpers reachable from the actions module for callers that
+// only import from here.
+export { shuttleDepartAt, shuttleRunsOn };

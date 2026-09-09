@@ -164,6 +164,7 @@ export async function Sidebar({
       defaultSubKey: myDriver && !isOrgAdmin ? "driver" : "requests",
       subItems: transportSubmenu({
         admin: isOrgAdmin,
+        manager: isManager,
         driver: Boolean(myDriver),
         canCreate: isOrgAdmin || hasPermission(perms, "transportation", "create"),
         outOfTown: Boolean(outOfTown),
