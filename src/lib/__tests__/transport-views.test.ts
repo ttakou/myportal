@@ -11,6 +11,7 @@ const EMPLOYEE: TransportFlags = { admin: false, driver: false, canCreate: true,
 const VIEWER: TransportFlags = { admin: false, driver: false, canCreate: false, outOfTown: false };
 const DRIVER: TransportFlags = { admin: false, driver: true, canCreate: false, outOfTown: false };
 const ADMIN: TransportFlags = { admin: true, driver: false, canCreate: true, outOfTown: true };
+const MANAGER: TransportFlags = { admin: false, manager: true, driver: false, canCreate: true, outOfTown: false };
 
 describe("transportViewAllowed", () => {
   it("gives everyone the requests list", () => {
@@ -25,6 +26,16 @@ describe("transportViewAllowed", () => {
     expect(transportViewAllowed("dispatch", ADMIN)).toBe(true);
     expect(transportViewAllowed("driver", DRIVER)).toBe(true);
     expect(transportViewAllowed("driver", EMPLOYEE)).toBe(false);
+  });
+
+  it("opens approvals to line managers and admins, the desk views to admins only", () => {
+    expect(transportViewAllowed("approvals", MANAGER)).toBe(true);
+    expect(transportViewAllowed("approvals", EMPLOYEE)).toBe(false);
+    expect(transportViewAllowed("approvals", ADMIN)).toBe(true);
+    for (const k of ["planner", "fleet", "shuttles"] as const) {
+      expect(transportViewAllowed(k, ADMIN)).toBe(true);
+      expect(transportViewAllowed(k, MANAGER)).toBe(false);
+    }
   });
 });
 
@@ -46,7 +57,17 @@ describe("resolveTransportView", () => {
 describe("transportSubmenu", () => {
   it("lists the permitted views in order, then Out of Town Trip when enabled", () => {
     expect(transportSubmenu(EMPLOYEE).map((i) => i.key)).toEqual(["requests", "new", "out-of-town"]);
-    expect(transportSubmenu(ADMIN).map((i) => i.key)).toEqual(["requests", "new", "dispatch", "out-of-town"]);
+    expect(transportSubmenu(ADMIN).map((i) => i.key)).toEqual([
+      "requests",
+      "new",
+      "approvals",
+      "dispatch",
+      "planner",
+      "fleet",
+      "shuttles",
+      "out-of-town",
+    ]);
+    expect(transportSubmenu(MANAGER).map((i) => i.key)).toEqual(["requests", "new", "approvals"]);
     expect(transportSubmenu(DRIVER).map((i) => i.key)).toEqual(["requests", "driver"]);
   });
 

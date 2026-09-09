@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { ClipboardList, TriangleAlert, Truck, UserPlus } from "lucide-react";
+import Link from "next/link";
+import { ClipboardList, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -10,23 +11,13 @@ import { usePermissions } from "@/components/permissions-provider";
 import {
   PRIORITY_LABEL,
   TASK_TYPE_LABEL,
-  VEHICLE_STATUS_LABEL,
   type Driver,
   type TransportPriority,
   type TransportRequest,
   type TransportTaskType,
   type Vehicle,
-  type VehicleStatus,
 } from "@/types/transport";
-import {
-  addDriver,
-  addVehicle,
-  assignTransport,
-  createTransportTask,
-  linkDriverProfile,
-  setTransportStatus,
-  setVehicleStatus,
-} from "../actions";
+import { assignTransport, createTransportTask, setTransportStatus } from "../actions";
 import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
 import { TransportAnalytics } from "./transport-analytics";
 
@@ -41,14 +32,10 @@ export function DispatchBoard({
   all,
   drivers,
   vehicles,
-  allVehicles,
-  profiles,
 }: {
   all: TransportRequest[];
   drivers: Driver[];
   vehicles: Vehicle[];
-  allVehicles: Vehicle[];
-  profiles: { id: string; full_name: string }[];
 }) {
   const { can } = usePermissions();
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -157,84 +144,18 @@ export function DispatchBoard({
         </details>
       )}
 
-      {can("transportation", "manage") && (
-        <DriversPanel drivers={drivers} profiles={profiles} pending={pending} run={run} />
-      )}
-      {can("transportation", "manage") && (
-        <VehiclesPanel vehicles={allVehicles} pending={pending} run={run} />
-      )}
+      <p className="text-xs text-muted-foreground">
+        Vehicles and drivers are managed on the{" "}
+        <Link href="/transportation?view=fleet" className="font-medium underline">
+          Vehicles &amp; drivers
+        </Link>{" "}
+        view; the{" "}
+        <Link href="/transportation?view=planner" className="font-medium underline">
+          Day planner
+        </Link>{" "}
+        shows the same tasks on a clock.
+      </p>
     </section>
-  );
-}
-
-function VehiclesPanel({
-  vehicles,
-  pending,
-  run,
-}: {
-  vehicles: Vehicle[];
-  pending: boolean;
-  run: Runner;
-}) {
-  const [name, setName] = useState("");
-  const [plate, setPlate] = useState("");
-  const [capacity, setCapacity] = useState("4");
-
-  return (
-    <details className="rounded-lg border bg-card p-4">
-      <summary className="cursor-pointer text-sm font-medium">
-        <span className="inline-flex items-center gap-1">
-          <Truck className="h-4 w-4" /> Vehicles ({vehicles.length})
-        </span>
-      </summary>
-
-      <div className="mt-2 space-y-2">
-        {vehicles.map((v) => (
-          <div key={v.id} className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-medium">{v.name}</span>
-            {v.plate && <span className="text-xs text-muted-foreground">{v.plate}</span>}
-            <span className="text-xs text-muted-foreground">· {v.capacity} seats</span>
-            <select
-              value={v.status}
-              disabled={pending}
-              onChange={(e) => run(() => setVehicleStatus(v.id, e.target.value as VehicleStatus))}
-              className="ml-auto rounded-md border bg-background px-1.5 py-1 text-xs"
-            >
-              {(Object.keys(VEHICLE_STATUS_LABEL) as VehicleStatus[]).map((s) => (
-                <option key={s} value={s}>
-                  {VEHICLE_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
-        {vehicles.length === 0 && (
-          <p className="text-xs text-muted-foreground">No vehicles yet.</p>
-        )}
-      </div>
-
-      <form
-        className="mt-3 flex flex-wrap gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(
-            () => addVehicle({ name, plate, capacity: Number(capacity) }),
-            () => {
-              setName("");
-              setPlate("");
-              setCapacity("4");
-            },
-          );
-        }}
-      >
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New vehicle (e.g. Toyota Hiace)" required className={field} />
-        <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Plate" className={field} />
-        <input value={capacity} onChange={(e) => setCapacity(e.target.value)} type="number" min={1} placeholder="Seats" className={`${field} w-24`} />
-        <Button type="submit" variant="outline" disabled={pending}>
-          Add vehicle
-        </Button>
-      </form>
-    </details>
   );
 }
 
@@ -414,85 +335,6 @@ function NewTaskForm({
         <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instructions for the driver" className={field} />
         <Button type="submit" disabled={pending}>
           Create task
-        </Button>
-      </form>
-    </details>
-  );
-}
-
-function DriversPanel({
-  drivers,
-  profiles,
-  pending,
-  run,
-}: {
-  drivers: Driver[];
-  profiles: { id: string; full_name: string }[];
-  pending: boolean;
-  run: Runner;
-}) {
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [profileId, setProfileId] = useState("");
-
-  return (
-    <details className="rounded-lg border bg-card p-4">
-      <summary className="cursor-pointer text-sm font-medium">
-        <span className="inline-flex items-center gap-1">
-          <UserPlus className="h-4 w-4" /> Drivers ({drivers.length})
-        </span>
-      </summary>
-
-      <p className="mt-2 text-xs text-muted-foreground">
-        Link a driver to a portal account so they can see and update their own tasks live.
-      </p>
-
-      <div className="mt-2 space-y-2">
-        {drivers.map((d) => (
-          <div key={d.id} className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-medium">{d.full_name}</span>
-            {d.phone && <span className="text-xs text-muted-foreground">{d.phone}</span>}
-            <LazySelect
-              value={d.profile_id ?? null}
-              options={profiles}
-              getOptionValue={(p) => p.id}
-              getOptionLabel={(p) => p.full_name ?? ""}
-              placeholder="No portal account"
-              disabled={pending}
-              className="ml-auto rounded-md border bg-background px-1.5 py-1 text-xs"
-              onChange={(v) => run(() => linkDriverProfile(d.id, v))}
-            />
-          </div>
-        ))}
-      </div>
-
-      <form
-        className="mt-3 flex flex-wrap gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(
-            () => addDriver({ fullName: name, phone, profileId: profileId || undefined }),
-            () => {
-              setName("");
-              setPhone("");
-              setProfileId("");
-            },
-          );
-        }}
-      >
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New driver name" required className={field} />
-        <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" className={field} />
-        <LazySelect
-          value={profileId || null}
-          options={profiles}
-          getOptionValue={(p) => p.id}
-          getOptionLabel={(p) => p.full_name}
-          placeholder="Portal account (optional)"
-          className={field}
-          onChange={(v) => setProfileId(v ?? "")}
-        />
-        <Button type="submit" variant="outline" disabled={pending}>
-          Add driver
         </Button>
       </form>
     </details>

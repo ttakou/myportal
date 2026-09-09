@@ -1,25 +1,36 @@
 import Link from "next/link";
 import { FileBarChart } from "lucide-react";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { hasDirectReports } from "@/lib/appraisals";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
 import { getActiveServices } from "@/lib/services";
+import { getModuleSettings } from "@/lib/module-settings";
+import { localDate } from "@/lib/transport/day-plan";
 import {
+  getAllDrivers,
   getAllTransportRequests,
   getAllVehicles,
+  getApprovalQueue,
   getDrivers,
   getMyDriver,
   getMyDriverTasks,
   getMyTransportRequests,
   getProfilesForLinking,
+  getRequestsForDay,
+  getShuttles,
   getVehicles,
 } from "@/lib/transport";
 import { cn } from "@/lib/utils";
 import { LiveRefresh } from "@/components/live-refresh";
+import { ApprovalsPanel } from "./_components/approvals-panel";
+import { DayPlanner } from "./_components/day-planner";
 import { DriverTasks } from "./_components/driver-tasks";
 import { DispatchBoard } from "./_components/dispatch-board";
+import { FleetPanel } from "./_components/fleet-panel";
 import { RequestForm } from "./_components/request-form";
 import { RequestsList } from "./_components/requests-list";
+import { ShuttlesPanel } from "./_components/shuttles-panel";
 import {
   resolveTransportView,
   TRANSPORT_VIEWS,
@@ -29,42 +40,53 @@ import {
 
 /**
  * One view at a time, driven by the sidebar submenu: the requests list,
- * the request form, the dispatch board, or a driver's tasks. Each view
- * loads only its own data.
+ * the request form, approvals, the dispatch board, the day planner, the
+ * fleet, the shuttle schedules, or a driver's tasks. Each view loads only
+ * its own data.
  */
 export default async function TransportationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; date?: string }>;
 }) {
-  const { view } = await searchParams;
-  const [role, perms, myDriver, services] = await Promise.all([
+  const { view, date } = await searchParams;
+  const [role, perms, myDriver, services, isManager, cfg] = await Promise.all([
     getCurrentRole(),
     getMyPermissions(),
     getMyDriver(),
     getActiveServices(),
+    hasDirectReports(),
+    getModuleSettings("transportation"),
   ]);
   const isAdmin = isAdminRole(role);
   const flags: TransportFlags = {
     admin: isAdmin,
+    manager: isManager,
     driver: Boolean(myDriver),
     canCreate: isAdmin || hasPermission(perms, "transportation", "create"),
     outOfTown: services.some((s) => s.slug === "out-of-town"),
   };
   const active = resolveTransportView(view, flags);
+  const approvalOn = cfg.require_approval === true;
+  const plannerDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : localDate(new Date().toISOString());
 
-  const [requests, drivers, vehicles, allVehicles, profiles, driverTasks] = await Promise.all([
-    active === "requests" || active === "dispatch"
-      ? isAdmin
-        ? getAllTransportRequests()
-        : getMyTransportRequests()
-      : Promise.resolve([]),
-    active === "dispatch" ? getDrivers() : Promise.resolve([]),
-    active === "dispatch" ? getVehicles() : Promise.resolve([]),
-    active === "dispatch" ? getAllVehicles() : Promise.resolve([]),
-    active === "dispatch" ? getProfilesForLinking() : Promise.resolve([]),
-    active === "driver" ? getMyDriverTasks() : Promise.resolve([]),
-  ]);
+  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, driverTasks] =
+    await Promise.all([
+      active === "requests" || active === "dispatch"
+        ? isAdmin
+          ? getAllTransportRequests()
+          : getMyTransportRequests()
+        : Promise.resolve([]),
+      active === "approvals" ? getApprovalQueue() : Promise.resolve([]),
+      active === "planner" ? getRequestsForDay(plannerDate) : Promise.resolve([]),
+      active === "dispatch" || active === "planner" || active === "shuttles" ? getDrivers() : Promise.resolve([]),
+      active === "fleet" ? getAllDrivers() : Promise.resolve([]),
+      active === "dispatch" || active === "planner" || active === "shuttles" ? getVehicles() : Promise.resolve([]),
+      active === "fleet" ? getAllVehicles() : Promise.resolve([]),
+      active === "fleet" ? getProfilesForLinking() : Promise.resolve([]),
+      active === "shuttles" ? getShuttles() : Promise.resolve([]),
+      active === "driver" ? getMyDriverTasks() : Promise.resolve([]),
+    ]);
 
   const tabs = TRANSPORT_VIEWS.filter((v) => transportViewAllowed(v.key, flags));
 
@@ -112,9 +134,19 @@ export default async function TransportationPage({
         <RequestsList requests={requests} scope={isAdmin ? "all" : "mine"} canCreate={flags.canCreate} canDispatch={isAdmin} />
       )}
       {active === "new" && <RequestForm />}
-      {active === "dispatch" && (
-        <DispatchBoard all={requests} drivers={drivers} vehicles={vehicles} allVehicles={allVehicles} profiles={profiles} />
+      {active === "approvals" && <ApprovalsPanel requests={approvals} approvalOn={approvalOn} />}
+      {active === "dispatch" && <DispatchBoard all={requests} drivers={drivers} vehicles={vehicles} />}
+      {active === "planner" && (
+        <DayPlanner
+          date={plannerDate}
+          requests={dayRequests}
+          drivers={drivers}
+          vehicles={vehicles}
+          clashMinutes={Math.round(Number(cfg.conflict_window_hours ?? 2) * 60)}
+        />
       )}
+      {active === "fleet" && <FleetPanel drivers={allDrivers} vehicles={allVehicles} profiles={profiles} approvalOn={approvalOn} />}
+      {active === "shuttles" && <ShuttlesPanel shuttles={shuttles} drivers={drivers} vehicles={vehicles} />}
       {active === "driver" && myDriver && <DriverTasks driver={myDriver} tasks={driverTasks} />}
     </div>
   );

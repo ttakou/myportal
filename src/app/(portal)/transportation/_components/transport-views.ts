@@ -5,7 +5,7 @@
 
 import type { NavSubItem } from "@/components/layout/nav-links";
 
-export type TransportViewKey = "requests" | "new" | "dispatch" | "driver";
+export type TransportViewKey = "requests" | "new" | "approvals" | "dispatch" | "planner" | "fleet" | "shuttles" | "driver";
 
 export interface TransportView {
   key: TransportViewKey;
@@ -17,7 +17,11 @@ export interface TransportView {
 export const TRANSPORT_VIEWS: TransportView[] = [
   { key: "requests", label: "Transportation requests", icon: "ClipboardList" },
   { key: "new", label: "Request a transportation", icon: "Car" },
+  { key: "approvals", label: "Approvals", icon: "CheckCircle2" },
   { key: "dispatch", label: "Dispatch board", icon: "Truck" },
+  { key: "planner", label: "Day planner", icon: "CalendarClock" },
+  { key: "fleet", label: "Vehicles & drivers", icon: "Wrench" },
+  { key: "shuttles", label: "Shuttle schedules", icon: "Repeat" },
   { key: "driver", label: "My driving tasks", icon: "Navigation" },
 ];
 
@@ -26,6 +30,8 @@ export const TRANSPORT_VIEW_KEYS = TRANSPORT_VIEWS.map((v) => v.key);
 export interface TransportFlags {
   /** Tenant or system admin: dispatches, and sees every request. */
   admin: boolean;
+  /** Has direct reports: decides their ride requests when approval is on. */
+  manager?: boolean;
   /** Linked to a driver record: has a task list of their own. */
   driver: boolean;
   /** Holds the transportation `create` verb: may raise a request. */
@@ -41,7 +47,12 @@ export function transportViewAllowed(key: TransportViewKey, flags: TransportFlag
       return true;
     case "new":
       return flags.canCreate || flags.admin;
+    case "approvals":
+      return Boolean(flags.manager) || flags.admin;
     case "dispatch":
+    case "planner":
+    case "fleet":
+    case "shuttles":
       return flags.admin;
     case "driver":
       return flags.driver;

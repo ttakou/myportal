@@ -1,4 +1,5 @@
 export type TransportStatus =
+  | "awaiting_approval"
   | "pending"
   | "assigned"
   | "in_progress"
@@ -6,6 +7,7 @@ export type TransportStatus =
   | "cancelled";
 
 export const TRANSPORT_STATUS_LABEL: Record<TransportStatus, string> = {
+  awaiting_approval: "Awaiting approval",
   pending: "Pending",
   assigned: "Assigned",
   in_progress: "In progress",
@@ -100,9 +102,31 @@ export interface TaskUpdate {
   created_at: string;
 }
 
+/** A run that repeats: base to airport at 06:30 on weekdays. The nightly job makes the day's task. */
+export interface Shuttle {
+  id: string;
+  name: string;
+  pickup: string;
+  dropoff: string;
+  /** "HH:MM" on the tenant's clock. */
+  depart_time: string;
+  /** 0 = Sunday … 6 = Saturday. */
+  days_of_week: number[];
+  passengers: number;
+  task_type: TransportTaskType;
+  driver_id: string | null;
+  driver_name: string | null;
+  vehicle_id: string | null;
+  vehicle_name: string | null;
+  is_active: boolean;
+}
+
 export interface TransportRequest {
   id: string;
+  requester_id: string | null;
   requester_name: string | null;
+  /** Set when the request came from a recurring shuttle. */
+  shuttle_id: string | null;
   pickup: string;
   dropoff: string;
   depart_at: string;

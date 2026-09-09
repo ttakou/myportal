@@ -39,6 +39,13 @@ export const MODULE_PARAMS: Record<string, ModuleParamDef[]> = {
   ],
   transportation: [
     {
+      key: "require_approval",
+      label: "Line manager approves ride requests",
+      help: "A request waits on the requester's line manager before the dispatch desk sees it. People with no manager on file go straight to dispatch.",
+      type: "boolean",
+      default: false,
+    },
+    {
       key: "allow_employee_requests",
       label: "Employees can request rides",
       help: "When off, only the dispatch desk can create tasks.",
