@@ -3,13 +3,18 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useStatusTransition } from "@/components/activity";
-import { Car, Truck, Undo2 } from "lucide-react";
+import { Car, Pencil, Truck, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
-import { TRANSPORT_STATUS_LABEL, type TransportRequest, type TransportStatus } from "@/types/transport";
-import { cancelTransportRequest } from "../actions";
-import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
+import { isoToLocalInput } from "@/lib/transport/day-plan";
+import { describeTripLog } from "@/lib/transport/trip-log";
+import { TRANSPORT_OPEN_STATUSES, TRANSPORT_STATUS_LABEL, type Place, type TransportRequest, type TransportStatus } from "@/types/transport";
+import { cancelTransportRequest, rateTrip, updateTransportRequest } from "../actions";
+import { PLACES_LIST_ID, PlacesDatalist } from "./places-datalist";
+import { Checklist, FollowUps, PriorityBadge, StatusBadge, Stars, TypeBadge, fmt } from "./task-bits";
+
+const field = "rounded-md border bg-background px-2 py-1.5 text-sm";
 
 type Filter = "open" | "all" | TransportStatus;
 
@@ -19,12 +24,14 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "pending", label: TRANSPORT_STATUS_LABEL.pending },
   { key: "assigned", label: TRANSPORT_STATUS_LABEL.assigned },
   { key: "in_progress", label: TRANSPORT_STATUS_LABEL.in_progress },
+  { key: "arrived", label: TRANSPORT_STATUS_LABEL.arrived },
   { key: "completed", label: TRANSPORT_STATUS_LABEL.completed },
+  { key: "no_show", label: TRANSPORT_STATUS_LABEL.no_show },
   { key: "cancelled", label: TRANSPORT_STATUS_LABEL.cancelled },
   { key: "all", label: "All" },
 ];
 
-const OPEN: TransportStatus[] = ["awaiting_approval", "pending", "assigned", "in_progress"];
+const OPEN: TransportStatus[] = TRANSPORT_OPEN_STATUSES;
 
 /**
  * Every transportation request: all of them for an admin, your own for
@@ -36,15 +43,27 @@ export function RequestsList({
   scope,
   canCreate,
   canDispatch,
+  places,
 }: {
   requests: TransportRequest[];
   scope: "all" | "mine";
   canCreate: boolean;
   canDispatch: boolean;
+  places: Place[];
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("open");
+  const [editing, setEditing] = useState<string | null>(null);
+
+  function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Action failed.");
+      else onOk?.();
+    });
+  }
 
   const shown = useMemo(() => {
     const list = filter === "all" ? requests : filter === "open" ? requests.filter((r) => OPEN.includes(r.status)) : requests.filter((r) => r.status === filter);
@@ -108,6 +127,7 @@ export function RequestsList({
       </div>
 
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+      <PlacesDatalist places={places} />
 
       <nav className="flex flex-wrap gap-1" aria-label="Filter by status">
         {FILTERS.map((f) => (
@@ -145,12 +165,20 @@ export function RequestsList({
                 {r.purpose ? ` · ${r.purpose}` : ""}
                 {scope === "all" && r.requester_name ? ` · for ${r.requester_name}` : ""}
               </span>
-              {(r.status === "awaiting_approval" || r.status === "pending" || r.status === "assigned") && (
-                <Button size="sm" variant="outline" disabled={pending} className="ml-auto" onClick={() => cancel(r.id)}>
-                  Cancel
-                </Button>
-              )}
+              <span className="ml-auto flex gap-1.5">
+                {(r.status === "awaiting_approval" || r.status === "pending") && (
+                  <Button size="sm" variant="ghost" disabled={pending} onClick={() => setEditing(editing === r.id ? null : r.id)}>
+                    <Pencil className="h-3.5 w-3.5" /> {editing === r.id ? "Close" : "Edit"}
+                  </Button>
+                )}
+                {(r.status === "awaiting_approval" || r.status === "pending" || r.status === "assigned") && (
+                  <Button size="sm" variant="outline" disabled={pending} onClick={() => cancel(r.id)}>
+                    Cancel
+                  </Button>
+                )}
+              </span>
             </div>
+            {editing === r.id && <EditRequest r={r} pending={pending} run={run} onDone={() => setEditing(null)} />}
             {returnOf.get(r.id) && (
               <p className="mt-1 text-xs text-muted-foreground">
                 Return booked: {returnOf.get(r.id)!.pickup} → {returnOf.get(r.id)!.dropoff} · {fmt(returnOf.get(r.id)!.depart_at)}
@@ -170,6 +198,18 @@ export function RequestsList({
                 </p>
               )
             )}
+            {describeTripLog(r.log) && r.status === "completed" && (
+              <p className="mt-1 text-xs text-muted-foreground">Trip log: {describeTripLog(r.log)}</p>
+            )}
+            {r.status === "completed" && scope === "mine" && (
+              <Rate r={r} pending={pending} run={run} />
+            )}
+            {r.status === "completed" && scope === "all" && r.rating !== null && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Rated <Stars rating={r.rating} />
+                {r.rating_comment ? ` "${r.rating_comment}"` : ""}
+              </p>
+            )}
             <Checklist task={r} canTick={false} />
             <FollowUps task={r} canPost />
           </div>
@@ -181,6 +221,84 @@ export function RequestsList({
         )}
       </div>
       <ShowMore ref={reveal.sentinelRef} hasMore={reveal.hasMore} remaining={reveal.remaining} onClick={reveal.showMore} label="Show more requests" />
+    </div>
+  );
+}
+
+type Runner = (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
+
+/** Change a request nobody has picked up yet: where, when, how many. */
+function EditRequest({ r, pending, run, onDone }: { r: TransportRequest; pending: boolean; run: Runner; onDone: () => void }) {
+  const [pickup, setPickup] = useState(r.pickup);
+  const [dropoff, setDropoff] = useState(r.dropoff);
+  const [departAt, setDepartAt] = useState(isoToLocalInput(r.depart_at));
+  const [passengers, setPassengers] = useState(String(r.passengers));
+  const [purpose, setPurpose] = useState(r.purpose ?? "");
+  return (
+    <form
+      className="mt-2 grid gap-2 rounded-md border bg-background/60 p-2 sm:grid-cols-2 lg:grid-cols-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        run(() => updateTransportRequest(r.id, { pickup, dropoff, departAt, passengers: Number(passengers), purpose }), onDone);
+      }}
+    >
+      <input value={pickup} onChange={(e) => setPickup(e.target.value)} list={PLACES_LIST_ID} autoComplete="off" placeholder="Pickup" required className={field} />
+      <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} list={PLACES_LIST_ID} autoComplete="off" placeholder="Drop-off" required className={field} />
+      <input value={departAt} onChange={(e) => setDepartAt(e.target.value)} type="datetime-local" required className={field} title="On the office clock (Douala)" />
+      <input value={passengers} onChange={(e) => setPassengers(e.target.value)} type="number" min={1} className={field} />
+      <input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="Purpose" className={field} />
+      <div className="flex gap-2 sm:col-span-2 lg:col-span-5">
+        <Button size="sm" type="submit" disabled={pending}>
+          Save changes
+        </Button>
+        <span className="self-center text-xs text-muted-foreground">Times are on the office clock, wherever you are.</span>
+      </div>
+    </form>
+  );
+}
+
+/** The requester's word after the ride: one to five stars, a comment if they like. */
+function Rate({ r, pending, run }: { r: TransportRequest; pending: boolean; run: Runner }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const [comment, setComment] = useState(r.rating_comment ?? "");
+  const [picked, setPicked] = useState<number | null>(r.rating);
+  if (r.rating !== null && picked === r.rating && !hover) {
+    return (
+      <p className="mt-1 text-xs text-muted-foreground">
+        You rated this ride <Stars rating={r.rating} />
+        {r.rating_comment ? ` "${r.rating_comment}"` : ""}{" "}
+        <button type="button" className="underline" onClick={() => setPicked(null)}>
+          change
+        </button>
+      </p>
+    );
+  }
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-muted-foreground">How was the ride?</span>
+      <span className="inline-flex text-lg leading-none" onMouseLeave={() => setHover(null)}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            disabled={pending}
+            onMouseEnter={() => setHover(n)}
+            onClick={() => setPicked(n)}
+            className={cn("px-0.5 text-amber-500", (hover ?? picked ?? 0) >= n ? "" : "opacity-25")}
+            aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          >
+            ★
+          </button>
+        ))}
+      </span>
+      {picked !== null && (
+        <>
+          <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="A word about the driver (optional)" className={`${field} w-64`} />
+          <Button size="sm" disabled={pending} onClick={() => run(() => rateTrip(r.id, picked, comment))}>
+            Send
+          </Button>
+        </>
+      )}
     </div>
   );
 }

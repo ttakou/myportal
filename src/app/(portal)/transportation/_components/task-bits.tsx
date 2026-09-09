@@ -20,7 +20,9 @@ export const STATUS_STYLE: Record<TransportStatus, string> = {
   pending: "bg-muted text-muted-foreground",
   assigned: "bg-accent text-accent-foreground",
   in_progress: "bg-primary/10 text-primary",
+  arrived: "bg-sky-100 text-sky-800",
   completed: "bg-green-100 text-green-700",
+  no_show: "bg-orange-100 text-orange-800",
   cancelled: "bg-destructive/10 text-destructive line-through",
 };
 
@@ -55,13 +57,28 @@ export function TypeBadge({ type }: { type: TransportTaskType }) {
   );
 }
 
+/** A time on the tenant's clock (Africa/Douala), whoever is looking. */
 export function fmt(dt: string) {
-  return new Date(dt).toLocaleString(undefined, {
+  return new Date(dt).toLocaleString("en-GB", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Africa/Douala",
   });
+}
+
+/** Five stars, filled to the rating; read-only. */
+export function Stars({ rating }: { rating: number }) {
+  return (
+    <span className="inline-flex text-amber-500" aria-label={`${rating} out of 5`}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <span key={n} className={n <= rating ? "" : "opacity-25"}>
+          ★
+        </span>
+      ))}
+    </span>
+  );
 }
 
 /**

@@ -3,14 +3,16 @@
 import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import Link from "next/link";
-import { ClipboardList, TriangleAlert } from "lucide-react";
+import { ClipboardList, Clock, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
+import { isLateStart, minutesLate } from "@/lib/transport/live";
 import {
   PRIORITY_LABEL,
   TASK_TYPE_LABEL,
+  TRANSPORT_OPEN_STATUSES,
   type Driver,
   type Place,
   type TransportPriority,
@@ -18,7 +20,7 @@ import {
   type TransportTaskType,
   type Vehicle,
 } from "@/types/transport";
-import { assignTransport, createTransportTask, setTransportStatus } from "../actions";
+import { assignTransport, createTransportTask, markNoShow, setTransportStatus } from "../actions";
 import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
 import { TransportAnalytics } from "./transport-analytics";
 import { PLACES_LIST_ID, PlacesDatalist } from "./places-datalist";
@@ -35,11 +37,14 @@ export function DispatchBoard({
   drivers,
   vehicles,
   places,
+  lateMinutes,
 }: {
   all: TransportRequest[];
   drivers: Driver[];
   vehicles: Vehicle[];
   places: Place[];
+  /** Past departure by this much with nobody on the way, a task is flagged late. */
+  lateMinutes: number;
 }) {
   const { can } = usePermissions();
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -59,8 +64,10 @@ export function DispatchBoard({
     });
   };
 
-  const active = all.filter((r) => !["completed", "cancelled"].includes(r.status));
-  const closed = all.filter((r) => ["completed", "cancelled"].includes(r.status));
+  const active = all.filter((r) => (TRANSPORT_OPEN_STATUSES as string[]).includes(r.status));
+  const closed = all.filter((r) => !(TRANSPORT_OPEN_STATUSES as string[]).includes(r.status));
+  const nowIso = new Date().toISOString();
+  const lateCount = active.filter((r) => isLateStart(r, nowIso, lateMinutes)).length;
   const stat = (s: string) => all.filter((r) => r.status === s).length;
   const unassigned = active.filter((r) => !r.driver_id).length;
 
@@ -81,12 +88,17 @@ export function DispatchBoard({
         <ClipboardList className="h-5 w-5 text-primary" />
         <h2 className="text-lg font-semibold">Dispatch board</h2>
         <div className="ml-auto flex flex-wrap gap-2 text-xs">
+          {lateCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-1 font-medium text-destructive">
+              <Clock className="h-3 w-3" /> {lateCount} not started
+            </span>
+          )}
           {unassigned > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">
               <TriangleAlert className="h-3 w-3" /> {unassigned} unassigned
             </span>
           )}
-          {(["pending", "assigned", "in_progress"] as const).map((s) => (
+          {(["pending", "assigned", "in_progress", "arrived"] as const).map((s) => (
             <span key={s} className="rounded-full bg-muted px-2 py-1 font-medium text-muted-foreground">
               {stat(s)} {s.replace("_", " ")}
             </span>
@@ -111,7 +123,7 @@ export function DispatchBoard({
 
       <div className="space-y-3">
         {active.slice(0, activeReveal.count).map((r) => (
-          <TaskRow key={r.id} r={r} drivers={sortedDrivers} vehicles={vehicles} pending={pending} run={run} />
+          <TaskRow key={r.id} r={r} drivers={sortedDrivers} vehicles={vehicles} pending={pending} run={run} late={isLateStart(r, nowIso, lateMinutes) ? minutesLate(r.depart_at, nowIso) : null} />
         ))}
         {active.length === 0 && (
           <p className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -169,13 +181,17 @@ function TaskRow({
   vehicles,
   pending,
   run,
+  late,
 }: {
   r: TransportRequest;
   drivers: Driver[];
   vehicles: Vehicle[];
   pending: boolean;
   run: Runner;
+  /** Minutes past departure with nobody on the way, when the task is flagged late. */
+  late: number | null;
 }) {
+  const busy = r.status === "in_progress" || r.status === "arrived";
   return (
     <div className="rounded-lg border bg-card p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -185,6 +201,11 @@ function TaskRow({
         {!r.driver_id && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
             Unassigned
+          </span>
+        )}
+        {late !== null && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive" title="Past departure and nobody on the way">
+            <Clock className="h-3 w-3" /> Not started · {late} min late
           </span>
         )}
         <span className="font-medium">
@@ -207,7 +228,7 @@ function TaskRow({
           getOptionValue={(d) => d.id}
           getOptionLabel={(d) => `${d.full_name}${d.on_duty ? "" : " (off duty)"}`}
           placeholder={r.driver_id ? "Driver…" : "Assign driver…"}
-          disabled={pending || r.status === "in_progress"}
+          disabled={pending || busy}
           className={`rounded-md border px-1.5 py-1 text-xs ${
             r.driver_id ? "bg-background" : "border-amber-400 bg-amber-50 font-medium text-amber-900"
           }`}
@@ -219,7 +240,7 @@ function TaskRow({
           getOptionValue={(v) => v.id}
           getOptionLabel={(v) => v.name}
           placeholder="Vehicle…"
-          disabled={pending || r.status === "in_progress"}
+          disabled={pending || busy}
           className="rounded-md border bg-background px-1.5 py-1 text-xs"
           onChange={(v) => run(() => assignTransport(r.id, r.driver_id, v))}
         />
@@ -230,8 +251,26 @@ function TaskRow({
             </Button>
           )}
           {r.status === "in_progress" && (
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setTransportStatus(r.id, "arrived"))}>
+              Arrived
+            </Button>
+          )}
+          {busy && (
             <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setTransportStatus(r.id, "completed"))}>
               Complete
+            </Button>
+          )}
+          {busy && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => {
+                const why = prompt("Passenger no-show — anything to note?");
+                if (why !== null) run(() => markNoShow(r.id, why));
+              }}
+            >
+              No-show
             </Button>
           )}
           {(r.status === "pending" || r.status === "assigned") && (

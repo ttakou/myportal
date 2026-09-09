@@ -18,7 +18,7 @@ import { one } from "@/lib/supabase/row-helpers";
 
 const REQ_SELECT =
   "id, requester_id, shuttle_id, return_of, created_at, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
-  " task_type, priority, notes," +
+  " task_type, priority, notes, started_at, arrived_at, completed_at, odometer_start, odometer_end, fuel_litres, fuel_cost, rating, rating_comment," +
   " requester:profiles!transport_requests_requester_id_fkey(full_name)," +
   " driver:transport_drivers(full_name, phone), vehicle:transport_vehicles(name)," +
   " transport_task_updates(id, note, new_status, created_at, author:profiles(full_name))," +
@@ -57,6 +57,17 @@ function mapReq(row: Record<string, any>): TransportRequest {
     driver_name: driver?.full_name ?? null,
     driver_phone: driver?.phone ?? null,
     vehicle_name: one<{ name?: string }>(row.vehicle)?.name ?? null,
+    started_at: row.started_at ?? null,
+    arrived_at: row.arrived_at ?? null,
+    completed_at: row.completed_at ?? null,
+    log: {
+      odometer_start: row.odometer_start ?? null,
+      odometer_end: row.odometer_end ?? null,
+      fuel_litres: row.fuel_litres === null || row.fuel_litres === undefined ? null : Number(row.fuel_litres),
+      fuel_cost: row.fuel_cost === null || row.fuel_cost === undefined ? null : Number(row.fuel_cost),
+    },
+    rating: row.rating ?? null,
+    rating_comment: row.rating_comment ?? null,
     updates: ((row.transport_task_updates as any[]) ?? [])
       .map(mapUpdate)
       .sort((a, b) => b.created_at.localeCompare(a.created_at)),

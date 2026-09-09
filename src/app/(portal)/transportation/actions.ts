@@ -11,6 +11,9 @@ import { seedTaskChecklist } from "@/lib/task-checklist";
 import { getModuleSettings } from "@/lib/module-settings";
 import { shuttleDepartAt, shuttleRunsOn } from "@/lib/transport/shuttles";
 import { canonicalPlace, normalisePlaceName } from "@/lib/transport/places";
+import { localInputToIso } from "@/lib/transport/day-plan";
+import { describeTripLog, validateTripLog, type TripLogInput } from "@/lib/transport/trip-log";
+import { deskIdsFor } from "@/lib/transport-desk";
 import { runTransportShuttles } from "@/lib/transport-shuttle-run";
 import { getActiveDelegatorIds } from "@/lib/delegation";
 import { getPlaces } from "@/lib/transport";
@@ -87,8 +90,11 @@ export async function createTransportRequest(input: {
 }): Promise<ActionResult> {
   if (!input.pickup.trim() || !input.dropoff.trim())
     return { ok: false, error: "Pickup and drop-off are required." };
-  if (!input.departAt) return { ok: false, error: "Departure time is required." };
-  if (input.returnAt && Date.parse(input.returnAt) <= Date.parse(input.departAt))
+  const departIso = input.departAt ? localInputToIso(input.departAt) : null;
+  if (!departIso) return { ok: false, error: "Departure time is required." };
+  const returnIso = input.returnAt ? localInputToIso(input.returnAt) : null;
+  if (input.returnAt && !returnIso) return { ok: false, error: "The return time is not a valid date and time." };
+  if (returnIso && Date.parse(returnIso) <= Date.parse(departIso))
     return { ok: false, error: "The return must leave after the outbound trip." };
 
   const cfg = await getModuleSettings("transportation");
@@ -124,7 +130,7 @@ export async function createTransportRequest(input: {
       tenant_id: tenant,
       pickup,
       dropoff,
-      depart_at: new Date(input.departAt).toISOString(),
+      depart_at: departIso,
       passengers,
       purpose,
       task_type: taskType,
@@ -146,7 +152,7 @@ export async function createTransportRequest(input: {
         tenant_id: tenant,
         pickup: dropoff,
         dropoff: pickup,
-        depart_at: new Date(input.returnAt).toISOString(),
+        depart_at: returnIso as string,
         passengers,
         purpose,
         task_type: taskType,
@@ -163,7 +169,7 @@ export async function createTransportRequest(input: {
 
   if (data) {
     const route = `${pickup} → ${dropoff}`;
-    const when = `${fmtLocal(input.departAt)}${input.returnAt ? `, back ${fmtLocal(input.returnAt)}` : ""}`;
+    const when = `${fmtLocal(departIso)}${returnIso ? `, back ${fmtLocal(returnIso)}` : ""}`;
     if (managerId) {
       // The manager, and whoever holds their access while they are away.
       const adminCli = createAdminClient();
@@ -199,15 +205,15 @@ export async function createTransportRequest(input: {
   return { ok: true };
 }
 
-/** The tenant's admins: the dispatch desk, until a dispatcher role exists. */
+/**
+ * The dispatch desk: whoever holds the transportation approve / manage
+ * verb, else every tenant admin. Looked up with the service role — a
+ * requester cannot read other people's role assignments.
+ */
 async function dispatchDeskIds(): Promise<string[]> {
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("is_active", true)
-    .in("role", ["tenant_admin", "super_admin"]);
-  return (data ?? []).map((p) => p.id as string);
+  const tenant = await tenantId();
+  if (!tenant) return [];
+  return deskIdsFor(createAdminClient() ?? createClient(), tenant);
 }
 
 /** A pickup time on the tenant's clock, for a notification body. */
@@ -324,7 +330,8 @@ export async function createTransportTask(input: {
   if (gate) return gate;
   if (!input.pickup.trim() || !input.dropoff.trim())
     return { ok: false, error: "Pickup and drop-off are required." };
-  if (!input.departAt) return { ok: false, error: "Departure time is required." };
+  const departIso = input.departAt ? localInputToIso(input.departAt) : null;
+  if (!departIso) return { ok: false, error: "Departure time is required." };
 
   const supabase = createClient();
   const tenant = await tenantId();
@@ -337,7 +344,7 @@ export async function createTransportTask(input: {
       tenant_id: tenant,
       pickup: canonicalPlace(input.pickup, places),
       dropoff: canonicalPlace(input.dropoff, places),
-      depart_at: new Date(input.departAt).toISOString(),
+      depart_at: departIso,
       passengers: Math.max(1, Math.floor(input.passengers || 1)),
       purpose: input.purpose?.trim() || null,
       notes: input.notes?.trim() || null,
@@ -542,9 +549,18 @@ export async function setTransportStatus(
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const now = new Date().toISOString();
+  const stamp =
+    status === "in_progress"
+      ? { started_at: now }
+      : status === "arrived"
+        ? { arrived_at: now }
+        : status === "completed" || status === "no_show"
+          ? { completed_at: now }
+          : {};
   const { data, error } = await supabase
     .from("transport_requests")
-    .update({ status })
+    .update({ status, ...stamp })
     .eq("id", id)
     .select("id, tenant_id, requester_id, pickup, dropoff, depart_at, driver:transport_drivers(full_name, phone)")
     .maybeSingle();
@@ -567,11 +583,15 @@ export async function setTransportStatus(
     const text =
       status === "in_progress"
         ? { title: "Your driver is on the way", body: `${d?.full_name ?? "Your driver"}${d?.phone ? ` (${d.phone})` : ""} has started ${route}.` }
-        : status === "completed"
-          ? { title: "Trip completed", body: `${route} · ${fmtLocal(data.depart_at as string)}.` }
-          : status === "cancelled"
-            ? { title: "Ride request cancelled", body: `${route} · ${fmtLocal(data.depart_at as string)}${note?.trim() ? ` · ${note.trim()}` : ""}.` }
-            : null;
+        : status === "arrived"
+          ? { title: `Your driver is at ${data.pickup}`, body: `${d?.full_name ?? "Your driver"}${d?.phone ? ` (${d.phone})` : ""} is waiting for you.` }
+          : status === "completed"
+            ? { title: "Trip completed", body: `${route} · ${fmtLocal(data.depart_at as string)}. How was the ride? Rate it on your requests list.` }
+            : status === "no_show"
+              ? { title: "Marked as no-show", body: `${d?.full_name ?? "The driver"} waited at ${data.pickup} for ${route} · ${fmtLocal(data.depart_at as string)}${note?.trim() ? ` · ${note.trim()}` : ""}.` }
+              : status === "cancelled"
+                ? { title: "Ride request cancelled", body: `${route} · ${fmtLocal(data.depart_at as string)}${note?.trim() ? ` · ${note.trim()}` : ""}.` }
+                : null;
     if (text) {
       await notifyUsers({
         tenantId: data.tenant_id as string,
@@ -582,6 +602,135 @@ export async function setTransportStatus(
       });
     }
   }
+  // A no-show is the desk's business too: the slot was wasted.
+  if (status === "no_show") {
+    await notifyUsers({
+      tenantId: data.tenant_id as string,
+      profileIds: await dispatchDeskIds(),
+      category: "transport",
+      title: `No-show: ${data.pickup} → ${data.dropoff}`,
+      body: `${fmtLocal(data.depart_at as string)}${note?.trim() ? ` · ${note.trim()}` : ""}.`,
+      url: "/transportation?view=dispatch",
+    });
+  }
+  rev();
+  return { ok: true };
+}
+
+/** The driver sets off, noting the odometer if they have it. */
+export async function startTrip(id: string, odometerStart?: number | string | null): Promise<ActionResult> {
+  const v = validateTripLog({ odometerStart });
+  if (!v.ok) return { ok: false, error: v.error };
+  if (v.log.odometer_start !== null) {
+    const { error } = await createClient().from("transport_requests").update({ odometer_start: v.log.odometer_start }).eq("id", id);
+    if (error) return { ok: false, error: error.message };
+  }
+  return setTransportStatus(id, "in_progress");
+}
+
+/** The driver closes the trip with its log: odometer, fuel, a note. */
+export async function completeTrip(id: string, log: TripLogInput, note?: string): Promise<ActionResult> {
+  const v = validateTripLog(log);
+  if (!v.ok) return { ok: false, error: v.error };
+  const patch: Record<string, number> = {};
+  if (v.log.odometer_start !== null) patch.odometer_start = v.log.odometer_start;
+  if (v.log.odometer_end !== null) patch.odometer_end = v.log.odometer_end;
+  if (v.log.fuel_litres !== null) patch.fuel_litres = v.log.fuel_litres;
+  if (v.log.fuel_cost !== null) patch.fuel_cost = v.log.fuel_cost;
+  if (Object.keys(patch).length > 0) {
+    const { error } = await createClient().from("transport_requests").update(patch).eq("id", id);
+    if (error) return { ok: false, error: error.message };
+  }
+  const summary = describeTripLog(v.log);
+  const trail = [summary, note?.trim()].filter(Boolean).join(" · ");
+  return setTransportStatus(id, "completed", trail || undefined);
+}
+
+/** The passenger did not turn up. */
+export async function markNoShow(id: string, note?: string): Promise<ActionResult> {
+  return setTransportStatus(id, "no_show", note);
+}
+
+/**
+ * The requester changes their own request while nobody is working on it
+ * (still awaiting approval or pending). The desk, or the manager, hears
+ * that it changed.
+ */
+export async function updateTransportRequest(
+  id: string,
+  input: { pickup: string; dropoff: string; departAt: string; passengers: number; purpose?: string },
+): Promise<ActionResult> {
+  if (!input.pickup.trim() || !input.dropoff.trim()) return { ok: false, error: "Pickup and drop-off are required." };
+  const departIso = input.departAt ? localInputToIso(input.departAt) : null;
+  if (!departIso) return { ok: false, error: "Departure time is required." };
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const { data: req } = await supabase
+    .from("transport_requests")
+    .select("id, tenant_id, status, requester_id, pickup, dropoff, depart_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (!req) return { ok: false, error: "Request not found." };
+  const admin = isAdminRole(await getCurrentRole());
+  if (req.requester_id !== user.id && !admin) return { ok: false, error: "Only the requester can change this request." };
+  if (req.status !== "awaiting_approval" && req.status !== "pending")
+    return { ok: false, error: "A driver is already on this request; cancel it and ask again, or message the desk on its thread." };
+
+  const places = await getPlaces();
+  const pickup = canonicalPlace(input.pickup, places);
+  const dropoff = canonicalPlace(input.dropoff, places);
+  const { error } = await supabase
+    .from("transport_requests")
+    .update({
+      pickup,
+      dropoff,
+      depart_at: departIso,
+      passengers: Math.max(1, Math.floor(input.passengers || 1)),
+      purpose: input.purpose?.trim() || null,
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  const changed: string[] = [];
+  if (pickup !== req.pickup || dropoff !== req.dropoff) changed.push(`${pickup} → ${dropoff}`);
+  if (departIso !== req.depart_at) changed.push(fmtLocal(departIso));
+  const note = `Request changed${changed.length ? `: ${changed.join(", ")}` : ""}.`;
+  await supabase.from("transport_task_updates").insert({ tenant_id: req.tenant_id, request_id: id, note, new_status: null });
+  if (req.status === "pending") {
+    await notifyUsers({
+      tenantId: req.tenant_id as string,
+      profileIds: await dispatchDeskIds(),
+      category: "transport",
+      title: "Transport request changed",
+      body: `${pickup} → ${dropoff} · ${fmtLocal(departIso)}.`,
+      url: "/transportation?view=dispatch",
+    });
+  }
+  rev();
+  return { ok: true };
+}
+
+/** The requester rates a completed ride, 1–5, with a word if they like. */
+export async function rateTrip(id: string, rating: number, comment?: string): Promise<ActionResult> {
+  const r = Math.round(Number(rating));
+  if (!(r >= 1 && r <= 5)) return { ok: false, error: "Pick one to five stars." };
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const { data: req } = await supabase.from("transport_requests").select("id, status, requester_id").eq("id", id).maybeSingle();
+  if (!req) return { ok: false, error: "Request not found." };
+  if (req.requester_id !== user.id) return { ok: false, error: "Only the person who rode can rate the ride." };
+  if (req.status !== "completed") return { ok: false, error: "Rate the ride once it is completed." };
+  const { error } = await supabase
+    .from("transport_requests")
+    .update({ rating: r, rating_comment: comment?.trim() || null, rated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };
 }

@@ -3,17 +3,32 @@ export type TransportStatus =
   | "pending"
   | "assigned"
   | "in_progress"
+  | "arrived"
   | "completed"
+  | "no_show"
   | "cancelled";
 
 export const TRANSPORT_STATUS_LABEL: Record<TransportStatus, string> = {
   awaiting_approval: "Awaiting approval",
   pending: "Pending",
   assigned: "Assigned",
-  in_progress: "In progress",
+  in_progress: "On the way",
+  arrived: "Arrived at pickup",
   completed: "Completed",
+  no_show: "No-show",
   cancelled: "Cancelled",
 };
+
+/** Still to happen or under way: everything before a terminal state. */
+export const TRANSPORT_OPEN_STATUSES: TransportStatus[] = ["awaiting_approval", "pending", "assigned", "in_progress", "arrived"];
+
+/** What the driver logs on completing a trip. Every field optional. */
+export interface TripLog {
+  odometer_start: number | null;
+  odometer_end: number | null;
+  fuel_litres: number | null;
+  fuel_cost: number | null;
+}
 
 export type TransportTaskType =
   | "passenger"
@@ -150,6 +165,14 @@ export interface TransportRequest {
   driver_name: string | null;
   driver_phone: string | null;
   vehicle_name: string | null;
+  /** The moments the trip passed through. */
+  started_at: string | null;
+  arrived_at: string | null;
+  completed_at: string | null;
+  log: TripLog;
+  /** The requester's word afterwards, 1–5. */
+  rating: number | null;
+  rating_comment: string | null;
   updates: TaskUpdate[];
   checklist: ChecklistItem[];
 }

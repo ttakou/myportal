@@ -44,8 +44,32 @@ export default async function TransportReportPage({
   ]);
 
   const csv: string[][] = [
-    ["Department", "Requests"],
-    ...report.byDept.map((d) => [d.department, String(d.count)]),
+    ["Section", "Name", "Trips", "No-shows", "Km", "Litres", "Fuel cost", "L/100 km", "Avg rating", "Ratings"],
+    ...report.trips.byDriver.map((d) => [
+      "Driver",
+      d.name,
+      String(d.trips),
+      String(d.noShows),
+      String(d.km),
+      String(d.litres),
+      String(d.fuelCost),
+      d.lPer100 === null ? "" : String(d.lPer100),
+      d.avgRating === null ? "" : String(d.avgRating),
+      String(d.ratings),
+    ]),
+    ...report.trips.byVehicle.map((v) => [
+      "Vehicle",
+      v.name,
+      String(v.trips),
+      "",
+      String(v.km),
+      String(v.litres),
+      String(v.fuelCost),
+      v.lPer100 === null ? "" : String(v.lPer100),
+      "",
+      "",
+    ]),
+    ...report.byDept.map((d) => ["Department", d.department, String(d.count), "", "", "", "", "", "", ""]),
   ];
 
   const meta = [
@@ -70,7 +94,7 @@ export default async function TransportReportPage({
 
       <ReportHeader
         title="Transportation requests & SLA"
-        subtitle="Requests by departure time: completion vs cancellation, active backlog and overdue, with breakdowns."
+        subtitle="Requests by departure time: completion, no-shows, start punctuality, kilometres and fuel from the drivers' trip logs, ratings, with breakdowns."
         meta={meta}
       />
 
@@ -78,12 +102,48 @@ export default async function TransportReportPage({
         <ReportFilters show={{ period: true, department: true }} departments={departments} from={from} to={to} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         <Kpi label="Requests" value={String(report.summary.total)} />
         <Kpi label="Completed" value={String(report.summary.completed)} tone="green" />
         <Kpi label="Completion" value={`${report.summary.completionRate}%`} tone={report.summary.completionRate >= 90 ? "green" : undefined} />
         <Kpi label="Active" value={String(report.summary.active)} />
         <Kpi label="Overdue" value={String(report.summary.overdue)} tone={report.summary.overdue > 0 ? "red" : undefined} />
+        <Kpi label="No-shows" value={String(report.summary.noShows)} tone={report.summary.noShows > 0 ? "red" : undefined} />
+        <Kpi
+          label="Start vs plan"
+          value={report.summary.avgStartDelayMin === null ? "—" : `${report.summary.avgStartDelayMin > 0 ? "+" : ""}${report.summary.avgStartDelayMin} min`}
+          tone={report.summary.avgStartDelayMin !== null && report.summary.avgStartDelayMin > 15 ? "red" : undefined}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <Kpi label="Trips logged" value={String(report.trips.trips)} />
+        <Kpi label="Kilometres" value={report.trips.km.toLocaleString("en-GB")} />
+        <Kpi label="Fuel (L)" value={report.trips.litres.toLocaleString("en-GB")} />
+        <Kpi label="Fuel cost" value={report.trips.fuelCost.toLocaleString("en-GB")} />
+        <Kpi label="Avg rating" value={report.trips.avgRating === null ? "—" : `${report.trips.avgRating} / 5`} tone={report.trips.avgRating !== null && report.trips.avgRating >= 4.5 ? "green" : undefined} />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <CostTable
+          title="By driver"
+          head={["Driver", "Trips", "No-show", "Km", "L", "Cost", "L/100", "Rating"]}
+          rows={report.trips.byDriver.map((d) => [
+            d.name,
+            d.trips,
+            d.noShows,
+            d.km,
+            d.litres,
+            d.fuelCost,
+            d.lPer100 ?? "—",
+            d.avgRating === null ? "—" : `${d.avgRating} (${d.ratings})`,
+          ])}
+        />
+        <CostTable
+          title="By vehicle"
+          head={["Vehicle", "Trips", "Km", "L", "Cost", "L/100"]}
+          rows={report.trips.byVehicle.map((v) => [v.name, v.trips, v.km, v.litres, v.fuelCost, v.lPer100 ?? "—"])}
+        />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -91,6 +151,46 @@ export default async function TransportReportPage({
         <Breakdown title="By task type" rows={report.byTaskType.map((t) => [cap(t.taskType), t.count])} />
         <Breakdown title="By department" rows={report.byDept.map((d) => [d.department, d.count])} />
       </div>
+    </div>
+  );
+}
+
+function CostTable({ title, head, rows }: { title: string; head: string[]; rows: (string | number)[][] }) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground">
+              {head.map((h, i) => (
+                <th key={h} className={cn("py-1 font-medium", i > 0 && "text-right")}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map((r, i) => (
+              <tr key={i}>
+                {r.map((c, j) => (
+                  <td key={j} className={cn("py-1.5", j > 0 && "text-right tabular-nums")}>
+                    {typeof c === "number" ? c.toLocaleString("en-GB") : c}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={head.length} className="py-4 text-center text-muted-foreground">
+                  No trip logs yet. Drivers fill odometer and fuel when they complete a trip.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <ReportStampFooter />
     </div>
   );
 }

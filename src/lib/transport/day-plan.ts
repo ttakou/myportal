@@ -28,6 +28,24 @@ export function localTime(iso: string, offsetHours = TENANT_UTC_OFFSET_HOURS): s
   return new Date(Date.parse(iso) + offsetHours * 3_600_000).toISOString().slice(11, 16);
 }
 
+/**
+ * A `datetime-local` value ("2026-09-10T08:00") read on the tenant's clock,
+ * whatever the browser's or the server's zone, as a UTC instant. Returns
+ * null for anything that is not a date-time.
+ */
+export function localInputToIso(value: string, offsetHours = TENANT_UTC_OFFSET_HOURS): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
+  if (!m) return null;
+  const base = Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4] ?? "00"}Z`);
+  if (Number.isNaN(base)) return null;
+  return new Date(base - offsetHours * 3_600_000).toISOString();
+}
+
+/** The reverse: a UTC instant as a `datetime-local` value on the tenant's clock. */
+export function isoToLocalInput(iso: string, offsetHours = TENANT_UTC_OFFSET_HOURS): string {
+  return new Date(Date.parse(iso) + offsetHours * 3_600_000).toISOString().slice(0, 16);
+}
+
 /** Minutes past local midnight. */
 export function localMinutes(iso: string, offsetHours = TENANT_UTC_OFFSET_HOURS): number {
   const d = new Date(Date.parse(iso) + offsetHours * 3_600_000);
@@ -47,7 +65,7 @@ export function timelinePct(iso: string): number {
 }
 
 /** Tasks in flight or still to run; done and cancelled do not clash with anything. */
-const LIVE = new Set(["awaiting_approval", "pending", "assigned", "in_progress"]);
+const LIVE = new Set(["awaiting_approval", "pending", "assigned", "in_progress", "arrived"]);
 
 export interface Lane {
   driver: Driver;

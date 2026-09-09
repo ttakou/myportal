@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getModuleSettingsForTenant } from "@/lib/module-settings";
 import { notifyUsers } from "@/lib/notify";
+import { deskIdsFor } from "@/lib/transport-desk";
 import { escalationNote, staleApprovals } from "@/lib/transport/approvals";
 
 /**
@@ -59,13 +60,7 @@ async function escalateTenant(admin: SupabaseClient, tenantId: string, nowIso: s
   if (stale.length === 0) return 0;
 
   const note = escalationNote(hours);
-  const { data: desk } = await admin
-    .from("profiles")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("is_active", true)
-    .in("role", ["tenant_admin", "super_admin"]);
-  const deskIds = (desk ?? []).map((p) => p.id as string);
+  const deskIds = await deskIdsFor(admin, tenantId);
 
   let n = 0;
   for (const r of stale) {
