@@ -30,8 +30,14 @@ export const TRANSPORT_VIEW_KEYS = TRANSPORT_VIEWS.map((v) => v.key);
 export interface TransportFlags {
   /** Tenant or system admin: dispatches, and sees every request. */
   admin: boolean;
-  /** Has direct reports: decides their ride requests when approval is on. */
+  /** Has direct reports, or holds a line manager's delegated access: decides their ride requests. */
   manager?: boolean;
+  /**
+   * The Approvals view has something to show: approval is switched on, or a
+   * request still waits from when it was. When false the view hides for
+   * everyone. Defaults to shown.
+   */
+  approvals?: boolean;
   /** Linked to a driver record: has a task list of their own. */
   driver: boolean;
   /** Holds the transportation `create` verb: may raise a request. */
@@ -48,7 +54,7 @@ export function transportViewAllowed(key: TransportViewKey, flags: TransportFlag
     case "new":
       return flags.canCreate || flags.admin;
     case "approvals":
-      return Boolean(flags.manager) || flags.admin;
+      return (Boolean(flags.manager) || flags.admin) && flags.approvals !== false;
     case "dispatch":
     case "planner":
     case "fleet":

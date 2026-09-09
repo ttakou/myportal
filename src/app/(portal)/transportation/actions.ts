@@ -10,7 +10,10 @@ import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { seedTaskChecklist } from "@/lib/task-checklist";
 import { getModuleSettings } from "@/lib/module-settings";
 import { shuttleDepartAt, shuttleRunsOn } from "@/lib/transport/shuttles";
+import { canonicalPlace, normalisePlaceName } from "@/lib/transport/places";
 import { runTransportShuttles } from "@/lib/transport-shuttle-run";
+import { getActiveDelegatorIds } from "@/lib/delegation";
+import { getPlaces } from "@/lib/transport";
 import type {
   TransportPriority,
   TransportStatus,
@@ -79,10 +82,14 @@ export async function createTransportRequest(input: {
   passengers: number;
   purpose?: string;
   taskType?: TransportTaskType;
+  /** Book the return leg too: back from the drop-off at this time. */
+  returnAt?: string;
 }): Promise<ActionResult> {
   if (!input.pickup.trim() || !input.dropoff.trim())
     return { ok: false, error: "Pickup and drop-off are required." };
   if (!input.departAt) return { ok: false, error: "Departure time is required." };
+  if (input.returnAt && Date.parse(input.returnAt) <= Date.parse(input.departAt))
+    return { ok: false, error: "The return must leave after the outbound trip." };
 
   const cfg = await getModuleSettings("transportation");
   if (cfg.allow_employee_requests === false) {
@@ -104,34 +111,77 @@ export async function createTransportRequest(input: {
     managerId = (me?.manager_id as string | null) ?? null;
   }
   const status = managerId ? "awaiting_approval" : "pending";
+  const places = await getPlaces();
+  const pickup = canonicalPlace(input.pickup, places);
+  const dropoff = canonicalPlace(input.dropoff, places);
+  const taskType = input.taskType ?? "passenger";
+  const passengers = Math.max(1, Math.floor(input.passengers || 1));
+  const purpose = input.purpose?.trim() || null;
 
   const { data, error } = await supabase
     .from("transport_requests")
     .insert({
       tenant_id: tenant,
-      pickup: input.pickup.trim(),
-      dropoff: input.dropoff.trim(),
+      pickup,
+      dropoff,
       depart_at: new Date(input.departAt).toISOString(),
-      passengers: Math.max(1, Math.floor(input.passengers || 1)),
-      purpose: input.purpose?.trim() || null,
-      task_type: input.taskType ?? "passenger",
+      passengers,
+      purpose,
+      task_type: taskType,
       status,
     })
     .select("id")
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (data && cfg.seed_checklists !== false) {
-    await seedTaskChecklist(supabase, tenant, data.id, input.taskType ?? "passenger");
+    await seedTaskChecklist(supabase, tenant, data.id, taskType);
   }
+
+  // The return leg is its own request — its own driver, its own status —
+  // that points back at the outbound one so the two are decided together.
+  if (data && input.returnAt) {
+    const { data: ret, error: retError } = await supabase
+      .from("transport_requests")
+      .insert({
+        tenant_id: tenant,
+        pickup: dropoff,
+        dropoff: pickup,
+        depart_at: new Date(input.returnAt).toISOString(),
+        passengers,
+        purpose,
+        task_type: taskType,
+        status,
+        return_of: data.id,
+      })
+      .select("id")
+      .maybeSingle();
+    if (retError) return { ok: false, error: `Outbound saved, but the return failed: ${retError.message}` };
+    if (ret && cfg.seed_checklists !== false) {
+      await seedTaskChecklist(supabase, tenant, ret.id, taskType);
+    }
+  }
+
   if (data) {
-    const route = `${input.pickup.trim()} → ${input.dropoff.trim()}`;
+    const route = `${pickup} → ${dropoff}`;
+    const when = `${fmtLocal(input.departAt)}${input.returnAt ? `, back ${fmtLocal(input.returnAt)}` : ""}`;
     if (managerId) {
+      // The manager, and whoever holds their access while they are away.
+      const adminCli = createAdminClient();
+      const { data: delegates } = adminCli
+        ? await adminCli
+            .from("access_delegations")
+            .select("delegate_id")
+            .eq("delegator_id", managerId)
+            .is("revoked_at", null)
+            .lte("starts_on", new Date().toISOString().slice(0, 10))
+            .gte("ends_on", new Date().toISOString().slice(0, 10))
+        : { data: [] };
       await notifyUsers({
         tenantId: tenant,
-        profileIds: [managerId],
+        profileIds: [managerId, ...(delegates ?? []).map((d) => d.delegate_id as string)],
         category: "approval",
         title: "Ride request to approve",
-        body: `${route} · ${fmtLocal(input.departAt)}. Approve or reject on the Transportation approvals view.`,
+        body: `${route} · ${when}. Approve or reject on the Transportation approvals view.`,
         url: "/transportation?view=approvals",
       });
     } else {
@@ -140,7 +190,7 @@ export async function createTransportRequest(input: {
         profileIds: await dispatchDeskIds(),
         category: "transport",
         title: "New transport request",
-        body: `${route} · ${fmtLocal(input.departAt)}. Assign a driver on the dispatch board.`,
+        body: `${route} · ${when}. Assign a driver on the dispatch board.`,
         url: "/transportation?view=dispatch",
       });
     }
@@ -188,15 +238,25 @@ export async function decideTransportRequest(
   if (!user) return { ok: false, error: "Not signed in." };
   const { data: req } = await supabase
     .from("transport_requests")
-    .select("id, tenant_id, status, requester_id, pickup, dropoff, depart_at, requester:profiles!transport_requests_requester_id_fkey(manager_id)")
+    .select("id, tenant_id, status, requester_id, return_of, pickup, dropoff, depart_at, requester:profiles!transport_requests_requester_id_fkey(manager_id)")
     .eq("id", id)
     .maybeSingle();
   if (!req) return { ok: false, error: "Request not found." };
   if (req.status !== "awaiting_approval") return { ok: false, error: "This request is not waiting for approval." };
   const requester = (Array.isArray(req.requester) ? req.requester[0] : req.requester) as { manager_id?: string | null } | null;
-  const isManager = requester?.manager_id === user.id;
+  const managerId = requester?.manager_id ?? null;
+  // The line manager, or whoever holds their access for the delegation window.
+  const isManager = Boolean(managerId) && (managerId === user.id || (await getActiveDelegatorIds()).includes(managerId as string));
   const admin = isAdminRole(await getCurrentRole());
   if (!isManager && !admin) return { ok: false, error: "Only the requester's line manager can decide this." };
+
+  // A return trip is two requests decided as one.
+  let siblingId: string | null = (req.return_of as string | null) ?? null;
+  if (!siblingId) {
+    const { data: ret } = await supabase.from("transport_requests").select("id").eq("return_of", id).maybeSingle();
+    siblingId = ret?.id ?? null;
+  }
+  const ids = siblingId ? [id, siblingId] : [id];
 
   const next = decision === "approve" ? "pending" : "cancelled";
   const { error } = await supabase
@@ -206,23 +266,22 @@ export async function decideTransportRequest(
         ? { status: next, approved_by: user.id, approved_at: new Date().toISOString() }
         : { status: next },
     )
-    .eq("id", id);
+    .in("id", ids)
+    .eq("status", "awaiting_approval");
   if (error) return { ok: false, error: error.message };
 
   // The trail entry is written with the service role: the manager may decide
   // the request but is not one of the people RLS lets post on its thread.
   const adminCli = createAdminClient();
   if (adminCli) {
-    await adminCli.from("transport_task_updates").insert({
-      tenant_id: req.tenant_id,
-      request_id: id,
-      author_id: user.id,
-      note: decision === "approve" ? "Approved by line manager." : `Rejected by line manager${reason?.trim() ? `: ${reason.trim()}` : "."}`,
-      new_status: next,
-    });
+    const who = managerId === user.id ? "line manager" : admin && !isManager ? "administrator" : "line manager's delegate";
+    const note = decision === "approve" ? `Approved by ${who}.` : `Rejected by ${who}${reason?.trim() ? `: ${reason.trim()}` : "."}`;
+    await adminCli.from("transport_task_updates").insert(
+      ids.map((requestId) => ({ tenant_id: req.tenant_id, request_id: requestId, author_id: user.id, note, new_status: next })),
+    );
   }
 
-  const route = `${req.pickup} → ${req.dropoff}`;
+  const route = `${req.pickup} → ${req.dropoff}${siblingId ? " (and return)" : ""}`;
   await notifyUsers({
     tenantId: req.tenant_id,
     profileIds: [req.requester_id as string | null],
@@ -270,13 +329,14 @@ export async function createTransportTask(input: {
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const places = await getPlaces();
 
   const { data, error } = await supabase
     .from("transport_requests")
     .insert({
       tenant_id: tenant,
-      pickup: input.pickup.trim(),
-      dropoff: input.dropoff.trim(),
+      pickup: canonicalPlace(input.pickup, places),
+      dropoff: canonicalPlace(input.dropoff, places),
       depart_at: new Date(input.departAt).toISOString(),
       passengers: Math.max(1, Math.floor(input.passengers || 1)),
       purpose: input.purpose?.trim() || null,
@@ -732,11 +792,12 @@ export async function createShuttle(input: {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const places = await getPlaces();
   const { error } = await supabase.from("transport_shuttles").insert({
     tenant_id: tenant,
     name: input.name.trim(),
-    pickup: input.pickup.trim(),
-    dropoff: input.dropoff.trim(),
+    pickup: canonicalPlace(input.pickup, places),
+    dropoff: canonicalPlace(input.dropoff, places),
     depart_time: input.departTime,
     days_of_week: days,
     passengers: Math.max(1, Math.floor(input.passengers || 1)),
@@ -792,6 +853,37 @@ export async function runShuttlesNow(dateIso: string): Promise<ActionResult & { 
   if (!res.ok) return { ok: false, error: res.error ?? "Could not create the runs." };
   rev();
   return { ok: true, created: res.created };
+}
+
+// --- Saved places -----------------------------------------------------------
+
+/** Name a pickup or drop-off point once; forms offer it and requests fold onto its spelling. */
+export async function addPlace(name: string): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  const clean = normalisePlaceName(name);
+  if (!clean) return { ok: false, error: "Give the place a name." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { error } = await supabase.from("transport_places").insert({ tenant_id: tenant, name: clean, created_by: user?.id ?? null });
+  if (error) return { ok: false, error: /transport_places_tenant_name/.test(error.message) ? "That place is already saved." : error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Forget a saved place. Requests that name it keep their text. */
+export async function removePlace(id: string): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("transport_places").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
 }
 
 // Keep the pure helpers reachable from the actions module for callers that

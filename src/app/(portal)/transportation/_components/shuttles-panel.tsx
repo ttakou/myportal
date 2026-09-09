@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { DAY_LABELS, describeDays, shuttlesDue } from "@/lib/transport/shuttles";
 import { localTime } from "@/lib/transport/day-plan";
-import { TASK_TYPE_LABEL, type Driver, type Shuttle, type TransportTaskType, type Vehicle } from "@/types/transport";
+import { TASK_TYPE_LABEL, type Driver, type Place, type Shuttle, type TransportTaskType, type Vehicle } from "@/types/transport";
 import { createShuttle, deleteShuttle, runShuttlesNow, updateShuttle } from "../actions";
+import { PLACES_LIST_ID, PlacesDatalist } from "./places-datalist";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -19,7 +20,17 @@ const field = "rounded-md border bg-background px-3 py-2 text-sm";
  * tasks, assigned when a driver is named. "Create today's runs" does the
  * same on demand after a change.
  */
-export function ShuttlesPanel({ shuttles, drivers, vehicles }: { shuttles: Shuttle[]; drivers: Driver[]; vehicles: Vehicle[] }) {
+export function ShuttlesPanel({
+  shuttles,
+  drivers,
+  vehicles,
+  places,
+}: {
+  shuttles: Shuttle[];
+  drivers: Driver[];
+  vehicles: Vehicle[];
+  places: Place[];
+}) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -115,7 +126,7 @@ export function ShuttlesPanel({ shuttles, drivers, vehicles }: { shuttles: Shutt
         )}
       </div>
 
-      <NewShuttleForm drivers={drivers} vehicles={vehicles} pending={pending} run={run} />
+      <NewShuttleForm drivers={drivers} vehicles={vehicles} places={places} pending={pending} run={run} />
 
       {due.length > 0 && (
         <p className="text-xs text-muted-foreground">
@@ -129,11 +140,13 @@ export function ShuttlesPanel({ shuttles, drivers, vehicles }: { shuttles: Shutt
 function NewShuttleForm({
   drivers,
   vehicles,
+  places,
   pending,
   run,
 }: {
   drivers: Driver[];
   vehicles: Vehicle[];
+  places: Place[];
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
@@ -176,10 +189,11 @@ function NewShuttleForm({
       }}
     >
       <h3 className="text-sm font-semibold">New shuttle</h3>
+      <PlacesDatalist places={places} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (e.g. Morning airport run)" required className={field} />
-        <input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Pickup" required className={field} />
-        <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} placeholder="Drop-off" required className={field} />
+        <input value={pickup} onChange={(e) => setPickup(e.target.value)} list={PLACES_LIST_ID} autoComplete="off" placeholder="Pickup" required className={field} />
+        <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} list={PLACES_LIST_ID} autoComplete="off" placeholder="Drop-off" required className={field} />
         <label className="text-xs font-medium">
           Departs (local time)
           <input value={time} onChange={(e) => setTime(e.target.value)} type="time" required className={`mt-1 block w-full ${field}`} />

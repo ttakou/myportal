@@ -5,16 +5,19 @@ import { useRouter } from "next/navigation";
 import { useStatusTransition } from "@/components/activity";
 import { Car } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { Place } from "@/types/transport";
 import { createTransportRequest } from "../actions";
+import { PLACES_LIST_ID, PlacesDatalist } from "./places-datalist";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
 /**
  * Request a ride. On its own view so the form is the whole screen, not a
  * strip above a list; a saved request lands the person on the requests
- * list where they can follow it.
+ * list where they can follow it. Pickup and drop-off offer the tenant's
+ * saved places; ticking "book the return" raises the return leg with it.
  */
-export function RequestForm() {
+export function RequestForm({ places }: { places: Place[] }) {
   const router = useRouter();
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -23,12 +26,18 @@ export function RequestForm() {
   const [departAt, setDepartAt] = useState("");
   const [passengers, setPassengers] = useState("1");
   const [purpose, setPurpose] = useState("");
+  const [withReturn, setWithReturn] = useState(false);
+  const [returnAt, setReturnAt] = useState("");
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
+        if (withReturn && !returnAt) {
+          setError("Say when the return leaves, or untick the return.");
+          return;
+        }
         startTransition(async () => {
           const res = await createTransportRequest({
             pickup,
@@ -36,6 +45,7 @@ export function RequestForm() {
             departAt,
             passengers: Number(passengers),
             purpose,
+            returnAt: withReturn ? returnAt : undefined,
           });
           if (!res.ok) setError(res.error ?? "Could not save the request.");
           else router.push("/transportation?view=requests");
@@ -51,14 +61,31 @@ export function RequestForm() {
         </p>
       </div>
       {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+      <PlacesDatalist places={places} />
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium">
           Pickup location
-          <input value={pickup} onChange={(e) => setPickup(e.target.value)} required className={`mt-1 block w-full ${field}`} placeholder="e.g. Base main gate" />
+          <input
+            value={pickup}
+            onChange={(e) => setPickup(e.target.value)}
+            list={PLACES_LIST_ID}
+            autoComplete="off"
+            required
+            className={`mt-1 block w-full ${field}`}
+            placeholder="e.g. Base main gate"
+          />
         </label>
         <label className="text-xs font-medium">
           Drop-off location
-          <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} required className={`mt-1 block w-full ${field}`} placeholder="e.g. Douala airport" />
+          <input
+            value={dropoff}
+            onChange={(e) => setDropoff(e.target.value)}
+            list={PLACES_LIST_ID}
+            autoComplete="off"
+            required
+            className={`mt-1 block w-full ${field}`}
+            placeholder="e.g. Douala airport"
+          />
         </label>
         <label className="text-xs font-medium">
           Departure
@@ -72,10 +99,27 @@ export function RequestForm() {
           Purpose (optional)
           <input value={purpose} onChange={(e) => setPurpose(e.target.value)} className={`mt-1 block w-full ${field}`} placeholder="Meeting, site visit, hospital run…" />
         </label>
+        <label className="flex items-center gap-2 text-sm sm:col-span-2">
+          <input type="checkbox" checked={withReturn} onChange={(e) => setWithReturn(e.target.checked)} className="h-4 w-4" />
+          Also book the return{dropoff && pickup ? ` (${dropoff} → ${pickup})` : ""}
+        </label>
+        {withReturn && (
+          <label className="text-xs font-medium">
+            Return departs
+            <input
+              value={returnAt}
+              onChange={(e) => setReturnAt(e.target.value)}
+              type="datetime-local"
+              min={departAt || undefined}
+              required
+              className={`mt-1 block w-full ${field}`}
+            />
+          </label>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <Button type="submit" disabled={pending}>
-          <Car className="h-4 w-4" /> {pending ? "Sending…" : "Send request"}
+          <Car className="h-4 w-4" /> {pending ? "Sending…" : withReturn ? "Send both legs" : "Send request"}
         </Button>
         <span className="text-xs text-muted-foreground">You can cancel it from the requests list until a driver has started.</span>
       </div>

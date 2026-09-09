@@ -12,7 +12,7 @@ import { visitorsSubmenu } from "@/app/(portal)/visitors/_components/visitors-vi
 import { medicalSubmenu } from "@/app/(portal)/medical/_components/medical-views";
 import { savingsSubmenu } from "@/app/(portal)/savings/_components/savings-views";
 import { transportSubmenu } from "@/app/(portal)/transportation/_components/transport-views";
-import { getMyDriver } from "@/lib/transport";
+import { getApprovalAccess, getMyDriver } from "@/lib/transport";
 import { isSavingsApprover as getIsSavingsApprover } from "@/lib/savings";
 import { adminSubmenu, canSeeAdminConsole, type AdminFlags } from "@/app/(portal)/admin/_components/admin-views";
 import { isTrainingAdmin as getIsTrainingAdmin } from "@/lib/training";
@@ -35,7 +35,7 @@ export async function Sidebar({
   brandName?: string;
   logoUrl?: string | null;
 }) {
-  const [services, access, isManager, isTrainingAdmin, perms, isSavingsApprover, myDriver] = await Promise.all([
+  const [services, access, isManager, isTrainingAdmin, perms, isSavingsApprover, myDriver, approvalAccess] = await Promise.all([
     getActiveServices(),
     getAccess(),
     hasDirectReports(),
@@ -43,6 +43,7 @@ export async function Sidebar({
     getMyPermissions(),
     getIsSavingsApprover(),
     getMyDriver(),
+    getApprovalAccess(),
   ]);
   // Full offshore managers drive the admin console's offshore section; the
   // Dispatcher additionally gets the (scoped) offshore submenu but not the
@@ -164,7 +165,8 @@ export async function Sidebar({
       defaultSubKey: myDriver && !isOrgAdmin ? "driver" : "requests",
       subItems: transportSubmenu({
         admin: isOrgAdmin,
-        manager: isManager,
+        manager: approvalAccess.approver,
+        approvals: approvalAccess.showApprovals,
         driver: Boolean(myDriver),
         canCreate: isOrgAdmin || hasPermission(perms, "transportation", "create"),
         outOfTown: Boolean(outOfTown),

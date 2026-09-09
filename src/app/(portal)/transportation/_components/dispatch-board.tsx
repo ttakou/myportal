@@ -12,6 +12,7 @@ import {
   PRIORITY_LABEL,
   TASK_TYPE_LABEL,
   type Driver,
+  type Place,
   type TransportPriority,
   type TransportRequest,
   type TransportTaskType,
@@ -20,6 +21,7 @@ import {
 import { assignTransport, createTransportTask, setTransportStatus } from "../actions";
 import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
 import { TransportAnalytics } from "./transport-analytics";
+import { PLACES_LIST_ID, PlacesDatalist } from "./places-datalist";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -32,10 +34,12 @@ export function DispatchBoard({
   all,
   drivers,
   vehicles,
+  places,
 }: {
   all: TransportRequest[];
   drivers: Driver[];
   vehicles: Vehicle[];
+  places: Place[];
 }) {
   const { can } = usePermissions();
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -102,7 +106,7 @@ export function DispatchBoard({
       <TransportAnalytics all={all} drivers={drivers} />
 
       {can("transportation", "manage") && (
-        <NewTaskForm drivers={sortedDrivers} vehicles={vehicles} pending={pending} run={run} />
+        <NewTaskForm drivers={sortedDrivers} vehicles={vehicles} places={places} pending={pending} run={run} />
       )}
 
       <div className="space-y-3">
@@ -246,11 +250,13 @@ function TaskRow({
 function NewTaskForm({
   drivers,
   vehicles,
+  places,
   pending,
   run,
 }: {
   drivers: Driver[];
   vehicles: Vehicle[];
+  places: Place[];
   pending: boolean;
   run: Runner;
 }) {
@@ -311,8 +317,9 @@ function NewTaskForm({
           ))}
         </select>
         <input value={departAt} onChange={(e) => setDepartAt(e.target.value)} type="datetime-local" required className={field} />
-        <input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Pickup" required className={field} />
-        <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} placeholder="Drop-off" required className={field} />
+        <PlacesDatalist places={places} />
+        <input value={pickup} onChange={(e) => setPickup(e.target.value)} list={PLACES_LIST_ID} autoComplete="off" placeholder="Pickup" required className={field} />
+        <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} list={PLACES_LIST_ID} autoComplete="off" placeholder="Drop-off" required className={field} />
         <input value={passengers} onChange={(e) => setPassengers(e.target.value)} type="number" min={1} placeholder="Passengers" className={field} />
         <LazySelect
           value={driverId || null}

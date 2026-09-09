@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { FileBarChart } from "lucide-react";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
-import { hasDirectReports } from "@/lib/appraisals";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
 import { getActiveServices } from "@/lib/services";
 import { getModuleSettings } from "@/lib/module-settings";
 import { localDate } from "@/lib/transport/day-plan";
+import { escalateStaleApprovalsHere } from "@/lib/transport-approval-escalation";
 import {
+  getApprovalAccess,
   getAllDrivers,
   getAllTransportRequests,
   getAllVehicles,
@@ -16,6 +17,7 @@ import {
   getMyDriver,
   getMyDriverTasks,
   getMyTransportRequests,
+  getPlaces,
   getProfilesForLinking,
   getRequestsForDay,
   getShuttles,
@@ -50,18 +52,19 @@ export default async function TransportationPage({
   searchParams: Promise<{ view?: string; date?: string }>;
 }) {
   const { view, date } = await searchParams;
-  const [role, perms, myDriver, services, isManager, cfg] = await Promise.all([
+  const [role, perms, myDriver, services, approvalAccess, cfg] = await Promise.all([
     getCurrentRole(),
     getMyPermissions(),
     getMyDriver(),
     getActiveServices(),
-    hasDirectReports(),
+    getApprovalAccess(),
     getModuleSettings("transportation"),
   ]);
   const isAdmin = isAdminRole(role);
   const flags: TransportFlags = {
     admin: isAdmin,
-    manager: isManager,
+    manager: approvalAccess.approver,
+    approvals: approvalAccess.showApprovals,
     driver: Boolean(myDriver),
     canCreate: isAdmin || hasPermission(perms, "transportation", "create"),
     outOfTown: services.some((s) => s.slug === "out-of-town"),
@@ -70,7 +73,14 @@ export default async function TransportationPage({
   const approvalOn = cfg.require_approval === true;
   const plannerDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : localDate(new Date().toISOString());
 
-  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, driverTasks] =
+  // The desk opening the module is the other moment (besides the nightly
+  // job) an unanswered approval is passed on, so it never waits past the
+  // delay by more than a page load.
+  if (isAdmin && approvalAccess.queued > 0 && (active === "requests" || active === "approvals" || active === "dispatch" || active === "planner")) {
+    await escalateStaleApprovalsHere();
+  }
+
+  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, places, driverTasks] =
     await Promise.all([
       active === "requests" || active === "dispatch"
         ? isAdmin
@@ -84,7 +94,8 @@ export default async function TransportationPage({
       active === "dispatch" || active === "planner" || active === "shuttles" ? getVehicles() : Promise.resolve([]),
       active === "fleet" ? getAllVehicles() : Promise.resolve([]),
       active === "fleet" ? getProfilesForLinking() : Promise.resolve([]),
-      active === "shuttles" ? getShuttles() : Promise.resolve([]),
+      active === "shuttles" || active === "planner" ? getShuttles() : Promise.resolve([]),
+      active === "new" || active === "dispatch" || active === "shuttles" || active === "fleet" ? getPlaces() : Promise.resolve([]),
       active === "driver" ? getMyDriverTasks() : Promise.resolve([]),
     ]);
 
@@ -133,20 +144,25 @@ export default async function TransportationPage({
       {active === "requests" && (
         <RequestsList requests={requests} scope={isAdmin ? "all" : "mine"} canCreate={flags.canCreate} canDispatch={isAdmin} />
       )}
-      {active === "new" && <RequestForm />}
-      {active === "approvals" && <ApprovalsPanel requests={approvals} approvalOn={approvalOn} />}
-      {active === "dispatch" && <DispatchBoard all={requests} drivers={drivers} vehicles={vehicles} />}
+      {active === "new" && <RequestForm places={places} />}
+      {active === "approvals" && (
+        <ApprovalsPanel requests={approvals} approvalOn={approvalOn} escalationHours={Number(cfg.approval_escalation_hours ?? 24)} />
+      )}
+      {active === "dispatch" && <DispatchBoard all={requests} drivers={drivers} vehicles={vehicles} places={places} />}
       {active === "planner" && (
         <DayPlanner
           date={plannerDate}
           requests={dayRequests}
           drivers={drivers}
           vehicles={vehicles}
+          shuttles={shuttles}
           clashMinutes={Math.round(Number(cfg.conflict_window_hours ?? 2) * 60)}
         />
       )}
-      {active === "fleet" && <FleetPanel drivers={allDrivers} vehicles={allVehicles} profiles={profiles} approvalOn={approvalOn} />}
-      {active === "shuttles" && <ShuttlesPanel shuttles={shuttles} drivers={drivers} vehicles={vehicles} />}
+      {active === "fleet" && (
+        <FleetPanel drivers={allDrivers} vehicles={allVehicles} profiles={profiles} places={places} approvalOn={approvalOn} />
+      )}
+      {active === "shuttles" && <ShuttlesPanel shuttles={shuttles} drivers={drivers} vehicles={vehicles} places={places} />}
       {active === "driver" && myDriver && <DriverTasks driver={myDriver} tasks={driverTasks} />}
     </div>
   );
