@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { CalendarRange, Car, MessageSquare, Pencil, UserCheck, UserPlus, Users } from "lucide-react";
+import { CalendarRange, Car, History, MessageSquare, Pencil, ShieldAlert, UserCheck, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -16,15 +16,19 @@ import {
   visitRangeLabel,
   VEHICLE_TYPES,
   VISITOR_STATUS_LABEL,
+  type DirectoryEntry,
   type Visitor,
   type VisitorStatus,
 } from "@/types/visitors";
+import { ordinal } from "@/lib/visitors/directory";
+import { siteClock } from "@/lib/visitors/daily";
 import {
   cancelVisitor,
   checkInVisitor,
   checkOutVisitor,
   preRegisterVisitor,
   searchHosts,
+  searchVisitorDirectory,
   setVisitorCheckInAt,
   setVisitorCheckOutAt,
   updateVisitorMinors,
@@ -35,8 +39,18 @@ const STATUS_STYLE: Record<VisitorStatus, string> = {
   pre_registered: "bg-muted text-muted-foreground",
   checked_in: "bg-primary/10 text-primary",
   checked_out: "bg-secondary text-secondary-foreground",
+  no_show: "bg-amber-100 text-amber-800",
   cancelled: "bg-destructive/10 text-destructive line-through",
 };
+
+type Filter = "all" | "expected" | "on_site" | "left" | "mine";
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "expected", label: "Expected" },
+  { key: "on_site", label: "On site" },
+  { key: "left", label: "Left" },
+  { key: "mine", label: "My visitors" },
+];
 
 function vehicleLabel(v: Visitor): string | null {
   return [v.vehicle_type, v.vehicle_plate].filter(Boolean).join(" · ") || null;
@@ -71,20 +85,53 @@ function MinorCount({
 
 export function VisitorsBoard({
   visitDate,
-  visitors,
+  visitors: allVisitors,
   isAdmin,
   departments,
+  meId,
 }: {
   visitDate: string;
   visitors: Visitor[];
   isAdmin: boolean;
   departments: string[];
+  /** The signed-in user, for the "My visitors" filter. */
+  meId: string | null;
 }) {
   const { can } = usePermissions();
   // Front-line reception/security: may check visitors in and out.
   const canOperate = isAdmin || can("visitors", "operate");
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const visitors = allVisitors.filter((v) => {
+    switch (filter) {
+      case "expected":
+        return v.status === "pre_registered";
+      case "on_site":
+        return v.status === "checked_in";
+      case "left":
+        return v.status === "checked_out" || v.status === "no_show" || v.status === "cancelled";
+      case "mine":
+        return v.host_id === meId;
+      default:
+        return true;
+    }
+  });
+  const counts: Record<Filter, number> = {
+    all: allVisitors.length,
+    expected: allVisitors.filter((v) => v.status === "pre_registered").length,
+    on_site: allVisitors.filter((v) => v.status === "checked_in").length,
+    left: allVisitors.filter((v) => v.status === "checked_out" || v.status === "no_show" || v.status === "cancelled").length,
+    mine: allVisitors.filter((v) => v.host_id === meId).length,
+  };
+
+  // The directory: as the name is typed, people who came before are offered;
+  // picking one prefills the form. A flagged person shows in red and cannot
+  // be registered.
+  const [directoryId, setDirectoryId] = useState<string | null>(null);
+  const [known, setKnown] = useState<DirectoryEntry | null>(null);
+  const [dirOptions, setDirOptions] = useState<DirectoryEntry[]>([]);
+  const [showDir, setShowDir] = useState(false);
 
   const [fullName, setFullName] = useState("");
   const [company, setCompany] = useState("");
@@ -111,6 +158,39 @@ export function VisitorsBoard({
   const [hostOptions, setHostOptions] = useState<HostOption[]>([]);
   const [showHosts, setShowHosts] = useState(false);
 
+  useEffect(() => {
+    if (directoryId) return;
+    const q = fullName.trim();
+    if (q.length < 2) {
+      setDirOptions([]);
+      return;
+    }
+    let active = true;
+    const t = setTimeout(async () => {
+      const res = await searchVisitorDirectory(q);
+      if (active) {
+        setDirOptions(res);
+        setShowDir(res.length > 0);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [fullName, directoryId]);
+
+  function pickKnown(d: DirectoryEntry) {
+    setDirectoryId(d.id);
+    setKnown(d);
+    setFullName(d.full_name);
+    if (d.company) setCompany(d.company);
+    if (d.id_document_type) setIdType(d.id_document_type);
+    if (d.id_document_number) setIdNumber(d.id_document_number);
+    if (d.email) setEmail(d.email);
+    if (d.phone) setPhone(d.phone);
+    setShowDir(false);
+  }
+
   // Debounced host directory search as the user types a name.
   useEffect(() => {
     if (hostId) return; // a host is already chosen
@@ -134,6 +214,9 @@ export function VisitorsBoard({
   }, [hostQuery, hostId]);
 
   function resetForm() {
+    setDirectoryId(null);
+    setKnown(null);
+    setDirOptions([]);
     setFullName("");
     setCompany("");
     setPurpose("");
@@ -220,13 +303,73 @@ export function VisitorsBoard({
         onSubmit={register}
         className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3"
       >
-        <input
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          placeholder="Visitor name"
-          required
-          className="rounded-md border bg-background px-3 py-2 text-sm"
-        />
+        <div className="relative">
+          <input
+            value={fullName}
+            onChange={(e) => {
+              setFullName(e.target.value);
+              if (directoryId) {
+                setDirectoryId(null);
+                setKnown(null);
+              }
+            }}
+            onFocus={() => dirOptions.length > 0 && setShowDir(true)}
+            onBlur={() => setTimeout(() => setShowDir(false), 150)}
+            placeholder="Visitor name"
+            required
+            autoComplete="off"
+            className={cn("w-full rounded-md border bg-background px-3 py-2 text-sm", known?.do_not_admit && "border-destructive")}
+          />
+          {showDir && dirOptions.length > 0 && (
+            <ul className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-popover text-sm shadow">
+              {dirOptions.map((d) => (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickKnown(d)}
+                    className={cn("flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-accent", d.do_not_admit && "text-destructive")}
+                  >
+                    <span className="font-medium">
+                      {d.do_not_admit && <ShieldAlert className="mr-1 inline h-3.5 w-3.5" />}
+                      {d.full_name}
+                      {d.company ? ` · ${d.company}` : ""}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {d.visits} visit{d.visits === 1 ? "" : "s"}
+                      {d.last_visit_date ? ` · last ${d.last_visit_date}${d.last_host_name ? ` with ${d.last_host_name}` : ""}` : ""}
+                      {d.id_document_number ? ` · ${idDocLabel(d.id_document_type) ?? "ID"} ${d.id_document_number}` : ""}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {known && (
+          <div
+            className={cn(
+              "flex items-start gap-2 rounded-md px-3 py-2 text-xs sm:col-span-2 lg:col-span-3",
+              known.do_not_admit ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground",
+            )}
+          >
+            {known.do_not_admit ? <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /> : <History className="mt-0.5 h-4 w-4 shrink-0" />}
+            <span>
+              {known.do_not_admit ? (
+                <>
+                  <strong>Do not admit.</strong> {known.do_not_admit_reason ?? "Flagged by security."} Ask security before going further; the flag is
+                  cleared in the visitor directory.
+                </>
+              ) : (
+                <>
+                  Known visitor: this will be their {ordinal(known.visits + 1)} visit
+                  {known.last_visit_date ? `; last on ${known.last_visit_date}${known.last_host_name ? ` hosted by ${known.last_host_name}` : ""}` : ""}.
+                  {known.notes ? ` Note: ${known.notes}` : ""}
+                </>
+              )}
+            </span>
+          </div>
+        )}
         <input
           value={company}
           onChange={(e) => setCompany(e.target.value)}
@@ -379,14 +522,14 @@ export function VisitorsBoard({
           <MinorCount label="Adolescents" value={adolescents} onChange={setAdolescents} />
         </fieldset>
         <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-3">
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || Boolean(known?.do_not_admit)}>
             <UserPlus className="h-4 w-4" /> Pre-register
           </Button>
           {canOperate && (
             <Button
               type="button"
               variant="outline"
-              disabled={pending}
+              disabled={pending || Boolean(known?.do_not_admit)}
               onClick={() => submit(true)}
               title="Register a walk-in who is already here, and check them in now"
             >
@@ -396,6 +539,22 @@ export function VisitorsBoard({
         </div>
       </form>
       )}
+
+      <nav className="flex flex-wrap gap-1" aria-label="Filter visitors">
+        {FILTERS.filter((f) => f.key !== "mine" || meId).map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setFilter(f.key)}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium",
+              filter === f.key ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-accent",
+            )}
+          >
+            {f.label} <span className="tabular-nums opacity-70">{counts[f.key]}</span>
+          </button>
+        ))}
+      </nav>
 
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
@@ -472,7 +631,7 @@ export function VisitorsBoard({
                 </td>
                 <td className="px-4 py-3 tabular-nums text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
-                    {v.check_in_at ? new Date(v.check_in_at).toLocaleTimeString() : "—"}
+                    {siteClock(v.check_in_at)}
                     {canOperate && v.check_in_at && (
                       <button
                         type="button"
@@ -487,7 +646,7 @@ export function VisitorsBoard({
                 </td>
                 <td className="px-4 py-3 tabular-nums text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
-                    {v.check_out_at ? new Date(v.check_out_at).toLocaleTimeString() : "—"}
+                    {siteClock(v.check_out_at)}
                     {canOperate && v.check_out_at && (
                       <button
                         type="button"

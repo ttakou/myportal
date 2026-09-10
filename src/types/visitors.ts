@@ -2,17 +2,40 @@ export type VisitorStatus =
   | "pre_registered"
   | "checked_in"
   | "checked_out"
+  | "no_show"
   | "cancelled";
 
 export const VISITOR_STATUS_LABEL: Record<VisitorStatus, string> = {
   pre_registered: "Pre-registered",
   checked_in: "On site",
   checked_out: "Checked out",
+  no_show: "No-show",
   cancelled: "Cancelled",
 };
 
+/** One person in the visitor directory: who they are, whether they may come in, how often they have. */
+export interface DirectoryEntry {
+  id: string;
+  full_name: string;
+  company: string | null;
+  id_document_type: string | null;
+  id_document_number: string | null;
+  email: string | null;
+  phone: string | null;
+  do_not_admit: boolean;
+  do_not_admit_reason: string | null;
+  notes: string | null;
+  /** Visits on record, and the last one. */
+  visits: number;
+  last_visit_date: string | null;
+  last_host_name: string | null;
+}
+
 export interface Visitor {
   id: string;
+  /** The directory record this visit belongs to. */
+  directory_id: string | null;
+  host_id: string | null;
   full_name: string;
   company: string | null;
   purpose: string | null;

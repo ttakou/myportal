@@ -1,3 +1,4 @@
+import { siteClock } from "@/lib/visitors/daily";
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
@@ -30,7 +31,7 @@ function dur(mins: number | null): string {
 }
 /** HH:MM (UTC) for an ISO timestamp, or "—". */
 function clock(ts: string | null): string {
-  return ts ? new Date(ts).toISOString().slice(11, 16) : "—";
+  return siteClock(ts);
 }
 function vehicle(r: { vehicle_type: string | null; vehicle_plate: string | null }): string {
   return [r.vehicle_type, r.vehicle_plate].filter(Boolean).join(" · ") || "—";

@@ -1,5 +1,6 @@
 "use client";
 
+import { siteClock } from "@/lib/visitors/daily";
 import { useMemo, useState } from "react";
 import { MessageSquare, Pencil, Search, UserPlus, Users } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
@@ -25,8 +26,10 @@ const STATUS_STYLE: Record<AttendanceStatus, string> = {
 // On site first, then not-yet-in, then those who have left; alpha within each.
 const STATUS_ORDER: Record<AttendanceStatus, number> = { on_site: 0, away: 1, left: 2 };
 
+
+/** HH:MM on the site clock. */
 function time(ts: string | null): string {
-  return ts ? new Date(ts).toLocaleTimeString() : "—";
+  return siteClock(ts);
 }
 
 export function StaffBoard({ rows }: { rows: StaffAttendance[] }) {

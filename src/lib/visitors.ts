@@ -1,14 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
 import { today } from "@/lib/canteen";
-import type { Visitor, VisitorStatus } from "@/types/visitors";
+import type { DirectoryEntry, Visitor, VisitorStatus } from "@/types/visitors";
 
 const SELECT =
-  "id, full_name, company, purpose, visit_date, visit_until, status, badge_no, id_document_type, id_document_number, email, phone, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, check_in_comment, check_out_comment, accompanying_infants, accompanying_children, accompanying_adolescents, host:profiles!visitors_host_id_fkey(full_name)";
+  "id, directory_id, host_id, full_name, company, purpose, visit_date, visit_until, status, badge_no, id_document_type, id_document_number, email, phone, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, check_in_comment, check_out_comment, accompanying_infants, accompanying_children, accompanying_adolescents, host:profiles!visitors_host_id_fkey(full_name)";
 
 function mapRow(row: Record<string, unknown>): Visitor {
   const host = Array.isArray(row.host) ? row.host[0] : row.host;
   return {
     id: row.id as string,
+    directory_id: (row.directory_id as string) ?? null,
+    host_id: (row.host_id as string) ?? null,
     full_name: row.full_name as string,
     company: (row.company as string) ?? null,
     purpose: (row.purpose as string) ?? null,
@@ -168,4 +170,83 @@ export async function getOnSite(visitDate: string = today()): Promise<Visitor[]>
   }
 
   return result.sort((a, b) => (a.check_in_at ?? "").localeCompare(b.check_in_at ?? ""));
+}
+
+// --- Visitor directory ----------------------------------------------------------
+
+const DIR_SELECT = "id, full_name, company, id_document_type, id_document_number, email, phone, do_not_admit, do_not_admit_reason, notes";
+
+/** Visit counts and the last visit for a set of directory ids. */
+async function visitStats(
+  supabase: ReturnType<typeof createClient>,
+  ids: string[],
+): Promise<Map<string, { visits: number; last: string | null; host: string | null }>> {
+  const out = new Map<string, { visits: number; last: string | null; host: string | null }>();
+  if (ids.length === 0) return out;
+  const { data } = await supabase
+    .from("visitors")
+    .select("directory_id, visit_date, status, host:profiles!visitors_host_id_fkey(full_name)")
+    .in("directory_id", ids)
+    .neq("status", "cancelled")
+    .order("visit_date", { ascending: false });
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const id = r.directory_id as string;
+    const cur = out.get(id) ?? { visits: 0, last: null, host: null };
+    cur.visits += 1;
+    if (!cur.last) {
+      cur.last = r.visit_date as string;
+      const host = Array.isArray(r.host) ? r.host[0] : r.host;
+      cur.host = (host as { full_name?: string } | null)?.full_name ?? null;
+    }
+    out.set(id, cur);
+  }
+  return out;
+}
+
+function mapDirectory(row: Record<string, unknown>, stats: { visits: number; last: string | null; host: string | null } | undefined): DirectoryEntry {
+  return {
+    id: row.id as string,
+    full_name: row.full_name as string,
+    company: (row.company as string) ?? null,
+    id_document_type: (row.id_document_type as string) ?? null,
+    id_document_number: (row.id_document_number as string) ?? null,
+    email: (row.email as string) ?? null,
+    phone: (row.phone as string) ?? null,
+    do_not_admit: Boolean(row.do_not_admit),
+    do_not_admit_reason: (row.do_not_admit_reason as string) ?? null,
+    notes: (row.notes as string) ?? null,
+    visits: stats?.visits ?? 0,
+    last_visit_date: stats?.last ?? null,
+    last_host_name: stats?.host ?? null,
+  };
+}
+
+/**
+ * People in the directory whose name, company, ID number or phone contains
+ * the query, with their visit history. Everyone when the query is blank,
+ * capped.
+ */
+export async function getDirectory(query: string, limit = 200): Promise<DirectoryEntry[]> {
+  const supabase = createClient();
+  const q = query.trim().replace(/[%_,()]/g, " ").trim();
+  let req = supabase.from("visitor_directory").select(DIR_SELECT).order("full_name").limit(limit);
+  if (q) {
+    const like = `%${q}%`;
+    req = req.or(`full_name.ilike.${like},company.ilike.${like},id_document_number.ilike.${like},phone.ilike.${like}`);
+  }
+  const { data, error } = await req;
+  if (error) {
+    console.error("getDirectory:", error.message);
+    return [];
+  }
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const stats = await visitStats(supabase, rows.map((r) => r.id as string));
+  return rows.map((r) => mapDirectory(r, stats.get(r.id as string)));
+}
+
+/** The directory's flagged people, for the board's warning list. */
+export async function getDoNotAdmitCount(): Promise<number> {
+  const supabase = createClient();
+  const { count } = await supabase.from("visitor_directory").select("id", { count: "exact", head: true }).eq("do_not_admit", true);
+  return count ?? 0;
 }

@@ -1,3 +1,4 @@
+import { siteClock } from "@/lib/visitors/daily";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
@@ -19,9 +20,9 @@ import { DailyTrafficChart } from "./_components/daily-traffic-chart";
 function iso(d: Date) {
   return d.toISOString().slice(0, 10);
 }
-/** HH:MM (UTC) for an ISO timestamp, or "—". */
+/** HH:MM on the site clock, or "—". */
 function clock(ts: string | null): string {
-  return ts ? new Date(ts).toISOString().slice(11, 16) : "—";
+  return siteClock(ts);
 }
 function duration(e: AccessEntry): string {
   if (!e.check_in_at || !e.check_out_at) return "—";

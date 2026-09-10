@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { idDocLabel } from "@/types/visitors";
+import { getModuleSettings, getModuleSettingsForTenant } from "@/lib/module-settings";
+import { isAfterHours, siteClock } from "@/lib/visitors/daily";
 
 /** Format a visitor's identity document as "Passport: A123", or null. */
 function idDocument(type: unknown, number: unknown): string | null {
@@ -79,11 +81,10 @@ export type AccessRegister = {
   truncated: boolean;
 };
 
-/** Site working window (UTC): entries outside it are flagged as after-hours. */
-const WORK_START_H = 6; // 06:00 UTC
-const WORK_END_H = 20; // 20:00 UTC
-/** Threshold for "entered but no exit ever logged". */
-const NO_EXIT_HOURS = 24;
+/** Defaults for the tenant settings that draw the anomaly windows (site clock). */
+const DEFAULT_AFTER_HOURS_FROM = "18:00";
+const DEFAULT_AFTER_HOURS_TO = "06:00";
+const DEFAULT_NO_EXIT_HOURS = 24;
 /** Per-source fetch cap: 1000-row pages, at most 5 pages. */
 const PAGE = 1000;
 const MAX_PAGES = 5;
@@ -123,6 +124,10 @@ export async function getAccessRegister(
   const supabase = opts?.client ?? createClient();
   // A service-role client bypasses RLS, so it must scope the tenant explicitly.
   const tenantId = opts?.tenantId ?? null;
+  const cfg = tenantId && opts?.client ? await getModuleSettingsForTenant(opts.client, tenantId, "visitors") : await getModuleSettings("visitors");
+  const afterFrom = String(cfg.after_hours_from ?? DEFAULT_AFTER_HOURS_FROM);
+  const afterTo = String(cfg.after_hours_to ?? DEFAULT_AFTER_HOURS_TO);
+  const NO_EXIT_HOURS = Number(cfg.no_exit_hours ?? DEFAULT_NO_EXIT_HOURS) || DEFAULT_NO_EXIT_HOURS;
 
   const wantStaffSide =
     (f.population === "all" || f.population === "staff" || f.population === "contractor") &&
@@ -334,19 +339,14 @@ export async function getAccessRegister(
   const anomalies: AccessAnomaly[] = [];
   const nowMs = Date.now();
   for (const e of entries) {
-    if (e.check_in_at) {
-      const h = new Date(e.check_in_at).getUTCHours();
-      if (h < WORK_START_H || h >= WORK_END_H) {
-        anomalies.push({
-          type: "after_hours",
-          name: e.name,
-          kind: e.kind,
-          date: e.date,
-          detail: `Entered at ${e.check_in_at.slice(11, 16)} UTC (outside ${String(
-            WORK_START_H,
-          ).padStart(2, "0")}:00–${WORK_END_H}:00)`,
-        });
-      }
+    if (e.check_in_at && isAfterHours(e.check_in_at, afterFrom, afterTo)) {
+      anomalies.push({
+        type: "after_hours",
+        name: e.name,
+        kind: e.kind,
+        date: e.date,
+        detail: `Entered at ${siteClock(e.check_in_at)} (after hours: ${afterFrom}–${afterTo})`,
+      });
     }
     if (
       e.check_in_at &&
