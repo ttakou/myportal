@@ -36,6 +36,8 @@ export interface Visitor {
   /** The directory record this visit belongs to. */
   directory_id: string | null;
   host_id: string | null;
+  /** Shared by the members of a group visit registered on one form. */
+  group_id: string | null;
   full_name: string;
   company: string | null;
   purpose: string | null;

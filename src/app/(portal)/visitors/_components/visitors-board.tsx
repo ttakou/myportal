@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { CalendarRange, Car, History, MessageSquare, Pencil, ShieldAlert, UserCheck, UserPlus, Users } from "lucide-react";
+import { CalendarRange, Car, History, MessageSquare, Pencil, ShieldAlert, UserCheck, UserPlus, Users, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -21,11 +21,15 @@ import {
   type VisitorStatus,
 } from "@/types/visitors";
 import { ordinal } from "@/lib/visitors/directory";
+import { groupVisitors, parseGroupMembers } from "@/lib/visitors/group";
 import { siteClock } from "@/lib/visitors/daily";
 import {
   cancelVisitor,
+  checkInGroup,
   checkInVisitor,
+  checkOutGroup,
   checkOutVisitor,
+  preRegisterGroup,
   preRegisterVisitor,
   searchHosts,
   searchVisitorDirectory,
@@ -128,6 +132,12 @@ export function VisitorsBoard({
   // The directory: as the name is typed, people who came before are offered;
   // picking one prefills the form. A flagged person shows in red and cannot
   // be registered.
+  // A delegation on one form: the shared fields plus one person per line.
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupText, setGroupText] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const groupMembers = groupMode ? parseGroupMembers(groupText) : [];
+  const { ordered, headerFor } = groupVisitors(visitors);
   const [directoryId, setDirectoryId] = useState<string | null>(null);
   const [known, setKnown] = useState<DirectoryEntry | null>(null);
   const [dirOptions, setDirOptions] = useState<DirectoryEntry[]>([]);
@@ -260,6 +270,32 @@ export function VisitorsBoard({
   }
 
   function submit(checkInNow: boolean) {
+    if (groupMode) {
+      setNotice(null);
+      run(
+        () =>
+          preRegisterGroup({
+            members: groupText,
+            company,
+            purpose,
+            visitDate,
+            visitUntil: visitUntil || null,
+            vehicleType,
+            vehiclePlate,
+            hostId,
+            service,
+            checkInNow,
+          }).then((r) => {
+            if (r.ok) setNotice(`${r.created ?? 0} people ${checkInNow ? "registered and checked in" : "pre-registered"} as one group.`);
+            return r;
+          }),
+        () => {
+          resetForm();
+          setGroupText("");
+        },
+      );
+      return;
+    }
     run(
       () =>
         preRegisterVisitor({
@@ -298,12 +334,49 @@ export function VisitorsBoard({
         </p>
       )}
 
+      {notice && <p className="rounded-md bg-green-50 px-4 py-2 text-sm text-green-800">{notice}</p>}
+
       {can("visitors", "create") && (
       <form
         onSubmit={register}
         className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3"
       >
-        <div className="relative">
+        <div className="flex flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
+          <button
+            type="button"
+            onClick={() => setGroupMode(false)}
+            className={cn("rounded-full border px-3 py-1 text-xs font-medium", !groupMode ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground")}
+          >
+            One visitor
+          </button>
+          <button
+            type="button"
+            onClick={() => setGroupMode(true)}
+            className={cn("inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium", groupMode ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground")}
+          >
+            <UsersRound className="h-3.5 w-3.5" /> Group visit
+          </button>
+          {groupMode && (
+            <span className="text-xs text-muted-foreground">
+              Company, host, purpose, dates and vehicle below are shared; the people go one per line.
+            </span>
+          )}
+        </div>
+        {groupMode && (
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">
+            People — one per line: Name, ID number, phone (ID and phone optional)
+            <textarea
+              value={groupText}
+              onChange={(e) => setGroupText(e.target.value)}
+              rows={Math.min(14, Math.max(4, groupText.split("\n").length + 1))}
+              placeholder={"Jean Mbarga, CM-123456, 699001122\nAïcha Ndongo, 677889900\nPaul Essomba"}
+              className="rounded-md border bg-background px-3 py-2 font-mono text-sm text-foreground"
+              required
+            />
+            <span>{groupMembers.length} {groupMembers.length === 1 ? "person" : "people"} listed</span>
+          </label>
+        )}
+        <div className={cn("relative", groupMode && "hidden")}>
           <input
             value={fullName}
             onChange={(e) => {
@@ -316,7 +389,7 @@ export function VisitorsBoard({
             onFocus={() => dirOptions.length > 0 && setShowDir(true)}
             onBlur={() => setTimeout(() => setShowDir(false), 150)}
             placeholder="Visitor name"
-            required
+            required={!groupMode}
             autoComplete="off"
             className={cn("w-full rounded-md border bg-background px-3 py-2 text-sm", known?.do_not_admit && "border-destructive")}
           />
@@ -403,7 +476,7 @@ export function VisitorsBoard({
         <select
           value={idType}
           onChange={(e) => setIdType(e.target.value)}
-          className="rounded-md border bg-background px-3 py-2 text-sm"
+          className={cn("rounded-md border bg-background px-3 py-2 text-sm", groupMode && "hidden")}
           aria-label="ID document type"
         >
           <option value="">ID type (optional)</option>
@@ -417,21 +490,21 @@ export function VisitorsBoard({
           value={idNumber}
           onChange={(e) => setIdNumber(e.target.value)}
           placeholder="CNI / Passport no. (optional)"
-          className="rounded-md border bg-background px-3 py-2 text-sm"
+          className={cn("rounded-md border bg-background px-3 py-2 text-sm", groupMode && "hidden")}
         />
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email (optional)"
-          className="rounded-md border bg-background px-3 py-2 text-sm"
+          className={cn("rounded-md border bg-background px-3 py-2 text-sm", groupMode && "hidden")}
         />
         <input
           type="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="Phone (optional)"
-          className="rounded-md border bg-background px-3 py-2 text-sm"
+          className={cn("rounded-md border bg-background px-3 py-2 text-sm", groupMode && "hidden")}
         />
         {/* Optional end date → multi-day pass (repeated check-in/out over the range). */}
         <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
@@ -513,7 +586,7 @@ export function VisitorsBoard({
             </option>
           ))}
         </select>
-        <fieldset className="grid grid-cols-3 gap-2 sm:col-span-2 lg:col-span-3">
+        <fieldset className={cn("grid grid-cols-3 gap-2 sm:col-span-2 lg:col-span-3", groupMode && "hidden")}>
           <legend className="mb-1 text-xs font-medium text-muted-foreground">
             Accompanying minors (optional)
           </legend>
@@ -570,10 +643,54 @@ export function VisitorsBoard({
             </tr>
           </thead>
           <tbody className="divide-y">
-            {visitors.slice(0, count).map((v) => {
+            {ordered.slice(0, count).map((v) => {
               const vehicle = vehicleLabel(v);
+              const group = headerFor.get(v.id);
+              const expected = group?.filter((m) => m.status === "pre_registered" || (isPass(m) && m.status === "checked_out")).length ?? 0;
+              const onSite = group?.filter((m) => m.status === "checked_in").length ?? 0;
               return (
-              <tr key={v.id}>
+              <Fragment key={v.id}>
+              {group && (
+                <tr className="bg-muted/40">
+                  <td colSpan={7} className="px-4 py-2">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <UsersRound className="h-4 w-4 text-primary" />
+                      <span className="font-medium">Group of {group.length}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {[group[0].company, group[0].purpose, group[0].host_name ? `host ${group[0].host_name}` : null].filter(Boolean).join(" · ")}
+                        {" · "}
+                        {onSite} on site · {expected} expected
+                      </span>
+                      {canOperate && (
+                        <span className="ml-auto flex gap-1.5">
+                          {expected > 0 && (
+                            <Button
+                              size="sm"
+                              disabled={pending}
+                              onClick={() =>
+                                run(() =>
+                                  checkInGroup(group[0].group_id as string).then((r) => {
+                                    if (r.ok) setNotice(`${r.done ?? 0} checked in${r.skipped?.length ? ` · not: ${r.skipped.join("; ")}` : ""}.`);
+                                    return r;
+                                  }),
+                                )
+                              }
+                            >
+                              Check in all ({expected})
+                            </Button>
+                          )}
+                          {onSite > 0 && (
+                            <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => checkOutGroup(group[0].group_id as string))}>
+                              Check out all ({onSite})
+                            </Button>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              <tr className={cn(v.group_id && "bg-muted/10")}>
                 <td className="px-4 py-3">
                   <div className="font-medium">{v.full_name}</div>
                   <div className="text-xs text-muted-foreground">
@@ -718,6 +835,7 @@ export function VisitorsBoard({
                   </div>
                 </td>
               </tr>
+              </Fragment>
               );
             })}
             {visitors.length === 0 && (
