@@ -254,6 +254,22 @@ export async function getManagedDishes(serviceDate: string): Promise<CanteenDish
   return (data ?? []).map((row) => mapDish(row as Record<string, any>));
 }
 
+/** Days with a menu over the last `daysBack` days, newest first, with what was on them — for "bring an earlier menu here". */
+export async function getMenuDates(daysBack = 120): Promise<{ date: string; dishes: number; names: string[] }[]> {
+  const supabase = createClient();
+  const since = addDays(today(), -daysBack);
+  const { data } = await supabase
+    .from("canteen_dishes")
+    .select("service_date, name")
+    .gte("service_date", since)
+    .eq("is_active", true)
+    .order("service_date", { ascending: false })
+    .limit(2000);
+  const byDate = new Map<string, string[]>();
+  for (const r of (data ?? []) as { service_date: string; name: string }[]) byDate.set(r.service_date, [...(byDate.get(r.service_date) ?? []), r.name]);
+  return [...byDate.entries()].map(([date, names]) => ({ date, dishes: names.length, names: names.slice(0, 4) }));
+}
+
 /** The current user's active bookings for a service date. */
 export async function getMyBookings(serviceDate: string): Promise<CanteenBooking[]> {
   const supabase = createClient();

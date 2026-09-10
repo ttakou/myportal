@@ -1,8 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
 import { useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { CopyPlus, ImagePlus, Plus, X } from "lucide-react";
+import { CopyPlus, ImagePlus, Plus, X, CalendarDays, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -33,14 +35,23 @@ export function MenuEditor({
   kitchens,
   dishes,
   mealPeriods,
+  pastMenus,
 }: {
   serviceDate: string;
   kitchens: Kitchen[];
   dishes: CanteenDish[];
   mealPeriods: MealPeriod[];
+  /** Days that had a menu, newest first, to copy from. */
+  pastMenus: { date: string; dishes: number; names: string[] }[];
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
+  const [copyFrom, setCopyFrom] = useState("");
+  const shiftDay = (d: string, n: number) => new Date(Date.parse(d + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
+  const goTo = (d: string) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) router.push(`/canteen/manage?date=${d}`);
+  };
 
   const [kitchenId, setKitchenId] = useState(kitchens[0]?.id ?? "");
   const [mealPeriod, setMealPeriod] = useState<MealPeriod>(mealPeriods[0] ?? "lunch");
@@ -152,6 +163,50 @@ export function MenuEditor({
           className="rounded-md border bg-background px-3 py-2 text-sm sm:col-span-2 lg:col-span-6"
         />
       </form>
+
+      {/* Which day is being edited: any day, past or future. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+        <CalendarDays className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium">Day</span>
+        <Button size="sm" variant="outline" onClick={() => goTo(shiftDay(serviceDate, -1))} aria-label="Previous day">
+          ‹
+        </Button>
+        <input type="date" value={serviceDate} onChange={(e) => goTo(e.target.value)} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
+        <Button size="sm" variant="outline" onClick={() => goTo(shiftDay(serviceDate, 1))} aria-label="Next day">
+          ›
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {dishes.length} dish{dishes.length === 1 ? "" : "es"} on this day. Open any past day to reuse its menu.
+        </span>
+      </div>
+
+      {/* Bring an earlier menu onto this day. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+        <History className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium">Bring an earlier menu here:</span>
+        <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} className="max-w-md rounded-md border bg-background px-2 py-1.5 text-sm">
+          <option value="">Pick a day that had a menu…</option>
+          {pastMenus
+            .filter((m) => m.date !== serviceDate)
+            .map((m) => (
+              <option key={m.date} value={m.date}>
+                {m.date} · {m.dishes} dish{m.dishes === 1 ? "" : "es"}: {m.names.join(", ")}
+                {m.dishes > m.names.length ? "…" : ""}
+              </option>
+            ))}
+        </select>
+        <span className="text-xs text-muted-foreground">or</span>
+        <input type="date" value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending || !copyFrom || copyFrom === serviceDate}
+          onClick={() => run(() => copyMenu(copyFrom, serviceDate), () => setCopyFrom(""))}
+        >
+          Copy onto {serviceDate}
+        </Button>
+        <span className="text-xs text-muted-foreground">Dishes, options and photos are copied; bookings are not. Existing dishes on this day stay.</span>
+      </div>
 
       {/* Weekly / monthly planning: copy this day's menu to another date */}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-4">
