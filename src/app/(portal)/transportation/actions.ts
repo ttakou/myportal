@@ -16,7 +16,8 @@ import { describeTripLog, validateTripLog, type TripLogInput } from "@/lib/trans
 import { deskIdsFor } from "@/lib/transport-desk";
 import { runTransportShuttles } from "@/lib/transport-shuttle-run";
 import { getActiveDelegatorIds } from "@/lib/delegation";
-import { getPlaces } from "@/lib/transport";
+import { getPlaces, getShuttles } from "@/lib/transport";
+import { canBook, upcomingRuns } from "@/lib/transport/seats";
 import type {
   TransportPriority,
   TransportStatus,
@@ -562,7 +563,7 @@ export async function setTransportStatus(
     .from("transport_requests")
     .update({ status, ...stamp })
     .eq("id", id)
-    .select("id, tenant_id, requester_id, pickup, dropoff, depart_at, driver:transport_drivers(full_name, phone)")
+    .select("id, tenant_id, requester_id, pickup, dropoff, depart_at, shuttle_id, shuttle_date, driver:transport_drivers(full_name, phone)")
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "Task not found or not yours to update." };
@@ -601,6 +602,26 @@ export async function setTransportStatus(
         url: "/transportation?view=requests",
       });
     }
+  }
+  // A cancelled shuttle run: everyone with a seat on it hears.
+  if (status === "cancelled" && data.shuttle_id && data.shuttle_date) {
+    const adminCli = createAdminClient();
+    const { data: seats } = adminCli
+      ? await adminCli
+          .from("transport_shuttle_seats")
+          .select("profile_id")
+          .eq("shuttle_id", data.shuttle_id)
+          .eq("ride_date", data.shuttle_date)
+          .is("cancelled_at", null)
+      : { data: [] };
+    await notifyUsers({
+      tenantId: data.tenant_id as string,
+      profileIds: (seats ?? []).map((x) => x.profile_id as string),
+      category: "transport",
+      title: `Shuttle cancelled: ${data.pickup} → ${data.dropoff}`,
+      body: `The ${fmtLocal(data.depart_at as string)} run will not go${note?.trim() ? ` · ${note.trim()}` : ""}. Book another run or request a ride.`,
+      url: "/transportation?view=seats",
+    });
   }
   // A no-show is the desk's business too: the slot was wasted.
   if (status === "no_show") {
@@ -1002,6 +1023,59 @@ export async function runShuttlesNow(dateIso: string): Promise<ActionResult & { 
   if (!res.ok) return { ok: false, error: res.error ?? "Could not create the runs." };
   rev();
   return { ok: true, created: res.created };
+}
+
+// --- Shuttle seats ----------------------------------------------------------
+
+/** Take a seat on a shuttle run: an upcoming one, with a seat still free. */
+export async function bookSeat(shuttleId: string, dateIso: string, note?: string): Promise<ActionResult> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return { ok: false, error: "Pick a date." };
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const nowIso = new Date().toISOString();
+  const run = upcomingRuns(await getShuttles(), nowIso).find((r) => r.shuttle.id === shuttleId && r.date === dateIso);
+  if (!run) return { ok: false, error: "That run is not open for booking." };
+
+  const { count } = await supabase
+    .from("transport_shuttle_seats")
+    .select("id", { count: "exact", head: true })
+    .eq("shuttle_id", shuttleId)
+    .eq("ride_date", dateIso)
+    .is("cancelled_at", null);
+  if (!canBook(run, count ?? 0, nowIso)) return { ok: false, error: "That run is full." };
+
+  const { error } = await supabase.from("transport_shuttle_seats").insert({
+    tenant_id: tenant,
+    shuttle_id: shuttleId,
+    ride_date: dateIso,
+    profile_id: user.id,
+    note: note?.trim() || null,
+  });
+  if (error) {
+    if (/transport_shuttle_seats_one_per_run/.test(error.message)) return { ok: false, error: "You already have a seat on that run." };
+    return { ok: false, error: error.message };
+  }
+  rev();
+  return { ok: true };
+}
+
+/** Give a seat back. Your own, or anyone's for the desk. */
+export async function cancelSeat(seatId: string): Promise<ActionResult> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("transport_shuttle_seats")
+    .update({ cancelled_at: new Date().toISOString() })
+    .eq("id", seatId)
+    .is("cancelled_at", null);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
 }
 
 // --- Saved places -----------------------------------------------------------

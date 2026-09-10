@@ -5,6 +5,7 @@ import type {
   Driver,
   Place,
   Shuttle,
+  ShuttleSeat,
   TaskUpdate,
   TransportRequest,
   Vehicle,
@@ -17,7 +18,7 @@ import { getActiveDelegatorIds } from "@/lib/delegation";
 import { one } from "@/lib/supabase/row-helpers";
 
 const REQ_SELECT =
-  "id, requester_id, shuttle_id, return_of, created_at, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
+  "id, requester_id, shuttle_id, shuttle_date, return_of, created_at, pickup, dropoff, depart_at, passengers, purpose, status, driver_id, vehicle_id," +
   " task_type, priority, notes, started_at, arrived_at, completed_at, odometer_start, odometer_end, fuel_litres, fuel_cost, rating, rating_comment," +
   " requester:profiles!transport_requests_requester_id_fkey(full_name)," +
   " driver:transport_drivers(full_name, phone), vehicle:transport_vehicles(name)," +
@@ -40,6 +41,7 @@ function mapReq(row: Record<string, any>): TransportRequest {
     id: row.id,
     requester_id: row.requester_id ?? null,
     shuttle_id: row.shuttle_id ?? null,
+    shuttle_date: row.shuttle_date ?? null,
     return_of: row.return_of ?? null,
     created_at: row.created_at,
     requester_name: one<{ full_name?: string }>(row.requester)?.full_name ?? null,
@@ -307,3 +309,58 @@ export const getApprovalAccess = cache(
     return { approver, approvalOn, queued: queued ?? 0, showApprovals: showApprovalsView(approvalOn, queued ?? 0) };
   },
 );
+
+// --- Shuttle seats -------------------------------------------------------------
+
+const SEAT_SELECT = "id, shuttle_id, ride_date, profile_id, note, profile:profiles!transport_shuttle_seats_profile_id_fkey(full_name)";
+
+function mapSeat(row: Record<string, any>): ShuttleSeat {
+  return {
+    id: row.id,
+    shuttle_id: row.shuttle_id,
+    ride_date: row.ride_date,
+    profile_id: row.profile_id,
+    profile_name: one<{ full_name?: string }>(row.profile)?.full_name ?? null,
+    note: row.note ?? null,
+  };
+}
+
+/** Whether the tenant has an active shuttle at all: the seat-booking view shows when it does. */
+export const hasActiveShuttles = cache(async (): Promise<boolean> => {
+  const supabase = createClient();
+  const { count } = await supabase.from("transport_shuttles").select("id", { count: "exact", head: true }).eq("is_active", true);
+  return (count ?? 0) > 0;
+});
+
+/** Live seats on every run between two dates, keyed by run (`shuttleId|date`). */
+export async function getSeatsBetween(fromDate: string, toDate: string): Promise<Record<string, ShuttleSeat[]>> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("transport_shuttle_seats")
+    .select(SEAT_SELECT)
+    .is("cancelled_at", null)
+    .gte("ride_date", fromDate)
+    .lte("ride_date", toDate)
+    .order("created_at");
+  if (error) {
+    console.error("getSeatsBetween:", error.message);
+    return {};
+  }
+  const out: Record<string, ShuttleSeat[]> = {};
+  for (const raw of data ?? []) {
+    const seat = mapSeat(raw as Record<string, any>);
+    const key = `${seat.shuttle_id}|${seat.ride_date}`;
+    (out[key] ??= []).push(seat);
+  }
+  return out;
+}
+
+/** The manifests for the shuttle tasks in a list, keyed by run. */
+export async function getManifestsFor(tasks: TransportRequest[]): Promise<Record<string, ShuttleSeat[]>> {
+  const runs = tasks.filter((t) => t.shuttle_id && t.shuttle_date);
+  if (runs.length === 0) return {};
+  const dates = runs.map((t) => t.shuttle_date as string).sort();
+  const all = await getSeatsBetween(dates[0], dates[dates.length - 1]);
+  const wanted = new Set(runs.map((t) => `${t.shuttle_id}|${t.shuttle_date}`));
+  return Object.fromEntries(Object.entries(all).filter(([k]) => wanted.has(k)));
+}

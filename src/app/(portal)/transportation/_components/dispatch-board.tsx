@@ -9,12 +9,14 @@ import { LazySelect } from "@/components/ui/lazy-select";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import { isLateStart, minutesLate } from "@/lib/transport/live";
+import { runKey } from "@/lib/transport/seats";
 import {
   PRIORITY_LABEL,
   TASK_TYPE_LABEL,
   TRANSPORT_OPEN_STATUSES,
   type Driver,
   type Place,
+  type ShuttleSeat,
   type TransportPriority,
   type TransportRequest,
   type TransportTaskType,
@@ -38,6 +40,7 @@ export function DispatchBoard({
   vehicles,
   places,
   lateMinutes,
+  manifests,
 }: {
   all: TransportRequest[];
   drivers: Driver[];
@@ -45,6 +48,8 @@ export function DispatchBoard({
   places: Place[];
   /** Past departure by this much with nobody on the way, a task is flagged late. */
   lateMinutes: number;
+  /** Who booked a seat on each shuttle run, keyed by run. */
+  manifests: Record<string, ShuttleSeat[]>;
 }) {
   const { can } = usePermissions();
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -123,7 +128,7 @@ export function DispatchBoard({
 
       <div className="space-y-3">
         {active.slice(0, activeReveal.count).map((r) => (
-          <TaskRow key={r.id} r={r} drivers={sortedDrivers} vehicles={vehicles} pending={pending} run={run} late={isLateStart(r, nowIso, lateMinutes) ? minutesLate(r.depart_at, nowIso) : null} />
+          <TaskRow key={r.id} r={r} drivers={sortedDrivers} vehicles={vehicles} pending={pending} run={run} late={isLateStart(r, nowIso, lateMinutes) ? minutesLate(r.depart_at, nowIso) : null} manifest={r.shuttle_id && r.shuttle_date ? manifests[runKey(r.shuttle_id, r.shuttle_date)] ?? [] : null} />
         ))}
         {active.length === 0 && (
           <p className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -182,6 +187,7 @@ function TaskRow({
   pending,
   run,
   late,
+  manifest,
 }: {
   r: TransportRequest;
   drivers: Driver[];
@@ -190,6 +196,8 @@ function TaskRow({
   run: Runner;
   /** Minutes past departure with nobody on the way, when the task is flagged late. */
   late: number | null;
+  /** Seat holders on a shuttle run; null for an ordinary task. */
+  manifest: ShuttleSeat[] | null;
 }) {
   const busy = r.status === "in_progress" || r.status === "arrived";
   return (
@@ -214,8 +222,8 @@ function TaskRow({
         <span className="ml-auto text-xs text-muted-foreground">{fmt(r.depart_at)}</span>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        {r.requester_name ? `Requested by ${r.requester_name} · ` : "Dispatcher task · "}
-        {r.passengers} pax
+        {r.requester_name ? `Requested by ${r.requester_name} · ` : manifest ? "Shuttle run · " : "Dispatcher task · "}
+        {manifest ? `${manifest.length}/${r.passengers} seats booked${manifest.length ? `: ${manifest.map((s) => s.profile_name ?? "—").join(", ")}` : ""}` : `${r.passengers} pax`}
         {r.purpose ? ` · ${r.purpose}` : ""}
         {r.driver_phone ? ` · driver ${r.driver_phone}` : ""}
       </p>

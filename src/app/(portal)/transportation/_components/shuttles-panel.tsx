@@ -56,7 +56,8 @@ export function ShuttlesPanel({
           </h2>
           <p className="text-sm text-muted-foreground">
             Regular runs the desk should not have to type every morning. The job creates each day&apos;s
-            tasks at 03:30 local time; {due.length} run{due.length === 1 ? "" : "s"} today.
+            tasks at 03:30 local time; {due.length} run{due.length === 1 ? "" : "s"} today. Seats is how many people
+            can book a place on a run under Book a shuttle seat.
           </p>
         </div>
         <Button
@@ -81,7 +82,7 @@ export function ShuttlesPanel({
                 {s.pickup} → {s.dropoff}
               </span>
               <span className="text-xs text-muted-foreground">
-                {describeDays(s.days_of_week)} · {s.passengers} pax · {TASK_TYPE_LABEL[s.task_type]}
+                {describeDays(s.days_of_week)} · {s.passengers} seats · {TASK_TYPE_LABEL[s.task_type]}
               </span>
               <span className="ml-auto flex items-center gap-2">
                 <LazySelect
@@ -198,7 +199,7 @@ function NewShuttleForm({
           Departs (local time)
           <input value={time} onChange={(e) => setTime(e.target.value)} type="time" required className={`mt-1 block w-full ${field}`} />
         </label>
-        <input value={passengers} onChange={(e) => setPassengers(e.target.value)} type="number" min={1} placeholder="Passengers" className={field} />
+        <input value={passengers} onChange={(e) => setPassengers(e.target.value)} type="number" min={1} placeholder="Seats" className={field} />
         <select value={taskType} onChange={(e) => setTaskType(e.target.value as TransportTaskType)} className={field}>
           {(Object.keys(TASK_TYPE_LABEL) as TransportTaskType[]).map((t) => (
             <option key={t} value={t}>

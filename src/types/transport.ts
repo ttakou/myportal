@@ -136,6 +136,17 @@ export interface Shuttle {
   is_active: boolean;
 }
 
+/** One person on one shuttle run. */
+export interface ShuttleSeat {
+  id: string;
+  shuttle_id: string;
+  /** YYYY-MM-DD on the tenant's clock. */
+  ride_date: string;
+  profile_id: string;
+  profile_name: string | null;
+  note: string | null;
+}
+
 /** A saved pickup or drop-off point the tenant names once. */
 export interface Place {
   id: string;
@@ -148,6 +159,7 @@ export interface TransportRequest {
   requester_name: string | null;
   /** Set when the request came from a recurring shuttle. */
   shuttle_id: string | null;
+  shuttle_date: string | null;
   /** Set on a return leg: the outbound request it comes back from. */
   return_of: string | null;
   created_at: string;

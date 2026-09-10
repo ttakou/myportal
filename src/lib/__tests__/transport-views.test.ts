@@ -7,11 +7,11 @@ import {
   type TransportFlags,
 } from "@/app/(portal)/transportation/_components/transport-views";
 
-const EMPLOYEE: TransportFlags = { admin: false, driver: false, canCreate: true, outOfTown: true };
-const VIEWER: TransportFlags = { admin: false, driver: false, canCreate: false, outOfTown: false };
-const DRIVER: TransportFlags = { admin: false, driver: true, canCreate: false, outOfTown: false };
-const ADMIN: TransportFlags = { admin: true, driver: false, canCreate: true, outOfTown: true };
-const MANAGER: TransportFlags = { admin: false, manager: true, driver: false, canCreate: true, outOfTown: false };
+const EMPLOYEE: TransportFlags = { admin: false, driver: false, canCreate: true, outOfTown: true, shuttles: false };
+const VIEWER: TransportFlags = { admin: false, driver: false, canCreate: false, outOfTown: false, shuttles: false };
+const DRIVER: TransportFlags = { admin: false, driver: true, canCreate: false, outOfTown: false, shuttles: false };
+const ADMIN: TransportFlags = { admin: true, driver: false, canCreate: true, outOfTown: true, shuttles: false };
+const MANAGER: TransportFlags = { admin: false, manager: true, driver: false, canCreate: true, outOfTown: false, shuttles: false };
 
 describe("transportViewAllowed", () => {
   it("gives everyone the requests list", () => {
@@ -36,6 +36,12 @@ describe("transportViewAllowed", () => {
       expect(transportViewAllowed(k, ADMIN)).toBe(true);
       expect(transportViewAllowed(k, MANAGER)).toBe(false);
     }
+  });
+
+  it("offers seat booking to everyone once the tenant has a shuttle", () => {
+    expect(transportViewAllowed("seats", VIEWER)).toBe(false);
+    expect(transportViewAllowed("seats", { ...VIEWER, shuttles: true })).toBe(true);
+    expect(transportSubmenu({ ...EMPLOYEE, shuttles: true }).map((i) => i.key)).toEqual(["requests", "new", "seats", "out-of-town"]);
   });
 
   it("hides approvals from everyone when approval is off and nothing waits", () => {
