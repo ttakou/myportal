@@ -4,14 +4,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getModuleSettingsForTenant } from "@/lib/module-settings";
 import { notifyUsers } from "@/lib/notify";
 import { holdersOfVerb } from "@/lib/verb-holders";
-import { expectedOn, neverCame, overstays, siteDate, type VisitLite } from "@/lib/visitors/daily";
+import { addDays, expectedOn, neverCame, overstays, passesEndingOn, siteDate, type VisitLite } from "@/lib/visitors/daily";
 
 /**
  * The visitor jobs.
  *
  * Evening (17:00 site time): close yesterday's pre-registrations that
- * never came as no-shows, and send tomorrow's expected list — the whole
- * list to reception, each host their own.
+ * never came as no-shows; send tomorrow's expected list — the whole list
+ * to reception, each host their own; warn about long-stay passes that end
+ * in a few days; and tell security which badges did not come back today.
  *
  * Every 15 minutes: past the tenant's cutoff, tell security and the host
  * about anyone still on site, once a day per visit.
@@ -34,14 +35,16 @@ interface VisitRow extends VisitLite {
 
 export async function runVisitorsEvening(
   nowIso: string = new Date().toISOString(),
-): Promise<{ ok: boolean; noShows: number; expected: number; tenants: number; error?: string }> {
+): Promise<{ ok: boolean; noShows: number; expected: number; expiring: number; badgesMissing: number; tenants: number; error?: string }> {
   const admin = createAdminClient();
-  if (!admin) return { ok: false, noShows: 0, expected: 0, tenants: 0, error: "Service-role key missing." };
+  if (!admin) return { ok: false, noShows: 0, expected: 0, expiring: 0, badgesMissing: 0, tenants: 0, error: "Service-role key missing." };
   const today = siteDate(nowIso);
   const tomorrow = new Date(Date.parse(today + "T00:00:00Z") + 86_400_000).toISOString().slice(0, 10);
 
   let noShows = 0;
   let expected = 0;
+  let expiring = 0;
+  let badgesMissing = 0;
   const tenants = await tenantsWithVisitors(admin);
   for (const tenantId of tenants) {
     const cfg = await getModuleSettingsForTenant(admin, tenantId, "visitors");
@@ -52,6 +55,53 @@ export async function runVisitorsEvening(
       .eq("status", "pre_registered")
       .lte("visit_date", tomorrow);
     const rows = (data ?? []) as VisitRow[];
+
+    // Long-stay passes ending soon: the host and security get a few days' notice.
+    const noticeDays = Number(cfg.pass_expiry_notice_days ?? 3);
+    if (noticeDays > 0) {
+      const endDate = addDays(today, noticeDays);
+      const { data: passes } = await admin
+        .from("visitors")
+        .select("id, status, visit_date, visit_until, full_name, company, host_id")
+        .eq("tenant_id", tenantId)
+        .eq("visit_until", endDate);
+      const ending = passesEndingOn((passes ?? []) as VisitRow[], endDate);
+      if (ending.length > 0) {
+        expiring += ending.length;
+        const security = await holdersOfVerb(admin, tenantId, "visitors", ["operate"]);
+        for (const v of ending) {
+          const who = `${v.full_name}${v.company ? ` (${v.company})` : ""}`;
+          await notifyUsers({
+            tenantId,
+            profileIds: [v.host_id, ...security],
+            category: "general",
+            title: `Pass ends ${endDate}: ${who}`,
+            body: `The long-stay pass expires in ${noticeDays} day${noticeDays === 1 ? "" : "s"}. Extend it with a new registration, or make sure they leave by then.`,
+            url: `/visitors?date=${endDate}`,
+          });
+        }
+      }
+    }
+
+    // Badges that did not come back today.
+    const { data: missing } = await admin
+      .from("visitors")
+      .select("full_name, company, badge_no")
+      .eq("tenant_id", tenantId)
+      .eq("badge_returned", false)
+      .gte("badge_returned_at", today + "T00:00:00Z");
+    if ((missing ?? []).length > 0) {
+      badgesMissing += (missing ?? []).length;
+      const security = await holdersOfVerb(admin, tenantId, "visitors", ["operate"]);
+      await notifyUsers({
+        tenantId,
+        profileIds: security,
+        category: "general",
+        title: `${(missing ?? []).length} badge${(missing ?? []).length === 1 ? "" : "s"} not returned today`,
+        body: (missing ?? []).map((m) => `${m.badge_no ?? "?"} — ${m.full_name}${m.company ? ` (${m.company})` : ""}`).join(" · "),
+        url: "/visitors",
+      });
+    }
 
     if (cfg.auto_no_show !== false) {
       const gone = neverCame(rows, today);
@@ -103,7 +153,7 @@ export async function runVisitorsEvening(
       }
     }
   }
-  return { ok: true, noShows, expected, tenants: tenants.length };
+  return { ok: true, noShows, expected, expiring, badgesMissing, tenants: tenants.length };
 }
 
 interface OnSiteRow {

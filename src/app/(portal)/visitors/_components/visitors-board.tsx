@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { CalendarRange, Car, History, MessageSquare, Pencil, ShieldAlert, UserCheck, UserPlus, Users, UsersRound } from "lucide-react";
+import { BadgeCheck, CalendarRange, Car, History, MessageSquare, Pencil, Plane, ShieldAlert, UserCheck, UserPlus, Users, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
@@ -18,8 +18,11 @@ import {
   VISITOR_STATUS_LABEL,
   type DirectoryEntry,
   type Visitor,
+  type VisitorBadge,
+  type VisitorRide,
   type VisitorStatus,
 } from "@/types/visitors";
+import { badgeBoard } from "@/lib/visitors/badges";
 import { ordinal } from "@/lib/visitors/directory";
 import { groupVisitors, parseGroupMembers } from "@/lib/visitors/group";
 import { siteClock } from "@/lib/visitors/daily";
@@ -29,6 +32,7 @@ import {
   checkInVisitor,
   checkOutGroup,
   checkOutVisitor,
+  markBadgeReturned,
   preRegisterGroup,
   preRegisterVisitor,
   searchHosts,
@@ -93,6 +97,8 @@ export function VisitorsBoard({
   isAdmin,
   departments,
   meId,
+  badges,
+  transportOn,
 }: {
   visitDate: string;
   visitors: Visitor[];
@@ -100,6 +106,10 @@ export function VisitorsBoard({
   departments: string[];
   /** The signed-in user, for the "My visitors" filter. */
   meId: string | null;
+  /** The badge pool: check-in offers the free ones. */
+  badges: VisitorBadge[];
+  /** The tenant runs the transportation module: flights raise airport rides. */
+  transportOn: boolean;
 }) {
   const { can } = usePermissions();
   // Front-line reception/security: may check visitors in and out.
@@ -138,6 +148,13 @@ export function VisitorsBoard({
   const [notice, setNotice] = useState<string | null>(null);
   const groupMembers = groupMode ? parseGroupMembers(groupText) : [];
   const { ordered, headerFor } = groupVisitors(visitors);
+  const freeBadges = badgeBoard(badges, allVisitors.filter((v) => v.status === "checked_in")).free;
+  // Flights: an airport pickup on arrival, a drop-off for the departure.
+  const [arrivalFlight, setArrivalFlight] = useState("");
+  const [arrivalAt, setArrivalAt] = useState("");
+  const [departureFlight, setDepartureFlight] = useState("");
+  const [departureAt, setDepartureAt] = useState("");
+  const flights = { arrivalFlight, arrivalAt, departureFlight, departureAt };
   const [directoryId, setDirectoryId] = useState<string | null>(null);
   const [known, setKnown] = useState<DirectoryEntry | null>(null);
   const [dirOptions, setDirOptions] = useState<DirectoryEntry[]>([]);
@@ -224,6 +241,10 @@ export function VisitorsBoard({
   }, [hostQuery, hostId]);
 
   function resetForm() {
+    setArrivalFlight("");
+    setArrivalAt("");
+    setDepartureFlight("");
+    setDepartureAt("");
     setDirectoryId(null);
     setKnown(null);
     setDirOptions([]);
@@ -285,6 +306,7 @@ export function VisitorsBoard({
             hostId,
             service,
             checkInNow,
+            ...flights,
           }).then((r) => {
             if (r.ok) setNotice(`${r.created ?? 0} people ${checkInNow ? "registered and checked in" : "pre-registered"} as one group.`);
             return r;
@@ -316,6 +338,7 @@ export function VisitorsBoard({
           hostId,
           service,
           checkInNow,
+          ...flights,
         }),
       resetForm,
     );
@@ -518,6 +541,23 @@ export function VisitorsBoard({
             className="rounded-md border bg-background px-3 py-1.5 text-sm text-foreground"
           />
         </label>
+        {transportOn && (
+          <fieldset className="grid gap-2 rounded-md border border-dashed p-2 sm:col-span-2 lg:col-span-3 sm:grid-cols-2 lg:grid-cols-4">
+            <legend className="flex items-center gap-1 px-1 text-xs font-medium text-muted-foreground">
+              <Plane className="h-3.5 w-3.5" /> Flights (optional) — an airport pickup and drop-off go to the transport desk
+            </legend>
+            <input value={arrivalFlight} onChange={(e) => setArrivalFlight(e.target.value)} placeholder="Arrival flight (e.g. AF 0906)" className="rounded-md border bg-background px-3 py-1.5 text-sm" />
+            <label className="flex flex-col text-[11px] text-muted-foreground">
+              Lands at (site time) → pickup
+              <input type="datetime-local" value={arrivalAt} onChange={(e) => setArrivalAt(e.target.value)} className="rounded-md border bg-background px-3 py-1.5 text-sm text-foreground" />
+            </label>
+            <input value={departureFlight} onChange={(e) => setDepartureFlight(e.target.value)} placeholder="Departure flight" className="rounded-md border bg-background px-3 py-1.5 text-sm" />
+            <label className="flex flex-col text-[11px] text-muted-foreground">
+              Leave site at (site time) → drop-off
+              <input type="datetime-local" value={departureAt} onChange={(e) => setDepartureAt(e.target.value)} className="rounded-md border bg-background px-3 py-1.5 text-sm text-foreground" />
+            </label>
+          </fieldset>
+        )}
         {/* Assign to an individual host (employee directory typeahead). */}
         <div className="relative">
           {hostId ? (
@@ -709,6 +749,22 @@ export function VisitorsBoard({
                       <CalendarRange className="h-3 w-3" /> Pass · {visitRangeLabel(v)}
                     </div>
                   )}
+                  {(v.pickup || v.dropoff || v.flight_arrival || v.flight_departure) && (
+                    <div className="mt-0.5 space-y-0.5 text-[11px] text-muted-foreground">
+                      {(v.pickup || v.flight_arrival) && <RideLine label="Pickup" flight={v.flight_arrival} ride={v.pickup} />}
+                      {(v.dropoff || v.flight_departure) && <RideLine label="Drop-off" flight={v.flight_departure} ride={v.dropoff} />}
+                    </div>
+                  )}
+                  {v.badge_returned === false && (
+                    <div className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+                      Badge {v.badge_no ?? ""} not returned
+                      {canOperate && (
+                        <button type="button" disabled={pending} onClick={() => run(() => markBadgeReturned(v.id))} className="ml-1 underline">
+                          returned now
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {accompanyingTotal(v) > 0 && (
                     <div className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
                       <Users className="h-3 w-3" /> +{accompanyingTotal(v)} minor
@@ -859,6 +915,7 @@ export function VisitorsBoard({
       {checkIn && (
         <CheckInDialog
           visitor={checkIn}
+          freeBadges={freeBadges}
           pending={pending}
           onCancel={() => setCheckIn(null)}
           onSubmit={(opts) =>
@@ -883,8 +940,8 @@ export function VisitorsBoard({
           visitor={checkOut}
           pending={pending}
           onCancel={() => setCheckOut(null)}
-          onSubmit={(comment) =>
-            run(() => checkOutVisitor(checkOut.id, comment), () => setCheckOut(null))
+          onSubmit={(comment, badgeReturned) =>
+            run(() => checkOutVisitor(checkOut.id, comment, badgeReturned), () => setCheckOut(null))
           }
         />
       )}
@@ -972,11 +1029,14 @@ function EditMinorsDialog({
 
 function CheckInDialog({
   visitor,
+  freeBadges,
   pending,
   onCancel,
   onSubmit,
 }: {
   visitor: Visitor;
+  /** Pool badges nobody has right now; typing another number is still allowed. */
+  freeBadges: string[];
   pending: boolean;
   onCancel: () => void;
   onSubmit: (opts: {
@@ -1039,9 +1099,25 @@ function CheckInDialog({
             <input
               value={badgeNo}
               onChange={(e) => setBadgeNo(e.target.value)}
-              placeholder="Optional"
+              list="free-badges"
+              autoComplete="off"
+              placeholder={freeBadges.length ? `${freeBadges.length} free — e.g. ${freeBadges[0]}` : "Optional"}
               className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm"
             />
+            <datalist id="free-badges">
+              {freeBadges.map((n) => (
+                <option key={n} value={n} />
+              ))}
+            </datalist>
+            {freeBadges.length > 0 && !badgeNo && (
+              <span className="mt-1 flex flex-wrap gap-1">
+                {freeBadges.slice(0, 8).map((n) => (
+                  <button key={n} type="button" onClick={() => setBadgeNo(n)} className="rounded-full border px-2 py-0.5 font-mono text-[11px] hover:bg-accent">
+                    {n}
+                  </button>
+                ))}
+              </span>
+            )}
           </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="block text-sm">
@@ -1173,9 +1249,10 @@ function CheckOutDialog({
   visitor: Visitor;
   pending: boolean;
   onCancel: () => void;
-  onSubmit: (comment: string) => void;
+  onSubmit: (comment: string, badgeReturned?: boolean) => void;
 }) {
   const [comment, setComment] = useState("");
+  const [badgeReturned, setBadgeReturned] = useState(true);
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
@@ -1183,6 +1260,12 @@ function CheckOutDialog({
         <p className="mt-1 text-sm text-muted-foreground">
           The departure time is recorded automatically. Add a note if anything needs flagging.
         </p>
+        {visitor.badge_no && (
+          <label className="mt-4 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={badgeReturned} onChange={(e) => setBadgeReturned(e.target.checked)} className="h-4 w-4" />
+            <BadgeCheck className="h-4 w-4 text-muted-foreground" /> Badge {visitor.badge_no} returned
+          </label>
+        )}
         <label className="mt-4 block text-sm">
           <span className="text-muted-foreground">Comment (optional)</span>
           <textarea
@@ -1197,7 +1280,7 @@ function CheckOutDialog({
           <Button variant="outline" className="flex-1" disabled={pending} onClick={onCancel}>
             Cancel
           </Button>
-          <Button className="flex-1" disabled={pending} onClick={() => onSubmit(comment)}>
+          <Button className="flex-1" disabled={pending} onClick={() => onSubmit(comment, visitor.badge_no ? badgeReturned : undefined)}>
             {pending ? "Checking out…" : "Check out"}
           </Button>
         </div>
@@ -1311,5 +1394,30 @@ function DepartureTimeDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/** One airport ride on a visitor row: when, who drives, where it stands. */
+function RideLine({ label, flight, ride }: { label: string; flight: string | null; ride: VisitorRide | null }) {
+  const status = ride
+    ? ride.status === "completed"
+      ? "done"
+      : ride.status === "cancelled"
+        ? "cancelled"
+        : ride.status === "in_progress" || ride.status === "arrived"
+          ? "driver on the way"
+          : ride.driver_name
+            ? `driver ${ride.driver_name}`
+            : "no driver yet"
+    : "no ride raised";
+  return (
+    <p className="flex items-center gap-1">
+      <Plane className="h-3 w-3 shrink-0" />
+      <span>
+        {label}
+        {flight ? ` · ${flight}` : ""}
+        {ride ? ` · ${siteClock(ride.depart_at)}` : ""} · {status}
+      </span>
+    </p>
   );
 }

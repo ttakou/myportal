@@ -90,3 +90,13 @@ export function overstays<T extends OnSiteLite>(onSite: T[], nowIso: string, cut
     return siteDate(v.check_in_at) < today || siteMinutes(v.check_in_at) < c;
   });
 }
+
+/** Long-stay passes that end on a date: the reminder goes out this many days before. */
+export function passesEndingOn<T extends VisitLite>(visits: T[], dateIso: string): T[] {
+  return visits.filter((v) => v.status !== "cancelled" && v.status !== "no_show" && v.visit_until === dateIso);
+}
+
+/** The date `days` after a YYYY-MM-DD. */
+export function addDays(dateIso: string, days: number): string {
+  return new Date(Date.parse(dateIso + "T00:00:00Z") + days * 86_400_000).toISOString().slice(0, 10);
+}

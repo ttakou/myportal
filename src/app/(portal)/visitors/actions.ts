@@ -5,9 +5,13 @@ import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
 import { notifyUsers } from "@/lib/notify";
 import { getDirectory, getOnSite } from "@/lib/visitors";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { holdersOfVerb } from "@/lib/verb-holders";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { matchDirectory } from "@/lib/visitors/directory";
 import { parseGroupMembers } from "@/lib/visitors/group";
+import { parseBadgeNumbers } from "@/lib/visitors/badges";
+import { cancelVisitorRides, createVisitorRide, hasTransportationModule } from "@/lib/visitors-transport";
 import type { DirectoryEntry, Visitor } from "@/types/visitors";
 
 import type { ActionResult } from "@/types/actions";
@@ -181,6 +185,11 @@ export async function preRegisterVisitor(input: {
   phone?: string;
   /** Walk-in: create the visitor already checked in (on site). */
   checkInNow?: boolean;
+  /** Flights: an airport pickup on arrival, a drop-off for the departure (site clock). */
+  arrivalFlight?: string;
+  arrivalAt?: string;
+  departureFlight?: string;
+  departureAt?: string;
 }): Promise<ActionResult> {
   // A walk-in check-in needs reception/operate rights; a plain pre-registration
   // only needs create.
@@ -268,6 +277,18 @@ export async function preRegisterVisitor(input: {
     });
     if (entryErr) return { ok: false, error: entryErr.message };
   }
+  if (inserted?.id) {
+    const rides = await raiseRides(supabase, tenant.id as string, [inserted.id as string], {
+      name: row.full_name as string,
+      company: row.company as string | null,
+      passengers: 1,
+      arrivalFlight: input.arrivalFlight,
+      arrivalAt: input.arrivalAt,
+      departureFlight: input.departureFlight,
+      departureAt: input.departureAt,
+    });
+    if (!rides.ok) return { ok: false, error: `Visitor saved, but the airport ride failed: ${rides.error}` };
+  }
   if (input.hostId) {
     await notifyUsers({
       tenantId: tenant.id as string,
@@ -279,6 +300,41 @@ export async function preRegisterVisitor(input: {
     });
   }
   revalidate();
+  return { ok: true };
+}
+
+/**
+ * The airport rides a registration asks for, raised on the transport board
+ * when the tenant runs that module, and linked to every visitor row given
+ * (one ride for a whole group).
+ */
+async function raiseRides(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  visitorIds: string[],
+  v: { name: string; company: string | null; passengers: number; arrivalFlight?: string; arrivalAt?: string; departureFlight?: string; departureAt?: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const wantsPickup = Boolean(v.arrivalAt?.trim());
+  const wantsDropoff = Boolean(v.departureAt?.trim());
+  const patch: Record<string, string | null> = {};
+  if (v.arrivalFlight?.trim()) patch.flight_arrival = v.arrivalFlight.trim();
+  if (v.departureFlight?.trim()) patch.flight_departure = v.departureFlight.trim();
+  if ((wantsPickup || wantsDropoff) && (await hasTransportationModule(supabase))) {
+    if (wantsPickup) {
+      const r = await createVisitorRide(supabase, { tenantId, kind: "pickup", when: v.arrivalAt as string, visitorName: v.name, company: v.company, flight: v.arrivalFlight?.trim() || null, passengers: v.passengers });
+      if (!r.ok) return r;
+      patch.pickup_request_id = r.id;
+    }
+    if (wantsDropoff) {
+      const r = await createVisitorRide(supabase, { tenantId, kind: "dropoff", when: v.departureAt as string, visitorName: v.name, company: v.company, flight: v.departureFlight?.trim() || null, passengers: v.passengers });
+      if (!r.ok) return r;
+      patch.dropoff_request_id = r.id;
+    }
+  }
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase.from("visitors").update(patch).in("id", visitorIds);
+    if (error) return { ok: false, error: error.message };
+  }
   return { ok: true };
 }
 
@@ -300,6 +356,10 @@ export async function preRegisterGroup(input: {
   hostId?: string | null;
   service?: string | null;
   checkInNow?: boolean;
+  arrivalFlight?: string;
+  arrivalAt?: string;
+  departureFlight?: string;
+  departureAt?: string;
 }): Promise<ActionResult & { created?: number }> {
   const gate = await requireModule("visitors", input.checkInNow ? "operate" : "create");
   if (gate) return gate;
@@ -363,6 +423,16 @@ export async function preRegisterGroup(input: {
       .insert((inserted ?? []).map((r) => ({ tenant_id: tenant.id, visitor_id: r.id, check_in_at: now })));
     if (entryErr) return { ok: false, error: entryErr.message };
   }
+  const rides = await raiseRides(supabase, tenant.id as string, (inserted ?? []).map((r) => r.id as string), {
+    name: `${company ?? "Group"} × ${members.length}`,
+    company: null,
+    passengers: members.length,
+    arrivalFlight: input.arrivalFlight,
+    arrivalAt: input.arrivalAt,
+    departureFlight: input.departureFlight,
+    departureAt: input.departureAt,
+  });
+  if (!rides.ok) return { ok: false, error: `Group saved, but the airport ride failed: ${rides.error}` };
   if (input.hostId) {
     await notifyUsers({
       tenantId: tenant.id as string,
@@ -661,18 +731,33 @@ export async function setVisitorCheckOutAt(id: string, checkOutAt: string): Prom
   return { ok: true };
 }
 
-export async function checkOutVisitor(id: string, comment?: string): Promise<ActionResult> {
+export async function checkOutVisitor(id: string, comment?: string, badgeReturned?: boolean): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
   const supabase = createClient();
   const { data: visitor } = await supabase
     .from("visitors")
-    .select("tenant_id, host_id, full_name, visit_until")
+    .select("tenant_id, host_id, full_name, visit_until, badge_no, company")
     .eq("id", id)
     .maybeSingle();
   if (!visitor) return { ok: false, error: "Visitor not found." };
   const now = new Date().toISOString();
   const note = comment?.trim() ? comment.trim().slice(0, 500) : null;
+  // Whether the badge came back; only asked when one was issued.
+  if (visitor.badge_no && badgeReturned !== undefined) {
+    await supabase.from("visitors").update({ badge_returned: badgeReturned, badge_returned_at: now }).eq("id", id);
+    if (!badgeReturned) {
+      const admin = createAdminClient();
+      await notifyUsers({
+        tenantId: visitor.tenant_id as string,
+        profileIds: await holdersOfVerb(admin ?? supabase, visitor.tenant_id as string, "visitors", ["operate"]),
+        category: "general",
+        title: `Badge ${visitor.badge_no} not returned`,
+        body: `${visitor.full_name}${visitor.company ? ` (${visitor.company})` : ""} left without handing it back.`,
+        url: "/visitors",
+      });
+    }
+  }
 
   if (visitor.visit_until != null) {
     // A long-stay pass: close its currently-open entry. The pass itself stays
@@ -724,16 +809,60 @@ export async function cancelVisitor(id: string): Promise<ActionResult> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { data: v } = await supabase.from("visitors").select("host_id, created_by").eq("id", id).maybeSingle();
+  const { data: v } = await supabase.from("visitors").select("host_id, created_by, pickup_request_id, dropoff_request_id").eq("id", id).maybeSingle();
   const mine = Boolean(user) && (v?.host_id === user?.id || v?.created_by === user?.id);
   if (!mine && !isAdminRole(await getCurrentRole())) {
     const gate = await requireModule("visitors", "edit");
     if (gate) return gate;
   }
+  await cancelVisitorRides(supabase, [v?.pickup_request_id ?? null, v?.dropoff_request_id ?? null]);
   const { error } = await supabase
     .from("visitors")
     .update({ status: "cancelled" })
     .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}
+
+// --- Badge pool -------------------------------------------------------------
+
+/** Add badges to the pool: a list or a range ("V001-V050"). */
+export async function addBadges(text: string): Promise<ActionResult & { added?: number }> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const numbers = parseBadgeNumbers(text);
+  if (numbers.length === 0) return { ok: false, error: "Type badge numbers, or a range like V001-V050." };
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const { data: existing } = await supabase.from("visitor_badges").select("number");
+  const have = new Set((existing ?? []).map((b) => (b.number as string).toLowerCase()));
+  const fresh = numbers.filter((n) => !have.has(n.toLowerCase()));
+  if (fresh.length === 0) return { ok: false, error: "Those badges are already in the pool." };
+  const { error } = await supabase.from("visitor_badges").insert(fresh.map((number) => ({ tenant_id: tenant.id, number })));
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true, added: fresh.length };
+}
+
+/** Retire a badge (lost, damaged) or bring it back. */
+export async function setBadgeActive(id: string, active: boolean): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("visitor_badges").update({ is_active: active }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}
+
+/** A badge flagged as not returned turned up after all. */
+export async function markBadgeReturned(visitorId: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("visitors").update({ badge_returned: true, badge_returned_at: new Date().toISOString() }).eq("id", visitorId);
   if (error) return { ok: false, error: error.message };
   revalidate();
   return { ok: true };
