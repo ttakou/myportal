@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { BookOpenCheck, FileBarChart, Siren } from "lucide-react";
-import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
+import { BookOpenCheck, BookUser, FileBarChart, Siren } from "lucide-react";
+import { getAccess, getCachedUser, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
 import { getVisitors, getDepartments } from "@/lib/visitors";
@@ -20,12 +20,13 @@ export default async function VisitorsPage(
       ? searchParams.date
       : today();
 
-  const [visitors, role, access, perms, departments] = await Promise.all([
+  const [visitors, role, access, perms, departments, me] = await Promise.all([
     getVisitors(visitDate),
     getCurrentRole(),
     getAccess(),
     getMyPermissions(),
     getDepartments(),
+    getCachedUser(),
   ]);
   const isAdmin = isAdminRole(role);
   // Security / reception / emergency responders (e.g. ERTL) plus admins get the
@@ -55,6 +56,15 @@ export default async function VisitorsPage(
           )}
           {canOperate && (
             <Link
+              href="/visitors/directory"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent"
+            >
+              <BookUser className="h-4 w-4" />
+              Directory
+            </Link>
+          )}
+          {canOperate && (
+            <Link
               href="/visitors/register"
               className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent"
             >
@@ -79,6 +89,7 @@ export default async function VisitorsPage(
         visitors={visitors}
         isAdmin={isAdmin}
         departments={departments}
+        meId={me?.id ?? null}
       />
 
       {canOperate && <StaffBoard rows={staffRoster} />}

@@ -21,6 +21,51 @@ export interface ModuleParamDef {
 }
 
 export const MODULE_PARAMS: Record<string, ModuleParamDef[]> = {
+  visitors: [
+    {
+      key: "after_hours_from",
+      label: "After hours begin (site time)",
+      help: "Entries from this time are flagged after-hours on the access register. HH:MM.",
+      type: "text",
+      default: "18:00",
+    },
+    {
+      key: "after_hours_to",
+      label: "After hours end (site time)",
+      help: "Entries before this time are flagged after-hours. HH:MM.",
+      type: "text",
+      default: "06:00",
+    },
+    {
+      key: "overstay_alert_time",
+      label: "Alert security about visitors still on site after (site time)",
+      help: "Every 15 minutes past this time, anyone still checked in is reported to security and their host, once a day. HH:MM; blank switches it off.",
+      type: "text",
+      default: "20:00",
+    },
+    {
+      key: "no_exit_hours",
+      label: "Flag an entry with no exit after (hours)",
+      type: "number",
+      default: 24,
+      min: 1,
+      max: 168,
+    },
+    {
+      key: "expected_list_evening",
+      label: "Send tomorrow's expected visitors each evening",
+      help: "Reception gets the full list, each host their own, at 17:00 site time.",
+      type: "boolean",
+      default: true,
+    },
+    {
+      key: "auto_no_show",
+      label: "Mark visitors who never came as no-shows",
+      help: "A pre-registered visit whose date has passed without a check-in is closed as a no-show by the evening job.",
+      type: "boolean",
+      default: true,
+    },
+  ],
   emergency: [
     {
       key: "push_incident_alerts",

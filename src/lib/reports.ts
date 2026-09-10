@@ -705,7 +705,7 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
     if (v.status === "checked_in") checkedIn += 1;
     else if (v.status === "checked_out") checkedOut += 1;
     else if (v.status === "cancelled") cancelled += 1;
-    else if (v.status === "pre_registered" && v.visit_date < today) noShow += 1;
+    else if (v.status === "no_show" || (v.status === "pre_registered" && v.visit_date < today)) noShow += 1;
 
     let dwellMins: number | null = null;
     if (v.check_in_at && v.check_out_at) {

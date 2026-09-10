@@ -9,6 +9,14 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/visitors-live",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/visitors-evening",
+      "schedule": "0 16 * * *"
+    },
+    {
       "path": "/api/cron/transport-shuttles",
       "schedule": "30 2 * * *"
     },

@@ -1,5 +1,6 @@
 "use client";
 
+import { siteClock } from "@/lib/visitors/daily";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Printer, Radio, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -11,8 +12,10 @@ import { getMusterVisitors } from "../actions";
 const STAFF_SELECT =
   "profile_id, check_in_at, profiles!staff_attendance_profile_id_fkey(full_name, department, job_title)";
 
+
+/** HH:MM on the site clock. */
 function clock(ts: string | null): string {
-  return ts ? new Date(ts).toLocaleTimeString() : "—";
+  return siteClock(ts);
 }
 
 export function MusterList({

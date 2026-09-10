@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
 import { notifyUsers } from "@/lib/notify";
-import { getOnSite } from "@/lib/visitors";
-import type { Visitor } from "@/types/visitors";
+import { getDirectory, getOnSite } from "@/lib/visitors";
+import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { matchDirectory } from "@/lib/visitors/directory";
+import type { DirectoryEntry, Visitor } from "@/types/visitors";
 
 import type { ActionResult } from "@/types/actions";
 export type { ActionResult };
@@ -62,6 +64,93 @@ export async function searchHosts(query: string): Promise<HostOption[]> {
     name: (p.full_name as string | null) ?? "(no name)",
     department: (p.department as string | null) ?? null,
   }));
+}
+
+/**
+ * The directory record a registration belongs to — found on ID number,
+ * phone, or name and company; created when there is none; refused when
+ * the person is flagged do-not-admit. Returns the record id.
+ */
+async function resolveDirectory(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  input: { full_name: string; company: string | null; id_document_type: string | null; id_document_number: string | null; email: string | null; phone: string | null },
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const name = input.full_name.trim();
+  const orParts = [`full_name.ilike.${name.replace(/[%_,()]/g, " ")}`];
+  if (input.id_document_number) orParts.push(`id_document_number.ilike.${input.id_document_number.replace(/[%_,()]/g, " ")}`);
+  if (input.phone) orParts.push(`phone.ilike.%${input.phone.replace(/\D/g, "").slice(-8)}%`);
+  const { data: candidates } = await supabase
+    .from("visitor_directory")
+    .select("id, full_name, company, id_document_number, phone, do_not_admit, do_not_admit_reason")
+    .or(orParts.join(","))
+    .limit(50);
+  const hit = matchDirectory(input, (candidates ?? []) as (DirectoryEntry & { id: string })[]);
+  if (hit) {
+    if (hit.do_not_admit) {
+      return { ok: false, error: `Do not admit: ${hit.full_name}${hit.do_not_admit_reason ? ` — ${hit.do_not_admit_reason}` : ""}. Ask security before going further.` };
+    }
+    // Keep the record current with whatever is new on this visit.
+    const patch: Record<string, string> = {};
+    if (input.company && !hit.company) patch.company = input.company;
+    if (input.id_document_number && !hit.id_document_number) {
+      patch.id_document_number = input.id_document_number;
+      if (input.id_document_type) patch.id_document_type = input.id_document_type;
+    }
+    if (input.phone && !hit.phone) patch.phone = input.phone;
+    if (input.email) patch.email = input.email;
+    if (Object.keys(patch).length) await supabase.from("visitor_directory").update(patch).eq("id", hit.id);
+    return { ok: true, id: hit.id };
+  }
+  const { data: created, error } = await supabase
+    .from("visitor_directory")
+    .insert({ tenant_id: tenantId, ...input, full_name: name })
+    .select("id")
+    .maybeSingle();
+  if (error || !created) return { ok: false, error: error?.message ?? "Could not record the visitor." };
+  return { ok: true, id: created.id as string };
+}
+
+/** Typeahead over the visitor directory for the pre-registration form. */
+export async function searchVisitorDirectory(query: string): Promise<DirectoryEntry[]> {
+  const gate = await requireModule("visitors", "create");
+  if (gate) return [];
+  const q = query.trim();
+  if (q.length < 2) return [];
+  return getDirectory(q, 8);
+}
+
+/** Flag or clear a person in the directory. Security and admins only. */
+export async function setDoNotAdmit(id: string, flag: boolean, reason?: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from("visitor_directory")
+    .update(
+      flag
+        ? { do_not_admit: true, do_not_admit_reason: reason?.trim() || null, do_not_admit_by: user?.id ?? null, do_not_admit_at: new Date().toISOString() }
+        : { do_not_admit: false, do_not_admit_reason: null, do_not_admit_by: null, do_not_admit_at: null },
+    )
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/visitors/directory");
+  revalidate();
+  return { ok: true };
+}
+
+/** A note on a directory record (what they usually come for, who to call). */
+export async function setDirectoryNotes(id: string, notes: string): Promise<ActionResult> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase.from("visitor_directory").update({ notes: notes.trim() || null }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/visitors/directory");
+  return { ok: true };
 }
 
 export async function preRegisterVisitor(input: {
@@ -145,6 +234,18 @@ export async function preRegisterVisitor(input: {
   // sets the registering user). RLS still applies: a non-admin may only host
   // their own visitors.
   if (input.hostId) row.host_id = input.hostId;
+  // The person behind the visit: matched or created in the directory, and
+  // refused outright when flagged.
+  const dir = await resolveDirectory(supabase, tenant.id as string, {
+    full_name: row.full_name as string,
+    company: row.company as string | null,
+    id_document_type: row.id_document_type as string | null,
+    id_document_number: row.id_document_number as string | null,
+    email: row.email as string | null,
+    phone: row.phone as string | null,
+  });
+  if (!dir.ok) return { ok: false, error: dir.error };
+  row.directory_id = dir.id;
   // Walk-in: create already on site. A single-day visit records arrival on the
   // row itself; a pass records it as its first gate entry (below).
   if (input.checkInNow && !isPass) {
@@ -207,10 +308,14 @@ export async function checkInVisitor(
 
   const { data: visitor } = await supabase
     .from("visitors")
-    .select("tenant_id, host_id, full_name, visit_until")
+    .select("tenant_id, host_id, full_name, visit_until, directory:visitor_directory!visitors_directory_id_fkey(do_not_admit, do_not_admit_reason)")
     .eq("id", id)
     .maybeSingle();
   if (!visitor) return { ok: false, error: "Visitor not found." };
+  const flagged = (Array.isArray(visitor.directory) ? visitor.directory[0] : visitor.directory) as { do_not_admit?: boolean; do_not_admit_reason?: string | null } | null;
+  if (flagged?.do_not_admit) {
+    return { ok: false, error: `Do not admit: ${visitor.full_name}${flagged.do_not_admit_reason ? ` — ${flagged.do_not_admit_reason}` : ""}. Security must clear the flag in the visitor directory first.` };
+  }
   const isPass = visitor.visit_until != null;
   // Arrival defaults to now, but reception may enter/adjust it (e.g. the
   // visitor arrived earlier than they were registered at the desk).
@@ -445,12 +550,12 @@ export async function checkOutVisitor(id: string, comment?: string): Promise<Act
     // Mirror the departure onto the row for reports/status views (see check-in).
     await supabase
       .from("visitors")
-      .update({ status: "checked_out", check_out_at: now, ...(note ? { check_out_comment: note } : {}) })
+      .update({ status: "checked_out", check_out_at: now, overstay_alerted_at: null, ...(note ? { check_out_comment: note } : {}) })
       .eq("id", id);
   } else {
     const { error } = await supabase
       .from("visitors")
-      .update({ status: "checked_out", check_out_at: now, ...(note ? { check_out_comment: note } : {}) })
+      .update({ status: "checked_out", check_out_at: now, overstay_alerted_at: null, ...(note ? { check_out_comment: note } : {}) })
       .eq("id", id);
     if (error) return { ok: false, error: error.message };
   }
@@ -470,9 +575,17 @@ export async function checkOutVisitor(id: string, comment?: string): Promise<Act
 }
 
 export async function cancelVisitor(id: string): Promise<ActionResult> {
-  const gate = await requireModule("visitors", "edit");
-  if (gate) return gate;
   const supabase = createClient();
+  // The host cancels their own visitor; anyone else needs the edit verb.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: v } = await supabase.from("visitors").select("host_id, created_by").eq("id", id).maybeSingle();
+  const mine = Boolean(user) && (v?.host_id === user?.id || v?.created_by === user?.id);
+  if (!mine && !isAdminRole(await getCurrentRole())) {
+    const gate = await requireModule("visitors", "edit");
+    if (gate) return gate;
+  }
   const { error } = await supabase
     .from("visitors")
     .update({ status: "cancelled" })
