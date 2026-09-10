@@ -18,6 +18,7 @@ import {
   addOption,
   addOptionGroup,
   copyMenu,
+  copyWeek,
   deleteOption,
   deleteOptionGroup,
   setDishActive,
@@ -47,6 +48,14 @@ export function MenuEditor({
   const [description, setDescription] = useState("");
   const [capacity, setCapacity] = useState("");
   const [copyTo, setCopyTo] = useState("");
+  // Week copy defaults: this Monday → next Monday.
+  const monday = (d: string) => {
+    const t = new Date(d + "T00:00:00Z");
+    t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7));
+    return t.toISOString().slice(0, 10);
+  };
+  const [weekFrom, setWeekFrom] = useState(monday(serviceDate));
+  const [weekTo, setWeekTo] = useState(new Date(Date.parse(monday(serviceDate) + "T00:00:00Z") + 7 * 86_400_000).toISOString().slice(0, 10));
 
   function run(
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -163,6 +172,22 @@ export function MenuEditor({
           Copy
         </Button>
         <span className="text-xs text-muted-foreground">Plan a week/month by copying to each date.</span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+        <span className="text-sm font-medium">Copy the week starting</span>
+        <input value={weekFrom} onChange={(e) => setWeekFrom(e.target.value)} type="date" className="rounded-md border bg-background px-2 py-1.5 text-sm" />
+        <span className="text-sm">to the week starting</span>
+        <input value={weekTo} onChange={(e) => setWeekTo(e.target.value)} type="date" className="rounded-md border bg-background px-2 py-1.5 text-sm" />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending || !weekFrom || !weekTo}
+          onClick={() => run(() => copyWeek(weekFrom, weekTo))}
+        >
+          Copy week
+        </Button>
+        <span className="text-xs text-muted-foreground">Seven days, each onto the matching day. For a two-week cycle, copy each week onto the week two ahead.</span>
       </div>
 
       {mealPeriods.map((meal) => {

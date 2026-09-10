@@ -45,6 +45,42 @@ export interface CanteenDish {
   change_note: string | null;
   is_active: boolean;
   option_groups: DishOptionGroup[];
+  /** Plates already committed on the dish (host + guests), everyone's. */
+  booked_plates: number;
+}
+
+/** A person's allergies, as they typed them. */
+export interface DietProfile {
+  allergens: string[];
+  notes: string | null;
+}
+
+/** One of the person's recent meals, for the feedback picker. */
+export interface RecentMeal {
+  booking_id: string;
+  service_date: string;
+  dish_name: string;
+  kitchen_name: string;
+  outcome: string;
+}
+
+/** A dish over a period: how often booked, how it was rated. */
+export interface DishRank {
+  dish_name: string;
+  kitchen_name: string;
+  bookings: number;
+  ratings: number;
+  avg_food: number | null;
+  avg_quantity: number | null;
+}
+
+/** Someone who keeps booking and not collecting. */
+export interface RepeatNoShow {
+  profile_id: string;
+  name: string;
+  department: string | null;
+  missed: number;
+  booked: number;
 }
 
 export interface CanteenBooking {

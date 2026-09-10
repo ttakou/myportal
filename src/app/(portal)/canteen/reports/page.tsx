@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
+import { getDishRanking } from "@/lib/canteen";
 import { getReportData } from "@/lib/canteen-reports";
 import { ISSUE_LABEL, type IssueType } from "@/types/feedback";
 
@@ -31,7 +32,8 @@ export default async function CanteenReportsPage() {
     );
   }
 
-  const r = await getReportData();
+  const [r, dishes] = await Promise.all([getReportData(), getDishRanking(30)]);
+  const lowest = dishes.filter((d) => d.avg_food !== null && d.ratings >= 2).sort((a, b) => (a.avg_food as number) - (b.avg_food as number)).slice(0, 5);
   const collectRate = r.booked > 0 ? Math.round((r.collected / r.booked) * 100) : 0;
   const maxDept = Math.max(1, ...r.byDept.map((d) => d.collected));
 
@@ -55,6 +57,58 @@ export default async function CanteenReportsPage() {
         <Stat label="Est. monthly cost" value={money(r.monthCost)} sub={`${r.collected} meals`} />
         <Stat label="Monthly subsidy" value={money(r.monthSubsidy)} sub={`${money(r.subsidyPerMeal)}/meal`} />
       </div>
+
+      {/* Dishes */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Dishes, last 30 days</h2>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-lg border bg-card p-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Most booked</p>
+            <table className="w-full text-sm">
+              <tbody className="divide-y">
+                {dishes.slice(0, 10).map((d) => (
+                  <tr key={`${d.kitchen_name}|${d.dish_name}`}>
+                    <td className="py-1.5">
+                      {d.dish_name} <span className="text-xs text-muted-foreground">· {d.kitchen_name}</span>
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums">{d.bookings}</td>
+                    <td className="py-1.5 text-right text-xs text-muted-foreground">{d.avg_food !== null ? `${d.avg_food}/5 (${d.ratings})` : "unrated"}</td>
+                  </tr>
+                ))}
+                {dishes.length === 0 && (
+                  <tr>
+                    <td className="py-4 text-center text-muted-foreground">No bookings in the period.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="rounded-lg border bg-card p-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Lowest rated (2+ ratings)</p>
+            <table className="w-full text-sm">
+              <tbody className="divide-y">
+                {lowest.map((d) => (
+                  <tr key={`${d.kitchen_name}|${d.dish_name}`}>
+                    <td className="py-1.5">
+                      {d.dish_name} <span className="text-xs text-muted-foreground">· {d.kitchen_name}</span>
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-destructive">{d.avg_food}/5</td>
+                    <td className="py-1.5 text-right text-xs text-muted-foreground">
+                      {d.ratings} rating{d.ratings === 1 ? "" : "s"}
+                      {d.avg_quantity !== null ? ` · qty ${d.avg_quantity}/5` : ""}
+                    </td>
+                  </tr>
+                ))}
+                {lowest.length === 0 && (
+                  <tr>
+                    <td className="py-4 text-center text-muted-foreground">Ratings name a dish from now on; nothing to rank yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
       {/* Department consumption */}
       <section className="space-y-3">

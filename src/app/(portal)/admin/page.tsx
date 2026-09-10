@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getTenantUsers, getTenantModules, getImpersonationLog, getPendingUsers } from "@/lib/admin";
 import { getAccessRoles } from "@/lib/access-roles";
 import { getTenantBranding } from "@/lib/branding";
-import { getCanteenCutoff, getServedMealPeriods } from "@/lib/canteen";
+import { getCanteenCutoff, getCanteenExtras, getServedMealPeriods } from "@/lib/canteen";
 import { isTrainingAdmin as getIsTrainingAdmin } from "@/lib/training";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
@@ -295,13 +295,13 @@ async function SettingsView({ flags }: { flags: AdminFlags }) {
   const [branding, modules] = await Promise.all([getTenantBranding(), getTenantModules()]);
   const canteenActive = modules.some((m) => m.slug === "canteen" && m.is_active);
   const showCanteen = canteenActive && flags.isCanteenManager;
-  const [served, cutoffHour] = showCanteen
-    ? await Promise.all([getServedMealPeriods(), getCanteenCutoff()])
-    : [[], null];
+  const [served, cutoffHour, extras] = showCanteen
+    ? await Promise.all([getServedMealPeriods(), getCanteenCutoff(), getCanteenExtras()])
+    : [[], null, null];
   return (
     <div className="space-y-8">
       <BrandingPanel branding={branding} />
-      {showCanteen && <CanteenSettingsPanel served={served} cutoffHour={cutoffHour} />}
+      {showCanteen && extras && <CanteenSettingsPanel served={served} cutoffHour={cutoffHour} extras={extras} />}
     </div>
   );
 }

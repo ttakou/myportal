@@ -28,6 +28,8 @@ export const INCIDENT_TYPES: IssueType[] = [
 export interface Feedback {
   id: string;
   person_name: string | null;
+  /** The dish the feedback is about, when the person picked a meal. */
+  dish_name: string | null;
   service_date: string;
   food_quality: number | null;
   quantity_rating: number | null;

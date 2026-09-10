@@ -11,6 +11,7 @@ import {
   type Feedback,
   type IssueType,
 } from "@/types/feedback";
+import type { RecentMeal } from "@/types/canteen";
 import { resolveFeedback, submitFeedback } from "../actions";
 
 const ISSUE_OPTIONS: IssueType[] = [
@@ -49,9 +50,12 @@ export function FeedbackBoard({
   mine,
   all,
   isAdmin,
+  meals,
 }: {
   mine: Feedback[];
   all: Feedback[];
+  /** The person's recent meals, so feedback names its dish. */
+  meals: RecentMeal[];
   isAdmin: boolean;
 }) {
   const [pending, startTransition] = useStatusTransition("Submitting…");
@@ -62,6 +66,7 @@ export function FeedbackBoard({
   const [qty, setQty] = useState(0);
   const [issue, setIssue] = useState<IssueType>("none");
   const [comment, setComment] = useState("");
+  const [bookingId, setBookingId] = useState<string>(meals[0]?.booking_id ?? "");
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -83,7 +88,7 @@ export function FeedbackBoard({
         onSubmit={(e) => {
           e.preventDefault();
           run(
-            () => submitFeedback({ foodQuality: food || null, quantityRating: qty || null, issueType: issue, comment }),
+            () => submitFeedback({ foodQuality: food || null, quantityRating: qty || null, issueType: issue, comment, bookingId: bookingId || null }),
             () => { setFood(0); setQty(0); setIssue("none"); setComment(""); setOkMsg(true); },
           );
         }}
@@ -97,6 +102,18 @@ export function FeedbackBoard({
           <p className="mb-1 text-sm font-medium">Quantity</p>
           <Stars value={qty} onChange={setQty} />
         </div>
+        <label className="text-sm sm:col-span-2">
+          Which meal?
+          <select value={bookingId} onChange={(e) => setBookingId(e.target.value)} className="mt-1 block w-full rounded-md border bg-background px-2 py-2 text-sm">
+            <option value="">Not about one meal in particular</option>
+            {meals.map((m) => (
+              <option key={m.booking_id} value={m.booking_id}>
+                {m.service_date} · {m.kitchen_name} · {m.dish_name}
+                {m.outcome === "missed" ? " (not collected)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="text-sm sm:col-span-1">
           Issue type
           <select value={issue} onChange={(e) => setIssue(e.target.value as IssueType)} className="mt-1 block w-full rounded-md border bg-background px-2 py-2 text-sm">
@@ -152,7 +169,10 @@ function FeedbackList({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 {showPerson && <span className="font-medium">{f.person_name ?? "—"}</span>}
-                <span className="text-muted-foreground">{f.service_date}</span>
+                <span className="text-muted-foreground">
+                  {f.service_date}
+                  {f.dish_name ? ` · ${f.dish_name}` : ""}
+                </span>
                 {f.issue_type !== "none" && (
                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", isIncident ? "bg-destructive/10 text-destructive" : "bg-accent text-accent-foreground")}>
                     {ISSUE_LABEL[f.issue_type]}

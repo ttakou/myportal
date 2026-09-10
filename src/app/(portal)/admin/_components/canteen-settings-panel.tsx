@@ -9,15 +9,25 @@ import {
   MEAL_PERIOD_LABEL,
   type MealPeriod,
 } from "@/types/canteen";
-import { setCanteenCutoff, setCanteenMealPeriods } from "../actions";
+import { setCanteenCutoff, setCanteenExtras, setCanteenMealPeriods } from "../actions";
+
+const numField = "mt-1 block w-full rounded-md border bg-background px-2 py-1.5 text-sm text-foreground";
 
 export function CanteenSettingsPanel({
   served,
   cutoffHour,
+  extras,
 }: {
   served: MealPeriod[];
   cutoffHour: number | null;
+  extras: { costPerMeal: number; subsidyPerMeal: number; remindBeforeCutoffMinutes: number; menuOutHour: number; noShowWarningThreshold: number };
 }) {
+  const [cost, setCost] = useState(String(extras.costPerMeal));
+  const [subsidy, setSubsidy] = useState(String(extras.subsidyPerMeal));
+  const [remind, setRemind] = useState(String(extras.remindBeforeCutoffMinutes));
+  const [menuOut, setMenuOut] = useState(String(extras.menuOutHour));
+  const [threshold, setThreshold] = useState(String(extras.noShowWarningThreshold));
+  const [extrasSaved, setExtrasSaved] = useState(false);
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -116,8 +126,60 @@ export function CanteenSettingsPanel({
           Save cut-off
         </Button>
         <span className="text-xs text-muted-foreground">
-          After this hour, employees can&apos;t book today&apos;s lunch.
+          After this hour (site time), employees can&apos;t book today&apos;s lunch.
         </span>
+      </div>
+
+      <div className="space-y-3 rounded-lg border bg-card p-4">
+        <p className="text-sm font-medium">Costs and nudges</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="text-xs text-muted-foreground">
+            Cost per meal
+            <input type="number" min={0} step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} className={`${numField}`} />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Company subsidy per meal
+            <input type="number" min={0} step="0.01" value={subsidy} onChange={(e) => setSubsidy(e.target.value)} className={`${numField}`} />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Remind unbooked people before cutoff (min, 0 off)
+            <input type="number" min={0} max={240} value={remind} onChange={(e) => setRemind(e.target.value)} className={`${numField}`} />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Announce tomorrow&apos;s menu at (hour, -1 off)
+            <input type="number" min={-1} max={23} value={menuOut} onChange={(e) => setMenuOut(e.target.value)} className={`${numField}`} />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Warn after N missed meals in 30 days (0 off)
+            <input type="number" min={0} max={30} value={threshold} onChange={(e) => setThreshold(e.target.value)} className={`${numField}`} />
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                setError(null);
+                setExtrasSaved(false);
+                const res = await setCanteenExtras({
+                  costPerMeal: Number(cost),
+                  subsidyPerMeal: Number(subsidy),
+                  remindBeforeCutoffMinutes: Number(remind),
+                  menuOutHour: Number(menuOut),
+                  noShowWarningThreshold: Number(threshold),
+                });
+                if (!res.ok) setError(res.error ?? "Failed to save.");
+                else setExtrasSaved(true);
+              })
+            }
+          >
+            Save costs and nudges
+          </Button>
+          {extrasSaved && <span className="text-sm text-muted-foreground">Saved</span>}
+          <span className="text-xs text-muted-foreground">Costs feed the canteen reports; nudges are sent by the canteen job every 15 minutes.</span>
+        </div>
       </div>
     </section>
   );

@@ -3,12 +3,14 @@ import type { Feedback } from "@/types/feedback";
 
 const SELECT =
   "id, service_date, food_quality, quantity_rating, issue_type, comment, status, created_at," +
-  " author:profiles!canteen_feedback_profile_id_fkey(full_name)";
+  " author:profiles!canteen_feedback_profile_id_fkey(full_name), dish:canteen_dishes(name)";
 
 function mapRow(row: Record<string, any>): Feedback {
   const author = Array.isArray(row.author) ? row.author[0] : row.author;
+  const dish = Array.isArray(row.dish) ? row.dish[0] : row.dish;
   return {
     id: row.id,
+    dish_name: (dish as { name?: string } | null)?.name ?? null,
     person_name: author?.full_name ?? null,
     service_date: row.service_date,
     food_quality: row.food_quality,

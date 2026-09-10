@@ -1,11 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
+import { siteDate, siteMinutes } from "@/lib/visitors/daily";
 import {
   MEAL_PERIODS,
   type CanteenDish,
   type CanteenBooking,
   type CanteenForecast,
+  type DietProfile,
   type DishDemand,
   type DishOptionGroup,
+  type DishRank,
+  type RecentMeal,
+  type RepeatNoShow,
   type EntitledPerson,
   type ForecastDay,
   type ForecastKitchen,
@@ -72,15 +77,24 @@ function mapDish(row: Record<string, any>): CanteenDish {
     photo_url: row.photo_url ?? null,
     capacity: row.capacity,
     available: row.available ?? true,
+    booked_plates: 0,
     change_note: row.change_note ?? null,
     is_active: row.is_active,
     option_groups: groups,
   };
 }
 
-/** Today's date in YYYY-MM-DD (server local). */
+/** Today's date in YYYY-MM-DD on the site's clock (Africa/Douala). */
 export function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return siteDate(new Date().toISOString());
+}
+
+/** Whether same-day booking is closed right now, on the site's clock. */
+export function bookingClosedNow(serviceDate: string, cutoffHour: number | null, nowIso: string = new Date().toISOString()): boolean {
+  if (cutoffHour == null) return false;
+  if (serviceDate < siteDate(nowIso)) return true;
+  if (serviceDate !== siteDate(nowIso)) return false;
+  return siteMinutes(nowIso) >= cutoffHour * 60;
 }
 
 /** Validate/normalize a `?date=` param, falling back to today. */
@@ -190,18 +204,17 @@ export async function getCanteenForecast(
 /** Active menu for a service date, ordered by kitchen then dish name. */
 export async function getMenu(serviceDate: string): Promise<CanteenDish[]> {
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from("canteen_dishes")
-    .select(DISH_SELECT)
-    .eq("service_date", serviceDate)
-    .eq("is_active", true)
-    .order("name");
+  const [{ data, error }, { data: plates }] = await Promise.all([
+    supabase.from("canteen_dishes").select(DISH_SELECT).eq("service_date", serviceDate).eq("is_active", true).order("name"),
+    supabase.rpc("canteen_dish_plates_on", { p_date: serviceDate }),
+  ]);
 
   if (error) {
     console.error("getMenu:", error.message);
     return [];
   }
-  return (data ?? []).map((row) => mapDish(row as Record<string, any>));
+  const booked = new Map<string, number>(((plates ?? []) as { dish_id: string; plates: number }[]).map((r) => [r.dish_id, Number(r.plates)]));
+  return (data ?? []).map((row) => ({ ...mapDish(row as Record<string, any>), booked_plates: booked.get((row as unknown as { id: string }).id) ?? 0 }));
 }
 
 export interface Kitchen {
@@ -412,6 +425,24 @@ export async function getMyLunchHistory(): Promise<LunchHistoryRow[]> {
   return (data ?? []) as LunchHistoryRow[];
 }
 
+/** What a meal costs, what the company pays, and the nudges — from canteen settings, with defaults. */
+export async function getCanteenExtras(): Promise<{ costPerMeal: number; subsidyPerMeal: number; remindBeforeCutoffMinutes: number; menuOutHour: number; noShowWarningThreshold: number }> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("tenant_services")
+    .select("settings, services_catalog!inner(slug)")
+    .eq("services_catalog.slug", "canteen")
+    .maybeSingle();
+  const st = (data?.settings as Record<string, unknown>) ?? {};
+  return {
+    costPerMeal: Number(st.cost_per_meal ?? 6),
+    subsidyPerMeal: Number(st.subsidy_per_meal ?? 4),
+    remindBeforeCutoffMinutes: Number(st.remind_before_cutoff_minutes ?? 60),
+    menuOutHour: Number(st.menu_out_hour ?? 16),
+    noShowWarningThreshold: Number(st.no_show_warning_threshold ?? 3),
+  };
+}
+
 /** Same-day booking cutoff hour (0-23) from canteen settings, or null. */
 export async function getCanteenCutoff(): Promise<number | null> {
   const supabase = createClient();
@@ -422,4 +453,131 @@ export async function getCanteenCutoff(): Promise<number | null> {
     .maybeSingle();
   const v = (data?.settings as { cutoff_hour?: unknown })?.cutoff_hour;
   return v === null || v === undefined || v === "" ? null : Number(v);
+}
+
+// --- Personal allergies -------------------------------------------------------
+
+export async function getMyDiet(): Promise<DietProfile> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { allergens: [], notes: null };
+  const { data } = await supabase.from("canteen_diet_profiles").select("allergens, notes").eq("profile_id", user.id).maybeSingle();
+  return { allergens: ((data?.allergens as string[] | null) ?? []).slice(), notes: (data?.notes as string | null) ?? null };
+}
+
+/** Allergies of everyone with a booking on a date, keyed by booking id — for the pack list. */
+export async function getAllergiesForDate(serviceDate: string): Promise<Record<string, string[]>> {
+  const supabase = createClient();
+  const { data: bookings } = await supabase
+    .from("canteen_bookings")
+    .select("id, profile_id")
+    .eq("service_date", serviceDate)
+    .neq("status", "cancelled");
+  const ids = [...new Set((bookings ?? []).map((b) => b.profile_id as string))];
+  if (ids.length === 0) return {};
+  const { data: diets } = await supabase.from("canteen_diet_profiles").select("profile_id, allergens").in("profile_id", ids);
+  const byProfile = new Map((diets ?? []).map((d) => [d.profile_id as string, (d.allergens as string[]) ?? []]));
+  const out: Record<string, string[]> = {};
+  for (const b of bookings ?? []) {
+    const a = byProfile.get(b.profile_id as string);
+    if (a && a.length) out[b.id as string] = a;
+  }
+  return out;
+}
+
+// --- Feedback picker, dish ranking, repeat no-shows ------------------------------
+
+/** The person's meals over the last two weeks, newest first, for "which meal was this about?". */
+export async function getMyRecentMeals(): Promise<RecentMeal[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const since = addDays(today(), -14);
+  const { data } = await supabase
+    .from("canteen_lunch_history")
+    .select("booking_id, service_date, dish_name, kitchen_name, outcome")
+    .eq("profile_id", user.id)
+    .gte("service_date", since)
+    .lte("service_date", today())
+    .neq("outcome", "cancelled")
+    .order("service_date", { ascending: false })
+    .limit(14);
+  return (data ?? []) as RecentMeal[];
+}
+
+/** Dishes over the last `days`: bookings and ratings, most booked first. Admin-scoped via RLS. */
+export async function getDishRanking(days = 30): Promise<DishRank[]> {
+  const supabase = createClient();
+  const since = addDays(today(), -days);
+  const [{ data: hist }, { data: fb }] = await Promise.all([
+    supabase.from("canteen_lunch_history").select("dish_id, dish_name, kitchen_name, outcome").gte("service_date", since).neq("outcome", "cancelled"),
+    supabase.from("canteen_feedback").select("dish_id, food_quality, quantity_rating").gte("service_date", since).not("dish_id", "is", null),
+  ]);
+  const byDish = new Map<string, DishRank & { foodSum: number; foodN: number; qtySum: number; qtyN: number }>();
+  const key = (r: { dish_name: string; kitchen_name: string }) => `${r.kitchen_name}|${r.dish_name}`;
+  const idToKey = new Map<string, string>();
+  for (const r of (hist ?? []) as { dish_id: string; dish_name: string; kitchen_name: string }[]) {
+    const k = key(r);
+    idToKey.set(r.dish_id, k);
+    const cur = byDish.get(k) ?? { dish_name: r.dish_name, kitchen_name: r.kitchen_name, bookings: 0, ratings: 0, avg_food: null, avg_quantity: null, foodSum: 0, foodN: 0, qtySum: 0, qtyN: 0 };
+    cur.bookings += 1;
+    byDish.set(k, cur);
+  }
+  for (const f of (fb ?? []) as { dish_id: string; food_quality: number | null; quantity_rating: number | null }[]) {
+    const k = idToKey.get(f.dish_id);
+    if (!k) continue;
+    const cur = byDish.get(k);
+    if (!cur) continue;
+    if (f.food_quality || f.quantity_rating) cur.ratings += 1;
+    if (f.food_quality) {
+      cur.foodSum += f.food_quality;
+      cur.foodN += 1;
+    }
+    if (f.quantity_rating) {
+      cur.qtySum += f.quantity_rating;
+      cur.qtyN += 1;
+    }
+  }
+  return [...byDish.values()]
+    .map(({ foodSum, foodN, qtySum, qtyN, ...d }) => ({
+      ...d,
+      avg_food: foodN ? Math.round((foodSum / foodN) * 10) / 10 : null,
+      avg_quantity: qtyN ? Math.round((qtySum / qtyN) * 10) / 10 : null,
+    }))
+    .sort((a, b) => b.bookings - a.bookings || a.dish_name.localeCompare(b.dish_name));
+}
+
+/** People with at least `min` missed bookings in the last `days`, worst first. Admin-scoped via RLS. */
+export async function getRepeatNoShows(days = 30, min = 3): Promise<RepeatNoShow[]> {
+  const supabase = createClient();
+  const since = addDays(today(), -days);
+  const { data } = await supabase
+    .from("canteen_lunch_history")
+    .select("profile_id, outcome")
+    .gte("service_date", since)
+    .in("outcome", ["missed", "collected"]);
+  const tally = new Map<string, { missed: number; booked: number }>();
+  for (const r of (data ?? []) as { profile_id: string; outcome: string }[]) {
+    const t = tally.get(r.profile_id) ?? { missed: 0, booked: 0 };
+    t.booked += 1;
+    if (r.outcome === "missed") t.missed += 1;
+    tally.set(r.profile_id, t);
+  }
+  const offenders = [...tally.entries()].filter(([, t]) => t.missed >= min);
+  if (offenders.length === 0) return [];
+  const { data: people } = await supabase.from("profiles").select("id, full_name, department").in("id", offenders.map(([id]) => id));
+  const names = new Map((people ?? []).map((p) => [p.id as string, p]));
+  return offenders
+    .map(([id, t]) => ({
+      profile_id: id,
+      name: (names.get(id)?.full_name as string | null) ?? "—",
+      department: (names.get(id)?.department as string | null) ?? null,
+      missed: t.missed,
+      booked: t.booked,
+    }))
+    .sort((a, b) => b.missed - a.missed || a.name.localeCompare(b.name));
 }

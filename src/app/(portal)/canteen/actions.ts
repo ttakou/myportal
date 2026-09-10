@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { parseAllergens } from "@/lib/canteen/allergy";
 import { requireModule } from "@/lib/permissions-server";
 
 import type { ActionResult } from "@/types/actions";
@@ -85,6 +86,24 @@ export async function updateGuests(
     .eq("id", bookingId);
   if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, "") };
 
+  revalidatePath("/canteen");
+  return { ok: true };
+}
+
+/** The person's own allergy list, as typed; blanks clear it. */
+export async function setMyAllergens(text: string, notes?: string): Promise<ActionResult> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const allergens = parseAllergens(text).slice(0, 20);
+  const { error } = await supabase
+    .from("canteen_diet_profiles")
+    .upsert({ profile_id: user.id, tenant_id: tenant.id, allergens, notes: notes?.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "profile_id" });
+  if (error) return { ok: false, error: error.message };
   revalidatePath("/canteen");
   return { ok: true };
 }
