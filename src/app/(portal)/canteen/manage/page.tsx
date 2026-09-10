@@ -4,6 +4,7 @@ import { getAccess } from "@/lib/auth";
 import {
   getKitchens,
   getManagedDishes,
+  getMenuDates,
   getServedMealPeriods,
   resolveServiceDate,
 } from "@/lib/canteen";
@@ -28,10 +29,11 @@ export default async function ManageMenuPage(
   }
 
   const serviceDate = resolveServiceDate(searchParams.date);
-  const [kitchens, dishes, mealPeriods] = await Promise.all([
+  const [kitchens, dishes, mealPeriods, pastMenus] = await Promise.all([
     getKitchens(),
     getManagedDishes(serviceDate),
     getServedMealPeriods(),
+    getMenuDates(120),
   ]);
 
   return (
@@ -52,6 +54,7 @@ export default async function ManageMenuPage(
         kitchens={kitchens}
         dishes={dishes}
         mealPeriods={mealPeriods}
+        pastMenus={pastMenus}
       />
     </div>
   );
