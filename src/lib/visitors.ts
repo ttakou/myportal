@@ -1,9 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
 import { today } from "@/lib/canteen";
-import type { DirectoryEntry, Visitor, VisitorStatus } from "@/types/visitors";
+import type { DirectoryEntry, Visitor, VisitorBadge, VisitorRide, VisitorStatus } from "@/types/visitors";
 
 const SELECT =
-  "id, directory_id, host_id, group_id, full_name, company, purpose, visit_date, visit_until, status, badge_no, id_document_type, id_document_number, email, phone, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, check_in_comment, check_out_comment, accompanying_infants, accompanying_children, accompanying_adolescents, host:profiles!visitors_host_id_fkey(full_name)";
+  "id, directory_id, host_id, group_id, full_name, company, purpose, visit_date, visit_until, status, badge_no, id_document_type, id_document_number, email, phone, vehicle_type, vehicle_plate, service, check_in_at, check_out_at, check_in_comment, check_out_comment, accompanying_infants, accompanying_children, accompanying_adolescents, badge_returned, flight_arrival, flight_departure, host:profiles!visitors_host_id_fkey(full_name), pickup:transport_requests!visitors_pickup_request_id_fkey(id, status, depart_at, driver:transport_drivers(full_name)), dropoff:transport_requests!visitors_dropoff_request_id_fkey(id, status, depart_at, driver:transport_drivers(full_name))";
+
+function mapRide(rel: unknown): VisitorRide | null {
+  const r = (Array.isArray(rel) ? rel[0] : rel) as { id?: string; status?: string; depart_at?: string; driver?: unknown } | null;
+  if (!r?.id) return null;
+  const d = (Array.isArray(r.driver) ? r.driver[0] : r.driver) as { full_name?: string } | null;
+  return { id: r.id, status: r.status ?? "pending", depart_at: r.depart_at ?? "", driver_name: d?.full_name ?? null };
+}
 
 function mapRow(row: Record<string, unknown>): Visitor {
   const host = Array.isArray(row.host) ? row.host[0] : row.host;
@@ -31,6 +38,11 @@ function mapRow(row: Record<string, unknown>): Visitor {
     check_out_at: (row.check_out_at as string) ?? null,
     check_in_comment: (row.check_in_comment as string) ?? null,
     check_out_comment: (row.check_out_comment as string) ?? null,
+    badge_returned: typeof row.badge_returned === "boolean" ? row.badge_returned : null,
+    flight_arrival: (row.flight_arrival as string) ?? null,
+    flight_departure: (row.flight_departure as string) ?? null,
+    pickup: mapRide(row.pickup),
+    dropoff: mapRide(row.dropoff),
     accompanying_infants: Number(row.accompanying_infants ?? 0),
     accompanying_children: Number(row.accompanying_children ?? 0),
     accompanying_adolescents: Number(row.accompanying_adolescents ?? 0),
@@ -250,4 +262,15 @@ export async function getDoNotAdmitCount(): Promise<number> {
   const supabase = createClient();
   const { count } = await supabase.from("visitor_directory").select("id", { count: "exact", head: true }).eq("do_not_admit", true);
   return count ?? 0;
+}
+
+/** The badge pool, active first, in number order. */
+export async function getBadges(): Promise<VisitorBadge[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("visitor_badges").select("id, number, is_active").order("number");
+  if (error) {
+    console.error("getBadges:", error.message);
+    return [];
+  }
+  return (data ?? []) as VisitorBadge[];
 }

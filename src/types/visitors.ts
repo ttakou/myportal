@@ -13,6 +13,21 @@ export const VISITOR_STATUS_LABEL: Record<VisitorStatus, string> = {
   cancelled: "Cancelled",
 };
 
+/** A physical badge in the pool. */
+export interface VisitorBadge {
+  id: string;
+  number: string;
+  is_active: boolean;
+}
+
+/** The airport ride raised for a visitor, as the board shows it. */
+export interface VisitorRide {
+  id: string;
+  status: string;
+  depart_at: string;
+  driver_name: string | null;
+}
+
 /** One person in the visitor directory: who they are, whether they may come in, how often they have. */
 export interface DirectoryEntry {
   id: string;
@@ -66,6 +81,13 @@ export interface Visitor {
   /** Optional free-text notes security added at check-in / check-out. */
   check_in_comment: string | null;
   check_out_comment: string | null;
+  /** Whether the badge came back at check-out; null until asked. */
+  badge_returned: boolean | null;
+  /** Flight numbers, and the airport rides the transport desk runs for them. */
+  flight_arrival: string | null;
+  flight_departure: string | null;
+  pickup: VisitorRide | null;
+  dropoff: VisitorRide | null;
   /** Accompanying minors, by age band — captured for security/muster headcount. */
   accompanying_infants: number;
   accompanying_children: number;

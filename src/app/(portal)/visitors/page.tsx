@@ -3,7 +3,10 @@ import { BookOpenCheck, BookUser, FileBarChart, Siren } from "lucide-react";
 import { getAccess, getCachedUser, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
-import { getVisitors, getDepartments } from "@/lib/visitors";
+import { getBadges, getVisitors, getDepartments } from "@/lib/visitors";
+import { hasTransportationModule } from "@/lib/visitors-transport";
+import { createClient } from "@/lib/supabase/server";
+import { BadgePanel } from "./_components/badge-panel";
 import { getStaffRoster } from "@/lib/staff-attendance";
 import { today } from "@/lib/canteen";
 import { VisitorsBoard } from "./_components/visitors-board";
@@ -20,13 +23,15 @@ export default async function VisitorsPage(
       ? searchParams.date
       : today();
 
-  const [visitors, role, access, perms, departments, me] = await Promise.all([
+  const [visitors, role, access, perms, departments, me, badges, transportOn] = await Promise.all([
     getVisitors(visitDate),
     getCurrentRole(),
     getAccess(),
     getMyPermissions(),
     getDepartments(),
     getCachedUser(),
+    getBadges(),
+    hasTransportationModule(createClient()),
   ]);
   const isAdmin = isAdminRole(role);
   // Security / reception / emergency responders (e.g. ERTL) plus admins get the
@@ -90,7 +95,11 @@ export default async function VisitorsPage(
         isAdmin={isAdmin}
         departments={departments}
         meId={me?.id ?? null}
+        badges={badges}
+        transportOn={transportOn}
       />
+
+      {canOperate && <BadgePanel badges={badges} visitors={visitors} />}
 
       {canOperate && <StaffBoard rows={staffRoster} />}
     </div>
