@@ -7,6 +7,7 @@ import { notifyUsers } from "@/lib/notify";
 import { getDirectory, getOnSite } from "@/lib/visitors";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { matchDirectory } from "@/lib/visitors/directory";
+import { parseGroupMembers } from "@/lib/visitors/group";
 import type { DirectoryEntry, Visitor } from "@/types/visitors";
 
 import type { ActionResult } from "@/types/actions";
@@ -279,6 +280,149 @@ export async function preRegisterVisitor(input: {
   }
   revalidate();
   return { ok: true };
+}
+
+/**
+ * A delegation on one form: company, host, purpose, dates and vehicle are
+ * shared; the people come one per line. Every member is matched to the
+ * directory first — a flagged person stops the whole group before anything
+ * is written — then each becomes an ordinary visitor row under one group
+ * id. The host hears once.
+ */
+export async function preRegisterGroup(input: {
+  members: string;
+  company?: string;
+  purpose?: string;
+  visitDate: string;
+  visitUntil?: string | null;
+  vehicleType?: string;
+  vehiclePlate?: string;
+  hostId?: string | null;
+  service?: string | null;
+  checkInNow?: boolean;
+}): Promise<ActionResult & { created?: number }> {
+  const gate = await requireModule("visitors", input.checkInNow ? "operate" : "create");
+  if (gate) return gate;
+  const members = parseGroupMembers(input.members);
+  if (members.length === 0) return { ok: false, error: "List the people, one per line." };
+  if (members.length > 60) return { ok: false, error: "A group is at most 60 people; split it." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.visitDate)) return { ok: false, error: "Invalid visit date." };
+  let visitUntil: string | null = null;
+  const rawUntil = input.visitUntil?.trim();
+  if (rawUntil) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rawUntil)) return { ok: false, error: "Invalid end date." };
+    if (rawUntil < input.visitDate) return { ok: false, error: "The end date must be on or after the start date." };
+    if (rawUntil > input.visitDate) visitUntil = rawUntil;
+  }
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const company = input.company?.trim() || null;
+
+  // Directory first, for everyone: one flagged person stops the group.
+  const directoryIds: string[] = [];
+  for (const m of members) {
+    const dir = await resolveDirectory(supabase, tenant.id as string, {
+      full_name: m.full_name,
+      company,
+      id_document_type: m.id_document_number ? "other" : null,
+      id_document_number: m.id_document_number,
+      email: null,
+      phone: m.phone,
+    });
+    if (!dir.ok) return { ok: false, error: dir.error };
+    directoryIds.push(dir.id);
+  }
+
+  const groupId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const walkIn = Boolean(input.checkInNow) && visitUntil === null;
+  const rows = members.map((m, i) => ({
+    tenant_id: tenant.id,
+    group_id: groupId,
+    directory_id: directoryIds[i],
+    full_name: m.full_name,
+    company,
+    purpose: input.purpose?.trim() || null,
+    visit_date: input.visitDate,
+    visit_until: visitUntil,
+    vehicle_type: input.vehicleType?.trim() || null,
+    vehicle_plate: input.vehiclePlate?.trim() || null,
+    service: input.service?.trim() || null,
+    id_document_type: m.id_document_number ? "other" : null,
+    id_document_number: m.id_document_number,
+    phone: m.phone,
+    ...(input.hostId ? { host_id: input.hostId } : {}),
+    ...(walkIn ? { status: "checked_in", check_in_at: now } : {}),
+  }));
+  const { data: inserted, error } = await supabase.from("visitors").insert(rows).select("id");
+  if (error) return { ok: false, error: error.message };
+  if (input.checkInNow && visitUntil !== null) {
+    const { error: entryErr } = await supabase
+      .from("visitor_checkins")
+      .insert((inserted ?? []).map((r) => ({ tenant_id: tenant.id, visitor_id: r.id, check_in_at: now })));
+    if (entryErr) return { ok: false, error: entryErr.message };
+  }
+  if (input.hostId) {
+    await notifyUsers({
+      tenantId: tenant.id as string,
+      profileIds: [input.hostId],
+      category: "general",
+      title: `Group of ${members.length} pre-registered with you as host`,
+      body: `${company ? `${company} · ` : ""}${members
+        .slice(0, 6)
+        .map((m) => m.full_name)
+        .join(", ")}${members.length > 6 ? ` and ${members.length - 6} more` : ""} on ${input.visitDate}.`,
+      url: `/visitors?date=${input.visitDate}`,
+    });
+  }
+  revalidate();
+  return { ok: true, created: members.length };
+}
+
+/** Check in every member of a group still expected. Each goes through the same path as a single check-in. */
+export async function checkInGroup(groupId: string, comment?: string): Promise<ActionResult & { done?: number; skipped?: string[] }> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { data } = await supabase.from("visitors").select("id, full_name, status, visit_until").eq("group_id", groupId);
+  let done = 0;
+  const skipped: string[] = [];
+  for (const v of data ?? []) {
+    if (v.status === "cancelled" || v.status === "no_show") continue;
+    if (v.status === "checked_in") continue;
+    const res = await checkInVisitor(v.id as string, { comment });
+    if (res.ok) done += 1;
+    else skipped.push(`${v.full_name}: ${res.error ?? "not checked in"}`);
+  }
+  revalidate();
+  return { ok: true, done, skipped };
+}
+
+/** Check out every member of a group still on site. */
+export async function checkOutGroup(groupId: string, comment?: string): Promise<ActionResult & { done?: number }> {
+  const gate = await requireModule("visitors", "operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { data } = await supabase.from("visitors").select("id, status").eq("group_id", groupId);
+  const [open] = await Promise.all([
+    supabase
+      .from("visitor_checkins")
+      .select("visitor_id")
+      .in(
+        "visitor_id",
+        (data ?? []).map((v) => v.id as string),
+      )
+      .is("check_out_at", null),
+  ]);
+  const onSite = new Set([...(data ?? []).filter((v) => v.status === "checked_in").map((v) => v.id as string), ...(open.data ?? []).map((r) => r.visitor_id as string)]);
+  let done = 0;
+  for (const id of onSite) {
+    const res = await checkOutVisitor(id, comment);
+    if (res.ok) done += 1;
+  }
+  revalidate();
+  return { ok: true, done };
 }
 
 export async function checkInVisitor(
