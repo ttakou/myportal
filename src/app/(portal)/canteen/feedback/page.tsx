@@ -2,14 +2,16 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getAccess } from "@/lib/auth";
 import { getAllFeedback, getMyFeedback } from "@/lib/canteen-feedback";
+import { getMyRecentMeals } from "@/lib/canteen";
 import { FeedbackBoard } from "./_components/feedback-board";
 
 export default async function FeedbackPage() {
   const access = await getAccess();
   const isAdmin = access.isCanteenManager || access.isHrCanteen;
-  const [mine, all] = await Promise.all([
+  const [mine, all, meals] = await Promise.all([
     getMyFeedback(),
     isAdmin ? getAllFeedback() : Promise.resolve([]),
+    getMyRecentMeals(),
   ]);
 
   return (
@@ -21,7 +23,7 @@ export default async function FeedbackPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Feedback &amp; incidents</h1>
         <p className="text-muted-foreground">Rate meals and report issues.</p>
       </div>
-      <FeedbackBoard mine={mine} all={all} isAdmin={isAdmin} />
+      <FeedbackBoard mine={mine} all={all} isAdmin={isAdmin} meals={meals} />
     </div>
   );
 }

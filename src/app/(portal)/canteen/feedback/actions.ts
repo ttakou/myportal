@@ -15,6 +15,8 @@ export async function submitFeedback(input: {
   quantityRating?: number | null;
   issueType: IssueType;
   comment?: string;
+  /** The meal this is about, from the person's recent bookings. */
+  bookingId?: string | null;
 }): Promise<ActionResult> {
   const gate = await requireModule("canteen", "create");
   if (gate) return gate;
@@ -27,8 +29,20 @@ export async function submitFeedback(input: {
     return { ok: false, error: "Add a rating, an issue, or a comment." };
   }
 
+  // The dish and date come from the booking when one is named.
+  let dishId: string | null = null;
+  let serviceDate: string | null = null;
+  if (input.bookingId) {
+    const { data: b } = await supabase.from("canteen_bookings").select("dish_id, service_date").eq("id", input.bookingId).maybeSingle();
+    dishId = (b?.dish_id as string | null) ?? null;
+    serviceDate = (b?.service_date as string | null) ?? null;
+  }
+
   const { error } = await supabase.from("canteen_feedback").insert({
     tenant_id: tenant.id,
+    booking_id: input.bookingId || null,
+    dish_id: dishId,
+    ...(serviceDate ? { service_date: serviceDate } : {}),
     food_quality: input.foodQuality || null,
     quantity_rating: input.quantityRating || null,
     issue_type: input.issueType,

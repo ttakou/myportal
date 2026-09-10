@@ -203,3 +203,25 @@ export async function deleteOptionGroup(groupId: string): Promise<ActionResult> 
   revalidatePath("/canteen");
   return { ok: true };
 }
+
+/**
+ * Copy a whole week: each of the seven days from `fromStart` onto the
+ * matching day from `toStart`. Days with nothing to copy are skipped.
+ */
+export async function copyWeek(fromStart: string, toStart: string): Promise<ActionResult & { copied?: number }> {
+  const gate = await requireModule("canteen", "manage", (a) => a.isCanteenManager);
+  if (gate) return gate;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromStart) || !/^\d{4}-\d{2}-\d{2}$/.test(toStart)) return { ok: false, error: "Invalid date." };
+  if (fromStart === toStart) return { ok: false, error: "Pick a different target week." };
+  const supabase = createClient();
+  const shift = (d: string, n: number) => new Date(Date.parse(d + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
+  let copied = 0;
+  for (let i = 0; i < 7; i++) {
+    const { data, error } = await supabase.rpc("canteen_copy_menu", { p_from: shift(fromStart, i), p_to: shift(toStart, i) });
+    if (error) return { ok: false, error: `Day ${i + 1}: ${error.message}` };
+    copied += typeof data === "number" ? data : 0;
+  }
+  revalidatePath("/canteen/manage");
+  revalidatePath("/canteen");
+  return copied === 0 ? { ok: false, error: "Nothing to copy in that week." } : { ok: true, copied };
+}

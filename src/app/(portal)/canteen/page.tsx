@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { History } from "lucide-react";
-import { getCanteenCutoff, getMenu, getMyAllowance, getMyBookings, getMyLunchHistory, getServedMealPeriods, resolveServiceDate, today } from "@/lib/canteen";
+import { bookingClosedNow, getCanteenCutoff, getMenu, getMyAllowance, getMyBookings, getMyDiet, getMyLunchHistory, getServedMealPeriods, resolveServiceDate } from "@/lib/canteen";
+import { DietPanel } from "./_components/diet-panel";
 import { LUNCH_OUTCOME_LABEL, type LunchOutcome } from "@/types/canteen";
 import { cn } from "@/lib/utils";
 import { MenuBoard } from "./_components/menu-board";
@@ -19,16 +20,17 @@ export default async function CanteenPage(
 ) {
   const searchParams = await props.searchParams;
   const serviceDate = resolveServiceDate(searchParams.date);
-  const [dishes, bookings, mealPeriods, cutoff, allowance, history] = await Promise.all([
+  const [dishes, bookings, mealPeriods, cutoff, allowance, history, diet] = await Promise.all([
     getMenu(serviceDate),
     getMyBookings(serviceDate),
     getServedMealPeriods(),
     getCanteenCutoff(),
     getMyAllowance(serviceDate),
     getMyLunchHistory(),
+    getMyDiet(),
   ]);
-  const bookingClosed =
-    cutoff != null && serviceDate === today() && new Date().getHours() >= cutoff;
+  // On the site's clock, not the server's.
+  const bookingClosed = bookingClosedNow(serviceDate, cutoff);
   const recent = history.slice(0, 3);
 
   const prettyDate = new Date(serviceDate + "T00:00:00").toLocaleDateString(
@@ -56,8 +58,11 @@ export default async function CanteenPage(
           bookingClosed={bookingClosed}
           cutoffHour={cutoff}
           allowance={allowance}
+          myAllergens={diet.allergens}
         />
       )}
+
+      <DietPanel diet={diet} />
 
       {recent.length > 0 && (
         <section className="space-y-2">

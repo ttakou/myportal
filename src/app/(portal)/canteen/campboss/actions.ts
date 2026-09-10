@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { notifyUsers } from "@/lib/notify";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/permissions-server";
 
@@ -15,11 +16,27 @@ export async function setReservationPrepared(
   const gate = await requireModule("canteen", "operate", (a) => a.isCanteenStaff);
   if (gate) return gate;
   const supabase = createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("canteen_bookings")
     .update({ prepared_at: prepared ? new Date().toISOString() : null })
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .select("tenant_id, profile_id, meal_period, dish:canteen_dishes(name), kitchen:canteen_kitchens(name)")
+    .maybeSingle();
   if (error) return { ok: false, error: error.message };
+
+  // The person hears their meal is ready to collect.
+  if (prepared && data?.profile_id) {
+    const dish = (Array.isArray(data.dish) ? data.dish[0] : data.dish) as { name?: string } | null;
+    const kitchen = (Array.isArray(data.kitchen) ? data.kitchen[0] : data.kitchen) as { name?: string } | null;
+    await notifyUsers({
+      tenantId: data.tenant_id as string,
+      profileIds: [data.profile_id as string],
+      category: "general",
+      title: `Your ${data.meal_period} is ready`,
+      body: `${dish?.name ?? "Your meal"}${kitchen?.name ? ` at ${kitchen.name}` : ""} is packed and waiting for you.`,
+      url: "/canteen",
+    });
+  }
 
   revalidatePath("/canteen/campboss");
   revalidatePath("/canteen/serving");

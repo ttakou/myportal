@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldX, TrendingUp, UserX } from "lucide-react";
 import { getAccess } from "@/lib/auth";
-import { getCanteenForecast } from "@/lib/canteen";
+import { getCanteenForecast, getRepeatNoShows } from "@/lib/canteen";
 import { KITCHEN_LABEL } from "@/types/canteen";
 
 export default async function CanteenForecastPage() {
@@ -21,7 +21,7 @@ export default async function CanteenForecastPage() {
     );
   }
 
-  const forecast = await getCanteenForecast({ days: 7, noShowWindowDays: 30 });
+  const [forecast, repeat] = await Promise.all([getCanteenForecast({ days: 7, noShowWindowDays: 30 }), getRepeatNoShows(30, 3)]);
   const kitchenNames = [
     ...new Set(forecast.days.flatMap((d) => d.byKitchen.map((k) => k.kitchenName))),
   ].sort((a, b) => a.localeCompare(b));
@@ -100,6 +100,43 @@ export default async function CanteenForecastPage() {
           <p className="text-sm text-muted-foreground">No bookings yet for the next 7 days.</p>
         )}
         <p className="text-xs text-muted-foreground">Hover a number to see the staff/visitor split.</p>
+      </section>
+
+      {/* Repeat no-shows */}
+      <section className="space-y-3 rounded-lg border bg-card p-5">
+        <div>
+          <h2 className="flex items-center gap-1.5 font-medium">
+            <UserX className="h-4 w-4" /> Repeat no-shows
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Three or more bookings not collected in the last 30 days. Each is warned once a month by the canteen job; you get this list
+            in the evening.
+          </p>
+        </div>
+        {repeat.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nobody has missed three meals this month.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                <th className="py-2 pr-4 font-medium">Person</th>
+                <th className="px-2 py-2 font-medium">Department</th>
+                <th className="px-2 py-2 text-right font-medium">Missed</th>
+                <th className="px-2 py-2 text-right font-medium">Of</th>
+              </tr>
+            </thead>
+            <tbody>
+              {repeat.map((p) => (
+                <tr key={p.profile_id} className="border-b last:border-0">
+                  <td className="py-2 pr-4 font-medium">{p.name}</td>
+                  <td className="px-2 py-2 text-muted-foreground">{p.department ?? "—"}</td>
+                  <td className="px-2 py-2 text-right tabular-nums text-destructive">{p.missed}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{p.booked}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       {/* No-show tracking */}

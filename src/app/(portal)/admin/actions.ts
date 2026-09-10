@@ -298,6 +298,42 @@ export async function setCanteenCutoff(hour: number | null): Promise<ActionResul
   return { ok: true };
 }
 
+/**
+ * The rest of the canteen settings: what a meal costs and what the company
+ * pays, and the nudges — the reminder before the cutoff, the hour
+ * tomorrow's menu is announced, the no-show warning threshold.
+ */
+export async function setCanteenExtras(input: {
+  costPerMeal: number;
+  subsidyPerMeal: number;
+  remindBeforeCutoffMinutes: number;
+  menuOutHour: number;
+  noShowWarningThreshold: number;
+}): Promise<ActionResult> {
+  if (!(await getAccess()).isCanteenManager) return { ok: false, error: "Not authorized." };
+  const num = (v: number, lo: number, hi: number) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : lo);
+  const supabase = createClient();
+  const { data: row } = await supabase
+    .from("tenant_services")
+    .select("id, settings, services_catalog!inner(slug)")
+    .eq("services_catalog.slug", "canteen")
+    .maybeSingle();
+  if (!row) return { ok: false, error: "Canteen module is not enabled." };
+  const settings = {
+    ...((row.settings as Record<string, unknown>) ?? {}),
+    cost_per_meal: num(input.costPerMeal, 0, 1_000_000),
+    subsidy_per_meal: num(input.subsidyPerMeal, 0, 1_000_000),
+    remind_before_cutoff_minutes: Math.round(num(input.remindBeforeCutoffMinutes, 0, 240)),
+    menu_out_hour: Math.round(num(input.menuOutHour, -1, 23)),
+    no_show_warning_threshold: Math.round(num(input.noShowWarningThreshold, 0, 30)),
+  };
+  const { error } = await supabase.from("tenant_services").update({ settings }).eq("id", row.id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin");
+  revalidatePath("/canteen/reports");
+  return { ok: true };
+}
+
 // --- Staff registration -------------------------------------------------------
 
 function generateTempPassword(): string {

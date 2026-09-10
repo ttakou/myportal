@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { Check, CheckCircle2, Minus, Plus, Users, UtensilsCrossed } from "lucide-react";
+import { Check, CheckCircle2, Minus, Plus, Users, UtensilsCrossed, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/components/permissions-provider";
@@ -14,6 +14,7 @@ import {
   type MealPeriod,
 } from "@/types/canteen";
 import { bookDish, cancelBooking, finalizeBooking, updateGuests } from "../actions";
+import { allergyHits } from "@/lib/canteen/allergy";
 
 export function MenuBoard({
   dishes,
@@ -22,6 +23,7 @@ export function MenuBoard({
   bookingClosed = false,
   cutoffHour = null,
   allowance = 1,
+  myAllergens = [],
 }: {
   serviceDate: string;
   dishes: CanteenDish[];
@@ -31,6 +33,8 @@ export function MenuBoard({
   cutoffHour?: number | null;
   /** The user's daily meal allowance (host + visitors). Caps the guest stepper. */
   allowance?: number;
+  /** The person's allergies; a dish listing one is flagged and booking asks first. */
+  myAllergens?: string[];
 }) {
   // Visitor plates count against the allowance, so the host keeps one plate and
   // the rest may be guests.
@@ -156,6 +160,21 @@ export function MenuBoard({
                       {!dish.available && (
                         <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] text-destructive">
                           Unavailable
+                        </span>
+                      )}
+                      {dish.capacity != null && (
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px]",
+                            dish.booked_plates >= dish.capacity ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {dish.booked_plates >= dish.capacity ? "Sold out" : `${dish.capacity - dish.booked_plates} left`}
+                        </span>
+                      )}
+                      {allergyHits(dish.allergens, myAllergens).length > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive" title="Listed in your allergies">
+                          <ShieldAlert className="h-3 w-3" /> Contains {allergyHits(dish.allergens, myAllergens).join(", ")}
                         </span>
                       )}
                     </div>
@@ -289,15 +308,16 @@ export function MenuBoard({
                             mealLocked ||
                             bookingClosed ||
                             !dish.available ||
+                            (dish.capacity != null && dish.booked_plates >= dish.capacity && !isBooked) ||
                             (hasOptions && !selectionValid(dish))
                           }
-                          onClick={() =>
-                            run(() =>
-                              bookDish(dish.id, 0, [], Array.from(sel)),
-                            )
-                          }
+                          onClick={() => {
+                            const hits = allergyHits(dish.allergens, myAllergens);
+                            if (hits.length > 0 && !confirm(`This dish lists ${hits.join(", ")}, which is in your allergies. Book it anyway?`)) return;
+                            run(() => bookDish(dish.id, 0, [], Array.from(sel)));
+                          }}
                         >
-                          {booking ? "Switch to this" : "Book"}
+                          {booking ? "Switch to this" : dish.capacity != null && dish.booked_plates >= dish.capacity && !isBooked ? "Sold out" : "Book"}
                         </Button>
                       </div>
                     )}
