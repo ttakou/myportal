@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { FileBarChart } from "lucide-react";
-import { getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getCachedUser, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
 import { getActiveServices } from "@/lib/services";
 import { getModuleSettings } from "@/lib/module-settings";
-import { localDate } from "@/lib/transport/day-plan";
+import { localDate, shiftDate } from "@/lib/transport/day-plan";
+import { BOOKING_DAYS_AHEAD } from "@/lib/transport/seats";
 import { escalateStaleApprovalsHere } from "@/lib/transport-approval-escalation";
 import {
   getApprovalAccess,
@@ -14,14 +15,17 @@ import {
   getAllVehicles,
   getApprovalQueue,
   getDrivers,
+  getManifestsFor,
   getMyDriver,
   getMyDriverTasks,
   getMyTransportRequests,
   getPlaces,
   getProfilesForLinking,
   getRequestsForDay,
+  getSeatsBetween,
   getShuttles,
   getVehicles,
+  hasActiveShuttles,
 } from "@/lib/transport";
 import { cn } from "@/lib/utils";
 import { LiveRefresh } from "@/components/live-refresh";
@@ -32,6 +36,7 @@ import { DispatchBoard } from "./_components/dispatch-board";
 import { FleetPanel } from "./_components/fleet-panel";
 import { RequestForm } from "./_components/request-form";
 import { RequestsList } from "./_components/requests-list";
+import { SeatsPanel } from "./_components/seats-panel";
 import { ShuttlesPanel } from "./_components/shuttles-panel";
 import {
   resolveTransportView,
@@ -52,13 +57,15 @@ export default async function TransportationPage({
   searchParams: Promise<{ view?: string; date?: string }>;
 }) {
   const { view, date } = await searchParams;
-  const [role, perms, myDriver, services, approvalAccess, cfg] = await Promise.all([
+  const [role, perms, myDriver, services, approvalAccess, cfg, shuttlesOn, me] = await Promise.all([
     getCurrentRole(),
     getMyPermissions(),
     getMyDriver(),
     getActiveServices(),
     getApprovalAccess(),
     getModuleSettings("transportation"),
+    hasActiveShuttles(),
+    getCachedUser(),
   ]);
   const isAdmin = isAdminRole(role);
   const flags: TransportFlags = {
@@ -68,10 +75,13 @@ export default async function TransportationPage({
     driver: Boolean(myDriver),
     canCreate: isAdmin || hasPermission(perms, "transportation", "create"),
     outOfTown: services.some((s) => s.slug === "out-of-town"),
+    shuttles: shuttlesOn,
   };
   const active = resolveTransportView(view, flags);
   const approvalOn = cfg.require_approval === true;
-  const plannerDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : localDate(new Date().toISOString());
+  const nowIso = new Date().toISOString();
+  const today = localDate(nowIso);
+  const plannerDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
 
   // The desk opening the module is the other moment (besides the nightly
   // job) an unanswered approval is passed on, so it never waits past the
@@ -80,7 +90,7 @@ export default async function TransportationPage({
     await escalateStaleApprovalsHere();
   }
 
-  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, places, driverTasks] =
+  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, places, driverTasks, seats] =
     await Promise.all([
       active === "requests" || active === "dispatch"
         ? isAdmin
@@ -94,10 +104,13 @@ export default async function TransportationPage({
       active === "dispatch" || active === "planner" || active === "shuttles" ? getVehicles() : Promise.resolve([]),
       active === "fleet" ? getAllVehicles() : Promise.resolve([]),
       active === "fleet" ? getProfilesForLinking() : Promise.resolve([]),
-      active === "shuttles" || active === "planner" ? getShuttles() : Promise.resolve([]),
+      active === "shuttles" || active === "planner" || active === "seats" ? getShuttles() : Promise.resolve([]),
       active === "new" || active === "requests" || active === "dispatch" || active === "shuttles" || active === "fleet" ? getPlaces() : Promise.resolve([]),
       active === "driver" ? getMyDriverTasks() : Promise.resolve([]),
+      active === "seats" ? getSeatsBetween(today, shiftDate(today, BOOKING_DAYS_AHEAD)) : Promise.resolve({}),
     ]);
+  // Who is on each shuttle run the driver or the desk is looking at.
+  const manifests = active === "driver" ? await getManifestsFor(driverTasks) : active === "dispatch" ? await getManifestsFor(requests) : {};
 
   const tabs = TRANSPORT_VIEWS.filter((v) => transportViewAllowed(v.key, flags));
 
@@ -145,6 +158,7 @@ export default async function TransportationPage({
         <RequestsList requests={requests} scope={isAdmin ? "all" : "mine"} canCreate={flags.canCreate} canDispatch={isAdmin} places={places} />
       )}
       {active === "new" && <RequestForm places={places} />}
+      {active === "seats" && <SeatsPanel shuttles={shuttles} seats={seats} nowIso={nowIso} meId={me?.id ?? null} isAdmin={isAdmin} />}
       {active === "approvals" && (
         <ApprovalsPanel requests={approvals} approvalOn={approvalOn} escalationHours={Number(cfg.approval_escalation_hours ?? 24)} />
       )}
@@ -154,6 +168,7 @@ export default async function TransportationPage({
           vehicles={vehicles}
           places={places}
           lateMinutes={Number(cfg.late_start_alert_minutes ?? 15)}
+          manifests={manifests}
         />}
       {active === "planner" && (
         <DayPlanner
@@ -169,7 +184,7 @@ export default async function TransportationPage({
         <FleetPanel drivers={allDrivers} vehicles={allVehicles} profiles={profiles} places={places} approvalOn={approvalOn} />
       )}
       {active === "shuttles" && <ShuttlesPanel shuttles={shuttles} drivers={drivers} vehicles={vehicles} places={places} />}
-      {active === "driver" && myDriver && <DriverTasks driver={myDriver} tasks={driverTasks} />}
+      {active === "driver" && myDriver && <DriverTasks driver={myDriver} tasks={driverTasks} manifests={manifests} />}
     </div>
   );
 }

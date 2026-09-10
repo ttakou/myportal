@@ -5,7 +5,7 @@
 
 import type { NavSubItem } from "@/components/layout/nav-links";
 
-export type TransportViewKey = "requests" | "new" | "approvals" | "dispatch" | "planner" | "fleet" | "shuttles" | "driver";
+export type TransportViewKey = "requests" | "new" | "seats" | "approvals" | "dispatch" | "planner" | "fleet" | "shuttles" | "driver";
 
 export interface TransportView {
   key: TransportViewKey;
@@ -17,6 +17,7 @@ export interface TransportView {
 export const TRANSPORT_VIEWS: TransportView[] = [
   { key: "requests", label: "Transportation requests", icon: "ClipboardList" },
   { key: "new", label: "Request a transportation", icon: "Car" },
+  { key: "seats", label: "Book a shuttle seat", icon: "Bus" },
   { key: "approvals", label: "Approvals", icon: "CheckCircle2" },
   { key: "dispatch", label: "Dispatch board", icon: "Truck" },
   { key: "planner", label: "Day planner", icon: "CalendarClock" },
@@ -44,6 +45,8 @@ export interface TransportFlags {
   canCreate: boolean;
   /** The Out of Town Trip module is enabled too; it joins the submenu. */
   outOfTown: boolean;
+  /** The tenant has at least one active shuttle to book a seat on. */
+  shuttles?: boolean;
 }
 
 /** Whether a role may open a view. "requests" is everyone's: your own, or all for an admin. */
@@ -53,6 +56,8 @@ export function transportViewAllowed(key: TransportViewKey, flags: TransportFlag
       return true;
     case "new":
       return flags.canCreate || flags.admin;
+    case "seats":
+      return flags.shuttles !== false;
     case "approvals":
       return (Boolean(flags.manager) || flags.admin) && flags.approvals !== false;
     case "dispatch":

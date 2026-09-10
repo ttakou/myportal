@@ -41,6 +41,8 @@ interface Row extends LiveTask {
   pickup: string;
   dropoff: string;
   requester_id: string | null;
+  shuttle_id: string | null;
+  shuttle_date: string | null;
   driver: { full_name?: string; profile_id?: string | null } | { full_name?: string; profile_id?: string | null }[] | null;
 }
 
@@ -69,7 +71,7 @@ async function runTenant(admin: SupabaseClient, tenantId: string, nowIso: string
   const now = Date.parse(nowIso);
   const { data } = await admin
     .from("transport_requests")
-    .select("id, status, depart_at, driver_id, reminded_at, late_alerted_at, pickup, dropoff, requester_id, driver:transport_drivers(full_name, profile_id)")
+    .select("id, status, depart_at, driver_id, reminded_at, late_alerted_at, pickup, dropoff, requester_id, shuttle_id, shuttle_date, driver:transport_drivers(full_name, profile_id)")
     .eq("tenant_id", tenantId)
     .in("status", ["pending", "assigned"])
     .gte("depart_at", new Date(now - 86_400_000).toISOString())
@@ -90,6 +92,23 @@ async function runTenant(admin: SupabaseClient, tenantId: string, nowIso: string
         title: `Departure at ${fmtLocal(t.depart_at).slice(-5)}: ${t.pickup} → ${t.dropoff}`,
         body: `Leaves in ${Math.max(1, -minutesLate(t.depart_at, nowIso))} min. Press Start trip when you set off.`,
         url: "/transportation?view=driver",
+      });
+    }
+    // Seat holders on a shuttle run get the same nudge.
+    if (t.shuttle_id && t.shuttle_date) {
+      const { data: seats } = await admin
+        .from("transport_shuttle_seats")
+        .select("profile_id")
+        .eq("shuttle_id", t.shuttle_id)
+        .eq("ride_date", t.shuttle_date)
+        .is("cancelled_at", null);
+      await notifyUsers({
+        tenantId,
+        profileIds: (seats ?? []).map((x) => x.profile_id as string),
+        category: "transport",
+        title: `Shuttle leaves at ${fmtLocal(t.depart_at).slice(-5)} from ${t.pickup}`,
+        body: `${t.pickup} → ${t.dropoff} in ${Math.max(1, -minutesLate(t.depart_at, nowIso))} min${d?.full_name ? ` · driver ${d.full_name}` : ""}.`,
+        url: "/transportation?view=seats",
       });
     }
   }

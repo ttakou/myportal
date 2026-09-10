@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { describeTripLog } from "@/lib/transport/trip-log";
-import { TRANSPORT_OPEN_STATUSES, type Driver, type TransportRequest } from "@/types/transport";
+import { runKey } from "@/lib/transport/seats";
+import { TRANSPORT_OPEN_STATUSES, type Driver, type ShuttleSeat, type TransportRequest } from "@/types/transport";
 import { completeTrip, markNoShow, setMyDuty, setTransportStatus, startTrip } from "../actions";
 import { Checklist, FollowUps, PriorityBadge, StatusBadge, Stars, TypeBadge, fmt } from "./task-bits";
 
@@ -19,7 +20,16 @@ const field = "rounded-md border bg-background px-2 py-1.5 text-sm";
  * No-show; follow-ups on each. Recent closed trips underneath, with the
  * requester's rating when they left one.
  */
-export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: TransportRequest[] }) {
+export function DriverTasks({
+  driver,
+  tasks,
+  manifests,
+}: {
+  driver: Driver;
+  tasks: TransportRequest[];
+  /** Who booked a seat on each shuttle run, keyed by run. */
+  manifests: Record<string, ShuttleSeat[]>;
+}) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
   const [onDuty, setOnDuty] = useState(driver.on_duty);
@@ -68,7 +78,7 @@ export function DriverTasks({ driver, tasks }: { driver: Driver; tasks: Transpor
 
       <div className="grid gap-3 lg:grid-cols-2">
         {open.slice(0, openReveal.count).map((t) => (
-          <TaskCard key={t.id} t={t} pending={pending} run={run} />
+          <TaskCard key={t.id} t={t} pending={pending} run={run} manifest={t.shuttle_id && t.shuttle_date ? manifests[runKey(t.shuttle_id, t.shuttle_date)] ?? [] : null} />
         ))}
       </div>
       <ShowMore
@@ -109,10 +119,13 @@ function TaskCard({
   t,
   pending,
   run,
+  manifest,
 }: {
   t: TransportRequest;
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>) => void;
+  /** The seat holders on a shuttle run; null for an ordinary task. */
+  manifest: ShuttleSeat[] | null;
 }) {
   const [odoStart, setOdoStart] = useState("");
   const [closing, setClosing] = useState(false);
@@ -139,6 +152,16 @@ function TaskCard({
         {t.log.odometer_start !== null ? ` · odometer ${t.log.odometer_start} at start` : ""}
       </p>
       {t.notes && <p className="mt-1 text-sm">{t.notes}</p>}
+      {manifest && (
+        <div className="mt-1 rounded-md border border-dashed px-2 py-1.5 text-xs">
+          <span className="font-medium">Shuttle · {manifest.length} booked</span>
+          {manifest.length > 0 ? (
+            <span className="text-muted-foreground">: {manifest.map((s) => s.profile_name ?? "—").join(", ")}</span>
+          ) : (
+            <span className="text-muted-foreground">. Nobody booked a seat; walk-ons still ride.</span>
+          )}
+        </div>
+      )}
 
       {t.status === "assigned" && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
