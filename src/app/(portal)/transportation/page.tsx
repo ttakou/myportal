@@ -36,7 +36,8 @@ import { DriverTasks } from "./_components/driver-tasks";
 import { DispatchBoard } from "./_components/dispatch-board";
 import { FleetPanel } from "./_components/fleet-panel";
 import { RequestForm } from "./_components/request-form";
-import { ReportsPanel, REPORT_TABS, type ReportKey } from "./_components/reports-panel";
+import { ReportsPanel } from "./_components/reports-panel";
+import { resolveReportKey } from "@/lib/transport/report-tabs";
 import { ReportStampFooter } from "@/app/(portal)/reports/_components/report-stamp-footer";
 import { RequestsList } from "./_components/requests-list";
 import { SeatsPanel } from "./_components/seats-panel";
@@ -91,7 +92,7 @@ export default async function TransportationPage({
   const isDate = (v?: string) => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
   const reportFrom = isDate(from) ? (from as string) : today.slice(0, 8) + "01";
   const reportTo = isDate(to) ? (to as string) : today;
-  const reportKey: ReportKey = REPORT_TABS.some((t) => t.key === report) ? (report as ReportKey) : "overview";
+  const reportKey = resolveReportKey(report);
   const lateMinutes = Number(cfg.late_start_alert_minutes ?? 15);
 
   // The desk opening the module is the other moment (besides the nightly
