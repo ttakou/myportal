@@ -17,9 +17,9 @@ import type { Shuttle } from "@/types/transport";
 export async function runTransportShuttles(
   dateIso: string = new Date().toISOString().slice(0, 10),
   onlyTenant?: string,
-): Promise<{ ok: boolean; date: string; created: number; tenants: number; error?: string }> {
+): Promise<{ ok: boolean; date: string; created: number; tenants: number; failed: string[]; error?: string }> {
   const admin = createAdminClient();
-  if (!admin) return { ok: false, date: dateIso, created: 0, tenants: 0, error: "Service-role key missing." };
+  if (!admin) return { ok: false, date: dateIso, created: 0, tenants: 0, failed: [], error: "Service-role key missing." };
 
   let q = admin
     .from("tenant_services")
@@ -31,6 +31,8 @@ export async function runTransportShuttles(
 
   let created = 0;
   let tenants = 0;
+  // Runs that could not be written, named, so the desk sees why "0 created".
+  const failed: string[] = [];
   for (const svc of (services ?? []) as { tenant_id: string }[]) {
     tenants += 1;
     const tenantId = svc.tenant_id;
@@ -69,6 +71,7 @@ export async function runTransportShuttles(
         // The unique index: another run got there first. Anything else is logged.
         if (!/transport_requests_shuttle_day/.test(error.message)) {
           console.error(`shuttle ${shuttle.name}: ${error.message}`);
+          failed.push(`${shuttle.name}: ${error.message}`);
         }
         continue;
       }
@@ -78,5 +81,5 @@ export async function runTransportShuttles(
       }
     }
   }
-  return { ok: true, date: dateIso, created, tenants };
+  return { ok: failed.length === 0, date: dateIso, created, tenants, failed, error: failed[0] };
 }
