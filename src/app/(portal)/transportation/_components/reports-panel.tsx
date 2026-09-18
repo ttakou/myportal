@@ -10,19 +10,7 @@ import { PrintButton } from "@/app/(portal)/reports/_components/print-button";
 import { DAY_LABELS } from "@/lib/transport/shuttles";
 import { TASK_TYPE_LABEL, TRANSPORT_STATUS_LABEL, PRIORITY_LABEL, type TransportStatus, type TransportTaskType, type TransportPriority } from "@/types/transport";
 import type { TransportReports } from "@/lib/transport-reports";
-
-export type ReportKey = "overview" | "drivers" | "vehicles" | "requesters" | "routes" | "peaks" | "shuttles" | "approvals";
-
-export const REPORT_TABS: { key: ReportKey; label: string }[] = [
-  { key: "overview", label: "Overview" },
-  { key: "drivers", label: "Drivers" },
-  { key: "vehicles", label: "Vehicles & fuel" },
-  { key: "requesters", label: "Requesters" },
-  { key: "routes", label: "Routes" },
-  { key: "peaks", label: "Peak times" },
-  { key: "shuttles", label: "Shuttles" },
-  { key: "approvals", label: "Approvals" },
-];
+import { REPORT_TABS, type ReportKey } from "@/lib/transport/report-tabs";
 
 const n = (v: number | null | undefined, suffix = "") => (v === null || v === undefined ? "—" : `${v.toLocaleString("en-GB")}${suffix}`);
 const s = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(v));
