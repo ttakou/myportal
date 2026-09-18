@@ -88,6 +88,14 @@ export default async function ReportsPage() {
       show: access.isSystemAdmin || access.isAdmin || access.isHr || access.isCanteenManager,
     },
     {
+      href: "/transportation?view=reports",
+      title: "Transportation reports",
+      description:
+        "Overview, drivers, vehicles and fuel, requesters and departments, routes, peak hours, shuttle occupancy and approvals over a period, with CSV export.",
+      icon: Truck,
+      show: access.isSystemAdmin || access.isAdmin || access.isFinance,
+    },
+    {
       href: "/reports/transport",
       title: "Transportation requests & SLA",
       description:

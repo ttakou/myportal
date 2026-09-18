@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { FileBarChart } from "lucide-react";
-import { getCachedUser, getCurrentRole, isAdminRole } from "@/lib/auth";
+import { getAccess, getCachedUser, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
 import { getActiveServices } from "@/lib/services";
@@ -8,6 +8,7 @@ import { getModuleSettings } from "@/lib/module-settings";
 import { localDate, shiftDate } from "@/lib/transport/day-plan";
 import { BOOKING_DAYS_AHEAD } from "@/lib/transport/seats";
 import { escalateStaleApprovalsHere } from "@/lib/transport-approval-escalation";
+import { getTransportReports } from "@/lib/transport-reports";
 import {
   getApprovalAccess,
   getAllDrivers,
@@ -35,6 +36,8 @@ import { DriverTasks } from "./_components/driver-tasks";
 import { DispatchBoard } from "./_components/dispatch-board";
 import { FleetPanel } from "./_components/fleet-panel";
 import { RequestForm } from "./_components/request-form";
+import { ReportsPanel, REPORT_TABS, type ReportKey } from "./_components/reports-panel";
+import { ReportStampFooter } from "@/app/(portal)/reports/_components/report-stamp-footer";
 import { RequestsList } from "./_components/requests-list";
 import { SeatsPanel } from "./_components/seats-panel";
 import { ShuttlesPanel } from "./_components/shuttles-panel";
@@ -54,10 +57,10 @@ import {
 export default async function TransportationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; date?: string }>;
+  searchParams: Promise<{ view?: string; date?: string; from?: string; to?: string; report?: string }>;
 }) {
-  const { view, date } = await searchParams;
-  const [role, perms, myDriver, services, approvalAccess, cfg, shuttlesOn, me] = await Promise.all([
+  const { view, date, from, to, report } = await searchParams;
+  const [role, perms, myDriver, services, approvalAccess, cfg, shuttlesOn, me, access] = await Promise.all([
     getCurrentRole(),
     getMyPermissions(),
     getMyDriver(),
@@ -66,6 +69,7 @@ export default async function TransportationPage({
     getModuleSettings("transportation"),
     hasActiveShuttles(),
     getCachedUser(),
+    getAccess(),
   ]);
   const isAdmin = isAdminRole(role);
   const flags: TransportFlags = {
@@ -76,12 +80,19 @@ export default async function TransportationPage({
     canCreate: isAdmin || hasPermission(perms, "transportation", "create"),
     outOfTown: services.some((s) => s.slug === "out-of-town"),
     shuttles: shuttlesOn,
+    finance: access.isFinance,
   };
   const active = resolveTransportView(view, flags);
   const approvalOn = cfg.require_approval === true;
   const nowIso = new Date().toISOString();
   const today = localDate(nowIso);
   const plannerDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
+  // Reports: month to date unless a period is given; one report at a time.
+  const isDate = (v?: string) => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
+  const reportFrom = isDate(from) ? (from as string) : today.slice(0, 8) + "01";
+  const reportTo = isDate(to) ? (to as string) : today;
+  const reportKey: ReportKey = REPORT_TABS.some((t) => t.key === report) ? (report as ReportKey) : "overview";
+  const lateMinutes = Number(cfg.late_start_alert_minutes ?? 15);
 
   // The desk opening the module is the other moment (besides the nightly
   // job) an unanswered approval is passed on, so it never waits past the
@@ -90,7 +101,7 @@ export default async function TransportationPage({
     await escalateStaleApprovalsHere();
   }
 
-  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, places, driverTasks, seats] =
+  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, places, driverTasks, seats, reports] =
     await Promise.all([
       active === "requests" || active === "dispatch"
         ? isAdmin
@@ -108,6 +119,7 @@ export default async function TransportationPage({
       active === "new" || active === "requests" || active === "dispatch" || active === "shuttles" || active === "fleet" ? getPlaces() : Promise.resolve([]),
       active === "driver" ? getMyDriverTasks() : Promise.resolve([]),
       active === "seats" ? getSeatsBetween(today, shiftDate(today, BOOKING_DAYS_AHEAD)) : Promise.resolve({}),
+      active === "reports" ? getTransportReports(reportFrom, reportTo, { onTimeMinutes: lateMinutes }) : Promise.resolve(null),
     ]);
   // Who is on each shuttle run the driver or the desk is looking at.
   const manifests = active === "driver" ? await getManifestsFor(driverTasks) : active === "dispatch" ? await getManifestsFor(requests) : {};
@@ -167,9 +179,10 @@ export default async function TransportationPage({
           drivers={drivers}
           vehicles={vehicles}
           places={places}
-          lateMinutes={Number(cfg.late_start_alert_minutes ?? 15)}
+          lateMinutes={lateMinutes}
           manifests={manifests}
         />}
+      {active === "reports" && reports && <ReportsPanel data={reports} report={reportKey} onTimeMinutes={lateMinutes} footer={<ReportStampFooter />} />}
       {active === "planner" && (
         <DayPlanner
           date={plannerDate}

@@ -5,7 +5,7 @@
 
 import type { NavSubItem } from "@/components/layout/nav-links";
 
-export type TransportViewKey = "requests" | "new" | "seats" | "approvals" | "dispatch" | "planner" | "fleet" | "shuttles" | "driver";
+export type TransportViewKey = "requests" | "new" | "seats" | "approvals" | "dispatch" | "planner" | "fleet" | "shuttles" | "reports" | "driver";
 
 export interface TransportView {
   key: TransportViewKey;
@@ -23,6 +23,7 @@ export const TRANSPORT_VIEWS: TransportView[] = [
   { key: "planner", label: "Day planner", icon: "CalendarClock" },
   { key: "fleet", label: "Vehicles & drivers", icon: "Wrench" },
   { key: "shuttles", label: "Shuttle schedules", icon: "Repeat" },
+  { key: "reports", label: "Reports", icon: "BarChart3" },
   { key: "driver", label: "My driving tasks", icon: "Navigation" },
 ];
 
@@ -47,6 +48,8 @@ export interface TransportFlags {
   outOfTown: boolean;
   /** The tenant has at least one active shuttle to book a seat on. */
   shuttles?: boolean;
+  /** Finance: reads the reports without the desk views. */
+  finance?: boolean;
 }
 
 /** Whether a role may open a view. "requests" is everyone's: your own, or all for an admin. */
@@ -65,6 +68,8 @@ export function transportViewAllowed(key: TransportViewKey, flags: TransportFlag
     case "fleet":
     case "shuttles":
       return flags.admin;
+    case "reports":
+      return flags.admin || Boolean(flags.finance);
     case "driver":
       return flags.driver;
   }
