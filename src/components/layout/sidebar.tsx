@@ -172,6 +172,7 @@ export async function Sidebar({
         canCreate: isOrgAdmin || hasPermission(perms, "transportation", "create"),
         outOfTown: Boolean(outOfTown),
         shuttles: shuttlesOn,
+        finance: access.isFinance,
       }),
     };
     links = links.flatMap((l) =>
