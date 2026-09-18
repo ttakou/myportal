@@ -1020,8 +1020,16 @@ export async function runShuttlesNow(dateIso: string): Promise<ActionResult & { 
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
   const res = await runTransportShuttles(dateIso, tenant);
-  if (!res.ok) return { ok: false, error: res.error ?? "Could not create the runs." };
   rev();
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: res.failed.length
+        ? `${res.created} run(s) created; ${res.failed.length} could not be: ${res.failed.join("; ")}`
+        : (res.error ?? "Could not create the runs."),
+      created: res.created,
+    };
+  }
   return { ok: true, created: res.created };
 }
 

@@ -2956,7 +2956,7 @@ export type Database = {
           pickup: string
           priority: Database["public"]["Enums"]["transport_priority"]
           purpose: string | null
-          requester_id: string
+          requester_id: string | null
           status: Database["public"]["Enums"]["transport_request_status"]
           task_type: Database["public"]["Enums"]["transport_task_type"]
           tenant_id: string
@@ -2974,7 +2974,7 @@ export type Database = {
           pickup: string
           priority?: Database["public"]["Enums"]["transport_priority"]
           purpose?: string | null
-          requester_id?: string
+          requester_id?: string | null
           status?: Database["public"]["Enums"]["transport_request_status"]
           task_type?: Database["public"]["Enums"]["transport_task_type"]
           tenant_id: string
@@ -2992,7 +2992,7 @@ export type Database = {
           pickup?: string
           priority?: Database["public"]["Enums"]["transport_priority"]
           purpose?: string | null
-          requester_id?: string
+          requester_id?: string | null
           status?: Database["public"]["Enums"]["transport_request_status"]
           task_type?: Database["public"]["Enums"]["transport_task_type"]
           tenant_id?: string
