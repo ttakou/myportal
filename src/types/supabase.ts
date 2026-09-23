@@ -3142,6 +3142,7 @@ export type Database = {
           capacity: number
           created_at: string
           fuel: string | null
+          holder_id: string | null
           id: string
           is_active: boolean
           name: string
@@ -3154,6 +3155,7 @@ export type Database = {
           capacity?: number
           created_at?: string
           fuel?: string | null
+          holder_id?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -3166,6 +3168,7 @@ export type Database = {
           capacity?: number
           created_at?: string
           fuel?: string | null
+          holder_id?: string | null
           id?: string
           is_active?: boolean
           name?: string
@@ -3174,6 +3177,13 @@ export type Database = {
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "transport_vehicles_holder_id_fkey"
+            columns: ["holder_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "transport_vehicles_tenant_id_fkey"
             columns: ["tenant_id"]

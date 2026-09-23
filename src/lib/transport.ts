@@ -143,26 +143,35 @@ export async function getMyDriverTasks(): Promise<TransportRequest[]> {
   return (data ?? []).map((r) => mapReq(r as Record<string, any>));
 }
 
-/** Vehicles available for assignment (active only). */
+const VEHICLE_SELECT =
+  "id, name, plate, capacity, status, fuel, assigned_to, holder_id, holder:profiles!transport_vehicles_holder_id_fkey(full_name)";
+
+function mapVehicle(row: Record<string, any>): Vehicle {
+  return {
+    id: row.id,
+    name: row.name,
+    plate: row.plate ?? null,
+    capacity: row.capacity,
+    status: row.status,
+    fuel: row.fuel ?? null,
+    assigned_to: row.assigned_to ?? null,
+    holder_id: row.holder_id ?? null,
+    holder_name: one<{ full_name?: string }>(row.holder)?.full_name ?? null,
+  };
+}
+
+/** Vehicles available for assignment (active only), pool first. */
 export async function getVehicles(): Promise<Vehicle[]> {
   const supabase = createClient();
-  const { data } = await supabase
-    .from("transport_vehicles")
-    .select("id, name, plate, capacity, status, fuel, assigned_to")
-    .eq("status", "active")
-    .order("name");
-  return poolFirst((data ?? []) as Vehicle[]);
+  const { data } = await supabase.from("transport_vehicles").select(VEHICLE_SELECT).eq("status", "active").order("name");
+  return poolFirst((data ?? []).map((r) => mapVehicle(r as Record<string, any>)));
 }
 
 /** Every vehicle (any status) for the fleet management panel. */
 export async function getAllVehicles(): Promise<Vehicle[]> {
   const supabase = createClient();
-  const { data } = await supabase
-    .from("transport_vehicles")
-    .select("id, name, plate, capacity, status, fuel, assigned_to")
-    .order("status")
-    .order("name");
-  return (data ?? []) as Vehicle[];
+  const { data } = await supabase.from("transport_vehicles").select(VEHICLE_SELECT).order("status").order("name");
+  return (data ?? []).map((r) => mapVehicle(r as Record<string, any>));
 }
 
 export async function getDrivers(): Promise<Driver[]> {

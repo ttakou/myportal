@@ -504,8 +504,10 @@ type VehicleInput = {
   plate?: string;
   capacity?: number;
   fuel?: string;
-  /** Post or person the vehicle is assigned to; empty or "Pool" for a pool vehicle. */
+  /** Post the vehicle is assigned to; empty or "Pool" for a pool vehicle. */
   assigned_to?: string;
+  /** Profile of the person holding it; empty for none. */
+  holder_id?: string | null;
 };
 
 function vehicleRow(input: VehicleInput) {
@@ -515,6 +517,7 @@ function vehicleRow(input: VehicleInput) {
     capacity: Math.max(1, Math.floor(input.capacity || 4)),
     fuel: parseFuel(input.fuel),
     assigned_to: parseAssignee(input.assigned_to),
+    holder_id: input.holder_id || null,
   };
 }
 

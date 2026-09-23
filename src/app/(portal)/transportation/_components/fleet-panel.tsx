@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
 import { FUEL_LABEL, VEHICLE_STATUS_LABEL, type Driver, type Place, type Vehicle, type VehicleFuel, type VehicleStatus } from "@/types/transport";
-import { poolFirst } from "@/lib/transport/vehicles";
+import { assigneeLabel, poolFirst } from "@/lib/transport/vehicles";
 import { addDriver, addPlace, addVehicle, linkDriverProfile, removePlace, setDriverActive, setDriverDuty, setVehicleStatus, updateVehicle } from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
@@ -58,7 +58,7 @@ export function FleetPanel({
       </div>
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
       <DriversSection drivers={drivers} profiles={profiles} pending={pending} run={run} />
-      <VehiclesSection vehicles={vehicles} pending={pending} run={run} />
+      <VehiclesSection vehicles={vehicles} profiles={profiles} pending={pending} run={run} />
       <PlacesSection places={places} pending={pending} run={run} />
     </div>
   );
@@ -241,7 +241,17 @@ function DriverRow({
  * post or a person; each row opens into a form to change its details or
  * its assignee, and the status select stays on the row.
  */
-function VehiclesSection({ vehicles, pending, run }: { vehicles: Vehicle[]; pending: boolean; run: Runner }) {
+function VehiclesSection({
+  vehicles,
+  profiles,
+  pending,
+  run,
+}: {
+  vehicles: Vehicle[];
+  profiles: { id: string; full_name: string }[];
+  pending: boolean;
+  run: Runner;
+}) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const live = vehicles.filter((v) => v.status !== "retired");
@@ -260,6 +270,7 @@ function VehiclesSection({ vehicles, pending, run }: { vehicles: Vehicle[]; pend
       </div>
       {adding && (
         <VehicleForm
+          profiles={profiles}
           pending={pending}
           submitLabel="Add vehicle"
           onSubmit={(input, done) => run(() => addVehicle(input), () => { done(); setAdding(false); })}
@@ -272,6 +283,7 @@ function VehiclesSection({ vehicles, pending, run }: { vehicles: Vehicle[]; pend
             <VehicleForm
               key={v.id}
               vehicle={v}
+              profiles={profiles}
               pending={pending}
               submitLabel="Save"
               onSubmit={(input) => run(() => updateVehicle(v.id, input), () => setEditing(null))}
@@ -284,8 +296,8 @@ function VehiclesSection({ vehicles, pending, run }: { vehicles: Vehicle[]; pend
               <span className="text-xs text-muted-foreground">
                 · {v.capacity} seats{v.fuel ? ` · ${FUEL_LABEL[v.fuel]}` : ""}
               </span>
-              {v.assigned_to ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{v.assigned_to}</span>
+              {assigneeLabel(v) ? (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{assigneeLabel(v)}</span>
               ) : (
                 <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">Pool</span>
               )}
@@ -315,17 +327,19 @@ function VehiclesSection({ vehicles, pending, run }: { vehicles: Vehicle[]; pend
   );
 }
 
-type VehicleFormInput = { name: string; plate: string; capacity: number; fuel: string; assigned_to: string };
+type VehicleFormInput = { name: string; plate: string; capacity: number; fuel: string; assigned_to: string; holder_id: string | null };
 
-/** Add or edit a vehicle: name, plate, seats, fuel, and who it is assigned to (blank = pool). */
+/** Add or edit a vehicle: name, plate, seats, fuel, the post it is assigned to (blank = pool) and who holds it. */
 function VehicleForm({
   vehicle,
+  profiles,
   pending,
   submitLabel,
   onSubmit,
   onCancel,
 }: {
   vehicle?: Vehicle;
+  profiles: { id: string; full_name: string }[];
   pending: boolean;
   submitLabel: string;
   onSubmit: (input: VehicleFormInput, reset: () => void) => void;
@@ -336,19 +350,21 @@ function VehicleForm({
   const [capacity, setCapacity] = useState(String(vehicle?.capacity ?? 4));
   const [fuel, setFuel] = useState<string>(vehicle?.fuel ?? "");
   const [assignedTo, setAssignedTo] = useState(vehicle?.assigned_to ?? "");
+  const [holderId, setHolderId] = useState<string | null>(vehicle?.holder_id ?? null);
   const reset = () => {
     setName("");
     setPlate("");
     setCapacity("4");
     setFuel("");
     setAssignedTo("");
+    setHolderId(null);
   };
   return (
     <form
       className="mt-3 flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-3"
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit({ name, plate, capacity: Number(capacity), fuel, assigned_to: assignedTo }, reset);
+        onSubmit({ name, plate, capacity: Number(capacity), fuel, assigned_to: assignedTo, holder_id: holderId }, reset);
       }}
     >
       <label className="flex flex-col gap-1 text-xs">
@@ -375,8 +391,20 @@ function VehicleForm({
         </select>
       </label>
       <label className="flex min-w-56 flex-1 flex-col gap-1 text-xs">
-        Assigned to
+        Assigned to (post)
         <input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Blank = pool vehicle" className={field} />
+      </label>
+      <label className="flex min-w-56 flex-1 flex-col gap-1 text-xs">
+        Holder (person)
+        <LazySelect
+          value={holderId}
+          options={profiles}
+          getOptionValue={(p) => p.id}
+          getOptionLabel={(p) => p.full_name ?? ""}
+          placeholder="Nobody named"
+          className={field}
+          onChange={(v) => setHolderId(v)}
+        />
       </label>
       <Button type="submit" variant="outline" disabled={pending}>
         {submitLabel}

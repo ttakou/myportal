@@ -79,8 +79,11 @@ export interface Vehicle {
   capacity: number;
   status: VehicleStatus;
   fuel: VehicleFuel | null;
-  /** Post or person the vehicle is assigned to; null means a pool vehicle. */
+  /** Post the vehicle is assigned to; null means a pool vehicle. */
   assigned_to: string | null;
+  /** The person holding it (a profile), when known. */
+  holder_id: string | null;
+  holder_name: string | null;
 }
 
 export interface Driver {
