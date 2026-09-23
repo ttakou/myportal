@@ -8,13 +8,19 @@ import type { Vehicle, VehicleFuel } from "@/types/transport";
  * assigned car, but it should see who it belongs to first.
  */
 
-type Labelled = Pick<Vehicle, "name" | "plate" | "assigned_to">;
+type Labelled = Pick<Vehicle, "name" | "plate" | "assigned_to"> & { holder_name?: string | null };
 
-/** "Toyota Prado · CE.303.MS (Operations Manager)" — name, plate, assignee. */
+/** "Operations Manager · Paul Wambo": the post and, when known, who holds it. */
+export function assigneeLabel(v: Pick<Labelled, "assigned_to" | "holder_name">): string | null {
+  if (!v.assigned_to && !v.holder_name) return null;
+  return [v.assigned_to, v.holder_name].filter(Boolean).join(" · ");
+}
+
+/** "Toyota Prado · CE.303.MS (Operations Manager · Paul Wambo)" — name, plate, assignee. */
 export function vehicleLabel(v: Labelled): string {
   const plate = v.plate ? ` · ${v.plate}` : "";
-  const who = v.assigned_to ? ` (${v.assigned_to})` : "";
-  return `${v.name}${plate}${who}`;
+  const who = assigneeLabel(v);
+  return `${v.name}${plate}${who ? ` (${who})` : ""}`;
 }
 
 /** Pool vehicles first, then the assigned ones; each group by name, then plate. */
