@@ -945,6 +945,12 @@ export async function addDriver(input: {
 }
 
 /** Link/unlink a driver record to a portal account so they can self-serve. */
+/**
+ * Link a driver to a portal account. The account also joins the tenant's
+ * "Driver" access role when one exists, so linking is the whole onboarding:
+ * the person sees their driving tasks and gets the module rights the tenant
+ * gives drivers. Unlinking leaves the role alone; an admin removes it.
+ */
 export async function linkDriverProfile(
   driverId: string,
   profileId: string | null,
@@ -957,8 +963,31 @@ export async function linkDriverProfile(
     .update({ profile_id: profileId })
     .eq("id", driverId);
   if (error) return { ok: false, error: error.message };
+  if (profileId) await grantDriverAccessRole(profileId);
   rev();
   return { ok: true };
+}
+
+/**
+ * Put a profile in the tenant's "Driver" access role (by name, any case).
+ * The desk is not a tenant admin, so the membership is written with the
+ * service role after both the role and the profile are checked against
+ * the caller's tenant. A tenant with no such role is left as is.
+ */
+async function grantDriverAccessRole(profileId: string): Promise<void> {
+  const supabase = createClient();
+  const tenant = await tenantId();
+  const admin = createAdminClient();
+  if (!tenant || !admin) return;
+  const [{ data: role }, { data: profile }] = await Promise.all([
+    supabase.from("tenant_roles").select("id").ilike("name", "driver").eq("tenant_id", tenant).limit(1).maybeSingle(),
+    supabase.from("profiles").select("id").eq("id", profileId).eq("tenant_id", tenant).maybeSingle(),
+  ]);
+  if (!role || !profile) return;
+  const { error } = await admin
+    .from("profile_access_roles")
+    .upsert({ profile_id: profileId, role_id: role.id, tenant_id: tenant }, { onConflict: "profile_id,role_id", ignoreDuplicates: true });
+  if (error) console.error(`driver access role: ${error.message}`);
 }
 
 
