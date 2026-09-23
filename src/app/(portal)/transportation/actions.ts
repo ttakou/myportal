@@ -18,6 +18,7 @@ import { runTransportShuttles } from "@/lib/transport-shuttle-run";
 import { getActiveDelegatorIds } from "@/lib/delegation";
 import { getPlaces, getShuttles } from "@/lib/transport";
 import { canBook, upcomingRuns } from "@/lib/transport/seats";
+import { parseAssignee, parseFuel } from "@/lib/transport/vehicles";
 import type {
   TransportPriority,
   TransportStatus,
@@ -498,23 +499,45 @@ export async function setMyDuty(onDuty: boolean): Promise<ActionResult> {
   return { ok: true };
 }
 
-export async function addVehicle(input: {
+type VehicleInput = {
   name: string;
   plate?: string;
   capacity?: number;
-}): Promise<ActionResult> {
+  fuel?: string;
+  /** Post or person the vehicle is assigned to; empty or "Pool" for a pool vehicle. */
+  assigned_to?: string;
+};
+
+function vehicleRow(input: VehicleInput) {
+  return {
+    name: input.name.trim(),
+    plate: input.plate?.trim() || null,
+    capacity: Math.max(1, Math.floor(input.capacity || 4)),
+    fuel: parseFuel(input.fuel),
+    assigned_to: parseAssignee(input.assigned_to),
+  };
+}
+
+export async function addVehicle(input: VehicleInput): Promise<ActionResult> {
   const gate = await requireModule("transportation", "manage");
   if (gate) return gate;
   if (!input.name.trim()) return { ok: false, error: "Vehicle name is required." };
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
-  const { error } = await supabase.from("transport_vehicles").insert({
-    tenant_id: tenant,
-    name: input.name.trim(),
-    plate: input.plate?.trim() || null,
-    capacity: Math.max(1, Math.floor(input.capacity || 4)),
-  });
+  const { error } = await supabase.from("transport_vehicles").insert({ tenant_id: tenant, ...vehicleRow(input) });
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/** Change a vehicle's details or who it is assigned to. Status has its own action. */
+export async function updateVehicle(id: string, input: VehicleInput): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  if (!input.name.trim()) return { ok: false, error: "Vehicle name is required." };
+  const supabase = createClient();
+  const { error } = await supabase.from("transport_vehicles").update(vehicleRow(input)).eq("id", id);
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };

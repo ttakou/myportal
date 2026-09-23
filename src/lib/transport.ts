@@ -12,6 +12,7 @@ import type {
 } from "@/types/transport";
 import { dayRangeIso } from "@/lib/transport/day-plan";
 import { showApprovalsView } from "@/lib/transport/approvals";
+import { poolFirst } from "@/lib/transport/vehicles";
 import { getModuleSettings } from "@/lib/module-settings";
 import { hasDirectReports } from "@/lib/appraisals";
 import { getActiveDelegatorIds } from "@/lib/delegation";
@@ -147,10 +148,10 @@ export async function getVehicles(): Promise<Vehicle[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("transport_vehicles")
-    .select("id, name, plate, capacity, status")
+    .select("id, name, plate, capacity, status, fuel, assigned_to")
     .eq("status", "active")
     .order("name");
-  return (data ?? []) as Vehicle[];
+  return poolFirst((data ?? []) as Vehicle[]);
 }
 
 /** Every vehicle (any status) for the fleet management panel. */
@@ -158,7 +159,7 @@ export async function getAllVehicles(): Promise<Vehicle[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("transport_vehicles")
-    .select("id, name, plate, capacity, status")
+    .select("id, name, plate, capacity, status, fuel, assigned_to")
     .order("status")
     .order("name");
   return (data ?? []) as Vehicle[];

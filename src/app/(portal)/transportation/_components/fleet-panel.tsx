@@ -6,8 +6,9 @@ import { MapPin, Truck, UserPlus, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { LazySelect } from "@/components/ui/lazy-select";
-import { VEHICLE_STATUS_LABEL, type Driver, type Place, type Vehicle, type VehicleStatus } from "@/types/transport";
-import { addDriver, addPlace, addVehicle, linkDriverProfile, removePlace, setDriverActive, setDriverDuty, setVehicleStatus } from "../actions";
+import { FUEL_LABEL, VEHICLE_STATUS_LABEL, type Driver, type Place, type Vehicle, type VehicleFuel, type VehicleStatus } from "@/types/transport";
+import { poolFirst } from "@/lib/transport/vehicles";
+import { addDriver, addPlace, addVehicle, linkDriverProfile, removePlace, setDriverActive, setDriverDuty, setVehicleStatus, updateVehicle } from "../actions";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -235,59 +236,154 @@ function DriverRow({
   );
 }
 
+/**
+ * The fleet register. Pool vehicles come first, then the ones assigned to a
+ * post or a person; each row opens into a form to change its details or
+ * its assignee, and the status select stays on the row.
+ */
 function VehiclesSection({ vehicles, pending, run }: { vehicles: Vehicle[]; pending: boolean; run: Runner }) {
-  const [name, setName] = useState("");
-  const [plate, setPlate] = useState("");
-  const [capacity, setCapacity] = useState("4");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const live = vehicles.filter((v) => v.status !== "retired");
+  const retired = vehicles.filter((v) => v.status === "retired");
+  const pool = live.filter((v) => !v.assigned_to).length;
 
   return (
     <section className="rounded-lg border bg-card p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-        <Truck className="h-4 w-4" /> Vehicles ({vehicles.filter((v) => v.status === "active").length} active)
-      </h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+          <Truck className="h-4 w-4" /> Vehicles ({live.length} in service · {pool} in the pool · {live.length - pool} assigned)
+        </h3>
+        <Button type="button" variant="outline" size="sm" className="ml-auto" disabled={pending} onClick={() => setAdding((a) => !a)}>
+          {adding ? "Close" : "Add vehicle"}
+        </Button>
+      </div>
+      {adding && (
+        <VehicleForm
+          pending={pending}
+          submitLabel="Add vehicle"
+          onSubmit={(input, done) => run(() => addVehicle(input), () => { done(); setAdding(false); })}
+          onCancel={() => setAdding(false)}
+        />
+      )}
       <div className="mt-3 space-y-2">
-        {vehicles.map((v) => (
-          <div key={v.id} className={cn("flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm", v.status === "retired" && "opacity-60")}>
-            <span className="font-medium">{v.name}</span>
-            {v.plate && <span className="text-xs text-muted-foreground">{v.plate}</span>}
-            <span className="text-xs text-muted-foreground">· {v.capacity} seats</span>
-            <select
-              value={v.status}
-              disabled={pending}
-              onChange={(e) => run(() => setVehicleStatus(v.id, e.target.value as VehicleStatus))}
-              className="ml-auto rounded-md border bg-background px-1.5 py-1 text-xs"
-            >
-              {(Object.keys(VEHICLE_STATUS_LABEL) as VehicleStatus[]).map((s) => (
-                <option key={s} value={s}>
-                  {VEHICLE_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
+        {[...poolFirst(live), ...poolFirst(retired)].map((v) =>
+          editing === v.id ? (
+            <VehicleForm
+              key={v.id}
+              vehicle={v}
+              pending={pending}
+              submitLabel="Save"
+              onSubmit={(input) => run(() => updateVehicle(v.id, input), () => setEditing(null))}
+              onCancel={() => setEditing(null)}
+            />
+          ) : (
+            <div key={v.id} className={cn("flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm", v.status === "retired" && "opacity-60")}>
+              <span className="font-medium">{v.name}</span>
+              {v.plate && <span className="text-xs text-muted-foreground">{v.plate}</span>}
+              <span className="text-xs text-muted-foreground">
+                · {v.capacity} seats{v.fuel ? ` · ${FUEL_LABEL[v.fuel]}` : ""}
+              </span>
+              {v.assigned_to ? (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{v.assigned_to}</span>
+              ) : (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">Pool</span>
+              )}
+              <span className="ml-auto flex items-center gap-2">
+                <button type="button" className="text-xs underline-offset-2 hover:underline" disabled={pending} onClick={() => setEditing(v.id)}>
+                  Edit
+                </button>
+                <select
+                  value={v.status}
+                  disabled={pending}
+                  onChange={(e) => run(() => setVehicleStatus(v.id, e.target.value as VehicleStatus))}
+                  className="rounded-md border bg-background px-1.5 py-1 text-xs"
+                >
+                  {(Object.keys(VEHICLE_STATUS_LABEL) as VehicleStatus[]).map((s) => (
+                    <option key={s} value={s}>
+                      {VEHICLE_STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </div>
+          ),
+        )}
         {vehicles.length === 0 && <p className="text-xs text-muted-foreground">No vehicles yet.</p>}
       </div>
-      <form
-        className="mt-3 flex flex-wrap gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(
-            () => addVehicle({ name, plate, capacity: Number(capacity) }),
-            () => {
-              setName("");
-              setPlate("");
-              setCapacity("4");
-            },
-          );
-        }}
-      >
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New vehicle (e.g. Toyota Hiace)" required className={field} />
-        <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Plate" className={field} />
-        <input value={capacity} onChange={(e) => setCapacity(e.target.value)} type="number" min={1} placeholder="Seats" className={`${field} w-24`} />
-        <Button type="submit" variant="outline" disabled={pending}>
-          Add vehicle
-        </Button>
-      </form>
     </section>
+  );
+}
+
+type VehicleFormInput = { name: string; plate: string; capacity: number; fuel: string; assigned_to: string };
+
+/** Add or edit a vehicle: name, plate, seats, fuel, and who it is assigned to (blank = pool). */
+function VehicleForm({
+  vehicle,
+  pending,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  vehicle?: Vehicle;
+  pending: boolean;
+  submitLabel: string;
+  onSubmit: (input: VehicleFormInput, reset: () => void) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(vehicle?.name ?? "");
+  const [plate, setPlate] = useState(vehicle?.plate ?? "");
+  const [capacity, setCapacity] = useState(String(vehicle?.capacity ?? 4));
+  const [fuel, setFuel] = useState<string>(vehicle?.fuel ?? "");
+  const [assignedTo, setAssignedTo] = useState(vehicle?.assigned_to ?? "");
+  const reset = () => {
+    setName("");
+    setPlate("");
+    setCapacity("4");
+    setFuel("");
+    setAssignedTo("");
+  };
+  return (
+    <form
+      className="mt-3 flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit({ name, plate, capacity: Number(capacity), fuel, assigned_to: assignedTo }, reset);
+      }}
+    >
+      <label className="flex flex-col gap-1 text-xs">
+        Vehicle
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Toyota Prado" required className={field} />
+      </label>
+      <label className="flex flex-col gap-1 text-xs">
+        Plate
+        <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="CE.303.MS" className={`${field} w-32`} />
+      </label>
+      <label className="flex flex-col gap-1 text-xs">
+        Seats
+        <input value={capacity} onChange={(e) => setCapacity(e.target.value)} type="number" min={1} className={`${field} w-20`} />
+      </label>
+      <label className="flex flex-col gap-1 text-xs">
+        Fuel
+        <select value={fuel} onChange={(e) => setFuel(e.target.value)} className={field}>
+          <option value="">—</option>
+          {(Object.keys(FUEL_LABEL) as VehicleFuel[]).map((f) => (
+            <option key={f} value={f}>
+              {FUEL_LABEL[f]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex min-w-56 flex-1 flex-col gap-1 text-xs">
+        Assigned to
+        <input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Blank = pool vehicle" className={field} />
+      </label>
+      <Button type="submit" variant="outline" disabled={pending}>
+        {submitLabel}
+      </Button>
+      <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>
+        Cancel
+      </Button>
+    </form>
   );
 }

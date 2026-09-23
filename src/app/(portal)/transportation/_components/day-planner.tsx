@@ -19,6 +19,7 @@ import {
 import type { Driver, Shuttle, TransportRequest, Vehicle } from "@/types/transport";
 import { assignTransport, runShuttlesNow } from "../actions";
 import { STATUS_STYLE } from "./task-bits";
+import { vehicleLabel } from "@/lib/transport/vehicles";
 
 /**
  * The dispatcher's day on a clock: one lane per driver, each task a block
@@ -224,7 +225,7 @@ export function DayPlanner({
                     value={r.vehicle_id ?? null}
                     options={vehicles}
                     getOptionValue={(v) => v.id}
-                    getOptionLabel={(v) => v.name}
+                    getOptionLabel={vehicleLabel}
                     placeholder="Vehicle…"
                     disabled={pending}
                     className="rounded-md border bg-background px-1.5 py-1 text-xs"
