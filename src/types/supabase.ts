@@ -3138,8 +3138,10 @@ export type Database = {
       }
       transport_vehicles: {
         Row: {
+          assigned_to: string | null
           capacity: number
           created_at: string
+          fuel: string | null
           id: string
           is_active: boolean
           name: string
@@ -3148,8 +3150,10 @@ export type Database = {
           tenant_id: string
         }
         Insert: {
+          assigned_to?: string | null
           capacity?: number
           created_at?: string
+          fuel?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -3158,8 +3162,10 @@ export type Database = {
           tenant_id: string
         }
         Update: {
+          assigned_to?: string | null
           capacity?: number
           created_at?: string
+          fuel?: string | null
           id?: string
           is_active?: boolean
           name?: string

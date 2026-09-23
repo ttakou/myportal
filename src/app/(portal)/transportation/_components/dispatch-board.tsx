@@ -26,6 +26,7 @@ import { assignTransport, createTransportTask, markNoShow, setTransportStatus } 
 import { Checklist, FollowUps, PriorityBadge, StatusBadge, TypeBadge, fmt } from "./task-bits";
 import { TransportAnalytics } from "./transport-analytics";
 import { PLACES_LIST_ID, PlacesDatalist } from "./places-datalist";
+import { vehicleLabel } from "@/lib/transport/vehicles";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -246,7 +247,7 @@ function TaskRow({
           value={r.vehicle_id ?? null}
           options={vehicles}
           getOptionValue={(v) => v.id}
-          getOptionLabel={(v) => v.name}
+          getOptionLabel={vehicleLabel}
           placeholder="Vehicle…"
           disabled={pending || busy}
           className="rounded-md border bg-background px-1.5 py-1 text-xs"
@@ -381,7 +382,7 @@ function NewTaskForm({
           value={vehicleId || null}
           options={vehicles}
           getOptionValue={(v) => v.id}
-          getOptionLabel={(v) => v.name}
+          getOptionLabel={vehicleLabel}
           placeholder="Vehicle…"
           className={field}
           onChange={(v) => setVehicleId(v ?? "")}

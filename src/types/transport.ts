@@ -63,12 +63,24 @@ export const VEHICLE_STATUS_LABEL: Record<VehicleStatus, string> = {
   retired: "Retired",
 };
 
+export type VehicleFuel = "diesel" | "gasoline" | "hybrid" | "electric";
+
+export const FUEL_LABEL: Record<VehicleFuel, string> = {
+  diesel: "Diesel",
+  gasoline: "Gasoline",
+  hybrid: "Hybrid",
+  electric: "Electric",
+};
+
 export interface Vehicle {
   id: string;
   name: string;
   plate: string | null;
   capacity: number;
   status: VehicleStatus;
+  fuel: VehicleFuel | null;
+  /** Post or person the vehicle is assigned to; null means a pool vehicle. */
+  assigned_to: string | null;
 }
 
 export interface Driver {
