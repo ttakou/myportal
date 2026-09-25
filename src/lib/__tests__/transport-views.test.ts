@@ -44,11 +44,14 @@ describe("transportViewAllowed", () => {
     expect(transportSubmenu({ ...EMPLOYEE, shuttles: true }).map((i) => i.key)).toEqual(["requests", "new", "seats", "out-of-town"]);
   });
 
-  it("opens the reports to admins and finance only", () => {
+  it("opens the reports and the daily assignments sheet to admins and finance only", () => {
     expect(transportViewAllowed("reports", ADMIN)).toBe(true);
     expect(transportViewAllowed("reports", { ...EMPLOYEE, finance: true })).toBe(true);
     expect(transportViewAllowed("reports", EMPLOYEE)).toBe(false);
-    expect(transportSubmenu({ ...EMPLOYEE, finance: true }).map((i) => i.key)).toEqual(["requests", "new", "reports", "out-of-town"]);
+    expect(transportViewAllowed("assignments", ADMIN)).toBe(true);
+    expect(transportViewAllowed("assignments", { ...EMPLOYEE, finance: true })).toBe(true);
+    expect(transportViewAllowed("assignments", DRIVER)).toBe(false);
+    expect(transportSubmenu({ ...EMPLOYEE, finance: true }).map((i) => i.key)).toEqual(["requests", "new", "reports", "assignments", "out-of-town"]);
   });
 
   it("hides approvals from everyone when approval is off and nothing waits", () => {
@@ -86,6 +89,7 @@ describe("transportSubmenu", () => {
       "fleet",
       "shuttles",
       "reports",
+      "assignments",
       "out-of-town",
     ]);
     expect(transportSubmenu(MANAGER).map((i) => i.key)).toEqual(["requests", "new", "approvals"]);

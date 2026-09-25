@@ -9,6 +9,8 @@ import { localDate, shiftDate } from "@/lib/transport/day-plan";
 import { BOOKING_DAYS_AHEAD } from "@/lib/transport/seats";
 import { escalateStaleApprovalsHere } from "@/lib/transport-approval-escalation";
 import { getTransportReports } from "@/lib/transport-reports";
+import { getAssignmentMonth } from "@/lib/transport-assignments";
+import { isMonth } from "@/lib/transport/daily-assignments";
 import {
   getApprovalAccess,
   getAllDrivers,
@@ -37,6 +39,7 @@ import { DispatchBoard } from "./_components/dispatch-board";
 import { FleetPanel } from "./_components/fleet-panel";
 import { RequestForm } from "./_components/request-form";
 import { ReportsPanel } from "./_components/reports-panel";
+import { AssignmentsPanel } from "./_components/assignments-panel";
 import { resolveReportKey } from "@/lib/transport/report-tabs";
 import { ReportStampFooter } from "@/app/(portal)/reports/_components/report-stamp-footer";
 import { RequestsList } from "./_components/requests-list";
@@ -58,9 +61,9 @@ import {
 export default async function TransportationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; date?: string; from?: string; to?: string; report?: string }>;
+  searchParams: Promise<{ view?: string; date?: string; from?: string; to?: string; report?: string; month?: string }>;
 }) {
-  const { view, date, from, to, report } = await searchParams;
+  const { view, date, from, to, report, month } = await searchParams;
   const [role, perms, myDriver, services, approvalAccess, cfg, shuttlesOn, me, access] = await Promise.all([
     getCurrentRole(),
     getMyPermissions(),
@@ -93,6 +96,8 @@ export default async function TransportationPage({
   const reportFrom = isDate(from) ? (from as string) : today.slice(0, 8) + "01";
   const reportTo = isDate(to) ? (to as string) : today;
   const reportKey = resolveReportKey(report);
+  // Daily assignments: one month at a time, this month by default.
+  const sheetMonth = isMonth(month) ? month : today.slice(0, 7);
   const lateMinutes = Number(cfg.late_start_alert_minutes ?? 15);
 
   // The desk opening the module is the other moment (besides the nightly
@@ -102,7 +107,7 @@ export default async function TransportationPage({
     await escalateStaleApprovalsHere();
   }
 
-  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, places, driverTasks, seats, reports] =
+  const [requests, approvals, dayRequests, drivers, allDrivers, vehicles, allVehicles, profiles, shuttles, places, driverTasks, seats, reports, sheet] =
     await Promise.all([
       active === "requests" || active === "dispatch"
         ? isAdmin
@@ -121,6 +126,7 @@ export default async function TransportationPage({
       active === "driver" ? getMyDriverTasks() : Promise.resolve([]),
       active === "seats" ? getSeatsBetween(today, shiftDate(today, BOOKING_DAYS_AHEAD)) : Promise.resolve({}),
       active === "reports" ? getTransportReports(reportFrom, reportTo, { onTimeMinutes: lateMinutes }) : Promise.resolve(null),
+      active === "assignments" ? getAssignmentMonth(sheetMonth) : Promise.resolve(null),
     ]);
   // Who is on each shuttle run the driver or the desk is looking at.
   const manifests = active === "driver" ? await getManifestsFor(driverTasks) : active === "dispatch" ? await getManifestsFor(requests) : {};
@@ -184,6 +190,9 @@ export default async function TransportationPage({
           manifests={manifests}
         />}
       {active === "reports" && reports && <ReportsPanel data={reports} report={reportKey} onTimeMinutes={lateMinutes} footer={<ReportStampFooter />} />}
+      {active === "assignments" && sheet && (
+        <AssignmentsPanel grid={sheet} today={today} canRecord={isAdmin} footer={<ReportStampFooter />} />
+      )}
       {active === "planner" && (
         <DayPlanner
           date={plannerDate}
