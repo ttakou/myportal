@@ -17,6 +17,7 @@ import {
   type ScheduledCrew,
 } from "./schedule-actions";
 import { scheduleActs, type OffshoreScheduleSettings } from "./schedule-settings";
+import { ensureDayManifests } from "./day-manifest-run";
 
 /**
  * The nightly job that makes the rotation schedule act.
@@ -51,6 +52,8 @@ export interface TenantScheduleSummary {
   reminded: number;
   staleFlagged: number;
   staleCancelled: number;
+  /** Crew change day manifests created ahead (MOB and DEMOB per day). */
+  dayManifests: number;
 }
 
 type Row = Record<string, unknown>;
@@ -139,6 +142,7 @@ async function runTenant(
     reminded: 0,
     staleFlagged: 0,
     staleCancelled: 0,
+    dayManifests: 0,
   };
 
   const [{ data: crewRows }, { data: deskRows }, { data: defaultInst }] = await Promise.all([
@@ -379,6 +383,16 @@ async function runTenant(
       },
       7,
     );
+  }
+
+  // Crew change day manifests for the weeks ahead: one MOB and one DEMOB per
+  // day and installation, filled with everyone due. Their own failure must
+  // not undo the crew changes above.
+  try {
+    const made = await ensureDayManifests(admin, tenantId, { todayIso: today, defaultInstallationId: settings.defaultInstallationId });
+    summary.dayManifests = made.created;
+  } catch (e) {
+    console.error(`offshore day manifests: tenant ${tenantId} failed:`, (e as Error).message);
   }
 
   return summary;
