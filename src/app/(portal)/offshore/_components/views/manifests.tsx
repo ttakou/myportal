@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, History, ChevronDown, Trash2 } from "lucide-react";
+import { FileText, History, ChevronDown, Trash2, CalendarRange, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { planManifest, seatOverflow } from "@/lib/offshore/manifest-plan";
 import {
@@ -27,6 +27,8 @@ import {
 import {
   confirmManifestMovement,
   createManifest,
+  generateDayManifests,
+  refreshDayManifest,
   removeManifestPax,
   reverseManifestPax,
   setManifestStatus,
@@ -464,13 +466,43 @@ export function ManifestsPanel({
   visits: VisitRequest[];
 }) {
   const { pending, error, run } = useRun();
+  const [notice, setNotice] = useState<string | null>(null);
 
   const active = manifests.filter((m) => m.status !== "completed" && m.status !== "cancelled");
   const history = manifests.filter((m) => m.status === "completed" || m.status === "cancelled");
 
+  const prepareDays = () =>
+    run(async () => {
+      setNotice(null);
+      const r = await generateDayManifests();
+      if (r.ok) {
+        const made = r.created ?? 0;
+        const folded = r.superseded ?? 0;
+        setNotice(
+          made === 0
+            ? `Every crew change day in the next six weeks already has its manifests (${r.days ?? 0} day${r.days === 1 ? "" : "s"}).`
+            : `${made} day manifest${made === 1 ? "" : "s"} prepared across ${r.days ?? 0} crew change day${r.days === 1 ? "" : "s"}.` +
+                (folded ? ` ${folded} per-crew draft${folded === 1 ? "" : "s"} for the same runs folded in and cancelled.` : ""),
+        );
+      }
+      return r;
+    });
+
   return (
     <div className="space-y-3">
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Crew change day manifests.</span> For every crew change day in the next
+          six weeks: one MOB manifest (shore → installation) and one DEMOB manifest (installation → shore), each with everyone
+          due by the rotation schedule, plus visitors on their booked dates. The nightly run prepares them; this does it now.
+        </p>
+        <Button size="sm" disabled={pending} onClick={prepareDays}>
+          <CalendarRange className="mr-1.5 h-4 w-4" /> Prepare day manifests
+        </Button>
+      </div>
+      {notice && <p className="rounded-md bg-green-50 px-4 py-2 text-sm text-green-800">{notice}</p>}
 
       <ManifestBuilder
         crews={crews}
@@ -632,13 +664,19 @@ function ManifestCard({
     m.transport_mode === "helicopter" ? "helicopter" : "boat",
   );
   const [editSeats, setEditSeats] = useState(m.seat_capacity);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
 
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className={cn("rounded-lg border bg-card p-3", m.kind === "day" && "border-primary/30")}>
       <div className="flex flex-wrap items-center gap-2">
         <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", MANIFEST_STYLE[m.status])}>
           {MANIFEST_STATUS_LABEL[m.status]}
         </span>
+        {m.kind === "day" && (
+          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary" title="Everyone due on this crew change day, all crews">
+            Crew change day
+          </span>
+        )}
         {m.crew_name && <span className="font-medium">{m.crew_name}</span>}
         <span
           className={cn(
@@ -659,6 +697,24 @@ function ManifestCard({
         <span className={cn("ml-auto text-xs", overCapacity ? "font-medium text-destructive" : "text-muted-foreground")}>
           {travelling.length}/{m.seat_capacity} seats
         </span>
+        {m.kind === "day" && editable && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                setRefreshNote(null);
+                const r = await refreshDayManifest(m.id);
+                if (r.ok) setRefreshNote(r.added ? `${r.added} added from the schedule.` : "Everyone due is already on it.");
+                return r;
+              })
+            }
+            className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
+            title="Add anyone who has become due since the manifest was made"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh from schedule
+          </button>
+        )}
         {canEditTransport && !editingTransport && (
           <button
             type="button"
@@ -677,6 +733,7 @@ function ManifestCard({
           <FileText className="h-3.5 w-3.5" /> Report
         </a>
       </div>
+      {refreshNote && <p className="mt-1 text-xs text-green-700">{refreshNote}</p>}
 
       {editingTransport && (
         <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-dashed bg-card/50 p-2">

@@ -18,7 +18,7 @@ export async function getManifests(): Promise<Manifest[]> {
   const { data, error } = await supabase
     .from("offshore_manifests")
     .select(
-      "id, title, crew_id, installation_id, trip_type, direction, transport_mode, seat_capacity," +
+      "id, kind, title, crew_id, installation_id, trip_type, direction, transport_mode, seat_capacity," +
         " scheduled_date, status, crew:offshore_crews(name), installation:offshore_installations(name)," +
         " offshore_manifest_pax(id, profile_id, visit_request_id, person_name, position, boarded, no_show)",
     )
@@ -37,6 +37,7 @@ export async function getManifests(): Promise<Manifest[]> {
 
   return (data ?? []).map((m: Record<string, any>) => ({
     id: m.id,
+    kind: m.kind === "day" ? "day" : "crew",
     title: m.title,
     crew_id: m.crew_id,
     crew_name: one<{ name?: string }>(m.crew)?.name ?? null,

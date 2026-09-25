@@ -492,6 +492,8 @@ export interface ManifestPax {
 
 export interface Manifest {
   id: string;
+  /** "day": the crew change day manifest (all crews, one direction); "crew": built by hand or per crew. */
+  kind: "crew" | "day";
   title: string;
   crew_id: string | null;
   crew_name: string | null;

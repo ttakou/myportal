@@ -5,6 +5,8 @@ import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 import { boardMember } from "./mobilise";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ensureDayManifests, offshoreDefaultInstallation, refreshDayManifestPax } from "@/lib/offshore/day-manifest-run";
 
 /**
  * Generate the crew manifest for the crew's *next* computed change date,
@@ -475,4 +477,45 @@ export async function reverseManifestPax(input: { paxId: string }): Promise<Acti
     .eq("id", input.paxId);
   rev();
   return { ok: true };
+}
+
+// --- Crew change day manifests ---------------------------------------------
+
+/**
+ * Prepare the crew change day manifests now rather than at the nightly run:
+ * for every crew change day in the weeks ahead, one MOB and one DEMOB
+ * manifest per installation, each with everyone due. Days that already have
+ * theirs are left as they are.
+ */
+export async function generateDayManifests(): Promise<ActionResult & { created?: number; days?: number; superseded?: number }> {
+  const gate = await requireOffshoreDispatch("operate");
+  if (gate) return gate;
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+  try {
+    const res = await ensureDayManifests(admin, tenant, {
+      todayIso: new Date().toISOString().slice(0, 10),
+      defaultInstallationId: await offshoreDefaultInstallation(admin, tenant),
+    });
+    rev();
+    return { ok: true, created: res.created, days: res.days, superseded: res.superseded };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** Add anyone who has become due since a day manifest was made. */
+export async function refreshDayManifest(id: string): Promise<ActionResult & { added?: number }> {
+  const gate = await requireOffshoreDispatch("operate");
+  if (gate) return gate;
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+  const res = await refreshDayManifestPax(admin, tenant, id, await offshoreDefaultInstallation(admin, tenant));
+  if (!res.ok) return res;
+  rev();
+  return { ok: true, added: res.added };
 }
