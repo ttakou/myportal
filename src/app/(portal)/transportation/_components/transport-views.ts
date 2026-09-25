@@ -5,7 +5,7 @@
 
 import type { NavSubItem } from "@/components/layout/nav-links";
 
-export type TransportViewKey = "requests" | "new" | "seats" | "approvals" | "dispatch" | "planner" | "fleet" | "shuttles" | "reports" | "driver";
+export type TransportViewKey = "requests" | "new" | "seats" | "approvals" | "dispatch" | "planner" | "fleet" | "shuttles" | "reports" | "assignments" | "driver";
 
 export interface TransportView {
   key: TransportViewKey;
@@ -24,6 +24,7 @@ export const TRANSPORT_VIEWS: TransportView[] = [
   { key: "fleet", label: "Vehicles & drivers", icon: "Wrench" },
   { key: "shuttles", label: "Shuttle schedules", icon: "Repeat" },
   { key: "reports", label: "Reports", icon: "BarChart3" },
+  { key: "assignments", label: "Daily assignments", icon: "CalendarDays" },
   { key: "driver", label: "My driving tasks", icon: "Navigation" },
 ];
 
@@ -69,6 +70,7 @@ export function transportViewAllowed(key: TransportViewKey, flags: TransportFlag
     case "shuttles":
       return flags.admin;
     case "reports":
+    case "assignments":
       return flags.admin || Boolean(flags.finance);
     case "driver":
       return flags.driver;

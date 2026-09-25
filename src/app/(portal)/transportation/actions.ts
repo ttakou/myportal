@@ -11,7 +11,7 @@ import { seedTaskChecklist } from "@/lib/task-checklist";
 import { getModuleSettings } from "@/lib/module-settings";
 import { shuttleDepartAt, shuttleRunsOn } from "@/lib/transport/shuttles";
 import { canonicalPlace, normalisePlaceName } from "@/lib/transport/places";
-import { localInputToIso } from "@/lib/transport/day-plan";
+import { localDate, localInputToIso } from "@/lib/transport/day-plan";
 import { describeTripLog, validateTripLog, type TripLogInput } from "@/lib/transport/trip-log";
 import { deskIdsFor } from "@/lib/transport-desk";
 import { runTransportShuttles } from "@/lib/transport-shuttle-run";
@@ -19,6 +19,7 @@ import { getActiveDelegatorIds } from "@/lib/delegation";
 import { getPlaces, getShuttles } from "@/lib/transport";
 import { canBook, upcomingRuns } from "@/lib/transport/seats";
 import { parseAssignee, parseFuel } from "@/lib/transport/vehicles";
+import { tallyError } from "@/lib/transport/daily-assignments";
 import type {
   TransportPriority,
   TransportStatus,
@@ -1175,3 +1176,48 @@ export async function removePlace(id: string): Promise<ActionResult> {
 // Keep the pure helpers reachable from the actions module for callers that
 // only import from here.
 export { shuttleDepartAt, shuttleRunsOn };
+
+// --- Daily assignments tally -------------------------------------------------
+
+/**
+ * Record one day of the daily assignments sheet: how many assignments each
+ * driver ran. Every listed driver gets a row, zeros included, so the day
+ * reads as recorded and its counts replace the portal-task count for that
+ * day. Re-recording a day overwrites it; the 2026 workbook's days can be
+ * corrected the same way.
+ */
+export async function recordDailyAssignments(day: string, counts: { driverId: string; n: number }[]): Promise<ActionResult> {
+  const gate = await requireModule("transportation", "manage");
+  if (gate) return gate;
+  if (!isAdminRole(await getCurrentRole())) return { ok: false, error: "Only the transport desk can record assignments." };
+  const err = tallyError(day, localDate(new Date().toISOString()), counts);
+  if (err) return { ok: false, error: err };
+
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const ids = counts.map((c) => c.driverId);
+  const { data: known } = await supabase.from("transport_drivers").select("id").eq("tenant_id", tenant).in("id", ids);
+  if ((known ?? []).length !== new Set(ids).size) return { ok: false, error: "A driver was not found." };
+
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("transport_daily_assignments").upsert(
+    counts.map((c) => ({
+      tenant_id: tenant,
+      day,
+      driver_id: c.driverId,
+      assignments: c.n,
+      source: "tally",
+      recorded_by: user?.id ?? null,
+      updated_at: now,
+    })),
+    { onConflict: "tenant_id,day,driver_id" },
+  );
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
