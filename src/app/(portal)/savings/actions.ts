@@ -9,6 +9,7 @@ import { logSavings } from "@/lib/savings-audit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ActionResult } from "@/types/actions";
+import { depositTimestamp } from "@/lib/savings-dates";
 export type { ActionResult };
 const rev = () => revalidatePath("/savings");
 async function tenantId(supabase: ReturnType<typeof createClient>) {
@@ -436,6 +437,8 @@ async function applyImportRows(
       amount: row.amount,
       period: periodDate,
       note: `Monthly savings ${period}`,
+      // Deposits are paid on the month's last Friday: date it then, not on upload day.
+      created_at: depositTimestamp(period),
     });
     if (txErr) {
       if (txErr.code === "23505" || txErr.message.includes("duplicate")) {
