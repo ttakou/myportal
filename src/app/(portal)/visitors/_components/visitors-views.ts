@@ -10,10 +10,14 @@ export interface VisitorsNavItem {
   href: string;
 }
 
-export function visitorsSubmenu(opts: { canMuster: boolean }): VisitorsNavItem[] {
+export function visitorsSubmenu(opts: { canMuster: boolean; canSeeTeam: boolean }): VisitorsNavItem[] {
   const items: VisitorsNavItem[] = [
     { key: "reception", label: "Visitor Management", icon: "Users", href: "/visitors" },
   ];
+  // Line managers and directors: attendance of everyone below them.
+  if (opts.canSeeTeam) {
+    items.push({ key: "team", label: "Team Attendance", icon: "UserCheck", href: "/reports/team-attendance" });
+  }
   if (opts.canMuster) {
     items.push({ key: "muster", label: "Muster Roll", icon: "ClipboardList", href: "/visitors/muster" });
     // Same audience as the muster: security/reception/admins (visitors:operate).

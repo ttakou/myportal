@@ -130,7 +130,13 @@ export async function Sidebar({
     // Visitors: reception view for everyone with the module; the muster roll for
     // admins / security / responders (visitors:operate).
     if (s.route_path === "/visitors") {
-      return { ...base, subItems: visitorsSubmenu({ canMuster }) };
+      const canSeeTeam = isManager || access.isAdmin;
+      return {
+        ...base,
+        // The team report lives under Reports; keep this menu open on it.
+        matchPaths: canSeeTeam ? ["/reports/team-attendance"] : undefined,
+        subItems: visitorsSubmenu({ canMuster, canSeeTeam }),
+      };
     }
     // Medical: the employee's own status, plus an Administration view for admins
     // and Medical Officers (medical:create access role).
