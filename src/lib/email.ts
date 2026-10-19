@@ -2,11 +2,18 @@ import "server-only";
 
 /**
  * Minimal transactional email via Resend's HTTP API (no SDK/deps).
- * Configure with RESEND_API_KEY and EMAIL_FROM (e.g. "MyPortal <no-reply@yourdomain>").
+ * Configure with RESEND_API_KEY; EMAIL_FROM optionally overrides the sender.
  * No-ops cleanly when unconfigured so callers can stay best-effort.
  */
+/** The sender: EMAIL_FROM when set, else the portal's own verified domain. */
+const DEFAULT_FROM = "MyPortal <no-reply@mportals.com>";
+
+function sender(): string {
+  return process.env.EMAIL_FROM?.trim() || DEFAULT_FROM;
+}
+
 export function isEmailConfigured(): boolean {
-  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+  return Boolean(process.env.RESEND_API_KEY);
 }
 
 /** What the admin console shows about the email channel. Never the key itself. */
@@ -14,7 +21,7 @@ export function emailStatus(): { configured: boolean; hasKey: boolean; from: str
   return {
     configured: isEmailConfigured(),
     hasKey: Boolean(process.env.RESEND_API_KEY),
-    from: process.env.EMAIL_FROM ?? null,
+    from: sender(),
   };
 }
 
@@ -29,7 +36,7 @@ export interface EmailMessage {
 
 /** Send one email and say why it failed, for the admin's test button. */
 export async function sendEmailDetailed(input: EmailMessage): Promise<{ ok: boolean; error?: string }> {
-  if (!isEmailConfigured()) return { ok: false, error: "Email is not configured: RESEND_API_KEY and EMAIL_FROM must both be set." };
+  if (!isEmailConfigured()) return { ok: false, error: "Email is not configured: RESEND_API_KEY is not set (add it in Vercel and redeploy)." };
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -38,7 +45,7 @@ export async function sendEmailDetailed(input: EmailMessage): Promise<{ ok: bool
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM,
+        from: sender(),
         to: [input.to],
         subject: input.subject,
         html: input.html,
@@ -75,7 +82,7 @@ export async function sendEmailBatch(messages: EmailMessage[]): Promise<{ ok: bo
         "Content-Type": "application/json",
       },
       body: JSON.stringify(
-        messages.map((m) => ({ from: process.env.EMAIL_FROM, to: [m.to], subject: m.subject, html: m.html, text: m.text })),
+        messages.map((m) => ({ from: sender(), to: [m.to], subject: m.subject, html: m.html, text: m.text })),
       ),
     });
     if (res.ok) return { ok: true };

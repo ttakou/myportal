@@ -33,7 +33,7 @@ export function EmailPanel({ status }: { status: { configured: boolean; hasKey: 
           {status.configured ? "Switched on." : "Not switched on yet."}
         </p>
         <p className="text-muted-foreground">
-          Sender: <span className="font-medium text-foreground">{status.from ?? "not set (EMAIL_FROM)"}</span>
+          Sender: <span className="font-medium text-foreground">{status.from}</span>
           {" · "}API key: <span className="font-medium text-foreground">{status.hasKey ? "set" : "not set (RESEND_API_KEY)"}</span>
         </p>
         <p className="text-muted-foreground">
@@ -42,8 +42,8 @@ export function EmailPanel({ status }: { status: { configured: boolean; hasKey: 
         </p>
         {!status.configured && (
           <p className="text-muted-foreground">
-            To switch it on, add <code>RESEND_API_KEY</code> and <code>EMAIL_FROM</code> to the project&apos;s environment
-            variables and redeploy.
+            To switch it on, add <code>RESEND_API_KEY</code> to the project&apos;s environment variables and redeploy.
+            <code>EMAIL_FROM</code> is optional and changes the sender.
           </p>
         )}
       </div>
