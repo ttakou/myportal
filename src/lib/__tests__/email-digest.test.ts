@@ -63,3 +63,21 @@ describe("helpers", () => {
     expect(isDeliverableEmail("not an email")).toBe(false);
   });
 });
+
+describe("desk mailbox", () => {
+  it("reads one or several addresses, any separator, and drops junk", async () => {
+    const { parseMailboxes } = await import("@/lib/email-digest-format");
+    expect(parseMailboxes("APCCTransport.Request@cm.addaxpetroleum.com")).toEqual(["apcctransport.request@cm.addaxpetroleum.com"]);
+    expect(parseMailboxes("a@x.com, b@y.com;\nc@z.com a@x.com")).toEqual(["a@x.com", "b@y.com", "c@z.com"]);
+    expect(parseMailboxes("not-an-address, x@no-email.local")).toEqual([]);
+    expect(parseMailboxes(undefined)).toEqual([]);
+  });
+
+  it("formats one notification as an escaped email with an absolute link", async () => {
+    const { notificationEmail } = await import("@/lib/email-digest-format");
+    const e = notificationEmail({ title: "New transport request", body: "Base → <Port>", url: "/transportation?view=dispatch", siteUrl: "https://mportals.com" });
+    expect(e.html).toContain("Base → &lt;Port&gt;");
+    expect(e.html).toContain('href="https://mportals.com/transportation?view=dispatch"');
+    expect(e.text).toBe("New transport request\n\nBase → <Port>\n\nhttps://mportals.com/transportation?view=dispatch\n");
+  });
+});

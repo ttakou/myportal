@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getModuleSettingsForTenant } from "@/lib/module-settings";
 import { notifyUsers } from "@/lib/notify";
-import { deskIdsFor } from "@/lib/transport-desk";
+import { deskIdsFor, emailDeskMailbox } from "@/lib/transport-desk";
 import { dueReminders, lateStarts, minutesLate, type LiveTask } from "@/lib/transport/live";
 
 /**
@@ -125,14 +125,13 @@ async function runTenant(admin: SupabaseClient, tenantId: string, nowIso: string
       const route = `${t.pickup} → ${t.dropoff}`;
       const by = minutesLate(t.depart_at, nowIso);
       const who = t.driver_id ? `${d?.full_name ?? "the driver"} has not started` : "no driver is assigned";
-      await notifyUsers({
-        tenantId,
-        profileIds: desk,
-        category: "transport",
+      const deskMsg = {
         title: `Not started: ${route}`,
         body: `Due ${fmtLocal(t.depart_at)}, ${by} min ago, and ${who}.`,
         url: "/transportation?view=dispatch",
-      });
+      };
+      await notifyUsers({ tenantId, profileIds: desk, category: "transport", ...deskMsg });
+      await emailDeskMailbox(admin, tenantId, deskMsg);
       if (d?.profile_id) {
         await notifyUsers({
           tenantId,

@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { filterByPreference } from "@/lib/notification-prefs";
 import { isWebPushConfigured, sendWebPush, type PushSubscriptionRecord } from "@/lib/webpush";
 import { isEmailConfigured, sendEmail } from "@/lib/email";
-import { escapeHtml, isDeliverableEmail } from "@/lib/email-digest-format";
+import { isDeliverableEmail, notificationEmail } from "@/lib/email-digest-format";
 
 /**
  * Deliver a notification to specific people: writes the in-app bell record and,
@@ -79,15 +79,16 @@ export async function notifyUsers(input: {
         .select("id, email")
         .in("id", emailNow)
         .not("email", "is", null);
-      const url = input.url ? new URL(input.url, process.env.NEXT_PUBLIC_SITE_URL ?? "https://mportals.com").toString() : null;
-      const html =
-        `<p>${escapeHtml(input.title)}</p>` +
-        (input.body ? `<p>${escapeHtml(input.body)}</p>` : "") +
-        (url ? `<p><a href="${escapeHtml(url)}">Open in MyPortal</a></p>` : "");
+      const { html, text } = notificationEmail({
+        title: input.title,
+        body: input.body,
+        url: input.url,
+        siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "https://mportals.com",
+      });
       await Promise.all(
         ((people ?? []) as Record<string, any>[]).map((p) =>
           isDeliverableEmail(p.email)
-            ? sendEmail({ to: p.email as string, subject: input.title, html, text: input.body })
+            ? sendEmail({ to: p.email as string, subject: input.title, html, text })
             : Promise.resolve(false),
         ),
       );

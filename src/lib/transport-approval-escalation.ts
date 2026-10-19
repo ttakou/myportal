@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getModuleSettingsForTenant } from "@/lib/module-settings";
 import { notifyUsers } from "@/lib/notify";
-import { deskIdsFor } from "@/lib/transport-desk";
+import { deskIdsFor, emailDeskMailbox } from "@/lib/transport-desk";
 import { escalationNote, staleApprovals } from "@/lib/transport/approvals";
 
 /**
@@ -97,14 +97,13 @@ async function escalateTenant(admin: SupabaseClient, tenantId: string, nowIso: s
       body: `${route} · ${when}. ${note}`,
       url: "/transportation?view=requests",
     });
-    await notifyUsers({
-      tenantId,
-      profileIds: deskIds,
-      category: "transport",
+    const deskMsg = {
       title: "Unanswered approval escalated",
       body: `${route} · ${when}. ${note} Assign a driver on the dispatch board.`,
       url: "/transportation?view=dispatch",
-    });
+    };
+    await notifyUsers({ tenantId, profileIds: deskIds, category: "transport", ...deskMsg });
+    await emailDeskMailbox(admin, tenantId, deskMsg);
   }
   return n;
 }

@@ -134,3 +134,26 @@ export function buildDigest(input: { name: string | null; tenantName: string | n
 export function isDeliverableEmail(email: string | null | undefined): email is string {
   return Boolean(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !email.endsWith("@no-email.local"));
 }
+
+/** A single notification as an email body (HTML and text), content escaped, link absolute. */
+export function notificationEmail(input: { title: string; body?: string | null; url?: string | null; siteUrl: string }): { html: string; text: string } {
+  const href = absolute(input.url ?? null, input.siteUrl);
+  const html =
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111827;max-width:600px">` +
+    `<p style="font-weight:600">${escapeHtml(input.title)}</p>` +
+    (input.body ? `<p>${escapeHtml(input.body)}</p>` : "") +
+    (href ? `<p><a href="${escapeHtml(href)}">Open in MyPortal</a></p>` : "") +
+    `</div>`;
+  const text = `${input.title}${input.body ? `\n\n${input.body}` : ""}${href ? `\n\n${href}` : ""}\n`;
+  return { html, text };
+}
+
+/** "a@x.com, b@y.com; c@z.com" → the deliverable addresses, lower-cased, de-duplicated. */
+export function parseMailboxes(raw: unknown): string[] {
+  if (typeof raw !== "string") return [];
+  const out = raw
+    .split(/[\s,;]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => isDeliverableEmail(s));
+  return [...new Set(out)];
+}
