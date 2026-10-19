@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getModuleSettings } from "@/lib/module-settings";
 import { notifyUsers } from "@/lib/notify";
 import { seedTaskChecklist } from "@/lib/task-checklist";
-import { deskIdsFor } from "@/lib/transport-desk";
+import { deskIdsFor, emailDeskMailbox } from "@/lib/transport-desk";
 import { canonicalPlace } from "@/lib/transport/places";
 import { localInputToIso } from "@/lib/transport/day-plan";
 
@@ -67,14 +67,13 @@ export async function createVisitorRide(
   await seedTaskChecklist(supabase, input.tenantId, data.id as string, input.kind === "pickup" ? "airport_pickup" : "airport_dropoff");
 
   const admin = createAdminClient();
-  await notifyUsers({
-    tenantId: input.tenantId,
-    profileIds: await deskIdsFor(admin ?? supabase, input.tenantId),
-    category: "transport",
+  const deskMsg = {
     title: input.kind === "pickup" ? `Airport pickup for a visitor: ${who}` : `Airport drop-off for a visitor: ${who}`,
     body: `${purpose} · ${new Date(at).toLocaleString("en-GB", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Douala" })}. Assign a driver on the dispatch board.`,
     url: "/transportation?view=dispatch",
-  });
+  };
+  await notifyUsers({ tenantId: input.tenantId, profileIds: await deskIdsFor(admin ?? supabase, input.tenantId), category: "transport", ...deskMsg });
+  await emailDeskMailbox(admin ?? supabase, input.tenantId, deskMsg);
   return { ok: true, id: data.id as string };
 }
 

@@ -13,7 +13,7 @@ import { shuttleDepartAt, shuttleRunsOn } from "@/lib/transport/shuttles";
 import { canonicalPlace, normalisePlaceName } from "@/lib/transport/places";
 import { localDate, localInputToIso } from "@/lib/transport/day-plan";
 import { describeTripLog, validateTripLog, type TripLogInput } from "@/lib/transport/trip-log";
-import { deskIdsFor } from "@/lib/transport-desk";
+import { deskIdsFor, emailDeskMailbox } from "@/lib/transport-desk";
 import { runTransportShuttles } from "@/lib/transport-shuttle-run";
 import { getActiveDelegatorIds } from "@/lib/delegation";
 import { getPlaces, getShuttles } from "@/lib/transport";
@@ -194,10 +194,7 @@ export async function createTransportRequest(input: {
         url: "/transportation?view=approvals",
       });
     } else {
-      await notifyUsers({
-        tenantId: tenant,
-        profileIds: await dispatchDeskIds(),
-        category: "transport",
+      await notifyDispatchDesk(tenant, {
         title: "New transport request",
         body: `${route} · ${when}. Assign a driver on the dispatch board.`,
         url: "/transportation?view=dispatch",
@@ -217,6 +214,12 @@ async function dispatchDeskIds(): Promise<string[]> {
   const tenant = await tenantId();
   if (!tenant) return [];
   return deskIdsFor(createAdminClient() ?? createClient(), tenant);
+}
+
+/** Tell the dispatch desk: its people (bell, push, digest) and its shared mailbox. */
+async function notifyDispatchDesk(tenant: string, msg: { title: string; body: string; url: string }): Promise<void> {
+  await notifyUsers({ tenantId: tenant, profileIds: await dispatchDeskIds(), category: "transport", ...msg });
+  await emailDeskMailbox(createAdminClient() ?? createClient(), tenant, msg);
 }
 
 /** A pickup time on the tenant's clock, for a notification body. */
@@ -303,10 +306,7 @@ export async function decideTransportRequest(
     url: "/transportation?view=requests",
   });
   if (decision === "approve") {
-    await notifyUsers({
-      tenantId: req.tenant_id,
-      profileIds: await dispatchDeskIds(),
-      category: "transport",
+    await notifyDispatchDesk(req.tenant_id, {
       title: "Approved transport request",
       body: `${route} · ${fmtLocal(req.depart_at as string)}. Assign a driver on the dispatch board.`,
       url: "/transportation?view=dispatch",
@@ -652,10 +652,7 @@ export async function setTransportStatus(
   }
   // A no-show is the desk's business too: the slot was wasted.
   if (status === "no_show") {
-    await notifyUsers({
-      tenantId: data.tenant_id as string,
-      profileIds: await dispatchDeskIds(),
-      category: "transport",
+    await notifyDispatchDesk(data.tenant_id as string, {
       title: `No-show: ${data.pickup} → ${data.dropoff}`,
       body: `${fmtLocal(data.depart_at as string)}${note?.trim() ? ` · ${note.trim()}` : ""}.`,
       url: "/transportation?view=dispatch",
@@ -748,10 +745,7 @@ export async function updateTransportRequest(
   const note = `Request changed${changed.length ? `: ${changed.join(", ")}` : ""}.`;
   await supabase.from("transport_task_updates").insert({ tenant_id: req.tenant_id, request_id: id, note, new_status: null });
   if (req.status === "pending") {
-    await notifyUsers({
-      tenantId: req.tenant_id as string,
-      profileIds: await dispatchDeskIds(),
-      category: "transport",
+    await notifyDispatchDesk(req.tenant_id as string, {
       title: "Transport request changed",
       body: `${pickup} → ${dropoff} · ${fmtLocal(departIso)}.`,
       url: "/transportation?view=dispatch",

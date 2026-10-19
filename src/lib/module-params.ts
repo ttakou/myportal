@@ -107,6 +107,13 @@ export const MODULE_PARAMS: Record<string, ModuleParamDef[]> = {
   ],
   transportation: [
     {
+      key: "desk_email",
+      label: "Dispatch desk mailbox",
+      help: "Shared mailbox emailed at once with everything the dispatch desk is told: new and changed requests, approved and escalated requests, visitor airport rides, late starts and no-shows. Separate several addresses with commas; blank sends none.",
+      type: "text",
+      default: "",
+    },
+    {
       key: "approval_escalation_hours",
       label: "Escalate unanswered approvals after (hours)",
       help: "A request the line manager has not decided within this time goes to the dispatch desk. 0 never escalates.",
