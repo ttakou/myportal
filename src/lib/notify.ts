@@ -11,6 +11,8 @@ import { isDeliverableEmail, notificationEmail } from "@/lib/email-digest-format
  * digest (one email per person per day, see lib/email-digest.ts) rather than
  * one email per notification; only someone who muted the bell but kept email
  * on is emailed straight away, since the digest reads from the bell.
+ * `instantEmail` is for news that is stale by tomorrow (a visitor waiting at
+ * reception): it is emailed at once and kept out of the morning digest.
  * Preference-aware and best-effort — never throws into the caller.
  */
 export async function notifyUsers(input: {
@@ -20,6 +22,8 @@ export async function notifyUsers(input: {
   title: string;
   body?: string;
   url?: string;
+  /** Email it now instead of in the next morning digest. */
+  instantEmail?: boolean;
 }): Promise<void> {
   try {
     const ids = [...new Set(input.profileIds.filter((x): x is string => Boolean(x)))];
@@ -29,7 +33,9 @@ export async function notifyUsers(input: {
 
     const { inApp, push, email } = await filterByPreference(admin, ids, input.category);
 
+    const sendNowToAll = Boolean(input.instantEmail) && isEmailConfigured();
     if (inApp.length) {
+      const stamp = sendNowToAll ? new Date().toISOString() : null;
       await admin.from("notifications").insert(
         inApp.map((pid) => ({
           tenant_id: input.tenantId,
@@ -38,6 +44,8 @@ export async function notifyUsers(input: {
           title: input.title,
           body: input.body ?? null,
           url: input.url ?? null,
+          // Emailed below, so the morning digest leaves it out.
+          emailed_at: stamp,
         })),
       );
     }
@@ -72,7 +80,7 @@ export async function notifyUsers(input: {
     }
 
     const inBell = new Set(inApp);
-    const emailNow = email.filter((pid) => !inBell.has(pid));
+    const emailNow = sendNowToAll ? email : email.filter((pid) => !inBell.has(pid));
     if (isEmailConfigured() && emailNow.length) {
       const { data: people } = await admin
         .from("profiles")

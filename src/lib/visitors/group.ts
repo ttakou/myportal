@@ -70,3 +70,13 @@ export function groupVisitors<T extends { id: string; group_id: string | null }>
   }
   return { ordered, headerFor };
 }
+
+/** The host's one notice when a group checks in: who arrived, from where, and when. */
+export function groupArrivalNotice(names: string[], company: string | null, clock: string): { title: string; body: string } {
+  const n = names.length;
+  const list = names.slice(0, 8).join(", ") + (n > 8 ? ` and ${n - 8} more` : "");
+  return {
+    title: `Your visitors have arrived: ${n} ${n === 1 ? "person" : "people"}${company ? ` from ${company}` : ""}`,
+    body: `${list} checked in at reception at ${clock}.`,
+  };
+}

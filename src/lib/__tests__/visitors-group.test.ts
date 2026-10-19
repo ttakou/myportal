@@ -37,3 +37,16 @@ describe("grouped rows", () => {
     expect(g.headerFor.get("b")?.map((r) => r.id)).toEqual(["b", "d"]);
   });
 });
+
+describe("group arrival notice", () => {
+  it("tells the host once, with the count, company, names and time", async () => {
+    const { groupArrivalNotice } = await import("@/lib/visitors/group");
+    expect(groupArrivalNotice(["Ann", "Bob"], "Schlumberger", "09:40")).toEqual({
+      title: "Your visitors have arrived: 2 people from Schlumberger",
+      body: "Ann, Bob checked in at reception at 09:40.",
+    });
+    const many = Array.from({ length: 12 }, (_, i) => `P${i + 1}`);
+    expect(groupArrivalNotice(many, null, "10:00").body).toBe("P1, P2, P3, P4, P5, P6, P7, P8 and 4 more checked in at reception at 10:00.");
+    expect(groupArrivalNotice(["Solo"], null, "11:15").title).toBe("Your visitors have arrived: 1 person");
+  });
+});

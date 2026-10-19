@@ -9,7 +9,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { holdersOfVerb } from "@/lib/verb-holders";
 import { getCurrentRole, isAdminRole } from "@/lib/auth";
 import { matchDirectory } from "@/lib/visitors/directory";
-import { parseGroupMembers } from "@/lib/visitors/group";
+import { groupArrivalNotice, parseGroupMembers } from "@/lib/visitors/group";
+import { siteClock } from "@/lib/visitors/daily";
 import { parseBadgeNumbers } from "@/lib/visitors/badges";
 import { cancelVisitorRides, createVisitorRide, hasTransportationModule } from "@/lib/visitors-transport";
 import type { DirectoryEntry, Visitor } from "@/types/visitors";
@@ -455,15 +456,38 @@ export async function checkInGroup(groupId: string, comment?: string): Promise<A
   const gate = await requireModule("visitors", "operate");
   if (gate) return gate;
   const supabase = createClient();
-  const { data } = await supabase.from("visitors").select("id, full_name, status, visit_until").eq("group_id", groupId);
+  const { data } = await supabase
+    .from("visitors")
+    .select("id, full_name, status, visit_until, host_id, tenant_id, company")
+    .eq("group_id", groupId);
   let done = 0;
   const skipped: string[] = [];
+  const arrived = new Map<string, { tenantId: string; names: string[] }>();
+  let company: string | null = null;
   for (const v of data ?? []) {
     if (v.status === "cancelled" || v.status === "no_show") continue;
     if (v.status === "checked_in") continue;
-    const res = await checkInVisitor(v.id as string, { comment });
-    if (res.ok) done += 1;
-    else skipped.push(`${v.full_name}: ${res.error ?? "not checked in"}`);
+    const res = await checkInVisitor(v.id as string, { comment, quiet: true });
+    if (res.ok) {
+      done += 1;
+      company = company ?? ((v.company as string | null) || null);
+      if (v.host_id) {
+        const entry = arrived.get(v.host_id as string) ?? { tenantId: v.tenant_id as string, names: [] };
+        entry.names.push(String(v.full_name ?? "").trim() || "a visitor");
+        arrived.set(v.host_id as string, entry);
+      }
+    } else skipped.push(`${v.full_name}: ${res.error ?? "not checked in"}`);
+  }
+  // One notice per host for the whole group, rather than one per person.
+  for (const [hostId, { tenantId, names }] of arrived) {
+    await notifyUsers({
+      tenantId,
+      profileIds: [hostId],
+      category: "general",
+      ...groupArrivalNotice(names, company, siteClock(new Date().toISOString())),
+      url: "/visitors",
+      instantEmail: true,
+    });
   }
   revalidate();
   return { ok: true, done, skipped };
@@ -514,6 +538,8 @@ export async function checkInVisitor(
     comment?: string;
     /** Arrival timestamp (ISO). Defaults to now; reception may back-date it. */
     checkInAt?: string;
+    /** Skip the host notice: a group check-in sends one for the whole group. */
+    quiet?: boolean;
   },
 ): Promise<ActionResult> {
   const gate = await requireModule("visitors", "operate");
@@ -522,7 +548,7 @@ export async function checkInVisitor(
 
   const { data: visitor } = await supabase
     .from("visitors")
-    .select("tenant_id, host_id, full_name, visit_until, directory:visitor_directory!visitors_directory_id_fkey(do_not_admit, do_not_admit_reason)")
+    .select("tenant_id, host_id, full_name, company, visit_until, directory:visitor_directory!visitors_directory_id_fkey(do_not_admit, do_not_admit_reason)")
     .eq("id", id)
     .maybeSingle();
   if (!visitor) return { ok: false, error: "Visitor not found." };
@@ -588,15 +614,16 @@ export async function checkInVisitor(
       .eq("id", id);
     if (error) return { ok: false, error: error.message };
   }
-  if (visitor?.host_id) {
+  if (visitor?.host_id && !opts?.quiet) {
     const name = (visitor.full_name as string | null)?.trim();
     await notifyUsers({
       tenantId: visitor.tenant_id as string,
       profileIds: [visitor.host_id as string],
       category: "general",
-      title: "Your visitor checked in",
-      body: name ? `${name} has arrived on site.` : "Your visitor has arrived on site.",
+      title: name ? `Your visitor has arrived: ${name}` : "Your visitor has arrived",
+      body: `${name || "Your visitor"}${visitor.company ? ` (${visitor.company})` : ""} checked in at reception at ${siteClock(now)}.`,
       url: "/visitors",
+      instantEmail: true,
     });
   }
   revalidate();
