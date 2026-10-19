@@ -18,6 +18,8 @@ import { RegisterStaffPanel } from "./_components/register-staff-panel";
 import { PendingUsersPanel } from "./_components/pending-users-panel";
 import { BulkImportPanel } from "./_components/bulk-import-panel";
 import { BrandingPanel } from "./_components/branding-panel";
+import { EmailPanel } from "./_components/email-panel";
+import { emailStatus } from "@/lib/email";
 import { CanteenSettingsPanel } from "./_components/canteen-settings-panel";
 import {
   canSeeAdminConsole,
@@ -301,6 +303,7 @@ async function SettingsView({ flags }: { flags: AdminFlags }) {
   return (
     <div className="space-y-8">
       <BrandingPanel branding={branding} />
+      {flags.isSystemAdmin && <EmailPanel status={emailStatus()} />}
       {showCanteen && extras && <CanteenSettingsPanel served={served} cutoffHour={cutoffHour} extras={extras} />}
     </div>
   );

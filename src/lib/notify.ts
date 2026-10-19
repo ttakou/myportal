@@ -3,11 +3,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { filterByPreference } from "@/lib/notification-prefs";
 import { isWebPushConfigured, sendWebPush, type PushSubscriptionRecord } from "@/lib/webpush";
 import { isEmailConfigured, sendEmail } from "@/lib/email";
+import { escapeHtml, isDeliverableEmail } from "@/lib/email-digest-format";
 
 /**
  * Deliver a notification to specific people: writes the in-app bell record and,
- * for those who allow it, sends a Web Push. Preference-aware and best-effort —
- * never throws into the caller.
+ * for those who allow it, sends a Web Push. Email goes out in the next morning
+ * digest (one email per person per day, see lib/email-digest.ts) rather than
+ * one email per notification; only someone who muted the bell but kept email
+ * on is emailed straight away, since the digest reads from the bell.
+ * Preference-aware and best-effort — never throws into the caller.
  */
 export async function notifyUsers(input: {
   tenantId: string;
@@ -67,20 +71,22 @@ export async function notifyUsers(input: {
       );
     }
 
-    if (isEmailConfigured() && email.length) {
+    const inBell = new Set(inApp);
+    const emailNow = email.filter((pid) => !inBell.has(pid));
+    if (isEmailConfigured() && emailNow.length) {
       const { data: people } = await admin
         .from("profiles")
         .select("id, email")
-        .in("id", email)
+        .in("id", emailNow)
         .not("email", "is", null);
       const url = input.url ? new URL(input.url, process.env.NEXT_PUBLIC_SITE_URL ?? "https://mportals.com").toString() : null;
       const html =
-        `<p>${input.title}</p>` +
-        (input.body ? `<p>${input.body}</p>` : "") +
-        (url ? `<p><a href="${url}">Open in MyPortal</a></p>` : "");
+        `<p>${escapeHtml(input.title)}</p>` +
+        (input.body ? `<p>${escapeHtml(input.body)}</p>` : "") +
+        (url ? `<p><a href="${escapeHtml(url)}">Open in MyPortal</a></p>` : "");
       await Promise.all(
         ((people ?? []) as Record<string, any>[]).map((p) =>
-          p.email
+          isDeliverableEmail(p.email)
             ? sendEmail({ to: p.email as string, subject: input.title, html, text: input.body })
             : Promise.resolve(false),
         ),
