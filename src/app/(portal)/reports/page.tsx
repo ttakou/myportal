@@ -1,15 +1,26 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, UserCheck, Utensils, UtensilsCrossed, Users } from "lucide-react";
-import { getAccess } from "@/lib/auth";
+import { getAccess, getCachedUser } from "@/lib/auth";
+import { hasDirectReports } from "@/lib/team-attendance";
 import { getMyPermissions } from "@/lib/permissions-server";
 import { hasPermission } from "@/lib/permissions";
 
 export default async function ReportsPage() {
-  const [access, perms] = await Promise.all([getAccess(), getMyPermissions()]);
+  const [access, perms, me] = await Promise.all([getAccess(), getMyPermissions(), getCachedUser()]);
+  // Line managers and directors: the attendance of everyone below them.
+  const managesPeople = me ? await hasDirectReports(me.id) : false;
   // Visitor operators / emergency responders (security, reception, ERTL).
   const canOperateVisitors = hasPermission(perms, "visitors", "operate");
 
   const tiles = [
+    {
+      href: "/reports/team-attendance",
+      title: "Team attendance",
+      description:
+        "Check-ins, late arrivals, early departures and absences of everyone below you in the reporting line, by day or over a period.",
+      icon: UserCheck,
+      show: managesPeople || access.isAdmin,
+    },
     {
       href: "/reports/offshore-certifications",
       title: "Offshore certification compliance",

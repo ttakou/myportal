@@ -17,6 +17,7 @@ import { getMyDashboard } from "@/lib/dashboard";
 import { getMyMedicalVisitToday, notifyMedicalVisitToday } from "@/lib/medical";
 import { VISIT_LABEL } from "@/types/medical";
 import { getMyAttendance } from "@/lib/staff-attendance";
+import { getTeamToday } from "@/lib/team-attendance";
 import { getMenu, today } from "@/lib/canteen";
 import { SelfCheckIn } from "./_components/self-check-in";
 import { OffshoreProfilePrompt } from "./_components/offshore-profile-prompt";
@@ -66,11 +67,12 @@ function focusIcon(slug: string) {
 }
 
 export default async function DashboardPage() {
-  const [services, me, myAttendance, medVisitToday] = await Promise.all([
+  const [services, me, myAttendance, medVisitToday, teamToday] = await Promise.all([
     getActiveServices(),
     getMyDashboard(),
     getMyAttendance(),
     getMyMedicalVisitToday(),
+    getTeamToday(today()),
   ]);
   // If a medical visit falls today, make sure a bell/push notification exists too
   // (deduped per visit-day). Best-effort — never blocks the dashboard.
@@ -153,6 +155,21 @@ export default async function DashboardPage() {
 
       {/* Self check-in — geofenced to the base ("I'm in") */}
       <SelfCheckIn initial={myAttendance} />
+
+      {/* Line managers: who in their line is in today. */}
+      {teamToday && (
+        <Link
+          href="/reports/team-attendance"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-4 py-3 text-sm hover:bg-accent"
+        >
+          <span>
+            <span className="font-medium">Your team today:</span> {teamToday.in} in · {teamToday.notIn} not in
+            {teamToday.rotation > 0 && ` · ${teamToday.rotation} on rotation`}
+            <span className="text-muted-foreground"> of {teamToday.people}</span>
+          </span>
+          <span className="font-medium text-primary">Team attendance →</span>
+        </Link>
+      )}
 
       {/* Offshore staff: the safety fields the roster has no record of. */}
       {myProfile && myProfile.gaps.length > 0 && <OffshoreProfilePrompt profile={myProfile} />}

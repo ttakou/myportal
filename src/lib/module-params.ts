@@ -37,6 +37,20 @@ export const MODULE_PARAMS: Record<string, ModuleParamDef[]> = {
       default: "06:00",
     },
     {
+      key: "work_start",
+      label: "Working day starts (site time)",
+      help: "Staff checking in after this time are flagged late on the team attendance report. HH:MM; blank switches the flag off.",
+      type: "text",
+      default: "07:30",
+    },
+    {
+      key: "work_end",
+      label: "Working day ends (site time)",
+      help: "Staff checking out before this time are flagged as leaving early on the team attendance report. HH:MM; blank switches the flag off.",
+      type: "text",
+      default: "16:30",
+    },
+    {
       key: "overstay_alert_time",
       label: "Alert security about visitors still on site after (site time)",
       help: "Every 15 minutes past this time, anyone still checked in is reported to security and their host, once a day. HH:MM; blank switches it off.",
