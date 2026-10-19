@@ -13,6 +13,8 @@ import type { EmployeeType } from "@/lib/admin";
 import type { UserRole } from "@/types/database";
 
 import type { ActionResult } from "@/types/actions";
+import { sendEmailDetailed } from "@/lib/email";
+import { escapeHtml, isDeliverableEmail } from "@/lib/email-digest-format";
 export type { ActionResult };
 
 const ASSIGNABLE_ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
@@ -1376,4 +1378,32 @@ export async function fetchAuditLog(input: {
     };
   });
   return { ok: true, entries };
+}
+
+// --- Email channel ------------------------------------------------------------
+
+/**
+ * Send a test email to the signed-in system admin, to prove the Resend key,
+ * the sender address and the domain verification work. Reports Resend's own
+ * reason when it refuses.
+ */
+export async function sendTestEmail(): Promise<ActionResult & { to?: string }> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const { data: me } = await supabase.from("profiles").select("email, full_name").eq("id", user.id).maybeSingle();
+  const to = (me?.email as string | null) ?? user.email ?? null;
+  if (!isDeliverableEmail(to)) return { ok: false, error: "Your profile has no email address to send the test to." };
+  const name = (me?.full_name as string | null)?.trim() || "there";
+  const res = await sendEmailDetailed({
+    to,
+    subject: "MyPortal test email",
+    html: `<p>Hello ${escapeHtml(name)},</p><p>Email from MyPortal works. People will get one digest a day with their notifications, at 07:00 site time.</p>`,
+    text: `Hello ${name},\n\nEmail from MyPortal works. People will get one digest a day with their notifications, at 07:00 site time.`,
+  });
+  return res.ok ? { ok: true, to } : { ok: false, error: res.error };
 }
