@@ -83,3 +83,26 @@ describe("daily job", () => {
     expect(overstays(onSite, now, "")).toEqual([]);
   });
 });
+
+describe("visits left open", () => {
+  it("picks entries from an earlier site day, not today's", async () => {
+    const { leftOpen } = await import("@/lib/visitors/daily");
+    const rows = [
+      { id: "a", check_in_at: "2026-10-19T14:08:00Z" },
+      // 23:30 UTC on the 1st is 00:30 on the 2nd at the site: today.
+      { id: "b", check_in_at: "2026-11-01T23:30:00Z" },
+      { id: "c", check_in_at: null },
+    ];
+    expect(leftOpen(rows, "2026-11-02").map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("closes at the end of the site day they came, and the note is recognised", async () => {
+    const { endOfSiteDay, isAutoClosed, AUTO_CLOSED_NOTE } = await import("@/lib/visitors/daily");
+    // 23:59 site time is 22:59 UTC.
+    expect(endOfSiteDay("2026-10-19T14:08:00Z")).toBe("2026-10-19T22:59:00.000Z");
+    expect(endOfSiteDay("2026-10-19T23:30:00Z")).toBe("2026-10-20T22:59:00.000Z");
+    expect(isAutoClosed(AUTO_CLOSED_NOTE)).toBe(true);
+    expect(isAutoClosed("Left with host")).toBe(false);
+    expect(isAutoClosed(null)).toBe(false);
+  });
+});

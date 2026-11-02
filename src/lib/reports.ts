@@ -3,6 +3,7 @@ import { cache } from "react";
 import { idDocLabel } from "@/types/visitors";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/supabase/row-helpers";
+import { isAutoClosed } from "@/lib/visitors/daily";
 import { summariseTrips, type TripSummary } from "@/lib/transport/trip-log";
 
 /** Distinct, non-empty departments in the tenant — for the report filter bar.
@@ -708,7 +709,8 @@ export async function getVisitorReport(f: CanteenReportFilters): Promise<Visitor
     else if (v.status === "no_show" || (v.status === "pre_registered" && v.visit_date < today)) noShow += 1;
 
     let dwellMins: number | null = null;
-    if (v.check_in_at && v.check_out_at) {
+    // An exit closed automatically is an assumption, not a measurement.
+    if (v.check_in_at && v.check_out_at && !isAutoClosed(v.check_out_comment)) {
       dwellMins = Math.round((new Date(v.check_out_at).getTime() - new Date(v.check_in_at).getTime()) / 60000);
       if (dwellMins >= 0) dwells.push(dwellMins);
     }

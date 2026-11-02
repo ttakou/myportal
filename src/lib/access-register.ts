@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { idDocLabel } from "@/types/visitors";
 import { getModuleSettings, getModuleSettingsForTenant } from "@/lib/module-settings";
-import { isAfterHours, siteClock } from "@/lib/visitors/daily";
+import { isAfterHours, isAutoClosed, siteClock } from "@/lib/visitors/daily";
 
 /** Format a visitor's identity document as "Passport: A123", or null. */
 function idDocument(type: unknown, number: unknown): string | null {
@@ -359,6 +359,16 @@ export async function getAccessRegister(
         kind: e.kind,
         date: e.date,
         detail: `Entry on ${e.date} has no exit logged after ${NO_EXIT_HOURS}h`,
+      });
+    }
+    // Closed by the evening job: the exit time is assumed, so it stays flagged.
+    if (isAutoClosed(e.check_out_comment)) {
+      anomalies.push({
+        type: "no_exit",
+        name: e.name,
+        kind: e.kind,
+        date: e.date,
+        detail: `Exit not recorded at the gate on ${e.date} (closed automatically)`,
       });
     }
   }

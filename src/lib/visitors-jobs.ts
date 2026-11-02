@@ -4,15 +4,27 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getModuleSettingsForTenant } from "@/lib/module-settings";
 import { notifyUsers } from "@/lib/notify";
 import { holdersOfVerb } from "@/lib/verb-holders";
-import { addDays, expectedOn, neverCame, overstays, passesEndingOn, siteDate, type VisitLite } from "@/lib/visitors/daily";
+import {
+  addDays,
+  AUTO_CLOSED_NOTE,
+  endOfSiteDay,
+  expectedOn,
+  leftOpen,
+  neverCame,
+  overstays,
+  passesEndingOn,
+  siteDate,
+  type VisitLite,
+} from "@/lib/visitors/daily";
 
 /**
  * The visitor jobs.
  *
  * Evening (17:00 site time): close yesterday's pre-registrations that
- * never came as no-shows; send tomorrow's expected list — the whole list
- * to reception, each host their own; warn about long-stay passes that end
- * in a few days; and tell security which badges did not come back today.
+ * never came as no-shows; close entries left open from an earlier day,
+ * whose exit nobody recorded; send tomorrow's expected list — the whole
+ * list to reception, each host their own; warn about long-stay passes that
+ * end in a few days; and tell security which badges did not come back today.
  *
  * Every 15 minutes: past the tenant's cutoff, tell security and the host
  * about anyone still on site, once a day per visit.
@@ -35,13 +47,14 @@ interface VisitRow extends VisitLite {
 
 export async function runVisitorsEvening(
   nowIso: string = new Date().toISOString(),
-): Promise<{ ok: boolean; noShows: number; expected: number; expiring: number; badgesMissing: number; tenants: number; error?: string }> {
+): Promise<{ ok: boolean; noShows: number; closed: number; expected: number; expiring: number; badgesMissing: number; tenants: number; error?: string }> {
   const admin = createAdminClient();
-  if (!admin) return { ok: false, noShows: 0, expected: 0, expiring: 0, badgesMissing: 0, tenants: 0, error: "Service-role key missing." };
+  if (!admin) return { ok: false, noShows: 0, closed: 0, expected: 0, expiring: 0, badgesMissing: 0, tenants: 0, error: "Service-role key missing." };
   const today = siteDate(nowIso);
   const tomorrow = new Date(Date.parse(today + "T00:00:00Z") + 86_400_000).toISOString().slice(0, 10);
 
   let noShows = 0;
+  let closed = 0;
   let expected = 0;
   let expiring = 0;
   let badgesMissing = 0;
@@ -103,6 +116,8 @@ export async function runVisitorsEvening(
       });
     }
 
+    if (cfg.auto_close_open_visits !== false) closed += await closeLeftOpen(admin, tenantId, today);
+
     if (cfg.auto_no_show !== false) {
       const gone = neverCame(rows, today);
       // A pass that was never entered has no gate log; one that was is not
@@ -153,7 +168,80 @@ export async function runVisitorsEvening(
       }
     }
   }
-  return { ok: true, noShows, expected, expiring, badgesMissing, tenants: tenants.length };
+  return { ok: true, noShows, closed, expected, expiring, badgesMissing, tenants: tenants.length };
+}
+
+/**
+ * Close what is still open from an earlier day.
+ *
+ * A visit nobody checked out stayed "on site" for good: it was counted in the
+ * muster, re-announced by the overstay alert every evening and carried as an
+ * anomaly in every monthly register. The exit is set to the end of the day
+ * they came, with a note saying it was not recorded, so the register still
+ * shows the gap and dwell times leave it out. Security is told who.
+ */
+async function closeLeftOpen(admin: SupabaseClient, tenantId: string, today: string): Promise<number> {
+  type Open = { id: string; visitor_id?: string; check_in_at: string | null; full_name?: string; company?: string | null };
+  const [single, entries] = await Promise.all([
+    admin
+      .from("visitors")
+      .select("id, check_in_at, full_name, company")
+      .eq("tenant_id", tenantId)
+      .is("visit_until", null)
+      .is("check_out_at", null)
+      .not("check_in_at", "is", null)
+      .lt("check_in_at", today + "T00:00:00Z"),
+    admin
+      .from("visitor_checkins")
+      .select("id, visitor_id, check_in_at, visitor:visitors!inner(full_name, company)")
+      .eq("tenant_id", tenantId)
+      .is("check_out_at", null)
+      .lt("check_in_at", today + "T00:00:00Z"),
+  ]);
+  const names: string[] = [];
+
+  for (const v of leftOpen((single.data ?? []) as Open[], today)) {
+    const { error } = await admin
+      .from("visitors")
+      .update({ status: "checked_out", check_out_at: endOfSiteDay(v.check_in_at!), check_out_comment: AUTO_CLOSED_NOTE, overstay_alerted_at: null })
+      .eq("id", v.id)
+      .is("check_out_at", null);
+    if (!error) names.push(`${v.full_name}${v.company ? ` (${v.company})` : ""}`);
+  }
+
+  const passRows = ((entries.data ?? []) as Record<string, unknown>[]).map((e) => {
+    const v = (Array.isArray(e.visitor) ? e.visitor[0] : e.visitor) as { full_name?: string; company?: string | null } | null;
+    return { id: e.id as string, visitor_id: e.visitor_id as string, check_in_at: (e.check_in_at as string) ?? null, full_name: v?.full_name, company: v?.company ?? null };
+  });
+  for (const e of leftOpen(passRows, today)) {
+    const out = endOfSiteDay(e.check_in_at!);
+    const { error } = await admin
+      .from("visitor_checkins")
+      .update({ check_out_at: out, check_out_comment: AUTO_CLOSED_NOTE })
+      .eq("id", e.id)
+      .is("check_out_at", null);
+    if (error) continue;
+    // Mirror onto the pass, as a gate check-out does; the pass stays valid.
+    await admin
+      .from("visitors")
+      .update({ status: "checked_out", check_out_at: out, check_out_comment: AUTO_CLOSED_NOTE, overstay_alerted_at: null })
+      .eq("id", e.visitor_id)
+      .eq("status", "checked_in");
+    names.push(`${e.full_name ?? "—"}${e.company ? ` (${e.company})` : ""}`);
+  }
+
+  if (names.length > 0) {
+    const security = await holdersOfVerb(admin, tenantId, "visitors", ["operate"]);
+    await notifyUsers({
+      tenantId,
+      profileIds: security,
+      category: "general",
+      title: `${names.length} visit${names.length === 1 ? "" : "s"} closed with no exit recorded`,
+      body: `Still checked in from an earlier day, so closed as "exit not recorded": ${names.slice(0, 12).join(" · ")}${names.length > 12 ? ` · and ${names.length - 12} more` : ""}. Please check visitors out at the gate when they leave.`,
+      url: "/visitors/register",
+    });
+  }
+  return names.length;
 }
 
 interface OnSiteRow {
