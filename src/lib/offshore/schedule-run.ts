@@ -89,7 +89,8 @@ async function notifyOnce(
   const done = new Set((sent ?? []).map((r) => r.profile_id as string));
   const fresh = ids.filter((id) => !done.has(id));
   if (fresh.length === 0) return 0;
-  await notifyUsers({ ...input, profileIds: fresh });
+  // Some of these link to the dashboard, so name the module they belong to.
+  await notifyUsers({ ...input, profileIds: fresh, module: "offshore" });
   return fresh.length;
 }
 

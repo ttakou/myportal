@@ -224,6 +224,32 @@ export const MODULE_PARAMS: Record<string, ModuleParamDef[]> = {
   ],
 };
 
+/**
+ * Modules whose notifications an administrator can keep out of email. Emergency
+ * alerts are safety-critical and always go out, so Emergency has no switch.
+ * The switch is read by the notification pipeline and the morning digest.
+ */
+export const EMAIL_SWITCH_MODULES = [
+  "canteen",
+  "visitors",
+  "transportation",
+  "out-of-town",
+  "offshore",
+  "performance",
+  "training",
+  "savings",
+  "medical",
+] as const;
+
+const EMAIL_PARAM: ModuleParamDef = {
+  key: "email_notifications",
+  label: "Email notifications",
+  help: "Email this module's notifications (the morning digest and instant emails). Off keeps them in the bell and on phones only.",
+  type: "boolean",
+  default: true,
+};
+for (const slug of EMAIL_SWITCH_MODULES) MODULE_PARAMS[slug] = [EMAIL_PARAM, ...(MODULE_PARAMS[slug] ?? [])];
+
 export type ModuleSettings = Record<string, ModuleParamValue>;
 
 /** Merge stored jsonb over the registry defaults (unknown keys pass through). */

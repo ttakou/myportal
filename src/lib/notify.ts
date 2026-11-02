@@ -4,6 +4,8 @@ import { filterByPreference } from "@/lib/notification-prefs";
 import { isWebPushConfigured, sendWebPush, type PushSubscriptionRecord } from "@/lib/webpush";
 import { isEmailConfigured, sendEmail } from "@/lib/email";
 import { isDeliverableEmail, notificationEmail } from "@/lib/email-digest-format";
+import { loadModuleStates } from "@/lib/module-notify-state";
+import { emailAllowed, moduleFor, notifyAllowed } from "@/lib/notification-modules";
 
 /**
  * Deliver a notification to specific people: writes the in-app bell record and,
@@ -13,6 +15,9 @@ import { isDeliverableEmail, notificationEmail } from "@/lib/email-digest-format
  * on is emailed straight away, since the digest reads from the bell.
  * `instantEmail` is for news that is stale by tomorrow (a visitor waiting at
  * reception): it is emailed at once and kept out of the morning digest.
+ * A module the tenant has switched off sends nothing; one whose email switch
+ * is off still rings the bell and the phone but is never emailed (the module
+ * is the one named, else the one the link opens).
  * Preference-aware and best-effort — never throws into the caller.
  */
 export async function notifyUsers(input: {
@@ -24,6 +29,8 @@ export async function notifyUsers(input: {
   url?: string;
   /** Email it now instead of in the next morning digest. */
   instantEmail?: boolean;
+  /** The module it comes from, when its link does not say (e.g. a dashboard link). */
+  module?: string;
 }): Promise<void> {
   try {
     const ids = [...new Set(input.profileIds.filter((x): x is string => Boolean(x)))];
@@ -31,9 +38,15 @@ export async function notifyUsers(input: {
     const admin = createAdminClient();
     if (!admin) return;
 
-    const { inApp, push, email } = await filterByPreference(admin, ids, input.category);
+    const states = await loadModuleStates(admin, [input.tenantId]);
+    const mod = moduleFor(states.get(input.tenantId), input.url, input.module);
+    if (!notifyAllowed(mod)) return;
+    const mayEmail = emailAllowed(mod);
 
-    const sendNowToAll = Boolean(input.instantEmail) && isEmailConfigured();
+    const { inApp, push, email: wantEmail } = await filterByPreference(admin, ids, input.category);
+    const email = mayEmail ? wantEmail : [];
+
+    const sendNowToAll = Boolean(input.instantEmail) && isEmailConfigured() && mayEmail;
     if (inApp.length) {
       const stamp = sendNowToAll ? new Date().toISOString() : null;
       await admin.from("notifications").insert(
