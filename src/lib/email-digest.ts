@@ -2,6 +2,8 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isEmailConfigured, sendEmailBatch, type EmailMessage } from "@/lib/email";
 import { buildDigest, isDeliverableEmail, type DigestItem } from "@/lib/email-digest-format";
+import { loadModuleStates } from "@/lib/module-notify-state";
+import { emailAllowed, moduleFor } from "@/lib/notification-modules";
 
 type Row = Record<string, any>;
 const PAGE = 1000;
@@ -32,7 +34,8 @@ function chunk<T>(arr: T[], n: number): T[][] {
  * The morning digest (Vercel Cron, see vercel.json): every notification of
  * the last day not yet emailed is grouped per person into one email. People
  * who turned email off for a category, have no real address, or are
- * inactive get nothing for it. What was handled is marked so it is never
+ * inactive get nothing for it, and neither does anything from a module that
+ * is switched off or has its email switch off. What was handled is marked so it is never
  * mailed twice; a batch the provider refuses stays unmarked and is retried
  * by tomorrow's run while it is still inside the window.
  */
@@ -83,6 +86,7 @@ export async function runEmailDigest(nowIso: string = new Date().toISOString()):
   const tenantIds = [...new Set(pending.map((n) => n.tenant_id as string))];
   const { data: tenants } = await admin.from("tenants").select("id, name").in("id", tenantIds);
   const tenantName = new Map(((tenants ?? []) as Row[]).map((t) => [t.id as string, t.name as string]));
+  const modules = await loadModuleStates(admin, tenantIds);
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://mportals.com";
 
   const outbox: { message: EmailMessage; ids: string[] }[] = [];
@@ -90,7 +94,7 @@ export async function runEmailDigest(nowIso: string = new Date().toISOString()):
   for (const [pid, notes] of byProfile) {
     const p = people.get(pid);
     const off = muted.get(pid) ?? new Set<string>();
-    const items = notes.filter((n) => !off.has(n.category));
+    const items = notes.filter((n) => !off.has(n.category) && emailAllowed(moduleFor(modules.get(n.tenant_id), n.url)));
     if (!p || p.is_active === false || !isDeliverableEmail(p.email) || items.length === 0) {
       run.skipped += 1;
       settled.push(...notes.map((n) => n.id as string));
