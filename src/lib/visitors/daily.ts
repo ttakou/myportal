@@ -91,6 +91,27 @@ export function overstays<T extends OnSiteLite>(onSite: T[], nowIso: string, cut
   });
 }
 
+/**
+ * The note on an entry the system closed because nobody recorded the exit.
+ * The exit time it carries is an assumption (end of that day), so reports
+ * keep flagging it and leave it out of dwell times.
+ */
+export const AUTO_CLOSED_NOTE = "Exit not recorded at the gate. Closed automatically.";
+
+export function isAutoClosed(note: string | null | undefined): boolean {
+  return (note ?? "").startsWith(AUTO_CLOSED_NOTE);
+}
+
+/** The last minute of the site day an instant falls on, as a UTC instant. */
+export function endOfSiteDay(iso: string, offsetHours = SITE_UTC_OFFSET_HOURS): string {
+  return new Date(Date.parse(siteDate(iso, offsetHours) + "T23:59:00Z") - offsetHours * 3_600_000).toISOString();
+}
+
+/** Entries still open from an earlier site day: the exit was never recorded. */
+export function leftOpen<T extends { check_in_at: string | null }>(rows: T[], todayIso: string): T[] {
+  return rows.filter((r) => r.check_in_at !== null && siteDate(r.check_in_at) < todayIso);
+}
+
 /** Long-stay passes that end on a date: the reminder goes out this many days before. */
 export function passesEndingOn<T extends VisitLite>(visits: T[], dateIso: string): T[] {
   return visits.filter((v) => v.status !== "cancelled" && v.status !== "no_show" && v.visit_until === dateIso);

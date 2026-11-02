@@ -58,6 +58,13 @@ export const MODULE_PARAMS: Record<string, ModuleParamDef[]> = {
       default: "20:00",
     },
     {
+      key: "auto_close_open_visits",
+      label: "Close visits left open from an earlier day",
+      help: "Each evening, visitors and pass entries still checked in from a previous day are closed as \"exit not recorded\" and security is told who. They stay flagged on the access register.",
+      type: "boolean",
+      default: true,
+    },
+    {
       key: "no_exit_hours",
       label: "Flag an entry with no exit after (hours)",
       type: "number",
