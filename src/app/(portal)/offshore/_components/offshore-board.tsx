@@ -46,6 +46,7 @@ export function OffshoreBoard({
   const [installationId, setInstallationId] = useState(installations[0]?.id ?? "");
   const [mobilize, setMobilize] = useState("");
   const [demob, setDemob] = useState("");
+  const [purpose, setPurpose] = useState("");
 
   // Map a typed name back to an employee (case-insensitive); anything not found
   // is treated as a brand-new named person (visitor/contractor not in the system).
@@ -92,7 +93,10 @@ export function OffshoreBoard({
             <tbody className="divide-y">
               {mine.slice(0, mineReveal.count).map((t) => (
                 <tr key={t.id}>
-                  <td className="px-4 py-3 font-medium">{t.installation_name ?? "—"}</td>
+                  <td className="px-4 py-3 font-medium">
+                    {t.installation_name ?? "—"}
+                    {t.purpose && <span className="block text-xs font-normal text-muted-foreground">{t.purpose}</span>}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">{t.mobilize_date}{t.demob_date ? ` → ${t.demob_date}` : ""}</td>
                   <td className="px-4 py-3 text-muted-foreground">{[t.flight_label, bedLabel(t.bed_no)].filter(Boolean).join(" · ") || "—"}</td>
                   <td className="px-4 py-3"><Badge status={t.status} /></td>
@@ -130,11 +134,13 @@ export function OffshoreBoard({
                   installationId,
                   mobilizeDate: mobilize,
                   demobDate: demob,
+                  purpose,
                   people: entries,
                 }),
               () => {
                 setMobilize("");
                 setDemob("");
+                setPurpose("");
                 setRows([myName]);
               },
             );
@@ -157,6 +163,18 @@ export function OffshoreBoard({
               <input value={demob} onChange={(e) => setDemob(e.target.value)} type="date" className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
             </label>
           </div>
+
+          <label className="block text-xs text-muted-foreground">
+            Purpose of the trip
+            <input
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              required
+              maxLength={300}
+              placeholder="e.g. SCADA upgrade, well intervention, inspection…"
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </label>
 
           <div className="space-y-2">
             <span className="text-sm font-medium">People on this trip</span>

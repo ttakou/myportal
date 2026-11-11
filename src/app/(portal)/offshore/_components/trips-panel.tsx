@@ -85,7 +85,7 @@ export function TripsPanel({
                 <tr key={t.id}>
                   <td className="px-4 py-3">
                     <div className="font-medium">{t.person_name ?? "—"}</div>
-                    <div className="text-xs text-muted-foreground">{t.installation_name} · {t.mobilize_date}</div>
+                    <div className="text-xs text-muted-foreground">{t.installation_name} · {t.mobilize_date}{t.purpose ? ` · ${t.purpose}` : ""}</div>
                   </td>
                   <td className="px-4 py-3">
                     {t.hse_cleared_at ? (

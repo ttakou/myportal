@@ -354,6 +354,7 @@ function TripRow({
         <span className="text-xs text-muted-foreground">
           {t.installation_name ?? "—"} · {t.mobilize_date}
           {t.demob_date ? ` → ${t.demob_date}` : ""}
+          {t.purpose ? ` · ${t.purpose}` : ""}
           {t.flight_label ? ` · ${t.flight_label}` : ""}
         </span>
         {t.room_label ? (

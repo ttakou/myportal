@@ -45,6 +45,8 @@ export async function requestOffshoreTripGroup(input: {
   installationId: string;
   mobilizeDate: string;
   demobDate?: string;
+  /** Why they are going offshore; required. */
+  purpose: string;
   /**
    * People on the trip. Each entry is either an existing employee (profileId)
    * or an ad-hoc free-text name (name) for someone not in the directory.
@@ -54,6 +56,8 @@ export async function requestOffshoreTripGroup(input: {
   const gate = await requireOffshoreDispatch("create");
   if (gate) return gate;
   if (!input.mobilizeDate) return { ok: false, error: "Mobilise date is required." };
+  const purpose = (input.purpose ?? "").trim().slice(0, 300);
+  if (!purpose) return { ok: false, error: "Say what the trip is for." };
 
   // Split the entries into employee ids and free-text names.
   const ids = [...new Set((input.people ?? []).map((p) => p.profileId).filter(Boolean) as string[])];
@@ -105,6 +109,7 @@ export async function requestOffshoreTripGroup(input: {
     installation_id: input.installationId || null,
     mobilize_date: input.mobilizeDate,
     demob_date: input.demobDate || null,
+    purpose,
   };
   const rows = [
     ...validIds.map((pid) => ({ ...base, profile_id: pid })),
@@ -118,13 +123,13 @@ export async function requestOffshoreTripGroup(input: {
     profileIds: validIds.filter((pid) => pid !== user.id),
     category: "general",
     title: "Offshore trip booked",
-    body: "You've been added to an offshore trip.",
+    body: `You've been added to an offshore trip: ${purpose}.`,
     url: "/offshore",
   });
   await notifyOffshoreApprovers({
     tenantId,
     title: `Offshore trip request: ${rows.length} person(s)`,
-    body: `Awaiting HSE clearance — mobilise ${input.mobilizeDate}.`,
+    body: `${purpose} · awaiting HSE clearance — mobilise ${input.mobilizeDate}.`,
     url: "/offshore?view=trips",
   });
   rev();

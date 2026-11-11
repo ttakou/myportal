@@ -45,6 +45,7 @@ const trip = (over: Partial<OffshoreTrip> & { id: string }): OffshoreTrip => ({
   room_id: null,
   room_label: null,
   mode: "auto",
+  purpose: null,
   is_request: true,
   ...over,
 });
