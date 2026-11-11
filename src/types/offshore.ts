@@ -54,6 +54,8 @@ export interface OffshoreTrip {
   room_id: string | null;
   room_label: string | null;
   mode: TripMode;
+  /** Why they are going, from the request form; none on a schedule crew change. */
+  purpose: string | null;
   /**
    * True when somebody raised this trip through the request form. A crew
    * change opened from the schedule is a trip, not a request, and stays off
