@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { History } from "lucide-react";
-import { bookingClosedNow, getCanteenCutoff, getMenu, getMyAllowance, getMyBookings, getMyDiet, getMyLunchHistory, getServedMealPeriods, resolveServiceDate } from "@/lib/canteen";
+import { bookingClosedNow, getCanteenCutoff, getMenu, getMyAllowance, getMyBookings, getMyDiet, getMyLunchHistory, getServedMealPeriods, resolveServiceDate, today } from "@/lib/canteen";
+import { MealTickets } from "./_components/meal-tickets";
 import { DietPanel } from "./_components/diet-panel";
 import { LUNCH_OUTCOME_LABEL, type LunchOutcome } from "@/types/canteen";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,8 @@ export default async function CanteenPage(
         <h1 className="text-2xl font-semibold tracking-tight">Canteen</h1>
         <p className="text-muted-foreground">{prettyDate}</p>
       </div>
+
+      <MealTickets bookings={bookings} dishes={dishes} serviceDate={serviceDate} today={today()} />
 
       {dishes.length === 0 ? (
         <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
