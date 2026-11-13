@@ -18,7 +18,8 @@ import { getMyMedicalVisitToday, notifyMedicalVisitToday } from "@/lib/medical";
 import { VISIT_LABEL } from "@/types/medical";
 import { getMyAttendance } from "@/lib/staff-attendance";
 import { getTeamToday } from "@/lib/team-attendance";
-import { getMenu, today } from "@/lib/canteen";
+import { getMenu, getMyBookings, today } from "@/lib/canteen";
+import { MealTickets } from "@/app/(portal)/canteen/_components/meal-tickets";
 import { SelfCheckIn } from "./_components/self-check-in";
 import { OffshoreProfilePrompt } from "./_components/offshore-profile-prompt";
 import { getMyOffshoreProfile } from "@/lib/offshore/my-profile";
@@ -104,7 +105,7 @@ export default async function DashboardPage() {
   // actually entitled to dine today (has the right/credit) or manages catering.
   const canteenActive = services.some((s) => s.slug === "canteen");
   const showCanteen = !isOffshore && canteenActive && (me?.canteenEntitledToday ?? false);
-  const menu = showCanteen ? await getMenu(today()) : [];
+  const [menu, myMeals] = showCanteen ? await Promise.all([getMenu(today()), getMyBookings(today())]) : [[], []];
   const menuPeriods = MEAL_PERIODS.filter((p) => menu.some((d) => d.meal_period === p));
   const menuDateLabel = new Date().toLocaleDateString("en-GB", {
     weekday: "long",
@@ -270,6 +271,9 @@ export default async function DashboardPage() {
           </div>
         </section>
       )}
+
+      {/* A meal booked for today: the ticket to show at the counter. */}
+      {showCanteen && <MealTickets bookings={myMeals} dishes={menu} serviceDate={today()} today={today()} compact />}
 
       {/* Onshore: lead with today's canteen menu, then quick access */}
       {showCanteen && (

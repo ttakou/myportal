@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Minus, Plus, ScanLine, Search, UserPlus, Utensils, X } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, Minus, Plus, ScanLine, Search, UserPlus, Utensils, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { CameraScanner } from "@/components/ui/camera-scanner";
 import type { CanteenDish, EntitledPerson, Reservation } from "@/types/canteen";
 import { setGuestCollected, setReservationCollected } from "../campboss/actions";
 import {
@@ -39,6 +40,8 @@ export function ServingScreen({
   // Typeahead suggestions for the validate box (search the employee directory).
   const [options, setOptions] = useState<EmployeeOption[]>([]);
   const [showOptions, setShowOptions] = useState(false);
+  // The camera scanner for meal tickets (no scanner hardware needed).
+  const [camera, setCamera] = useState(false);
 
   // Plate-aware tallies (host + visitors), so serving a visitor plate moves the
   // headline counters — the host-only booking count doesn't reflect visitors.
@@ -134,7 +137,11 @@ export function ServingScreen({
     startTransition(async () => {
       const res = await setReservationCollected(r.booking_id, true);
       if (res.ok) {
-        setFlash({ ok: true, msg: `Collected: ${r.person_name ?? r.person_email}` });
+        const plates = 1 + Number(r.guest_count);
+        setFlash({
+          ok: true,
+          msg: `Collected: ${r.person_name ?? r.person_email} · ${r.dish_name}${r.options ? ` (${r.options})` : ""}${plates > 1 ? ` · ${plates} plates` : ""}`,
+        });
         router.refresh();
       } else {
         setFlash({ ok: false, msg: res.error ?? "Failed." });
@@ -222,7 +229,12 @@ export function ServingScreen({
 
   function scan(e: React.FormEvent) {
     e.preventDefault();
-    const c = code.trim().toLowerCase();
+    validate(code);
+  }
+
+  /** A typed name, a badge, or a meal ticket's QR code (its booking id). */
+  function validate(raw: string) {
+    const c = raw.trim().toLowerCase();
     if (!c) return;
     // Match a QR/badge payload: full booking id, or employee email/name.
     const match = reservations.find(
@@ -245,13 +257,20 @@ export function ServingScreen({
     setFlash(null);
     setWalkin(null);
     setShowOptions(false);
+    // A meal ticket for another day carries a booking id that is not in
+    // today's list: say so rather than search the directory for it.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(c)) {
+      setCode("");
+      setFlash({ ok: false, msg: "This meal ticket is not for today's service." });
+      return;
+    }
     startTransition(async () => {
-      const res = await lookupWalkin(code.trim());
+      const res = await lookupWalkin(raw.trim());
       setCode("");
       if (res.ok && res.person) {
         setWalkin(res.person);
       } else {
-        setFlash({ ok: false, msg: res.error ?? `No reservation found for "${code}"` });
+        setFlash({ ok: false, msg: res.error ?? `No reservation found for "${raw.trim()}"` });
       }
     });
   }
@@ -358,8 +377,20 @@ export function ServingScreen({
             </ul>
           )}
         </div>
+        <Button type="button" variant="outline" disabled={pending} onClick={() => setCamera(true)} title="Scan a meal ticket with the camera">
+          <Camera className="h-4 w-4" /> <span className="hidden sm:inline">Camera</span>
+        </Button>
         <Button type="submit" disabled={pending}>Validate</Button>
       </form>
+      {camera && (
+        <CameraScanner
+          onClose={() => setCamera(false)}
+          onResult={(text) => {
+            setCamera(false);
+            validate(text);
+          }}
+        />
+      )}
 
       {flash && (
         <p

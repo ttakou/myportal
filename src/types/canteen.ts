@@ -96,6 +96,8 @@ export interface CanteenBooking {
   finalized_at: string | null;
   /** Set by the campboss when the meal is ready for collection. */
   prepared_at: string | null;
+  /** Set at the counter when the meal is handed over; the ticket is then used. */
+  collected_at: string | null;
   selected_options: DishOption[];
 }
 
