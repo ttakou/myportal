@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Archive, BedDouble, CheckCircle2, Inbox, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -69,6 +70,15 @@ export function TripRequestsPanel({
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
       {pastCount > 0 && <ArchivePast count={pastCount} approve={approve} pending={pending} run={run} />}
+
+      <div className="flex flex-wrap justify-end gap-3 text-xs font-medium">
+        <Link href="/reports/offshore-approvals" className="text-primary hover:underline">
+          Approvals log (decisions by period) →
+        </Link>
+        <Link href="/reports/pob-outlook" className="text-primary hover:underline">
+          POB outlook →
+        </Link>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Tile
