@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, UserCheck, Utensils, UtensilsCrossed, Users } from "lucide-react";
+import { AlertTriangle, Anchor, ArrowRight, Banknote, ClipboardCheck, FileBarChart, MessageSquare, Plane, ShieldCheck, Truck, UserCheck, Utensils, UtensilsCrossed, Users } from "lucide-react";
 import { getAccess, getCachedUser } from "@/lib/auth";
 import { hasDirectReports } from "@/lib/team-attendance";
 import { getMyPermissions } from "@/lib/permissions-server";
@@ -28,6 +28,22 @@ export default async function ReportsPage() {
         "Medical / BOSIET / HUET expiry status per person, with expired and upcoming certs flagged. Filter by period and department.",
       icon: ShieldCheck,
       show: access.isSystemAdmin || access.isAdmin || access.isCampboss || access.isOim,
+    },
+    {
+      href: "/reports/offshore-approvals",
+      title: "Offshore approvals log",
+      description:
+        "Visitor requests and staff trips approved or rejected in a period, and those awaiting a decision, each with the peak POB during the stay against the limit.",
+      icon: ClipboardCheck,
+      show: access.isOim || access.isCampboss,
+    },
+    {
+      href: "/reports/pob-outlook",
+      title: "POB outlook",
+      description:
+        "Expected people on board day by day: crews by their rotation schedule plus approved trips and visitors, with crew-change days and days over the POB limit.",
+      icon: Anchor,
+      show: access.isOim || access.isCampboss || access.isDispatcher,
     },
     {
       href: "/reports/travel-expense",

@@ -180,7 +180,15 @@ export async function setOffshoreStatus(
   const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
-  const { error } = await supabase.from("offshore_trips").update({ status }).eq("id", id);
+  // A rejection or cancellation records who made it, for the approvals log.
+  let who: Record<string, string | null> = {};
+  if (status === "cancelled") {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    who = { cancelled_by: user?.id ?? null, cancelled_at: new Date().toISOString() };
+  }
+  const { error } = await supabase.from("offshore_trips").update({ status, ...who }).eq("id", id);
   if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, "") };
   rev();
   return { ok: true };

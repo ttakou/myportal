@@ -650,6 +650,9 @@ export function Dashboard({
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Persons on board
           </h3>
+          <Link href="/reports/pob-outlook" className="ml-auto text-xs font-medium text-primary hover:underline">
+            POB outlook with crew changes →
+          </Link>
           <Button
             size="sm"
             variant="outline"
