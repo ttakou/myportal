@@ -1,4 +1,5 @@
 import { getAccess } from "@/lib/auth";
+import { getActiveServiceSlugs } from "@/lib/services";
 import { getEmergencyRoles, getRotationReport } from "@/lib/offshore";
 import { EMERGENCY_ROLE_LABEL, type EmergencyRoleKind, type RotationDay } from "@/types/offshore";
 import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
@@ -20,8 +21,9 @@ export default async function RotationReportPage({
   searchParams: Promise<{ from?: string; weeks?: string }>;
 }) {
   const sp = await searchParams;
-  const access = await getAccess();
-  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
+  // The rotation calendar is open to everyone with the offshore module.
+  const [access, slugs] = await Promise.all([getAccess(), getActiveServiceSlugs()]);
+  if (!access.isAdmin && !access.isCampboss && !access.isOim && !access.isDispatcher && !slugs.includes("offshore")) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 

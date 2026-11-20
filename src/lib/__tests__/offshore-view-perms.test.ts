@@ -31,9 +31,17 @@ describe("offshoreViewPerm — registrar", () => {
     expect(offshoreViewPerm("register", DISPATCHER)).toBe("full");
   });
 
-  it("gives someone with no offshore role nothing at all", () => {
-    for (const k of OFFSHORE_VIEW_KEYS) expect(offshoreViewPerm(k, NOBODY)).toBe("none");
+  it("gives someone with no offshore role only the shared views, read-only", () => {
+    for (const k of OFFSHORE_VIEW_KEYS) {
+      expect(offshoreViewPerm(k, NOBODY)).toBe(k === "whereis" || k === "calendar" ? "view" : "none");
+    }
     expect(canSeeOffshoreManagement(NOBODY)).toBe(false);
+    expect(offshoreHubSubmenu(NOBODY).map((i) => i.key)).toEqual(["mytrips", "calendar", "whereis"]);
+  });
+
+  it("keeps the Dispatcher's full hand on the rotation calendar", () => {
+    expect(offshoreViewPerm("calendar", DISPATCHER)).toBe("full");
+    expect(offshoreViewPerm("whereis", DISPATCHER)).toBe("view");
   });
 
   it("does not narrow a manager who also holds the create verb", () => {
@@ -58,14 +66,15 @@ describe("management entry points", () => {
     expect(firstOffshoreManagementView(REGISTRAR)).toBe("register");
   });
 
-  it("shows a registrar Trip Requests and the register view, nothing else", () => {
+  it("shows a registrar Trip Requests and the register view, plus the self-service views", () => {
     const items = offshoreHubSubmenu(REGISTRAR);
-    // "My trips" is the self-service hub everyone gets; the management hubs
-    // are Trip Requests (read-only) and Offshore Staff, trimmed to its
-    // register tab.
-    const management = items.filter((i) => i.key !== "mytrips");
+    // "My trips" and "Where is…" are the self-service views everyone gets;
+    // the management hubs are Trip Requests (read-only) and Offshore Staff,
+    // trimmed to its register tab.
+    const management = items.filter((i) => !["mytrips", "whereis", "calendar"].includes(i.key));
     expect(management.map((i) => i.key)).toEqual(["requests", "register"]);
     expect(management[1].href).toBe("/offshore?view=register");
+    expect(items.some((i) => i.key === "whereis")).toBe(true);
   });
 
   it("keeps Trip Requests off the Dispatcher's menu", () => {

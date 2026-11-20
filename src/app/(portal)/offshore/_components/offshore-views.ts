@@ -161,6 +161,9 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
 export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags): OffshorePerm {
   if (flags.manager) return "full";
   if (flags.dispatcher) return DISPATCHER_VIEW_PERMS[key] ?? "none";
+  // Shared views anyone with the module may read: look somebody up, see the
+  // crews' rotation ahead.
+  if (SHARED_READ_VIEWS.has(key)) return "view";
   // A registrar acts in one view and reads one more: they register people,
   // and they may follow the trip requests without deciding them. Checked
   // after the two role flags so that holding the verb as well as a role
@@ -168,6 +171,12 @@ export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags)
   if (flags.registrar) return key === "register" ? "full" : key === "requests" ? "view" : "none";
   return "none";
 }
+
+/** Management views everyone with the module may read, whatever their offshore role. */
+export const SHARED_READ_VIEWS: ReadonlySet<OffshoreViewKey> = new Set<OffshoreViewKey>(["whereis", "calendar"]);
+
+/** Views everyone with the module gets: their own trips, and the shared views. */
+export const SELF_SERVICE_VIEWS: ReadonlySet<OffshoreViewKey> = new Set<OffshoreViewKey>(["mytrips", ...SHARED_READ_VIEWS]);
 
 /** True when the user may see any management view at all (vs. self-service only). */
 export function canSeeOffshoreManagement(flags: OffshoreRoleFlags): boolean {
@@ -177,7 +186,7 @@ export function canSeeOffshoreManagement(flags: OffshoreRoleFlags): boolean {
 /** First management view the user may open — the landing view after "My trips". */
 export function firstOffshoreManagementView(flags: OffshoreRoleFlags): OffshoreViewKey {
   const hit = OFFSHORE_VIEWS.find(
-    (v) => v.key !== "mytrips" && offshoreViewPerm(v.key, flags) !== "none",
+    (v) => !SELF_SERVICE_VIEWS.has(v.key) && offshoreViewPerm(v.key, flags) !== "none",
   );
   return hit?.key ?? DEFAULT_OFFSHORE_VIEW;
 }
@@ -284,11 +293,11 @@ function hubViewKeys(h: OffshoreHub): OffshoreViewKey[] {
  */
 export function offshoreHubSubmenu(flags: OffshoreRoleFlags): OffshoreNavItem[] {
   if (!canSeeOffshoreManagement(flags)) {
-    return OFFSHORE_HUBS.filter((h) => h.key === "mytrips").map((h) => ({
-      key: h.key,
-      label: h.label,
-      icon: h.icon,
-      href: `/offshore?view=${h.key}`,
+    return OFFSHORE_VIEWS.filter((v) => SELF_SERVICE_VIEWS.has(v.key)).map((v) => ({
+      key: v.key,
+      label: v.label,
+      icon: v.icon,
+      href: `/offshore?view=${v.key}`,
     }));
   }
   const items: OffshoreNavItem[] = [];

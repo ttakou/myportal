@@ -43,6 +43,7 @@ import { getWhereabouts, getWhereaboutsBoard, getWhereaboutsPeople } from "@/lib
 import { WhereIsBoard } from "./_components/where-is-board";
 import type { BoardFilter, BoardGrouping } from "@/lib/offshore/where-board";
 import { effectiveManagementView, managementDataFor, type ManagementDataKey } from "./_components/offshore-view-data";
+import { SHARED_READ_VIEWS, type OffshoreViewKey } from "./_components/offshore-views";
 import type { AccommodationSummary, PobBreakdown } from "@/types/offshore";
 
 export default async function OffshorePage({
@@ -74,12 +75,16 @@ export default async function OffshorePage({
   // One view at a time, driven by the sidebar submenu. Everyone lands on
   // "My trips" (the self-service area); managers can switch to a management view.
   const activeView = view ?? "mytrips";
-  const showManagement = canManage && activeView !== "mytrips";
-  const showMyTrips = !showManagement;
-  // "Where is…" is answered here on the server for one person at a time; it
-  // needs none of the management area's data, so that is not loaded for it.
-  const showWhereIs = showManagement && activeView === "whereis";
-  const showMonolith = showManagement && !showWhereIs;
+  // "Where is…" is open to everyone with the module. It is answered here on
+  // the server for one person at a time and needs none of the management
+  // area's data, so that is not loaded for it.
+  const showWhereIs = activeView === "whereis";
+  // A shared view (the rotation calendar) opens the management area read-only
+  // for anyone; everything else there needs an offshore role.
+  const sharedView = SHARED_READ_VIEWS.has(activeView as OffshoreViewKey);
+  const showManagement = (canManage || sharedView) && activeView !== "mytrips" && !showWhereIs;
+  const showMyTrips = !showManagement && !showWhereIs;
+  const showMonolith = showManagement;
   // The view that will render, after the role fallback — so the data loaded
   // below is the data that view needs, not the data a deep link asked for.
   const managementView = showMonolith ? effectiveManagementView(activeView, offshoreFlags) : null;
@@ -182,7 +187,7 @@ export default async function OffshorePage({
       )}
 
       {showWhereIs && (
-        <WhereIsSection selectedId={person ?? null} by={by} only={only} />
+        <WhereIsSection selectedId={person ?? null} by={by} only={only} showAttendance={canManage} />
       )}
 
       {managementView && (
@@ -253,10 +258,13 @@ async function WhereIsSection({
   selectedId,
   by,
   only,
+  showAttendance,
 }: {
   selectedId: string | null;
   by?: string;
   only?: string;
+  /** Base check-ins are for the offshore desk, not everyone who looks somebody up. */
+  showAttendance: boolean;
 }) {
   const grouping: BoardGrouping = by === "cabin" || by === "crew" ? by : "lifeboat";
   const filter: BoardFilter = only === "onboard" || only === "exceptions" ? only : "all";
@@ -279,7 +287,7 @@ async function WhereIsSection({
       {selectedId && !found && (
         <p className="text-sm text-muted-foreground">Nobody with that id.</p>
       )}
-      {found && <WhereIsCard w={found} />}
+      {found && <WhereIsCard w={found} showAttendance={showAttendance} />}
       <WhereIsBoard rows={board} by={grouping} only={filter} />
     </div>
   );

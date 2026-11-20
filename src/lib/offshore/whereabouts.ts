@@ -1,5 +1,7 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { one, todayIso } from "./_shared";
 import { bedFor, type BedShown } from "./bed-for";
 import { crewStatus, currentCrewChange, tripOnBoard, type CrewChange, type CrewStatus } from "./crew-change";
@@ -43,9 +45,28 @@ export interface Whereabouts {
   lastCheckIn: { date: string; at: string; out: string | null } | null;
 }
 
+/**
+ * Trips are private to the traveller and the offshore desk, but "Where is…"
+ * is open to everyone with the module. So the trips it needs are read on the
+ * server, held to the caller's own company, and only where people are comes
+ * out of them.
+ */
+async function tripReader(): Promise<{ client: SupabaseClient; tenantId: string | null }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const admin = createAdminClient();
+  if (!user || !admin) return { client: supabase as unknown as SupabaseClient, tenantId: null };
+  const { data: me } = await supabase.from("profiles").select("tenant_id").eq("id", user.id).maybeSingle();
+  const tenantId = (me?.tenant_id as string | null) ?? null;
+  return tenantId ? { client: admin, tenantId } : { client: supabase as unknown as SupabaseClient, tenantId: null };
+}
+
 export async function getWhereabouts(profileId: string): Promise<Whereabouts | null> {
   const supabase = createClient();
   const today = todayIso();
+  const trips_ = await tripReader();
 
   const [{ data: profile }, { data: staff }, { data: trips }, { data: attendance }, fallbackInstallation] =
     await Promise.all([
@@ -64,15 +85,16 @@ export async function getWhereabouts(profileId: string): Promise<Whereabouts | n
         )
         .eq("profile_id", profileId)
         .maybeSingle(),
-      supabase
-        .from("offshore_trips")
-        .select(
-          "mobilize_date, demob_date, status, bed_no, lifeboat, installation:offshore_installations(name), room:offshore_rooms(room_number, block)",
-        )
-        .eq("profile_id", profileId)
-        .neq("status", "cancelled")
-        .order("mobilize_date", { ascending: false })
-        .limit(1),
+      (() => {
+        let q = trips_.client
+          .from("offshore_trips")
+          .select(
+            "mobilize_date, demob_date, status, bed_no, lifeboat, installation:offshore_installations(name), room:offshore_rooms(room_number, block)",
+          )
+          .eq("profile_id", profileId);
+        if (trips_.tenantId) q = q.eq("tenant_id", trips_.tenantId);
+        return q.neq("status", "cancelled").order("mobilize_date", { ascending: false }).limit(1);
+      })(),
       supabase
         .from("staff_attendance")
         .select("attendance_date, check_in_at, check_out_at")
@@ -199,17 +221,22 @@ export async function getWhereaboutsPeople(): Promise<{ id: string; name: string
 export async function getWhereaboutsBoard(): Promise<BoardRow[]> {
   const supabase = createClient();
   const today = todayIso();
+  const trips_ = await tripReader();
   const [{ data: staffRows }, { data: tripRows }, fallbackInstallation] = await Promise.all([
     supabase
       .from("offshore_staff")
       .select(
         "profile_id, fixed_bed, lifeboat, is_rotational, profile:profiles!offshore_staff_profile_id_fkey(full_name, email), crew:offshore_crews(name, offshore_days, onshore_days, cycle_start_date, installation:offshore_installations(name)), room:offshore_rooms(room_number, block, lifeboat)",
       ),
-    supabase
-      .from("offshore_trips")
-      .select(
-        "profile_id, mobilize_date, demob_date, status, bed_no, lifeboat, installation:offshore_installations(name), room:offshore_rooms(room_number, block)",
-      )
+    (() => {
+      let q = trips_.client
+        .from("offshore_trips")
+        .select(
+          "profile_id, mobilize_date, demob_date, status, bed_no, lifeboat, installation:offshore_installations(name), room:offshore_rooms(room_number, block)",
+        );
+      if (trips_.tenantId) q = q.eq("tenant_id", trips_.tenantId);
+      return q;
+    })()
       .neq("status", "cancelled")
       .not("profile_id", "is", null)
       .order("mobilize_date", { ascending: false }),
