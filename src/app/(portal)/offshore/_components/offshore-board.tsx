@@ -1,12 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { bedLabel } from "@/lib/offshore/bed-for";
 import { useStatusTransition } from "@/components/activity";
 import { Ship, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ShowMore, useProgressiveReveal } from "@/components/ui/progressive-list";
 import { usePermissions } from "@/components/permissions-provider";
 import {
   OFFSHORE_STATUS_LABEL,
@@ -67,7 +65,10 @@ export function OffshoreBoard({
   const removeRow = (i: number) => setRows((cur) => cur.filter((_, idx) => idx !== i));
   const selectedCount = rows.filter((r) => r.trim()).length;
 
-  const mineReveal = useProgressiveReveal(mine.length);
+  // The latest few trips; the rest on demand.
+  const RECENT_TRIPS = 3;
+  const [showAllTrips, setShowAllTrips] = useState(false);
+  const shownTrips = showAllTrips ? mine : mine.slice(0, RECENT_TRIPS);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) {
     setError(null);
@@ -88,17 +89,17 @@ export function OffshoreBoard({
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr><th className="px-4 py-3 font-medium">Installation</th><th className="px-4 py-3 font-medium">Dates</th><th className="px-4 py-3 font-medium">Flight / Bed</th><th className="px-4 py-3 font-medium">Status</th></tr>
+              <tr><th className="px-4 py-3 font-medium">Installation</th><th className="px-4 py-3 font-medium">Dates</th><th className="px-4 py-3 font-medium">Flight / Room</th><th className="px-4 py-3 font-medium">Status</th></tr>
             </thead>
             <tbody className="divide-y">
-              {mine.slice(0, mineReveal.count).map((t) => (
+              {shownTrips.map((t) => (
                 <tr key={t.id}>
                   <td className="px-4 py-3 font-medium">
                     {t.installation_name ?? "—"}
                     {t.purpose && <span className="block text-xs font-normal text-muted-foreground">{t.purpose}</span>}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{t.mobilize_date}{t.demob_date ? ` → ${t.demob_date}` : ""}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{[t.flight_label, bedLabel(t.bed_no)].filter(Boolean).join(" · ") || "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{[t.flight_label, t.room_label].filter(Boolean).join(" · ") || "—"}</td>
                   <td className="px-4 py-3"><Badge status={t.status} /></td>
                 </tr>
               ))}
@@ -106,13 +107,11 @@ export function OffshoreBoard({
             </tbody>
           </table>
         </div>
-        <ShowMore
-          ref={mineReveal.sentinelRef}
-          hasMore={mineReveal.hasMore}
-          remaining={mineReveal.remaining}
-          onClick={mineReveal.showMore}
-          label="Show more trips"
-        />
+        {mine.length > RECENT_TRIPS && (
+          <Button size="sm" variant="outline" onClick={() => setShowAllTrips((v) => !v)}>
+            {showAllTrips ? "Show the latest 3 only" : `Show all ${mine.length} trips`}
+          </Button>
+        )}
       </section>
 
       {can("offshore", "create") && (
