@@ -82,7 +82,6 @@ export default async function RoomAllocationReportPage({
                       {r.owners.map((o, i) => (
                         <li key={i}>
                           <span style={{ color: "#dc2626", fontWeight: 600 }}>{o.name}</span>
-                          {o.bed ? <span className="text-gray-400"> · {o.bed}</span> : ""}
                           {o.back_to_back ? <span className="text-gray-400"> ⇄ {o.back_to_back}</span> : ""}
                         </li>
                       ))}

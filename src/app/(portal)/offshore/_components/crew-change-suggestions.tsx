@@ -279,7 +279,6 @@ function ManualEditor({
                 {m.roomLabel && (
                   <span className="text-xs text-muted-foreground">
                     {m.roomLabel}
-                    {m.bed ? ` · ${m.bed}` : ""}
                   </span>
                 )}
                 {disabled && <span className="text-[11px] text-green-700">already aboard</span>}
