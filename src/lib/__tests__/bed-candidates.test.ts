@@ -14,11 +14,11 @@ const pool: BedPoolPerson[] = [
 ];
 
 describe("bedCandidates", () => {
-  it("offers an occupant of this very room, as a bed change", () => {
+  it("still lists an occupant of this very room, as already there", () => {
     const list = bedCandidates(pool, DOOR5);
     const oum = list.find((c) => c.id === "t-oum");
     expect(oum).toBeDefined();
-    expect(oum!.label).toBe("OUM RAPHAEL — change bed (now 43)");
+    expect(oum!.label).toBe("OUM RAPHAEL — already in this room");
   });
 
   it("marks on-board people as a move, not a boarding", () => {
@@ -46,15 +46,15 @@ describe("bedCandidates", () => {
     expect(bedCandidates(pool, DOOR5)[0].id).toBe("t-waiting");
   });
 
-  it("omits the bed hint when the occupant has no bed label", () => {
+  it("never shows a bed number", () => {
     const noBed: BedPoolPerson[] = [
       { id: "t-x", room_id: DOOR5, name: "No Bed", placedIn: "Door 5", bed: null },
     ];
-    expect(bedCandidates(noBed, DOOR5)[0].label).toBe("No Bed — change bed");
+    expect(bedCandidates(noBed, DOOR5)[0].label).toBe("No Bed — already in this room");
   });
 
   it("re-labels the same person as the room changes", () => {
-    // Viewed from Door 3, OUM is a move; from Door 5, a bed change.
+    // Viewed from Door 3, OUM is a move; from Door 5, already there.
     expect(bedCandidates(pool, DOOR3).find((c) => c.id === "t-oum")!.label).toBe(
       "OUM RAPHAEL — move from Door 5",
     );

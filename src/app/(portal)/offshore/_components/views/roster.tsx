@@ -107,7 +107,7 @@ export function RosterPanel({
               {m.fixed_room_label && (
                 <span className="text-xs text-muted-foreground">
                   Room {m.fixed_room_label}
-                  {m.fixed_bed ? ` · ${m.fixed_bed}` : ""}
+                  
                 </span>
               )}
               {m.lifeboat && (
@@ -176,15 +176,6 @@ export function RosterPanel({
                 disabled={pending}
                 className={field}
                 onChange={(v) => run(() => updateRosterMember({ id: m.id, fixedRoomId: v }))}
-              />
-              <input
-                defaultValue={m.fixed_bed ?? ""}
-                disabled={pending}
-                placeholder="Fixed bed (Bed 1)"
-                onBlur={(e) => {
-                  if (e.target.value !== (m.fixed_bed ?? "")) run(() => updateRosterMember({ id: m.id, fixedBed: e.target.value }));
-                }}
-                className={field}
               />
               <div className={cn(field, "flex items-center gap-1 bg-muted/40")} title="Muster follows the fixed room">
                 <span className="text-xs text-muted-foreground">Muster:</span>

@@ -45,11 +45,11 @@ export async function GET(req: NextRequest) {
   if (type === "roster") {
     const roster = await getRoster();
     const rows: (string | number | null)[][] = [
-      ["Name", "Crew", "Company", "Default room", "Bed", "Muster", "Back-to-back", "Medical", "BOSIET", "HUET", "Travel eligible"],
+      ["Name", "Crew", "Company", "Default room", "Muster", "Back-to-back", "Medical", "BOSIET", "HUET", "Travel eligible"],
     ];
     for (const m of roster)
       rows.push([
-        m.full_name || m.email, m.crew_name, m.company, m.fixed_room_label, m.fixed_bed,
+        m.full_name || m.email, m.crew_name, m.company, m.fixed_room_label,
         m.lifeboat, m.back_to_back_name, m.medical_expiry, m.bosiet_expiry, m.huet_expiry,
         m.travel_eligible ? "yes" : "no",
       ]);
@@ -61,16 +61,16 @@ export async function GET(req: NextRequest) {
     // The day sheet: who sleeps where that day, without the default owners.
     const daySheet = sp.get("view") === "day";
     const report = await getRoomAllocationAsOf(date);
-    const head = ["Room", "Installation", "Muster", "Beds", "Occupied", "Bed", "Occupant", "Category"];
+    const head = ["Room", "Installation", "Muster", "Beds", "Occupied", "Occupant", "Category"];
     const rows: (string | number | null)[][] = [daySheet ? head : [...head, "Default owners"]];
     for (const r of report.rooms) {
       const owners = r.owners.map((o) => o.name + (o.back_to_back ? ` <> ${o.back_to_back}` : "")).join("; ");
       const withOwners = (row: (string | number | null)[], first: boolean) => (daySheet ? row : [...row, first ? owners : ""]);
       if (r.occupants.length === 0) {
-        rows.push(withOwners([r.label, r.installation, r.lifeboat, r.beds, 0, "", "", ""], true));
+        rows.push(withOwners([r.label, r.installation, r.lifeboat, r.beds, 0, "", ""], true));
       } else {
         r.occupants.forEach((o, i) =>
-          rows.push(withOwners([r.label, r.installation, r.lifeboat, r.beds, r.occupants.length, o.bed_no, o.name, o.category], i === 0)),
+          rows.push(withOwners([r.label, r.installation, r.lifeboat, r.beds, r.occupants.length, o.name, o.category], i === 0)),
         );
       }
     }

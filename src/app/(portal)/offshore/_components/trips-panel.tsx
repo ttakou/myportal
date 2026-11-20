@@ -111,15 +111,6 @@ export function TripsPanel({
                           <option key={f.id} value={f.id}>{f.route} ({f.flight_date})</option>
                         ))}
                       </select>
-                      <input
-                        defaultValue={t.bed_no ?? ""}
-                        placeholder="Bed"
-                        disabled={pending || !t.hse_cleared_at}
-                        onBlur={(e) => {
-                          if (e.target.value !== (t.bed_no ?? "")) run(() => assignManifest(t.id, t.flight_id, e.target.value || null));
-                        }}
-                        className="w-16 rounded-md border bg-background px-1.5 py-1 text-xs"
-                      />
                     </div>
                   </td>
                   <td className="px-4 py-3">

@@ -50,8 +50,8 @@ export interface BedCandidate {
  * Candidates for a bed in `roomId`, sorted with the bed-less first, then people
  * already on board, then ashore staff, each group alphabetical.
  *
- * Nobody on board is excluded: someone already in this room is offered as a bed
- * change, someone in another room as a move, someone with no bed as a plain
+ * Nobody on board is excluded: someone already in this room is shown as such
+ * (bed numbers are not displayed), someone in another room as a move, someone with no bed as a plain
  * assignment. `ashore` is only included when `includeAshore` is set, since
  * boarding needs a permission the picker itself cannot check.
  */
@@ -68,7 +68,7 @@ export function bedCandidates(
       kind: "move" as const,
       waiting: !p.room_id,
       label: here
-        ? `${p.name} — change bed${p.bed ? ` (now ${p.bed})` : ""}`
+        ? `${p.name} — already in this room`
         : p.placedIn
           ? `${p.name} — move from ${p.placedIn}`
           : p.name,

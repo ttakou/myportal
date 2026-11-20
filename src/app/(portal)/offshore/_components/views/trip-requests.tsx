@@ -371,7 +371,6 @@ function TripRow({
           <span className="text-xs">
             <BedDouble className="mr-1 inline h-3.5 w-3.5 text-muted-foreground" />
             <span className="font-medium">{t.room_label}</span>
-            {t.bed_no ? ` · ${t.bed_no}` : ""}
           </span>
         ) : t.status !== "requested" ? (
           <span className="text-xs text-amber-800">no room yet</span>

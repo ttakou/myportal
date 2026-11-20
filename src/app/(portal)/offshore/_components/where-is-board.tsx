@@ -164,7 +164,6 @@ export function WhereIsBoard({
                       {by !== "crew" && r.crew && <span>{r.crew}</span>}
                       {by !== "lifeboat" && <span>{r.lifeboat ?? "no station"}</span>}
                       {by !== "cabin" && <span>{r.bed ?? "no bed"}{r.bedSource === "trip" ? "" : r.bed ? " (default)" : ""}</span>}
-                      {by === "cabin" && r.bed && <span>{r.bed.split(" · ")[1] ?? ""}</span>}
                       {r.nextChange && (
                         <span>
                           {r.kind === "offshore" || r.kind === "due_offshore" || r.kind === "off_early" ? "off" : "out"} {r.nextChange}

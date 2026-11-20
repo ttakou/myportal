@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, FileText, ListOrdered } from "lucide-react";
+import { AlertTriangle, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { bedCandidates } from "@/lib/offshore/bed-candidates";
-import { bedKey, duplicateBedKeys, roomBedIssues } from "@/lib/offshore/bed-issues";
+import { roomBedIssues } from "@/lib/offshore/bed-issues";
 import { roomLabel, sortRooms } from "@/lib/offshore/room-order";
 import { offshorePeople } from "@/lib/offshore/people";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
   type RoomStatus,
   type RosterEntry,
 } from "@/types/offshore";
-import { renumberRoomBeds, setRoomStatus, updateRoomFields, updateRosterMember, upsertRoom, type RenumberBedsRow } from "../../actions";
+import { setRoomStatus, updateRoomFields, updateRosterMember, upsertRoom } from "../../actions";
 import { BulkRoomImport } from "../bulk-room-import";
 import { OccupantRow, OwnerRow, EmptyBed } from "./bed-cells";
 import { field, rosterInfo, useRun } from "./shared";
@@ -64,7 +64,9 @@ function RoomOccupancyList({
   const issuesByRoom = useMemo(() => {
     const m = new Map<string, ReturnType<typeof roomBedIssues>>();
     for (const r of rooms) {
-      const found = roomBedIssues(r);
+      // Bed labels are not shown any more, so only a room over its bed
+      // count is a problem worth flagging.
+      const found = roomBedIssues(r).filter((i) => i.kind === "over_capacity");
       if (found.length) m.set(r.id, found);
     }
     return m;
@@ -137,10 +139,9 @@ function RoomOccupancyList({
           {error && (
             <p className="mb-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
           )}
-          {!readOnly && <RenumberBeds roomId={pickedRoom} roomName={pickedRoom ? roomLabel(allSorted.find((r) => r.id === pickedRoom)!) : null} />}
           {!readOnly && (
             <p className="mb-2 text-xs text-muted-foreground">
-              Edit in place: change a bed label, remove someone from a bed, or seat a waiting person.
+              Edit in place: remove someone from a room, or seat a waiting person in a free bed.
               Allocating a berth to someone who is ashore also boards them, so they appear on POB and
               the muster roll. Cabin owner(s) set the roster&apos;s fixed cabin — the permanent
               allocation auto-allocate honours first.
@@ -194,7 +195,6 @@ function RoomOccupancyList({
               // nothing to attach one to — they are not in the picker, and
               // without saying so their absence reads as a bug.
               const ashoreOwners = r.owners.filter((o) => !onboardProfileIds.has(o.profile_id));
-              const dupBeds = duplicateBedKeys(r);
               const ownerCandidates = roster
                 .filter((s) => !ownerIds.has(s.profile_id))
                 .map((s) => ({
@@ -241,16 +241,6 @@ function RoomOccupancyList({
                       {r.occupants.map((o) =>
                         readOnly || o.kind === "visitor" ? (
                           <li key={o.trip_id} className="flex items-center gap-1.5 text-xs">
-                            <span
-                              className={cn(
-                                "font-mono",
-                                o.bed_no && dupBeds.has(bedKey(o.bed_no))
-                                  ? "font-semibold text-destructive"
-                                  : "text-muted-foreground",
-                              )}
-                            >
-                              {o.bed_no || "•"}
-                            </span>
                             <span className="font-medium">{o.name}</span>
                             {o.kind === "visitor" && (
                               <span
@@ -265,8 +255,6 @@ function RoomOccupancyList({
                           <OccupantRow
                             key={o.trip_id}
                             occupant={o}
-                            roomId={r.id}
-                            clashes={Boolean(o.bed_no) && dupBeds.has(bedKey(o.bed_no ?? ""))}
                             pending={pending}
                             run={run}
                           />
@@ -289,7 +277,7 @@ function RoomOccupancyList({
                     <p className="mt-1.5 rounded border border-dashed bg-muted/30 px-1.5 py-1 text-[11px] text-muted-foreground">
                       {ashoreOwners.length} cabin owner(s) are ashore. Picking one in a bed above
                       boards them into it — they join POB and the muster roll straight away. Their
-                      permanent berth is editable below without boarding them.
+                      fixed cabin is set below without boarding them.
                     </p>
                   )}
                   {(r.owners.length > 0 || !readOnly) && (
@@ -299,7 +287,6 @@ function RoomOccupancyList({
                         {r.owners.map((o) =>
                           readOnly ? (
                             <li key={o.profile_id} className="flex items-center gap-1">
-                              <span className="font-mono">{o.bed || "•"}</span>
                               <span>{o.name}</span>
                               {!onboardProfileIds.has(o.profile_id) && (
                                 <span className="text-muted-foreground/70">· ashore</span>
@@ -583,106 +570,6 @@ export function RoomsPanel({
         <Button type="submit" disabled={pending}>Add room</Button>
       </form>
         </>
-      )}
-    </div>
-  );
-}
-
-
-/**
- * "Bed 1" to "Bed N" for one room or all of them: preview first, then confirm.
- *
- * The estate kept three bed conventions at once and most people on board had
- * none. The database does the renaming (`offshore_renumber_beds`); this shows
- * what it would change and who would be left without a berth, and writes
- * nothing until the button is pressed a second time.
- */
-function RenumberBeds({ roomId, roomName }: { roomId: string | null; roomName: string | null }) {
-  const { pending, error, run } = useRun();
-  const [plan, setPlan] = useState<RenumberBedsRow[] | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-
-  const scope = roomName ?? "every room";
-  const changes = plan?.filter((r) => r.new_bed) ?? [];
-  const overflow = plan?.filter((r) => !r.new_bed) ?? [];
-
-  function preview() {
-    setDone(null);
-    run(
-      async () => {
-        const res = await renumberRoomBeds({ roomId, apply: false });
-        if (res.ok) setPlan(res.rows);
-        return res.ok ? { ok: true } : res;
-      },
-    );
-  }
-
-  function apply() {
-    run(
-      async () => {
-        const res = await renumberRoomBeds({ roomId, apply: true });
-        if (res.ok) {
-          setDone(`${res.rows.filter((r) => r.new_bed).length} bed label(s) renamed in ${scope}.`);
-          setPlan(null);
-        }
-        return res.ok ? { ok: true } : res;
-      },
-    );
-  }
-
-  return (
-    <div className="mb-3 rounded-md border bg-muted/30 p-2 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <ListOrdered className="h-4 w-4 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">
-          Rename the beds of {scope} &ldquo;Bed 1&rdquo; to &ldquo;Bed N&rdquo;: valid labels are kept, blanks and clashes get the
-          lowest free berth, a cabin owner&apos;s fixed bed follows the bed they are in today, back-to-backs and
-          alternating crews share.
-        </span>
-        {!plan && (
-          <Button size="sm" variant="outline" className="ml-auto" disabled={pending} onClick={preview}>
-            Preview renumbering
-          </Button>
-        )}
-      </div>
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-      {done && <p className="mt-1 text-xs text-green-700">{done}</p>}
-      {plan && (
-        <div className="mt-2 space-y-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900">
-          <p className="font-medium">
-            {changes.length} label(s) would change in {scope}
-            {overflow.length > 0 && ` · ${overflow.length} would stay without a berth (more people than beds)`}.
-          </p>
-          {changes.length > 0 && (
-            <ul className="max-h-48 overflow-y-auto text-xs">
-              {changes.map((r, i) => (
-                <li key={i}>
-                  {r.room_label} · {r.person}: {r.old_bed ?? "—"} → <strong>{r.new_bed}</strong>
-                  {r.kind === "owner" ? " (fixed bed)" : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-          {overflow.length > 0 && (
-            <ul className="max-h-32 overflow-y-auto text-xs">
-              {overflow.map((r, i) => (
-                <li key={i}>
-                  {r.room_label} · {r.person}: no berth left{r.old_bed ? ` (keeps ${r.old_bed})` : ""}
-                  {r.kind === "owner_overflow" ? " (fixed bed)" : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" disabled={pending || changes.length === 0} onClick={apply}>
-              {pending ? "Saving…" : `Rename ${changes.length} label(s)`}
-            </Button>
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => setPlan(null)}>
-              Cancel
-            </Button>
-            <span className="text-xs">Nothing changes until you confirm.</span>
-          </div>
-        </div>
       )}
     </div>
   );

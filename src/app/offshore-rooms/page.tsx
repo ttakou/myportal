@@ -67,7 +67,6 @@ export default async function RoomAllocationReportPage({
                   <ul className="mt-1 space-y-0.5 text-gray-700">
                     {r.occupants.map((o, i) => (
                       <li key={i}>
-                        <span className="mr-1 font-mono text-gray-400">{o.bed_no || "•"}</span>
                         {o.name}
                         {o.category === "visitor" ? <span className="ml-1 text-violet-700">(visitor)</span> : ""}
                       </li>

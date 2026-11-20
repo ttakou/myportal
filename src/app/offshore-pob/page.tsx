@@ -83,7 +83,7 @@ export default async function PobRosterPage() {
                     <td className={`${td} text-gray-700`}>{IDENTITY_LABEL[p.identity]}</td>
                     <td className={`${td} text-gray-700`}>{p.company ?? "—"}</td>
                     <td className={`${td} text-gray-700`}>
-                      {p.room_label ?? "—"}{p.bed_no ? ` · ${p.bed_no}` : ""}
+                      {p.room_label ?? "—"}
                     </td>
                     <td className={`${td} text-gray-700`}>{p.crew_name ?? "—"}</td>
                     <td className={`${td} tabular-nums text-gray-700`}>{p.mobilize_date}</td>
