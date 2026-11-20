@@ -382,6 +382,15 @@ export function RoomsPanel({
         <Button size="sm" variant="outline" disabled={!repDate} onClick={() => window.open(`/offshore-rooms?date=${repDate}`, "_blank")}>
           <FileText className="h-4 w-4" /> Room allocation report
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!repDate}
+          title="Who sleeps where that day, without the cabins' default owners"
+          onClick={() => window.open(`/offshore-rooms?date=${repDate}&view=day`, "_blank")}
+        >
+          <FileText className="h-4 w-4" /> Day sheet (occupants only)
+        </Button>
       </div>
       <RoomOccupancyList
         rooms={rooms}
