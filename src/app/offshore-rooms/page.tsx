@@ -3,13 +3,18 @@ import { getRoomAllocationAsOf } from "@/lib/offshore";
 import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
-/** Standalone, print-friendly room allocation report as of a date, with branding. */
+/**
+ * Standalone, print-friendly room allocation report as of a date, with
+ * branding. `view=day` is the day sheet: who sleeps where that day, without
+ * the cabins' default owners.
+ */
 export default async function RoomAllocationReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; view?: string }>;
 }) {
   const sp = await searchParams;
+  const daySheet = sp.view === "day";
   const access = await getAccess();
   if (!access.isAdmin && !access.isCampboss && !access.isOim) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
@@ -29,7 +34,7 @@ export default async function RoomAllocationReportPage({
       <div className="mx-auto mb-3 flex max-w-[1100px] items-center gap-2 print:hidden">
         <PrintButton />
         <a
-          href={`/offshore-export?type=rooms&date=${date}`}
+          href={`/offshore-export?type=rooms&date=${date}${daySheet ? "&view=day" : ""}`}
           className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50"
         >
           Download CSV
@@ -39,8 +44,8 @@ export default async function RoomAllocationReportPage({
       <div className="room-report mx-auto max-w-[1100px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">
         {/* Header */}
         <ReportHeader
-          title="Room allocation"
-          subtitle={`As of ${fmt(report.date)} · ${report.roomsInUse} room(s) in use · ${report.totalOccupants} occupant(s)`}
+          title={daySheet ? "Room allocation — day sheet" : "Room allocation"}
+          subtitle={`${daySheet ? "On" : "As of"} ${fmt(report.date)} · ${report.roomsInUse} room(s) in use · ${report.totalOccupants} occupant(s)`}
         />
 
         {/* Room grid */}
@@ -71,7 +76,7 @@ export default async function RoomAllocationReportPage({
                 ) : (
                   <p className="mt-1 text-gray-400">Empty</p>
                 )}
-                {r.owners.length > 0 && (
+                {!daySheet && r.owners.length > 0 && (
                   <div className="mt-1 border-t border-gray-100 pt-1">
                     <p className="text-[10px] font-semibold text-gray-500">Default owner(s)</p>
                     <ul className="mt-0.5 space-y-0.5 text-[10px]">
@@ -91,7 +96,7 @@ export default async function RoomAllocationReportPage({
           {report.rooms.length === 0 && <p className="text-sm text-gray-400">No rooms.</p>}
         </div>
 
-        <ReportStampFooter label="Room allocation" />
+        <ReportStampFooter label={daySheet ? "Room allocation — day sheet" : "Room allocation"} />
       </div>
     </div>
   );

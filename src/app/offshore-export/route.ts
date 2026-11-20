@@ -58,21 +58,23 @@ export async function GET(req: NextRequest) {
 
   if (type === "rooms") {
     const date = sp.get("date") || today();
+    // The day sheet: who sleeps where that day, without the default owners.
+    const daySheet = sp.get("view") === "day";
     const report = await getRoomAllocationAsOf(date);
-    const rows: (string | number | null)[][] = [
-      ["Room", "Installation", "Muster", "Beds", "Occupied", "Bed", "Occupant", "Category", "Default owners"],
-    ];
+    const head = ["Room", "Installation", "Muster", "Beds", "Occupied", "Bed", "Occupant", "Category"];
+    const rows: (string | number | null)[][] = [daySheet ? head : [...head, "Default owners"]];
     for (const r of report.rooms) {
       const owners = r.owners.map((o) => o.name + (o.back_to_back ? ` <> ${o.back_to_back}` : "")).join("; ");
+      const withOwners = (row: (string | number | null)[], first: boolean) => (daySheet ? row : [...row, first ? owners : ""]);
       if (r.occupants.length === 0) {
-        rows.push([r.label, r.installation, r.lifeboat, r.beds, 0, "", "", "", owners]);
+        rows.push(withOwners([r.label, r.installation, r.lifeboat, r.beds, 0, "", "", ""], true));
       } else {
         r.occupants.forEach((o, i) =>
-          rows.push([r.label, r.installation, r.lifeboat, r.beds, r.occupants.length, o.bed_no, o.name, o.category, i === 0 ? owners : ""]),
+          rows.push(withOwners([r.label, r.installation, r.lifeboat, r.beds, r.occupants.length, o.bed_no, o.name, o.category], i === 0)),
         );
       }
     }
-    return csvResponse(`room-allocation-${date}.csv`, rows);
+    return csvResponse(`room-allocation${daySheet ? "-day" : ""}-${date}.csv`, rows);
   }
 
   if (type === "meals") {
