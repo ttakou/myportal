@@ -17,7 +17,8 @@ import {
   type ScheduledCrew,
 } from "./schedule-actions";
 import { scheduleActs, type OffshoreScheduleSettings } from "./schedule-settings";
-import { ensureDayManifests } from "./day-manifest-run";
+import { addVisitorsToDayManifests, advanceVisitorStatuses, ensureDayManifests } from "./day-manifest-run";
+import { DAY_MANIFEST_HORIZON_DAYS } from "./day-manifests";
 
 /**
  * The nightly job that makes the rotation schedule act.
@@ -54,6 +55,11 @@ export interface TenantScheduleSummary {
   staleCancelled: number;
   /** Crew change day manifests created ahead (MOB and DEMOB per day). */
   dayManifests: number;
+  /** Approved visitors added to manifests made before they were approved. */
+  visitorsManifested: number;
+  /** Visitors moved by their dates: on board, and returned. */
+  visitorsBoarded: number;
+  visitorsReturned: number;
 }
 
 type Row = Record<string, unknown>;
@@ -144,6 +150,9 @@ async function runTenant(
     staleFlagged: 0,
     staleCancelled: 0,
     dayManifests: 0,
+    visitorsManifested: 0,
+    visitorsBoarded: 0,
+    visitorsReturned: 0,
   };
 
   const [{ data: crewRows }, { data: deskRows }, { data: defaultInst }] = await Promise.all([
@@ -394,6 +403,19 @@ async function runTenant(
     summary.dayManifests = made.created;
   } catch (e) {
     console.error(`offshore day manifests: tenant ${tenantId} failed:`, (e as Error).message);
+  }
+
+  // Visitors approved after their manifests were built join them; then the
+  // dates move them: on board from departure, returned from the return date.
+  // Manifests first, so today's travellers are still due when they are read.
+  try {
+    const horizonEnd = new Date(Date.parse(today + "T00:00:00Z") + (DAY_MANIFEST_HORIZON_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+    summary.visitorsManifested = await addVisitorsToDayManifests(admin, tenantId, today, horizonEnd, settings.defaultInstallationId);
+    const moved = await advanceVisitorStatuses(admin, tenantId, today);
+    summary.visitorsBoarded = moved.boarded;
+    summary.visitorsReturned = moved.returned;
+  } catch (e) {
+    console.error(`offshore visitors: tenant ${tenantId} failed:`, (e as Error).message);
   }
 
   return summary;

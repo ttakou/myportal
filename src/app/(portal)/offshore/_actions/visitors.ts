@@ -1,6 +1,9 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { placeVisitsOnManifests } from "@/lib/offshore/day-manifest-run";
+import { visitDates } from "@/lib/offshore/visitor-moves";
 import { searchBedAvailability } from "@/lib/offshore";
 import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
@@ -24,11 +27,12 @@ export async function createVisitRequest(input: {
   const gate = await requireOffshoreDispatch("create");
   if (gate) return gate;
   if (!input.visitorName.trim()) return { ok: false, error: "Visitor name is required." };
-  if (!input.departDate) return { ok: false, error: "Departure date is required." };
+  const overnight = input.overnight ?? true;
+  const dates = visitDates(input.departDate, input.returnDate, overnight);
+  if (!dates.ok) return dates;
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
-  const overnight = input.overnight ?? true;
   const { error } = await supabase.from("offshore_visit_requests").insert({
     tenant_id: tenant,
     visitor_name: input.visitorName.trim(),
@@ -39,8 +43,8 @@ export async function createVisitRequest(input: {
     host_name: input.hostName?.trim() || null,
     purpose: input.purpose?.trim() || null,
     installation_id: input.installationId || null,
-    depart_date: input.departDate,
-    return_date: input.returnDate || null,
+    depart_date: dates.departDate,
+    return_date: dates.returnDate,
     overnight,
     accommodation_required: overnight,
     emergency_contact: input.emergencyContact?.trim() || null,
@@ -83,6 +87,7 @@ export async function decideVisitRequest(
     .select("requester_id, visitor_name, tenant_id")
     .eq("id", id)
     .maybeSingle();
+  if (decision === "approved" && vr?.tenant_id) await manifestApproved(vr.tenant_id as string, [id]);
   if (vr?.requester_id && vr.tenant_id) {
     await notifyUsers({
       tenantId: vr.tenant_id as string,
@@ -114,7 +119,8 @@ export async function createVisitGroup(input: {
 }): Promise<ActionResult> {
   const gate = await requireOffshoreDispatch("create");
   if (gate) return gate;
-  if (!input.departDate) return { ok: false, error: "Departure date is required." };
+  const dates = visitDates(input.departDate, input.returnDate, input.overnight ?? true);
+  if (!dates.ok) return dates;
   const visitors = (input.visitors ?? []).filter((v) => v.name?.trim());
   if (!visitors.length) return { ok: false, error: "Add at least one visitor name." };
   const supabase = createClient();
@@ -138,8 +144,8 @@ export async function createVisitGroup(input: {
     host_department: input.hostDepartment?.trim() || null,
     purpose: input.purpose?.trim() || null,
     installation_id: input.installationId || null,
-    depart_date: input.departDate,
-    return_date: input.returnDate || null,
+    depart_date: dates.departDate,
+    return_date: dates.returnDate,
     overnight,
     accommodation_required: overnight,
     emergency_contact: v.emergencyContact?.trim() || null,
@@ -180,6 +186,16 @@ export async function decideVisitGroup(
     .eq("status", "requested");
   if (error) return { ok: false, error: error.message };
 
+  if (decision === "approved") {
+    const { data: approved } = await supabase
+      .from("offshore_visit_requests")
+      .select("id, tenant_id")
+      .eq("group_id", groupId)
+      .eq("status", "approved");
+    const list = (approved ?? []) as { id: string; tenant_id: string }[];
+    if (list.length) await manifestApproved(list[0].tenant_id, list.map((v) => v.id));
+  }
+
   // Notify the host who raised the group request.
   const { data: rows } = await supabase
     .from("offshore_visit_requests")
@@ -202,6 +218,51 @@ export async function decideVisitGroup(
         ` · ${count ?? 0} visitor(s)`,
       url: "/offshore",
     });
+  }
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Put just-approved visitors on the manifests of their travel dates. Manifests
+ * are built weeks ahead, so a visit approved later would otherwise be missing
+ * from them. Best-effort: the nightly run catches anything missed here.
+ */
+async function manifestApproved(tenant: string, visitIds: string[]): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    if (!admin) return;
+    await placeVisitsOnManifests(admin, tenant, visitIds, new Date().toISOString().slice(0, 10));
+  } catch (e) {
+    console.error("manifest approved visits:", (e as Error).message);
+  }
+}
+
+/**
+ * The desk's correction when a visitor did not travel: the visit is closed as
+ * a no-show, their bed released, and they come off the manifests ahead.
+ */
+export async function markVisitNoShow(id: string): Promise<ActionResult> {
+  const gate = await requireOffshore("operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("offshore_visit_requests")
+    .update({ status: "cancelled", reject_reason: "Did not travel (no-show)" })
+    .eq("id", id)
+    .in("status", ["approved", "onboard"]);
+  if (error) return { ok: false, error: error.message };
+  await supabase.from("offshore_bed_allocations").delete().eq("visit_request_id", id).neq("status", "checked_out");
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: ahead } = await supabase
+    .from("offshore_manifest_pax")
+    .select("id, manifest:offshore_manifests!inner(scheduled_date, direction)")
+    .eq("visit_request_id", id);
+  for (const p of (ahead ?? []) as unknown as { id: string; manifest: { scheduled_date: string; direction: string } | { scheduled_date: string; direction: string }[] }[]) {
+    const m = Array.isArray(p.manifest) ? p.manifest[0] : p.manifest;
+    if (!m) continue;
+    if (m.direction === "out" && m.scheduled_date <= today) await supabase.from("offshore_manifest_pax").update({ no_show: true }).eq("id", p.id);
+    else if (m.scheduled_date >= today) await supabase.from("offshore_manifest_pax").delete().eq("id", p.id);
   }
   rev();
   return { ok: true };
@@ -290,12 +351,13 @@ export async function setVisitorMovement(
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 
-  // Sync the bed allocation lifecycle with the movement.
-  await supabase
-    .from("offshore_bed_allocations")
-    .update({ status: movement === "onboard" ? "checked_in" : "checked_out" })
-    .eq("visit_request_id", id)
-    .neq("status", "checked_out");
+  // Sync the bed allocation lifecycle with the movement. "On board" also
+  // takes the bed back when the desk undoes a return made by the dates.
+  if (movement === "onboard") {
+    await supabase.from("offshore_bed_allocations").update({ status: "checked_in" }).eq("visit_request_id", id);
+  } else {
+    await supabase.from("offshore_bed_allocations").update({ status: "checked_out" }).eq("visit_request_id", id).neq("status", "checked_out");
+  }
 
   rev();
   return { ok: true };

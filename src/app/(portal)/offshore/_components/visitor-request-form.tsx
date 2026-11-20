@@ -104,7 +104,8 @@ export function VisitorRequestForm({
         hostName,
         hostDepartment: hostDept,
         departDate,
-        returnDate: returnDate || undefined,
+        // A day visit with no return date comes back the day it goes.
+        returnDate: returnDate || (overnight ? undefined : departDate),
         overnight,
         visitors: visitors
           .filter((v) => v.name.trim())
@@ -172,7 +173,16 @@ export function VisitorRequestForm({
             </label>
             <label className="text-xs text-muted-foreground">
               Return
-              <input value={returnDate} onChange={(e) => setReturnDate(e.target.value)} type="date" className={`mt-1 w-full ${field}`} />
+              <input
+                value={returnDate}
+                onChange={(e) => setReturnDate(e.target.value)}
+                type="date"
+                required={overnight}
+                min={departDate || undefined}
+                placeholder={overnight ? undefined : "Same day"}
+                className={`mt-1 w-full ${field}`}
+              />
+              {!overnight && !returnDate && <span className="mt-0.5 block text-[11px]">Day visit: back the same day</span>}
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={overnight} onChange={(e) => setOvernight(e.target.checked)} />
