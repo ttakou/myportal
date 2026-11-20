@@ -160,6 +160,8 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
 /** The Dispatcher's (or full manager's) access level for one management view. */
 export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags): OffshorePerm {
   if (flags.manager) return "full";
+  // "Where is…" is self-service: anyone with the module may look somebody up.
+  if (key === "whereis") return "view";
   if (flags.dispatcher) return DISPATCHER_VIEW_PERMS[key] ?? "none";
   // A registrar acts in one view and reads one more: they register people,
   // and they may follow the trip requests without deciding them. Checked
@@ -169,6 +171,9 @@ export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags)
   return "none";
 }
 
+/** Views everyone with the module gets, whatever their offshore role. */
+export const SELF_SERVICE_VIEWS: ReadonlySet<OffshoreViewKey> = new Set<OffshoreViewKey>(["mytrips", "whereis"]);
+
 /** True when the user may see any management view at all (vs. self-service only). */
 export function canSeeOffshoreManagement(flags: OffshoreRoleFlags): boolean {
   return flags.manager || flags.dispatcher || flags.registrar;
@@ -177,7 +182,7 @@ export function canSeeOffshoreManagement(flags: OffshoreRoleFlags): boolean {
 /** First management view the user may open — the landing view after "My trips". */
 export function firstOffshoreManagementView(flags: OffshoreRoleFlags): OffshoreViewKey {
   const hit = OFFSHORE_VIEWS.find(
-    (v) => v.key !== "mytrips" && offshoreViewPerm(v.key, flags) !== "none",
+    (v) => !SELF_SERVICE_VIEWS.has(v.key) && offshoreViewPerm(v.key, flags) !== "none",
   );
   return hit?.key ?? DEFAULT_OFFSHORE_VIEW;
 }
@@ -284,7 +289,7 @@ function hubViewKeys(h: OffshoreHub): OffshoreViewKey[] {
  */
 export function offshoreHubSubmenu(flags: OffshoreRoleFlags): OffshoreNavItem[] {
   if (!canSeeOffshoreManagement(flags)) {
-    return OFFSHORE_HUBS.filter((h) => h.key === "mytrips").map((h) => ({
+    return OFFSHORE_HUBS.filter((h) => SELF_SERVICE_VIEWS.has(h.key)).map((h) => ({
       key: h.key,
       label: h.label,
       icon: h.icon,

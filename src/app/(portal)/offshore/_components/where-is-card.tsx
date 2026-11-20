@@ -14,7 +14,7 @@ const STATUS_TONE: Record<string, string> = {
  * One person: where the schedule puts them, what the record says, and which
  * bed is theirs — the one in use, or the default when they are ashore.
  */
-export function WhereIsCard({ w }: { w: Whereabouts }) {
+export function WhereIsCard({ w, showAttendance = true }: { w: Whereabouts; showAttendance?: boolean }) {
   const s = w.schedule;
   const headline = s
     ? s.phase === "offshore"
@@ -102,7 +102,7 @@ export function WhereIsCard({ w }: { w: Whereabouts }) {
           }
           sub={w.lastTrip ? `${w.lastTrip.status.replace(/_/g, " ")}${w.lastTrip.installation ? ` · ${w.lastTrip.installation}` : ""}` : undefined}
         />
-        <Stat
+        {showAttendance && <Stat
           icon={<Users className="h-4 w-4" />}
           label="Last check-in at the base"
           value={w.lastCheckIn ? w.lastCheckIn.date : "Never"}
@@ -111,7 +111,7 @@ export function WhereIsCard({ w }: { w: Whereabouts }) {
               ? `In ${w.lastCheckIn.at.slice(11, 16)}${w.lastCheckIn.out ? ` · out ${w.lastCheckIn.out.slice(11, 16)}` : ""} UTC`
               : "Security records arrivals at the gate; nothing recorded means they have not passed it."
           }
-        />
+        />}
       </div>
     </section>
   );
