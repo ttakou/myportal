@@ -10,7 +10,8 @@
  * of the crews whose offshore phase ends that day, whether or not the live
  * trips agree. Around the crews:
  * - visitors travel on their booked dates, once approved (or already aboard,
- *   for the return);
+ *   for the return). A day with no crew change but a visitor travelling gets
+ *   a manifest of its own ("Visitor movement"), only in the directions used;
  * - someone aboard outside the rotation (no crew, or not rotational) goes
  *   ashore on their trip's demob date.
  *
@@ -169,18 +170,94 @@ export function dueForDay(input: {
   }
 
   // Visitors on their booked dates.
-  for (const v of input.visits) {
-    if (!here(v.installation_id)) continue;
-    if (direction === "out") {
-      if (v.status !== "approved" || v.depart_date !== date) continue;
-      add({ profile_id: null, visit_request_id: v.id, name: v.visitor_name, position: "Visitor", reason: "Visitor — booked departure" });
-    } else {
-      if (v.return_date !== date || (v.status !== "onboard" && v.status !== "approved")) continue;
-      add({ profile_id: null, visit_request_id: v.id, name: v.visitor_name, position: "Visitor", reason: "Visitor — booked return" });
-    }
-  }
+  for (const p of visitorsDue(input.visits, date, direction, installationId, input.defaultInstallationId ?? null)) add(p);
 
   return picks.sort((a, b) => a.reason.localeCompare(b.reason) || a.name.localeCompare(b.name));
+}
+
+/** Where a visitor goes: their installation, else the tenant's default. */
+function visitInstallation(v: Pick<DayVisit, "installation_id">, defaultInstallationId: string | null): string | null {
+  return v.installation_id ?? defaultInstallationId;
+}
+
+/** True when a visitor makes the journey on `date`: out once approved, back once approved or aboard. */
+function visitorTravels(v: DayVisit, date: string, direction: Direction): boolean {
+  return direction === "out"
+    ? v.status === "approved" && v.depart_date === date
+    : v.return_date === date && (v.status === "approved" || v.status === "onboard");
+}
+
+/** Visitors on their booked dates for one manifest. */
+export function visitorsDue(
+  visits: DayVisit[],
+  date: string,
+  direction: Direction,
+  installationId: string | null,
+  defaultInstallationId: string | null,
+): DuePax[] {
+  return visits
+    .filter((v) => visitorTravels(v, date, direction))
+    .filter((v) => {
+      const inst = visitInstallation(v, defaultInstallationId);
+      return installationId === null || inst === null || inst === installationId;
+    })
+    .map((v) => ({
+      profile_id: null,
+      visit_request_id: v.id,
+      name: v.visitor_name,
+      position: "Visitor",
+      reason: direction === "out" ? "Visitor — booked departure" : "Visitor — booked return",
+    }));
+}
+
+export interface ManifestDay extends CrewChangeDay {
+  /** The journeys that day needs a manifest for. */
+  directions: Direction[];
+  /** True when a crew changes that day; false for visitors only. */
+  crewDay: boolean;
+}
+
+/**
+ * Every day that needs manifests, from `fromIso` for `days` days: each crew
+ * change day (both directions), and each other day a visitor departs or
+ * returns (only the directions used).
+ */
+export function manifestDays(input: {
+  crews: DayCrew[];
+  staff: DayStaff[];
+  visits: DayVisit[];
+  fromIso: string;
+  days: number;
+  defaultInstallationId?: string | null;
+}): ManifestDay[] {
+  const def = input.defaultInstallationId ?? null;
+  const crewDays = crewChangeDays(input).map((d) => ({ ...d, directions: ["out", "in"] as Direction[], crewDay: true }));
+  const key = (date: string, inst: string | null) => `${date}|${instKey(inst)}`;
+  const byKey = new Map<string, ManifestDay>(crewDays.map((d) => [key(d.date, d.installationId), d]));
+  const last = addDays(input.fromIso, input.days - 1);
+  const inWindow = (d: string | null) => d !== null && d >= input.fromIso && d <= last;
+
+  for (const v of input.visits) {
+    const inst = visitInstallation(v, def);
+    const moves: [string, Direction][] = [];
+    if (inWindow(v.depart_date) && visitorTravels(v, v.depart_date, "out")) moves.push([v.depart_date, "out"]);
+    if (v.return_date && inWindow(v.return_date) && visitorTravels(v, v.return_date, "in")) moves.push([v.return_date, "in"]);
+    for (const [date, direction] of moves) {
+      const k = key(date, inst);
+      const day = byKey.get(k) ?? { date, installationId: inst, out: [], in: [], directions: [], crewDay: false };
+      if (!day.directions.includes(direction)) day.directions.push(direction);
+      byKey.set(k, day);
+    }
+  }
+  return [...byKey.values()]
+    .map((d) => ({ ...d, directions: (["out", "in"] as Direction[]).filter((x) => d.directions.includes(x)) }))
+    .sort((a, b) => a.date.localeCompare(b.date) || instKey(a.installationId).localeCompare(instKey(b.installationId)));
+}
+
+/** "Visitor movement 2026-10-14 · MOB · Shore → Juliet": a day with no crew change. */
+export function visitorManifestTitle(date: string, direction: Direction, installationName: string | null): string {
+  const place = installationName?.trim() || "Installation";
+  return direction === "out" ? `Visitor movement ${date} · MOB · Shore → ${place}` : `Visitor movement ${date} · DEMOB · ${place} → Shore`;
 }
 
 /** The transport the crews share, lower-cased as manifests store it; null when they differ or none is set. */

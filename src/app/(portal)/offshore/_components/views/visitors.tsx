@@ -18,6 +18,7 @@ import {
   decideVisitGroup,
   findAvailableBeds,
   setVisitorMovement,
+  markVisitNoShow,
 } from "../../actions";
 import { useRun } from "./shared";
 
@@ -51,6 +52,9 @@ function groupVisits(list: VisitRequest[]): VisitRequest[][] {
   }
   return order.map((k) => map.get(k)!);
 }
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 export function VisitorsPanel({ visits }: { visits: VisitRequest[] }) {
   const { pending, error, run } = useRun();
@@ -233,6 +237,24 @@ function VisitorCard({
         {v.status === "onboard" && (
           <Button size="sm" disabled={pending} onClick={() => run(() => setVisitorMovement(v.id, "returned"))}>
             Confirm return onshore
+          </Button>
+        )}
+        {/* Corrections to what the dates did on their own. */}
+        {(v.status === "onboard" || (v.status === "approved" && v.depart_date <= todayIso())) && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              if (confirm(`${v.visitor_name} did not travel? The visit is closed as a no-show and the bed released.`)) run(() => markVisitNoShow(v.id));
+            }}
+          >
+            Didn&apos;t travel
+          </Button>
+        )}
+        {v.status === "returned" && v.return_date !== null && v.return_date >= daysAgo(7) && (
+          <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => setVisitorMovement(v.id, "onboard"))}>
+            Still on board
           </Button>
         )}
       </div>

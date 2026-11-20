@@ -3,11 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { one } from "./_shared";
 import {
   DAY_MANIFEST_HORIZON_DAYS,
-  crewChangeDays,
   dayManifestTitle,
   daySeats,
   dueForDay,
+  manifestDays,
   sharedTransport,
+  visitorManifestTitle,
+  visitorsDue,
   type DayCrew,
   type DayOnboard,
   type DayStaff,
@@ -15,11 +17,11 @@ import {
   type DuePax,
 } from "./day-manifests";
 import type { Direction } from "./manifest-plan";
+import { visitorMoves } from "./visitor-moves";
 
 type Row = Record<string, any>;
 const DAY_MS = 86_400_000;
 const addDays = (iso: string, n: number) => new Date(Date.parse(iso + "T00:00:00Z") + n * DAY_MS).toISOString().slice(0, 10);
-const DIRECTIONS: Direction[] = ["out", "in"];
 const PAGE = 1000;
 
 async function allRows(fetchPage: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>): Promise<Row[]> {
@@ -180,7 +182,7 @@ export async function ensureDayManifests(
   const to = addDays(from, horizon - 1);
   const defaultInstallationId = opts.defaultInstallationId ?? null;
   const inputs = await loadDayInputs(client, tenantId, from, to);
-  const days = crewChangeDays({ crews: inputs.crews, staff: inputs.staff, fromIso: from, days: horizon, defaultInstallationId });
+  const days = manifestDays({ crews: inputs.crews, staff: inputs.staff, visits: inputs.visits, fromIso: from, days: horizon, defaultInstallationId });
   const run: DayManifestRun = { days: days.length, created: 0, superseded: 0 };
   if (days.length === 0) return run;
 
@@ -213,7 +215,7 @@ export async function ensureDayManifests(
   const have = new Set(existing.map((m) => `${m.scheduled_date}|${m.direction}|${m.installation_id ?? ""}`));
 
   for (const day of days) {
-    for (const direction of DIRECTIONS) {
+    for (const direction of day.directions) {
       if (have.has(`${day.date}|${direction}|${day.installationId ?? ""}`)) continue;
 
       const due: DuePax[] = dueForDay({ date: day.date, direction, installationId: day.installationId, ...inputs, defaultInstallationId });
@@ -239,12 +241,16 @@ export async function ensureDayManifests(
         .insert({
           tenant_id: tenantId,
           kind: "day",
-          title: dayManifestTitle(day.date, direction, day.installationId ? inputs.installationName.get(day.installationId) ?? null : null),
+          title: (day.crewDay ? dayManifestTitle : visitorManifestTitle)(
+            day.date,
+            direction,
+            day.installationId ? inputs.installationName.get(day.installationId) ?? null : null,
+          ),
           crew_id: null,
           installation_id: day.installationId,
-          trip_type: direction === "out" ? "crew_change_out" : "crew_change_in",
+          trip_type: day.crewDay ? (direction === "out" ? "crew_change_out" : "crew_change_in") : direction === "out" ? "visitor_out" : "visitor_in",
           direction,
-          transport_mode: sharedTransport(crewsThisWay.length ? crewsThisWay : [...day.out, ...day.in]),
+          transport_mode: day.crewDay ? sharedTransport(crewsThisWay.length ? crewsThisWay : [...day.out, ...day.in]) : null,
           seat_capacity: daySeats(pax.length),
           scheduled_date: day.date,
           status: "draft",
@@ -303,4 +309,119 @@ export async function refreshDayManifestPax(
     if (error) return { ok: false, error: error.message };
   }
   return { ok: true, added: missing.length };
+}
+
+/**
+ * Put approved visitors on the open day manifests of their travel dates
+ * between `fromIso` and `toIso`: the MOB on the departure date, the DEMOB on
+ * the return date. A manifest built before the visit was approved does not
+ * have them yet. Only visitors are added; the desk's own edits stand.
+ */
+export async function addVisitorsToDayManifests(
+  client: SupabaseClient,
+  tenantId: string,
+  fromIso: string,
+  toIso: string,
+  defaultInstallationId: string | null,
+): Promise<number> {
+  const [inputs, manifests] = await Promise.all([
+    loadDayInputs(client, tenantId, fromIso, toIso),
+    allRows((a, b) =>
+      client
+        .from("offshore_manifests")
+        .select("id, scheduled_date, direction, installation_id, seat_capacity, offshore_manifest_pax(profile_id, visit_request_id, person_name)")
+        .eq("tenant_id", tenantId)
+        .eq("kind", "day")
+        .in("status", ["draft", "approved"])
+        .gte("scheduled_date", fromIso)
+        .lte("scheduled_date", toIso)
+        .order("scheduled_date")
+        .range(a, b),
+    ),
+  ]);
+  if (inputs.visits.length === 0) return 0;
+  let added = 0;
+  for (const m of manifests) {
+    const due = visitorsDue(inputs.visits, m.scheduled_date as string, m.direction as Direction, (m.installation_id as string | null) ?? null, defaultInstallationId);
+    if (due.length === 0) continue;
+    const pax = (m.offshore_manifest_pax ?? []) as Row[];
+    const onIt = new Set(pax.map((p) => paxKey({ profile_id: p.profile_id ?? null, visit_request_id: p.visit_request_id ?? null, person_name: p.person_name })));
+    const missing = due.filter((p) => !onIt.has(paxKey(p)));
+    if (missing.length === 0) continue;
+    const { error } = await client.from("offshore_manifest_pax").insert(paxRows(tenantId, m.id as string, missing));
+    if (error) {
+      console.error(`visitors onto manifest ${m.id}: ${error.message}`);
+      continue;
+    }
+    added += missing.length;
+    const seats = daySeats(pax.length + missing.length);
+    if (seats > Number(m.seat_capacity ?? 0)) await client.from("offshore_manifests").update({ seat_capacity: seats }).eq("id", m.id as string);
+  }
+  return added;
+}
+
+/**
+ * Put just-approved visits on the manifests of their travel dates, making a
+ * manifest for a date that has none yet (a visitor movement, or a crew change
+ * beyond the nightly horizon). Dates already past are left alone.
+ */
+export async function placeVisitsOnManifests(client: SupabaseClient, tenantId: string, visitIds: string[], todayIso: string): Promise<number> {
+  if (visitIds.length === 0) return 0;
+  const { data } = await client
+    .from("offshore_visit_requests")
+    .select("depart_date, return_date, status")
+    .eq("tenant_id", tenantId)
+    .in("id", visitIds)
+    .in("status", ["approved", "onboard"]);
+  const dates = new Set<string>();
+  for (const v of (data ?? []) as Row[]) {
+    if (v.status === "approved" && v.depart_date >= todayIso) dates.add(v.depart_date as string);
+    if (v.return_date && v.return_date >= todayIso) dates.add(v.return_date as string);
+  }
+  if (dates.size === 0) return 0;
+  const defaultInstallationId = await offshoreDefaultInstallation(client, tenantId);
+  let added = 0;
+  for (const date of [...dates].sort()) {
+    await ensureDayManifests(client, tenantId, { todayIso: date, horizonDays: 1, defaultInstallationId });
+    added += await addVisitorsToDayManifests(client, tenantId, date, date, defaultInstallationId);
+  }
+  return added;
+}
+
+/**
+ * Move visitors' status with their dates: on board from the departure date,
+ * returned (bed freed) from the return date. A visitor the desk marked a
+ * no-show on a MOB manifest is not boarded.
+ */
+export async function advanceVisitorStatuses(client: SupabaseClient, tenantId: string, todayIso: string): Promise<{ boarded: number; returned: number }> {
+  const visits = await allRows((a, b) =>
+    client
+      .from("offshore_visit_requests")
+      .select("id, status, depart_date, return_date, is_casual")
+      .eq("tenant_id", tenantId)
+      .in("status", ["approved", "onboard"])
+      .lte("depart_date", todayIso)
+      .order("id")
+      .range(a, b),
+  );
+  if (visits.length === 0) return { boarded: 0, returned: 0 };
+  const { data: flagged } = await client
+    .from("offshore_manifest_pax")
+    .select("visit_request_id, manifest:offshore_manifests!inner(direction)")
+    .eq("tenant_id", tenantId)
+    .eq("no_show", true)
+    .eq("manifest.direction", "out")
+    .in("visit_request_id", visits.map((v) => v.id as string));
+  const noShows = new Set(((flagged ?? []) as Row[]).map((r) => r.visit_request_id as string));
+  const { board, ret } = visitorMoves(visits as never, todayIso, noShows);
+
+  if (board.length) {
+    const { error } = await client.from("offshore_visit_requests").update({ status: "onboard" }).in("id", board).eq("status", "approved");
+    if (!error) await client.from("offshore_bed_allocations").update({ status: "checked_in" }).in("visit_request_id", board).eq("status", "reserved");
+  }
+  if (ret.length) {
+    const { error } = await client.from("offshore_visit_requests").update({ status: "returned" }).in("id", ret).in("status", ["approved", "onboard"]);
+    if (!error) await client.from("offshore_bed_allocations").update({ status: "checked_out" }).in("visit_request_id", ret).neq("status", "checked_out");
+  }
+  return { boarded: board.length, returned: ret.length };
 }
