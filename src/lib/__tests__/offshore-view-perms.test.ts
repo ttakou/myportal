@@ -31,10 +31,17 @@ describe("offshoreViewPerm — registrar", () => {
     expect(offshoreViewPerm("register", DISPATCHER)).toBe("full");
   });
 
-  it("gives someone with no offshore role only Where is…, read-only", () => {
-    for (const k of OFFSHORE_VIEW_KEYS) expect(offshoreViewPerm(k, NOBODY)).toBe(k === "whereis" ? "view" : "none");
+  it("gives someone with no offshore role only the shared views, read-only", () => {
+    for (const k of OFFSHORE_VIEW_KEYS) {
+      expect(offshoreViewPerm(k, NOBODY)).toBe(k === "whereis" || k === "calendar" ? "view" : "none");
+    }
     expect(canSeeOffshoreManagement(NOBODY)).toBe(false);
-    expect(offshoreHubSubmenu(NOBODY).map((i) => i.key)).toEqual(["mytrips", "whereis"]);
+    expect(offshoreHubSubmenu(NOBODY).map((i) => i.key)).toEqual(["mytrips", "calendar", "whereis"]);
+  });
+
+  it("keeps the Dispatcher's full hand on the rotation calendar", () => {
+    expect(offshoreViewPerm("calendar", DISPATCHER)).toBe("full");
+    expect(offshoreViewPerm("whereis", DISPATCHER)).toBe("view");
   });
 
   it("does not narrow a manager who also holds the create verb", () => {
@@ -64,7 +71,7 @@ describe("management entry points", () => {
     // "My trips" and "Where is…" are the self-service views everyone gets;
     // the management hubs are Trip Requests (read-only) and Offshore Staff,
     // trimmed to its register tab.
-    const management = items.filter((i) => i.key !== "mytrips" && i.key !== "whereis");
+    const management = items.filter((i) => !["mytrips", "whereis", "calendar"].includes(i.key));
     expect(management.map((i) => i.key)).toEqual(["requests", "register"]);
     expect(management[1].href).toBe("/offshore?view=register");
     expect(items.some((i) => i.key === "whereis")).toBe(true);

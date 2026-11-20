@@ -43,6 +43,7 @@ import { getWhereabouts, getWhereaboutsBoard, getWhereaboutsPeople } from "@/lib
 import { WhereIsBoard } from "./_components/where-is-board";
 import type { BoardFilter, BoardGrouping } from "@/lib/offshore/where-board";
 import { effectiveManagementView, managementDataFor, type ManagementDataKey } from "./_components/offshore-view-data";
+import { SHARED_READ_VIEWS, type OffshoreViewKey } from "./_components/offshore-views";
 import type { AccommodationSummary, PobBreakdown } from "@/types/offshore";
 
 export default async function OffshorePage({
@@ -78,7 +79,10 @@ export default async function OffshorePage({
   // the server for one person at a time and needs none of the management
   // area's data, so that is not loaded for it.
   const showWhereIs = activeView === "whereis";
-  const showManagement = canManage && activeView !== "mytrips" && !showWhereIs;
+  // A shared view (the rotation calendar) opens the management area read-only
+  // for anyone; everything else there needs an offshore role.
+  const sharedView = SHARED_READ_VIEWS.has(activeView as OffshoreViewKey);
+  const showManagement = (canManage || sharedView) && activeView !== "mytrips" && !showWhereIs;
   const showMyTrips = !showManagement && !showWhereIs;
   const showMonolith = showManagement;
   // The view that will render, after the role fallback — so the data loaded

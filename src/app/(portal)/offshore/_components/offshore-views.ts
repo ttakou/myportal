@@ -160,9 +160,10 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
 /** The Dispatcher's (or full manager's) access level for one management view. */
 export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags): OffshorePerm {
   if (flags.manager) return "full";
-  // "Where is…" is self-service: anyone with the module may look somebody up.
-  if (key === "whereis") return "view";
   if (flags.dispatcher) return DISPATCHER_VIEW_PERMS[key] ?? "none";
+  // Shared views anyone with the module may read: look somebody up, see the
+  // crews' rotation ahead.
+  if (SHARED_READ_VIEWS.has(key)) return "view";
   // A registrar acts in one view and reads one more: they register people,
   // and they may follow the trip requests without deciding them. Checked
   // after the two role flags so that holding the verb as well as a role
@@ -171,8 +172,11 @@ export function offshoreViewPerm(key: OffshoreViewKey, flags: OffshoreRoleFlags)
   return "none";
 }
 
-/** Views everyone with the module gets, whatever their offshore role. */
-export const SELF_SERVICE_VIEWS: ReadonlySet<OffshoreViewKey> = new Set<OffshoreViewKey>(["mytrips", "whereis"]);
+/** Management views everyone with the module may read, whatever their offshore role. */
+export const SHARED_READ_VIEWS: ReadonlySet<OffshoreViewKey> = new Set<OffshoreViewKey>(["whereis", "calendar"]);
+
+/** Views everyone with the module gets: their own trips, and the shared views. */
+export const SELF_SERVICE_VIEWS: ReadonlySet<OffshoreViewKey> = new Set<OffshoreViewKey>(["mytrips", ...SHARED_READ_VIEWS]);
 
 /** True when the user may see any management view at all (vs. self-service only). */
 export function canSeeOffshoreManagement(flags: OffshoreRoleFlags): boolean {
@@ -289,11 +293,11 @@ function hubViewKeys(h: OffshoreHub): OffshoreViewKey[] {
  */
 export function offshoreHubSubmenu(flags: OffshoreRoleFlags): OffshoreNavItem[] {
   if (!canSeeOffshoreManagement(flags)) {
-    return OFFSHORE_HUBS.filter((h) => SELF_SERVICE_VIEWS.has(h.key)).map((h) => ({
-      key: h.key,
-      label: h.label,
-      icon: h.icon,
-      href: `/offshore?view=${h.key}`,
+    return OFFSHORE_VIEWS.filter((v) => SELF_SERVICE_VIEWS.has(v.key)).map((v) => ({
+      key: v.key,
+      label: v.label,
+      icon: v.icon,
+      href: `/offshore?view=${v.key}`,
     }));
   }
   const items: OffshoreNavItem[] = [];
