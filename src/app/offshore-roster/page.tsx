@@ -78,7 +78,7 @@ export default async function RosterReportPage({
                     <td className={`${td} font-semibold`} style={{ color: "#dc2626" }}>{m.full_name || m.email}</td>
                     <td className={`${td} text-gray-700`}>{m.company ?? "—"}</td>
                     <td className={`${td} text-gray-700`}>
-                      {m.fixed_room_label ?? "—"}{m.fixed_bed ? ` · ${m.fixed_bed}` : ""}
+                      {m.fixed_room_label ?? "—"}
                     </td>
                     <td className={`${td} text-gray-700`}>{m.lifeboat ?? "—"}</td>
                     <td className={`${td} text-gray-700`}>{m.back_to_back_name ?? "—"}</td>

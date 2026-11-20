@@ -7,7 +7,7 @@ describe("bedFor", () => {
   it("shows the trip's bed while on board", () => {
     expect(bedFor({ ...base, onBoard: true, tripRoom: "Room 308", tripBed: "1" })).toEqual({
       source: "trip",
-      label: "Room 308 · Bed 1",
+      label: "Room 308",
       differsFromDefault: null,
     });
   });
@@ -16,24 +16,24 @@ describe("bedFor", () => {
     // A late arrival put wherever there was room.
     expect(bedFor({ ...base, onBoard: true, tripRoom: "Room 214", tripBed: "2" })).toEqual({
       source: "trip",
-      label: "Room 214 · Bed 2",
-      differsFromDefault: "Room 308 · Bed 1",
+      label: "Room 214",
+      differsFromDefault: "Room 308",
     });
   });
 
   it("falls back to the default when onshore", () => {
-    expect(bedFor(base)).toEqual({ source: "default", label: "Room 308 · Bed 1", differsFromDefault: null });
+    expect(bedFor(base)).toEqual({ source: "default", label: "Room 308", differsFromDefault: null });
   });
 
   it("falls back to the default when on board with no bed on the trip", () => {
     expect(bedFor({ ...base, onBoard: true })).toEqual({
       source: "default",
-      label: "Room 308 · Bed 1",
+      label: "Room 308",
       differsFromDefault: null,
     });
   });
 
-  it("copes with a room but no bed number", () => {
+  it("reads the same with or without a bed number", () => {
     expect(bedFor({ ...base, fixedBed: null }).label).toBe("Room 308");
   });
 
@@ -56,9 +56,9 @@ describe("bedLabel", () => {
     expect(bedLabel(null)).toBeNull();
   });
 
-  it("never reads 'Bed Bed 1'", () => {
-    expect(bedFor({ onBoard: false, tripRoom: null, tripBed: null, fixedRoom: "Room 220", fixedBed: "Bed 1" }).label).toBe(
-      "Room 220 · Bed 1",
-    );
+  it("shows the room only, never the bed number", () => {
+    expect(bedFor({ onBoard: false, tripRoom: null, tripBed: null, fixedRoom: "Room 220", fixedBed: "Bed 1" }).label).toBe("Room 220");
+    // Another bed in the same room is not a different place.
+    expect(bedFor({ onBoard: true, tripRoom: "Room 308", tripBed: "2", fixedRoom: "Room 308", fixedBed: "1" }).differsFromDefault).toBeNull();
   });
 });

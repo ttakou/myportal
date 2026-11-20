@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { Printer, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { bedCandidates } from "@/lib/offshore/bed-candidates";
 import { offshorePeople } from "@/lib/offshore/people";
@@ -126,7 +126,7 @@ export function BedBoardPanel({
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
       <p className="text-sm text-muted-foreground">
         Every usable room, full ones included so you can always move someone out. Type a name into an
-        empty bed to drop that person straight into it — their POB record gets that room &amp; bed.
+        empty bed to drop that person straight into it — their POB record gets that room.
         Anyone ashore is offered too — not just rostered crew — and picking one boards them into that
         bed. Blocked and under-maintenance rooms are hidden.
       </p>
@@ -155,6 +155,15 @@ export function BedBoardPanel({
             <input type="checkbox" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} />
             Only rooms with a free bed
           </label>
+          {/* The print sheet takes the same filters, so what prints is what is shown. */}
+          <a
+            href={`/offshore-bedboard?${new URLSearchParams({ ...(q.trim() ? { q: q.trim() } : {}), ...(freeOnly ? { free: "1" } : {}) })}`}
+            target="_blank"
+            rel="noopener"
+            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted"
+          >
+            <Printer className="h-3.5 w-3.5" /> Print
+          </a>
         </div>
       </div>
 
@@ -233,7 +242,6 @@ export function BedBoardPanel({
                     key={o.trip_id}
                     className="flex items-center gap-1.5 rounded bg-muted/40 px-2 py-1 text-xs"
                   >
-                    <span className="font-mono text-muted-foreground">{o.bed_no || "•"}</span>
                     <span className="truncate font-medium">{o.name}</span>
                     {o.kind === "visitor" && (
                       <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">

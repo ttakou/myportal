@@ -69,13 +69,13 @@ export function WhereIsCard({ w, showAttendance = true }: { w: Whereabouts; show
         />
         <Stat
           icon={<BedDouble className="h-4 w-4" />}
-          label={w.bed.source === "trip" ? "Bed in use" : w.bed.source === "default" ? "Default bed" : "Bed"}
+          label={w.bed.source === "trip" ? "Room in use" : w.bed.source === "default" ? "Default room" : "Room"}
           value={w.bed.label ?? "Not assigned"}
           sub={
             w.bed.differsFromDefault
               ? `Default is ${w.bed.differsFromDefault}`
               : w.bed.source === "default" && w.onBoard
-                ? "No bed on this trip; showing the roster default"
+                ? "No room on this trip; showing the roster default"
                 : undefined
           }
         />

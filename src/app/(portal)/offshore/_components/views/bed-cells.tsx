@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { type BedCandidate } from "@/lib/offshore/bed-candidates";
 import { SearchSelect } from "@/components/ui/search-select";
 import { type Room } from "@/types/offshore";
@@ -17,45 +15,20 @@ import { boardMember, reassignTripRoom, updateRosterMember } from "../../actions
  */
 
 /**
- * One live occupant on the occupancy card: rename their bed (saved on blur) or
- * lift them out of it. Unassigning keeps them on board — they drop back into the
+ * One live occupant on the occupancy card: lift them out of the room. Unassigning keeps them on board — they drop back into the
  * "waiting for a bed" pool.
  */
 export function OccupantRow({
   occupant,
-  roomId,
-  clashes = false,
   pending,
   run,
 }: {
   occupant: Room["occupants"][number];
-  roomId: string;
-  /** True when somebody else in this room holds the same bed. */
-  clashes?: boolean;
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
-  const original = occupant.bed_no ?? "";
-  const [bed, setBed] = useState(original);
-  // Re-sync when the server sends a different value (e.g. after auto-allocate).
-  useEffect(() => setBed(original), [original]);
   return (
     <li className="flex items-center gap-1.5 rounded bg-muted/40 px-1.5 py-1 text-xs">
-      <input
-        value={bed}
-        disabled={pending}
-        aria-label={`Bed for ${occupant.name}`}
-        placeholder="•"
-        onChange={(e) => setBed(e.target.value)}
-        onBlur={() => {
-          if (bed.trim() !== original) run(() => reassignTripRoom(occupant.trip_id, roomId, bed));
-        }}
-        title={clashes ? "Someone else in this room holds this bed" : undefined}
-        className={cn(
-          "w-14 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]",
-          clashes && "border-destructive font-semibold text-destructive",
-        )}
-      />
       <span className="truncate font-medium">{occupant.name}</span>
       <button
         disabled={pending}
@@ -71,8 +44,8 @@ export function OccupantRow({
 
 /**
  * One cabin owner on the occupancy card — the roster's fixed cabin, not a live
- * trip. Editing the bed or clearing the owner writes straight to the roster row,
- * exactly as the Roster tab's fixed-room fields do.
+ * trip. Clearing the owner writes straight to the roster row, exactly as the
+ * Roster tab's fixed-room fields do.
  */
 export function OwnerRow({
   owner,
@@ -88,25 +61,11 @@ export function OwnerRow({
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
-  const original = owner.bed ?? "";
-  const [bed, setBed] = useState(original);
-  useEffect(() => setBed(original), [original]);
   // Owners always resolve to a roster row; guard anyway so a stale render can't
   // fire an update with no id.
   const editable = Boolean(staffId) && !pending;
   return (
     <li className="flex items-center gap-1">
-      <input
-        value={bed}
-        disabled={!editable}
-        aria-label={`Fixed bed for ${owner.name}`}
-        placeholder="•"
-        onChange={(e) => setBed(e.target.value)}
-        onBlur={() => {
-          if (staffId && bed.trim() !== original) run(() => updateRosterMember({ id: staffId, fixedBed: bed }));
-        }}
-        className="w-14 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
-      />
       <span className="truncate">{owner.name}</span>
       {!aboard && (
         <span
@@ -130,7 +89,7 @@ export function OwnerRow({
 }
 
 /**
- * One empty bed slot: an editable bed label + a picker that places the chosen
+ * One empty bed slot: a picker that places the chosen
  * on-board person into this bed on select. Picking someone already in another
  * room moves them here (a single trip, so one room at a time).
  */
@@ -147,15 +106,11 @@ export function EmptyBed({
   pending: boolean;
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
-  const [bed, setBed] = useState(defaultBed);
+  // The bed label is bookkeeping only (it keeps two people off one berth); it
+  // is not shown, so the next free one is used as is.
+  const bed = defaultBed;
   return (
     <li className="flex items-center gap-1.5 rounded border border-dashed bg-background px-2 py-1 text-xs">
-      <input
-        value={bed}
-        onChange={(e) => setBed(e.target.value)}
-        aria-label="Bed label"
-        className="w-16 shrink-0 rounded border bg-background px-1 py-0.5 font-mono text-[11px]"
-      />
       <SearchSelect
         value={null}
         options={candidates}

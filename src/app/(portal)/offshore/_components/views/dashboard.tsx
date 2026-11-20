@@ -275,7 +275,7 @@ function PobPeopleRows({
               </span>
             )}
             <span className="ml-auto text-xs text-muted-foreground">
-              {p.crew_name ?? "—"} · {p.room_label ?? "no bed"}{p.bed_no ? ` · ${p.bed_no}` : ""}{p.lifeboat ? ` · ${p.lifeboat}` : ""}
+              {p.crew_name ?? "—"} · {p.room_label ?? "no bed"}{p.lifeboat ? ` · ${p.lifeboat}` : ""}
             </span>
             {canDemob && (
               <button
@@ -345,7 +345,7 @@ function FixedCabinRows({ roster }: { roster: RosterEntry[] }) {
             <span className="font-medium">{m.full_name || m.email}</span>
             {m.crew_name && <span className="text-xs text-muted-foreground">{m.crew_name}</span>}
             <span className="ml-auto text-xs text-muted-foreground">
-              {m.fixed_room_label ?? "—"}{m.fixed_bed ? ` · ${m.fixed_bed}` : ""}
+              {m.fixed_room_label ?? "—"}
             </span>
           </div>
         ))}
@@ -475,7 +475,7 @@ function UnassignedRow({ person, crews }: { person: PobBreakdown["people"][numbe
         {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
         {p.room_label && (
           <span className="text-xs text-muted-foreground">
-            {p.room_label}{p.bed_no ? ` · ${p.bed_no}` : ""}
+            {p.room_label}
           </span>
         )}
         {p.lifeboat && <span className="rounded bg-sky-100 px-1.5 text-[10px] text-sky-800">{p.lifeboat}</span>}
@@ -799,7 +799,7 @@ export function Dashboard({
                     {p.mobilize_date} → {p.demob_date ?? "—"}
                   </span>
                   <span className="ml-auto text-xs text-muted-foreground">
-                    {p.room_label ?? "—"}{p.bed_no ? ` · ${p.bed_no}` : ""}
+                    {p.room_label ?? "—"}
                     {p.lifeboat ? ` · ${p.lifeboat}` : ""}
                   </span>
                   <button
@@ -854,7 +854,7 @@ export function Dashboard({
                   <span className="font-medium">{p.name}</span>
                   {p.company && <span className="text-xs text-muted-foreground">{p.company}</span>}
                   <span className="ml-auto text-xs text-muted-foreground">
-                    {p.room_label ?? "—"}{p.bed_no ? ` · ${p.bed_no}` : ""}
+                    {p.room_label ?? "—"}
                     {p.crew_name ? ` · ${p.crew_name}` : ""}
                   </span>
                 </div>
@@ -901,7 +901,6 @@ export function Dashboard({
                   {r.occupants.map((o) => (
                     <div key={o.trip_id} className="flex flex-wrap items-center gap-2 text-sm">
                       <span>{o.name}</span>
-                      {o.bed_no && <span className="text-xs text-muted-foreground">{o.bed_no}</span>}
                       <LazySelect
                         value={r.room_id}
                         options={rooms}

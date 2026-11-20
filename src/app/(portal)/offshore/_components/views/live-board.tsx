@@ -291,11 +291,7 @@ export function LiveBoardPanel({
 
             <ul className="divide-y">
               {g.people.map((p) => {
-                const room = p.room_label
-                  ? p.bed_no
-                    ? `${p.room_label} · ${p.bed_no}`
-                    : p.room_label
-                  : null;
+                const room = p.room_label ?? null;
                 const leads = g.roles.filter((r) => r.profile_id && r.profile_id === p.profile_id);
                 return (
                   <li key={p.trip_id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
