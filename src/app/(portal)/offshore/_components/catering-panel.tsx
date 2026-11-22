@@ -99,8 +99,9 @@ export function CateringPanel({ installations }: { installations: Installation[]
       </div>
       <p className="text-xs text-muted-foreground">
         Breakfast {MEAL_TIME.breakfast} · Snack {MEAL_TIME.snack} · Lunch {MEAL_TIME.lunch} · Dinner{" "}
-        {MEAL_TIME.dinner}. Generated from POB; arrival day skips breakfast/snack and departure day
-        skips lunch/dinner/lodging — untick anything a half-day visitor shouldn&apos;t get.
+        {MEAL_TIME.dinner}. Generated from POB with every meal ticked — untick what was not served.
+        Generating again adds whoever has boarded since and removes whoever has left, keeping your
+        ticks for everyone else and any casual diners.
       </p>
 
       <div className="flex flex-wrap items-end gap-2">
@@ -112,7 +113,7 @@ export function CateringPanel({ installations }: { installations: Installation[]
         </select>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
         <Button size="sm" disabled={pending || !installationId} onClick={() => run(() => generateMealSheet(installationId, date))}>
-          Generate from POB
+          {entries.length ? "Update from POB" : "Generate from POB"}
         </Button>
         {entries.length > 0 && (
           <>
