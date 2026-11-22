@@ -49,6 +49,7 @@ export function BedBoardPanel({
   // Full rooms stay on the board by default — they still need editing (move
   // someone out, relabel a bed). Tick the filter to narrow to rooms with space.
   const [freeOnly, setFreeOnly] = useState(false);
+  const [showWaiting, setShowWaiting] = useState(false);
   const [allocMsg, setAllocMsg] = useState<string | null>(null);
 
   function autoAllocate() {
@@ -135,10 +136,18 @@ export function BedBoardPanel({
         <span className="font-semibold text-green-700">{totalFree}</span>
         <span className="text-muted-foreground">free bed(s)</span>
         <span className="text-muted-foreground">·</span>
-        <span className={cn("font-semibold", waitingCount ? "text-amber-600" : "text-muted-foreground")}>
-          {waitingCount}
-        </span>
-        <span className="text-muted-foreground">on board waiting for a bed</span>
+        {waitingCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setShowWaiting((v) => !v)}
+            title="List the people on board with no room"
+            className="rounded px-1 font-semibold text-amber-600 underline decoration-dotted underline-offset-2 hover:bg-amber-50"
+          >
+            {waitingCount} on board waiting for a bed {showWaiting ? "▴" : "▾"}
+          </button>
+        ) : (
+          <span className="text-muted-foreground">0 on board waiting for a bed</span>
+        )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {!readOnly && (
             <Button size="sm" disabled={pending || waitingCount === 0} onClick={autoAllocate}>
@@ -166,6 +175,22 @@ export function BedBoardPanel({
           </a>
         </div>
       </div>
+
+      {showWaiting && waitingCount > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="mb-1 font-medium">On board with no room ({waitingCount})</p>
+          <p>
+            {onboard
+              .filter((p) => !p.room_id)
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((p) => [p.name, p.crew_name].filter(Boolean).join(" · "))
+              .join("  ·  ")}
+          </p>
+          <p className="mt-1 text-amber-800/80">
+            Type a name into any empty bed below to seat them, or use Auto-allocate.
+          </p>
+        </div>
+      )}
 
       {allocMsg && (
         <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
