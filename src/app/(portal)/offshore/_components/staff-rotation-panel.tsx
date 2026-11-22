@@ -5,7 +5,9 @@ import { CalendarClock, Ship } from "lucide-react";
 import { useStatusTransition } from "@/components/activity";
 import { cn } from "@/lib/utils";
 import type { RotationStaffOption, StaffRotationHistory } from "@/types/offshore";
-import { fetchRotationStaff, fetchStaffRotation } from "../actions";
+import { fetchPersonMovementHistory, fetchRotationStaff, fetchStaffRotation } from "../actions";
+import type { MovementRequestRow } from "@/lib/offshore/movement-requests";
+import { MovementTrail } from "./movement-trail";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm";
 
@@ -43,6 +45,7 @@ export function StaffRotationPanel() {
   const [selected, setSelected] = useState("");
   const [history, setHistory] = useState<StaffRotationHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [moves, setMoves] = useState<MovementRequestRow[]>([]);
 
   useEffect(() => {
     fetchRotationStaff().then((res) => {
@@ -54,7 +57,9 @@ export function StaffRotationPanel() {
   function load(profileId: string) {
     setSelected(profileId);
     setHistory(null);
+    setMoves([]);
     if (!profileId) return;
+    fetchPersonMovementHistory(profileId).then((res) => res.ok && setMoves(res.rows ?? []));
     setError(null);
     startTransition(async () => {
       const res = await fetchStaffRotation(profileId);
@@ -140,6 +145,21 @@ export function StaffRotationPanel() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="text-sm font-semibold">Date changes (early / late mob & demob)</h4>
+            {moves.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No date change requested.</p>
+            ) : (
+              <div className="divide-y rounded-lg border">
+                {moves.map((m) => (
+                  <div key={m.id} className="p-3">
+                    <MovementTrail r={m} showPerson={false} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

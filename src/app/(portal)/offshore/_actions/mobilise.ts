@@ -7,6 +7,7 @@ import type { ActionResult } from "@/types/actions";
 import type { CrewChangePrefill, CrewChangePrefillMember } from "@/types/offshore";
 import { scheduleWindow } from "@/lib/offshore/rotation-math";
 import { getOffshoreDefaultInstallation } from "@/lib/offshore/crews";
+import { movedAwayOn } from "@/lib/offshore/movement-run";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -168,10 +169,12 @@ export async function mobiliseCrew(crewId: string): Promise<ActionResult> {
     .eq("status", "onboard")
     .in("profile_id", ids);
   const aboard = new Set((already ?? []).map((a) => a.profile_id as string));
+  // Anyone whose approved late mobilisation moves them off today stays ashore.
+  const movedAway = await movedAwayOn(supabase, tenant, todayIso(), "out");
 
   const nowIso = new Date().toISOString();
   const rows = (members ?? [])
-    .filter((m) => !aboard.has(m.profile_id as string))
+    .filter((m) => !aboard.has(m.profile_id as string) && !movedAway.has(m.profile_id as string))
     .map((m) => ({
       tenant_id: tenant,
       profile_id: m.profile_id,
@@ -417,20 +420,28 @@ export async function demobiliseCrew(crewId: string): Promise<ActionResult> {
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
 
+  const tenant = await tenantId();
+  // Anyone whose approved late demobilisation keeps them on board stays.
+  const movedAway = tenant ? await movedAwayOn(supabase, tenant, today, "in") : new Set<string>();
+
   // Capture who is being demobilised before the update clears the onboard flag.
-  const { data: affected } = await supabase
+  const { data: onboardRows } = await supabase
     .from("offshore_trips")
-    .select("profile_id")
+    .select("id, profile_id")
     .eq("crew_id", crewId)
     .eq("status", "onboard");
+  const affected = (onboardRows ?? []).filter((a) => !movedAway.has(a.profile_id as string));
+  if (affected.length === 0) {
+    rev();
+    return { ok: true };
+  }
 
   const { error } = await supabase
     .from("offshore_trips")
     .update({ status: "demobilised", demob_date: today })
-    .eq("crew_id", crewId)
+    .in("id", affected.map((a) => a.id as string))
     .eq("status", "onboard");
   if (error) return { ok: false, error: error.message };
-  const tenant = await tenantId();
   if (tenant) {
     await notifyUsers({
       tenantId: tenant,

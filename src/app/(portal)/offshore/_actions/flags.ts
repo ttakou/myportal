@@ -6,7 +6,7 @@ import type { ActionResult } from "@/types/actions";
 import type { RotationFlag, RotationFlagKind, RotationFlagReason } from "@/types/offshore";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
-const KINDS: RotationFlagKind[] = ["absent", "early_arrival", "early_departure", "late_arrival"];
+const KINDS: RotationFlagKind[] = ["absent", "early_arrival", "early_departure", "late_arrival", "late_departure"];
 const REASONS: RotationFlagReason[] = ["sick", "medevac", "compassionate", "training_logistics", "other"];
 
 export async function fetchRotationFlags(

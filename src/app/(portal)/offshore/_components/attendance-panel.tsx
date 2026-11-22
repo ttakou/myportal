@@ -25,6 +25,7 @@ const KIND_STYLE: Record<RotationFlagKind, string> = {
   early_departure: "bg-amber-100 text-amber-700",
   early_arrival: "bg-blue-100 text-blue-700",
   late_arrival: "bg-amber-100 text-amber-700",
+  late_departure: "bg-blue-100 text-blue-700",
 };
 
 /**

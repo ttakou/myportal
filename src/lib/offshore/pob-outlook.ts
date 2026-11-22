@@ -97,6 +97,11 @@ export function pobOutlook(input: {
   installations: OutlookInstallation[];
   crews: OutlookCrew[];
   stays: OutlookStay[];
+  /**
+   * Days a rotational member is ashore although the schedule has them on
+   * board (an approved late mobilisation or early demobilisation).
+   */
+  away?: Pick<OutlookStay, "person" | "from" | "to">[];
   /** Where crews and bookings with no installation go. */
   defaultInstallationId: string | null;
 }): InstallationOutlook[] {
@@ -120,6 +125,7 @@ export function pobOutlook(input: {
         if (idx < c.offshore_days) {
           for (const m of c.members) {
             const key = `p:${m}`;
+            if ((input.away ?? []).some((a) => a.person === key && staysOn(a, date))) continue;
             if (!onboard.has(key)) {
               onboard.add(key);
               rotational += 1;

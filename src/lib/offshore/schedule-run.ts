@@ -19,6 +19,7 @@ import {
 import { scheduleActs, type OffshoreScheduleSettings } from "./schedule-settings";
 import { addVisitorsToDayManifests, advanceVisitorStatuses, ensureDayManifests } from "./day-manifest-run";
 import { DAY_MANIFEST_HORIZON_DAYS } from "./day-manifests";
+import { carryOutDueMoves, movedAwayOn } from "./movement-run";
 
 /**
  * The nightly job that makes the rotation schedule act.
@@ -60,6 +61,8 @@ export interface TenantScheduleSummary {
   /** Visitors moved by their dates: on board, and returned. */
   visitorsBoarded: number;
   visitorsReturned: number;
+  /** Approved movement changes carried out (boarded or demobilised early/late). */
+  movesCarriedOut: number;
 }
 
 type Row = Record<string, unknown>;
@@ -151,6 +154,7 @@ async function runTenant(
     staleCancelled: 0,
     dayManifests: 0,
     visitorsManifested: 0,
+    movesCarriedOut: 0,
     visitorsBoarded: 0,
     visitorsReturned: 0,
   };
@@ -227,6 +231,11 @@ async function runTenant(
   };
 
   // ---- Today's crew changes -------------------------------------------------
+  // Approved early / late movements falling due — an OIM's explicit decision,
+  // carried out whatever the schedule mode. Before the crew changes, so
+  // someone leaving late is not taken off with their crew.
+  summary.movesCarriedOut = await carryOutDueMoves(admin, tenantId, today);
+
   for (const due of crewChangesDueToday(scheduled, today)) {
     const members = staffByCrew.get(due.crewId) ?? [];
     const inst = installationOf(due.crewId);
@@ -246,10 +255,13 @@ async function runTenant(
       );
       continue;
     }
+    // Anyone an approved change moves off today's crew change stays put.
+    const away = await movedAwayOn(admin, tenantId, today, due.action === "mobilise" ? "out" : "in");
+    const moving = members.filter((m) => !away.has(String(m.profile_id)));
     if (due.action === "mobilise") {
-      summary.mobilised += await mobilise(admin, tenantId, due, members, aboard, inst, today);
+      summary.mobilised += await mobilise(admin, tenantId, due, moving, aboard, inst, today);
     } else {
-      summary.demobilised += await demobilise(admin, tenantId, due, members, today);
+      summary.demobilised += await demobilise(admin, tenantId, due, moving, today);
     }
     await notifyOnce(
       admin,

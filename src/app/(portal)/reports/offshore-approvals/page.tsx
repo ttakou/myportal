@@ -10,6 +10,9 @@ import { CsvExportButton } from "../_components/csv-export-button";
 import { PrintButton } from "../_components/print-button";
 import { ReportHeader } from "../_components/report-header";
 import { ParamSelect } from "../_components/param-select";
+import { createClient } from "@/lib/supabase/server";
+import { listMovementRequests, movementDecisions } from "@/lib/offshore/movement-requests";
+import { MOVE_KIND_LABEL, MOVE_REASON_LABEL, MOVE_STATUS_LABEL, shiftDays, shiftLabel } from "@/lib/offshore/movement-change";
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const DECISION_LABEL: Record<ApprovalDecision, string> = {
@@ -67,7 +70,43 @@ export default async function OffshoreApprovalsPage({
   // The OIM starts on their own decisions; anyone else on everybody's.
   const onlyMine = sp.who ? sp.who === "me" : access.isOim && !access.isAdmin;
 
-  const rows = await getApprovalsLog({ from, to, decision, decidedBy: onlyMine ? me?.id ?? null : null });
+  const supabase = createClient();
+  const [rows, decidedMoves, openMoves] = await Promise.all([
+    getApprovalsLog({ from, to, decision, decidedBy: onlyMine ? me?.id ?? null : null }),
+    decision === "pending" ? Promise.resolve([]) : movementDecisions(supabase, from, to, onlyMine ? me?.id ?? null : null),
+    decision === "all" || decision === "pending"
+      ? listMovementRequests(supabase, (q) => q.in("status", ["pending_endorsement", "pending"]))
+      : Promise.resolve([]),
+  ]);
+  // Early / late mob and demob changes, filtered like the rest.
+  const moves = [
+    ...openMoves,
+    ...decidedMoves.filter((m) => decision === "all" || decision === "decided" || m.status === decision),
+  ];
+  const approvedMoves = moves.filter((m) => m.status === "approved");
+  const daysEarly = approvedMoves.filter((m) => m.kind.startsWith("early")).reduce((n, m) => n + shiftDays(m.scheduled_date, m.requested_date), 0);
+  const daysLate = approvedMoves.filter((m) => m.kind.startsWith("late")).reduce((n, m) => n + shiftDays(m.scheduled_date, m.requested_date), 0);
+  const moveCsv: string[][] = [
+    ["Status", "Decided on", "Decided by", "Comment", "Person", "Crew", "Change", "Scheduled", "Requested", "Shift", "Reason", "Details", "Cover / relief", "Raised by", "Raised on", "Endorsed by"],
+    ...moves.map((m) => [
+      MOVE_STATUS_LABEL[m.status],
+      m.decided_at ? `${siteDate(m.decided_at)} ${siteClock(m.decided_at)}` : "",
+      m.decider ?? "",
+      m.decision_comment ?? "",
+      m.person,
+      m.crew ?? "",
+      MOVE_KIND_LABEL[m.kind],
+      m.scheduled_date,
+      m.requested_date,
+      shiftLabel(m.kind, m.scheduled_date, m.requested_date),
+      MOVE_REASON_LABEL[m.reason],
+      m.note ?? "",
+      m.cover_note ?? "",
+      m.requester ?? "",
+      siteDate(m.created_at),
+      m.endorser ?? "",
+    ]),
+  ];
   const count = (d: ApprovalDecision) => rows.filter((r) => r.decision === d).length;
   const overCap = rows.filter((r) => r.decision !== "rejected" && r.pob?.over).length;
 
@@ -211,6 +250,82 @@ export default async function OffshoreApprovalsPage({
           </ProgressiveTableBody>
         </table>
       </div>
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">Early / late mobilisation and demobilisation</h2>
+          <div className="print:hidden">
+            <CsvExportButton filename={`offshore-date-changes-${from}_${to}.csv`} table={moveCsv} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Kpi label="Changes approved" value={approvedMoves.length} tone="green" />
+          <Kpi label="Rejected" value={moves.filter((m) => m.status === "rejected").length} />
+          <Kpi label="Days moved earlier" value={daysEarly} />
+          <Kpi label="Days moved later" value={daysLate} tone={daysLate ? "amber" : undefined} />
+        </div>
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Decision</th>
+                <th className="px-3 py-2 font-medium">Who / change</th>
+                <th className="px-3 py-2 font-medium">Dates</th>
+                <th className="px-3 py-2 font-medium">Reason</th>
+                <th className="px-3 py-2 font-medium">Trail</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {moves.map((m) => (
+                <tr key={m.id} className="align-top">
+                  <td className="px-3 py-2">
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-xs font-medium",
+                        m.status === "approved" ? DECISION_TONE.approved : m.status === "rejected" ? DECISION_TONE.rejected : DECISION_TONE.pending,
+                      )}
+                    >
+                      {MOVE_STATUS_LABEL[m.status]}
+                    </span>
+                    {m.decided_at && (
+                      <span className="mt-1 block text-[11px] text-muted-foreground">
+                        {siteDate(m.decided_at)} {siteClock(m.decided_at)}
+                        {m.decider ? ` · ${m.decider}` : ""}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className="font-medium">{m.person}</span>
+                    {m.crew && <span className="text-xs text-muted-foreground"> · {m.crew}</span>}
+                    <span className="block text-xs text-muted-foreground">{MOVE_KIND_LABEL[m.kind]}</span>
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                    {m.scheduled_date} → <span className="text-foreground">{m.requested_date}</span>
+                    <span className="block text-[11px]">{shiftLabel(m.kind, m.scheduled_date, m.requested_date)}</span>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {MOVE_REASON_LABEL[m.reason]}
+                    {m.note && <span className="block text-xs">{m.note}</span>}
+                  </td>
+                  <td className="px-3 py-2 text-[11px] text-muted-foreground">
+                    Raised {siteDate(m.created_at)}
+                    {m.requester ? ` by ${m.requester}` : ""}
+                    {m.endorser && <span className="block">Endorsed by {m.endorser}</span>}
+                    {m.decision_comment && <span className="block">“{m.decision_comment}”</span>}
+                  </td>
+                </tr>
+              ))}
+              {moves.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                    No date change in this period.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <p className="text-xs text-muted-foreground">
         Peak POB is the fullest day of the stay on that installation: crews by their rotation schedule, plus approved
         trips and visitors. For a request awaiting a decision it includes the request itself.

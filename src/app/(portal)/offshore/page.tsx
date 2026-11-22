@@ -32,6 +32,7 @@ import {
   getVisitorSuggestions,
 } from "@/lib/offshore";
 import { OffshoreBoard } from "./_components/offshore-board";
+import { MovementRequests } from "./_components/movement-requests";
 import { OffshoreManagement } from "./_components/offshore-management";
 import { CrewChangeSuggestions } from "./_components/crew-change-suggestions";
 import { DefaultModeToggle } from "./_components/default-mode-toggle";
@@ -236,6 +237,8 @@ export default async function OffshorePage({
             people={people}
             meId={meId}
           />
+
+          <MovementRequests />
 
           <VisitorRequestForm
             installations={installations}

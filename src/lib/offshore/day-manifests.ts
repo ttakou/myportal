@@ -20,6 +20,7 @@
 
 import { isCrewChangeDate, type Direction } from "./manifest-plan";
 import type { RotationCycle } from "./rotation-math";
+import { movesForDay, moveDirection, type DayMove } from "./movement-change";
 
 const DAY_MS = 86_400_000;
 const addDays = (iso: string, n: number) => new Date(Date.parse(iso + "T00:00:00Z") + n * DAY_MS).toISOString().slice(0, 10);
@@ -127,6 +128,8 @@ export function dueForDay(input: {
   onboard: DayOnboard[];
   visits: DayVisit[];
   defaultInstallationId?: string | null;
+  /** Approved movement changes: off on the scheduled date, on on the requested one. */
+  moves?: DayMove[];
 }): DuePax[] {
   const { date, direction, installationId } = input;
   const here = (inst: string | null) => inst === null || installationId === null || inst === installationId;
@@ -171,6 +174,14 @@ export function dueForDay(input: {
 
   // Visitors on their booked dates.
   for (const p of visitorsDue(input.visits, date, direction, installationId, input.defaultInstallationId ?? null)) add(p);
+
+  // Approved movement changes: moved off their scheduled day, onto the new one.
+  const moved = movesForDay(input.moves ?? [], date, direction, installationId, input.defaultInstallationId ?? null);
+  const kept = picks.filter((p) => !p.profile_id || !moved.skip.has(p.profile_id));
+  picks.length = 0;
+  seenProfile.clear();
+  for (const p of kept) add(p);
+  for (const m of moved.add) add({ ...m, visit_request_id: null });
 
   return picks.sort((a, b) => a.reason.localeCompare(b.reason) || a.name.localeCompare(b.name));
 }
@@ -229,6 +240,7 @@ export function manifestDays(input: {
   fromIso: string;
   days: number;
   defaultInstallationId?: string | null;
+  moves?: DayMove[];
 }): ManifestDay[] {
   const def = input.defaultInstallationId ?? null;
   const crewDays = crewChangeDays(input).map((d) => ({ ...d, directions: ["out", "in"] as Direction[], crewDay: true }));
@@ -248,6 +260,16 @@ export function manifestDays(input: {
       if (!day.directions.includes(direction)) day.directions.push(direction);
       byKey.set(k, day);
     }
+  }
+  // A day someone moves to by an approved change needs its manifest too.
+  for (const m of input.moves ?? []) {
+    if (!inWindow(m.requested_date)) continue;
+    const inst = m.installation_id ?? def;
+    const direction = moveDirection(m.kind);
+    const k = key(m.requested_date, inst);
+    const day = byKey.get(k) ?? { date: m.requested_date, installationId: inst, out: [], in: [], directions: [], crewDay: false };
+    if (!day.directions.includes(direction)) day.directions.push(direction);
+    byKey.set(k, day);
   }
   return [...byKey.values()]
     .map((d) => ({ ...d, directions: (["out", "in"] as Direction[]).filter((x) => d.directions.includes(x)) }))
