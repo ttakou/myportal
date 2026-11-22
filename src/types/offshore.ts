@@ -632,7 +632,7 @@ export interface StaffRotationHistory {
 
 // --- Rotation / attendance exception flags ----------------------------------
 
-export type RotationFlagKind = "absent" | "early_arrival" | "early_departure" | "late_arrival";
+export type RotationFlagKind = "absent" | "early_arrival" | "early_departure" | "late_arrival" | "late_departure";
 export type RotationFlagReason = "sick" | "medevac" | "compassionate" | "training_logistics" | "other";
 
 export const ROTATION_FLAG_KIND_LABEL: Record<RotationFlagKind, string> = {
@@ -640,6 +640,7 @@ export const ROTATION_FLAG_KIND_LABEL: Record<RotationFlagKind, string> = {
   early_arrival: "Early arrival",
   early_departure: "Early departure",
   late_arrival: "Late arrival",
+  late_departure: "Late departure",
 };
 export const ROTATION_FLAG_REASON_LABEL: Record<RotationFlagReason, string> = {
   sick: "Sick leave / medical",

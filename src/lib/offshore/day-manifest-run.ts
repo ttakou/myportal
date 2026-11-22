@@ -18,6 +18,7 @@ import {
 } from "./day-manifests";
 import type { Direction } from "./manifest-plan";
 import { visitorMoves } from "./visitor-moves";
+import type { DayMove, MoveKind } from "./movement-change";
 
 type Row = Record<string, any>;
 const DAY_MS = 86_400_000;
@@ -40,6 +41,7 @@ interface DayInputs {
   staff: DayStaff[];
   onboard: DayOnboard[];
   visits: DayVisit[];
+  moves: DayMove[];
   installationName: Map<string, string>;
 }
 
@@ -57,7 +59,7 @@ export async function offshoreDefaultInstallation(client: SupabaseClient, tenant
 
 /** Crews, roster, who is aboard and the visitor bookings, for the days `fromIso`..`toIso`. */
 async function loadDayInputs(client: SupabaseClient, tenantId: string, fromIso: string, toIso: string): Promise<DayInputs> {
-  const [crews, staff, onboard, visits, installations] = await Promise.all([
+  const [crews, staff, onboard, visits, installations, moves] = await Promise.all([
     allRows((a, b) =>
       client
         .from("offshore_crews")
@@ -96,7 +98,19 @@ async function loadDayInputs(client: SupabaseClient, tenantId: string, fromIso: 
         .range(a, b),
     ),
     allRows((a, b) => client.from("offshore_installations").select("id, name").eq("tenant_id", tenantId).order("id").range(a, b)),
+    // Approved movement changes touching the window, either end.
+    allRows((a, b) =>
+      client
+        .from("offshore_movement_requests")
+        .select("profile_id, kind, scheduled_date, requested_date, installation_id, profile:profiles!offshore_movement_requests_profile_id_fkey(full_name, email)")
+        .eq("tenant_id", tenantId)
+        .eq("status", "approved")
+        .or(`and(scheduled_date.gte.${fromIso},scheduled_date.lte.${toIso}),and(requested_date.gte.${fromIso},requested_date.lte.${toIso})`)
+        .order("id")
+        .range(a, b),
+    ),
   ]);
+  const positionOf = new Map(staff.map((s) => [s.profile_id as string, (s.position as string | null) ?? null]));
 
   return {
     crews: crews.map((c) => ({
@@ -135,6 +149,18 @@ async function loadDayInputs(client: SupabaseClient, tenantId: string, fromIso: 
       depart_date: v.depart_date,
       return_date: v.return_date ?? null,
     })),
+    moves: moves.map((m) => {
+      const p = one<{ full_name?: string; email?: string }>(m.profile);
+      return {
+        profile_id: m.profile_id as string,
+        name: p?.full_name || p?.email || "Crew member",
+        position: positionOf.get(m.profile_id as string) ?? null,
+        kind: m.kind as MoveKind,
+        scheduled_date: m.scheduled_date as string,
+        requested_date: m.requested_date as string,
+        installation_id: (m.installation_id as string | null) ?? null,
+      };
+    }),
     installationName: new Map(installations.map((i) => [i.id as string, i.name as string])),
   };
 }
@@ -182,7 +208,7 @@ export async function ensureDayManifests(
   const to = addDays(from, horizon - 1);
   const defaultInstallationId = opts.defaultInstallationId ?? null;
   const inputs = await loadDayInputs(client, tenantId, from, to);
-  const days = manifestDays({ crews: inputs.crews, staff: inputs.staff, visits: inputs.visits, fromIso: from, days: horizon, defaultInstallationId });
+  const days = manifestDays({ crews: inputs.crews, staff: inputs.staff, visits: inputs.visits, moves: inputs.moves, fromIso: from, days: horizon, defaultInstallationId });
   const run: DayManifestRun = { days: days.length, created: 0, superseded: 0 };
   if (days.length === 0) return run;
 

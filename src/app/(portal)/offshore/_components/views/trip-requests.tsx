@@ -35,6 +35,7 @@ import {
 } from "../../actions";
 import type { OffshoreRoleFlags } from "../offshore-views";
 import { useRun } from "./shared";
+import { MovementDesk } from "./movement-desk";
 
 /**
  * Trip Requests: every request to go offshore, and the two decisions each
@@ -79,6 +80,8 @@ export function TripRequestsPanel({
           POB outlook →
         </Link>
       </div>
+
+      <MovementDesk />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Tile

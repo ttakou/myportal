@@ -22,7 +22,7 @@ const VISIT_CONFIRMED = ["approved", "onboard", "returned"];
  */
 export async function getPobOutlook(from: string, to: string): Promise<InstallationOutlook[]> {
   const supabase = createClient();
-  const [{ data: insts }, { data: crews }, { data: staff }, { data: trips }, { data: visits }, fallback] = await Promise.all([
+  const [{ data: insts }, { data: crews }, { data: staff }, { data: trips }, { data: visits }, fallback, { data: moveRows }] = await Promise.all([
     supabase.from("offshore_installations").select("id, name, pob_capacity").eq("is_active", true).order("name"),
     supabase.from("offshore_crews").select("id, name, installation_id, offshore_days, onshore_days, cycle_start_date").eq("is_active", true),
     supabase.from("offshore_staff").select("profile_id, crew_id, is_rotational, profile:profiles!offshore_staff_profile_id_fkey(is_active)"),
@@ -39,6 +39,12 @@ export async function getPobOutlook(from: string, to: string): Promise<Installat
       .lte("depart_date", to)
       .or(`return_date.is.null,return_date.gte.${from}`),
     getOffshoreDefaultInstallation(),
+    // Movement changes, approved or awaiting a decision, touching the range.
+    supabase
+      .from("offshore_movement_requests")
+      .select("profile_id, kind, scheduled_date, requested_date, installation_id, status")
+      .in("status", ["approved", "pending", "pending_endorsement"])
+      .or(`and(scheduled_date.gte.${from},scheduled_date.lte.${to}),and(requested_date.gte.${from},requested_date.lte.${to})`),
   ]);
 
   const installations: OutlookInstallation[] = ((insts ?? []) as Record<string, unknown>[]).map((i) => ({
@@ -99,12 +105,29 @@ export async function getPobOutlook(from: string, to: string): Promise<Installat
     });
   }
 
+  // Movement changes move a rotational member off the schedule for a few
+  // days: extra days on board are stays (pending until approved), days ashore
+  // that the schedule counts on board are taken off once approved.
+  const away: { person: string; from: string; to: string }[] = [];
+  for (const m of (moveRows ?? []) as Record<string, unknown>[]) {
+    const person = `p:${m.profile_id}`;
+    const sched = String(m.scheduled_date);
+    const req = String(m.requested_date);
+    const pending = m.status !== "approved";
+    const installationId = (m.installation_id as string | null) ?? null;
+    if (m.kind === "early_mob") stays.push({ person, installationId, from: req, to: sched, pending });
+    else if (m.kind === "late_demob") stays.push({ person, installationId, from: sched, to: req, pending });
+    else if (!pending && m.kind === "late_mob") away.push({ person, from: sched, to: req });
+    else if (!pending && m.kind === "early_demob") away.push({ person, from: req, to: sched });
+  }
+
   return pobOutlook({
     from,
     to,
     installations,
     crews: outlookCrews,
     stays,
+    away,
     defaultInstallationId: fallback?.id ?? null,
   });
 }
