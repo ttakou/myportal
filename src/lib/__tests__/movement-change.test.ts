@@ -61,9 +61,11 @@ describe("checking a request", () => {
 
 describe("routing", () => {
   it("sends a staff member's own request to their line manager first", () => {
-    expect(firstStatus({ selfRaised: true, hasManager: true })).toBe("pending_endorsement");
-    expect(firstStatus({ selfRaised: true, hasManager: false })).toBe("pending");
-    expect(firstStatus({ selfRaised: false, hasManager: true })).toBe("pending");
+    // The person themselves, or a colleague: through their line manager.
+    expect(firstStatus({ hasManager: true, raisedByLineOrDesk: false })).toBe("pending_endorsement");
+    expect(firstStatus({ hasManager: false, raisedByLineOrDesk: false })).toBe("pending");
+    // Their manager (or anyone above) or the offshore desk: straight to the OIM.
+    expect(firstStatus({ hasManager: true, raisedByLineOrDesk: true })).toBe("pending");
   });
 });
 
@@ -141,6 +143,15 @@ describe("who a leader can raise a request for", () => {
   it("keeps a line manager outside the desk to their own line", () => {
     expect(groupPeople({ me: "me", line, offshore, desk: false }).map((g) => g.label)).toEqual(["My team", "Bob's team", "Cid's team"]);
   });
+  it("ends with everyone else registered, for anyone to raise a request for", () => {
+    const everyone = [...offshore, { id: "q", name: "Quinn (not offshore)" }];
+    const groups = groupPeople({ me: "me", line, offshore, desk: false, everyone });
+    expect(groups.map((g) => g.label)).toEqual(["My team", "Bob's team", "Cid's team", "Everyone else"]);
+    expect(groups[3].people.map((p) => p.id)).toEqual(["q", "z"]);
+    const desk = groupPeople({ me: "me", line, offshore, desk: true, everyone });
+    expect(desk.at(-1)).toEqual({ label: "Everyone else", people: [{ id: "q", name: "Quinn (not offshore)" }] });
+  });
+
   it("gives the desk everyone when they lead no team", () => {
     const groups = groupPeople({ me: "me", line: [], offshore, desk: true });
     expect(groups).toEqual([{ label: "Offshore staff", people: offshore.filter((p) => p.id !== "me").sort((x, y) => x.name.localeCompare(y.name)) }]);

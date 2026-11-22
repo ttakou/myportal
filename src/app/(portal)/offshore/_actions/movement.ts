@@ -116,11 +116,20 @@ async function movementsOf(profileId: string): Promise<{
   };
 }
 
-/** May the signed-in user raise or see requests for this person? */
+/** Does the signed-in user stand above this person, or sit on the offshore desk? */
 async function mayActFor(profileId: string, uid: string): Promise<boolean> {
   if (profileId === uid) return true;
   if ((await deskAccess()).desk) return true;
   return inMyLine(profileId);
+}
+
+/** Anyone may raise a request for anybody in their organisation; it is endorsed by the person's line. */
+async function mayRaiseFor(profileId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const tenant = await tenantId();
+  if (!admin || !tenant) return false;
+  const { data } = await admin.from("profiles").select("id").eq("id", profileId).eq("tenant_id", tenant).maybeSingle();
+  return !!data;
 }
 
 export interface MovementPanel {
@@ -150,13 +159,24 @@ export async function fetchMovementPanel(): Promise<{ ok: boolean; panel?: Movem
   const toEndorse = waiting.filter((r) => lineIds.has(r.profile_id));
 
   let offshore: { id: string; name: string }[] = [];
+  let everyone: { id: string; name: string }[] = [];
   const admin = createAdminClient();
   if (admin) {
     const tenant = await tenantId();
-    const { data: staff } = await admin
-      .from("offshore_staff")
-      .select("profile_id, profile:profiles!offshore_staff_profile_id_fkey(full_name, email, is_active)")
-      .eq("tenant_id", tenant ?? "");
+    const [{ data: staff }, { data: profiles }] = await Promise.all([
+      admin
+        .from("offshore_staff")
+        .select("profile_id, profile:profiles!offshore_staff_profile_id_fkey(full_name, email, is_active)")
+        .eq("tenant_id", tenant ?? ""),
+      // Everyone registered and active, for "Everyone else".
+      admin.from("profiles").select("id, full_name, email, is_active").eq("tenant_id", tenant ?? "").limit(5000),
+    ]);
+    everyone = ((profiles ?? []) as { id: string; full_name: string | null; email: string | null; is_active: boolean | null }[])
+      .filter((p) => p.is_active !== false)
+      .map((p) => ({
+      id: p.id,
+      name: p.full_name || p.email || "—",
+    }));
     offshore = ((staff ?? []) as Record<string, any>[])
       .map((s) => {
         const p = Array.isArray(s.profile) ? s.profile[0] : s.profile;
@@ -165,7 +185,7 @@ export async function fetchMovementPanel(): Promise<{ ok: boolean; panel?: Movem
       .filter((p) => p.active)
       .map(({ id, name }) => ({ id, name }));
   }
-  const groups = groupPeople({ me: uid, line: (line.data ?? []) as LineMember[], offshore, desk });
+  const groups = groupPeople({ me: uid, line: (line.data ?? []) as LineMember[], offshore, desk, everyone });
   return { ok: true, panel: { me: uid, groups, mine, raised, toEndorse } };
 }
 
@@ -175,7 +195,7 @@ export async function fetchPersonMovements(
 ): Promise<{ ok: boolean; movements?: PersonMovements; crewName?: string | null; open?: MoveKind[]; error?: string }> {
   const { supabase, uid } = await me();
   if (!uid) return { ok: false, error: "Not signed in." };
-  if (!(await mayActFor(profileId, uid))) return { ok: false, error: "You can only raise requests for yourself or your team." };
+  if (!(await mayRaiseFor(profileId))) return { ok: false, error: "That person is not in your organisation." };
   const info = await movementsOf(profileId);
   if (!info) return { ok: false, error: "Not available." };
   const open = await listMovementRequests(supabase, (q) => q.eq("profile_id", profileId).in("status", ["pending_endorsement", "pending", "approved"]).is("applied_at", null), 20);
@@ -194,7 +214,7 @@ export async function requestMovementChange(input: {
   if (!uid) return { ok: false, error: "Not signed in." };
   if (!MOVE_KINDS.includes(input.kind)) return { ok: false, error: "Pick what you are asking for." };
   if (!MOVE_REASONS.includes(input.reason)) return { ok: false, error: "Pick a reason." };
-  if (!(await mayActFor(input.profileId, uid))) return { ok: false, error: "You can only raise requests for yourself or your team." };
+  if (!(await mayRaiseFor(input.profileId))) return { ok: false, error: "That person is not in your organisation." };
   const tenant = await tenantId();
   const admin = createAdminClient();
   if (!tenant || !admin) return { ok: false, error: "Not available." };
@@ -217,8 +237,8 @@ export async function requestMovementChange(input: {
     return { ok: false, error: `There is already an open change for this ${direction === "out" ? "mobilisation" : "demobilisation"}. Withdraw it first, or ask the offshore desk.` };
   }
 
-  const selfRaised = input.profileId === uid;
-  const status: MoveStatus = firstStatus({ selfRaised, hasManager: !!info.managerId });
+  const raisedByLineOrDesk = input.profileId !== uid && (await mayActFor(input.profileId, uid));
+  const status: MoveStatus = firstStatus({ hasManager: !!info.managerId, raisedByLineOrDesk });
   const { data: row, error } = await admin
     .from("offshore_movement_requests")
     .insert({

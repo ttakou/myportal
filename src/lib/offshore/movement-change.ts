@@ -142,12 +142,14 @@ export function checkMove(input: {
 }
 
 /**
- * Where a new request goes first. A staff member asking for themselves goes
- * through their line manager, when they have one; a manager or the desk
- * asking on someone's behalf goes straight to the OIM.
+ * Where a new request goes first. It goes through the person's line manager,
+ * when they have one, unless whoever raised it already stands above them in
+ * the reporting line or sits on the offshore desk: then straight to the OIM.
+ * A staff member asking for themselves, or a colleague asking for them, is
+ * endorsed first.
  */
-export function firstStatus(input: { selfRaised: boolean; hasManager: boolean }): MoveStatus {
-  return input.selfRaised && input.hasManager ? "pending_endorsement" : "pending";
+export function firstStatus(input: { hasManager: boolean; raisedByLineOrDesk: boolean }): MoveStatus {
+  return input.hasManager && !input.raisedByLineOrDesk ? "pending_endorsement" : "pending";
 }
 
 /** Still open: nothing decided yet. */
@@ -218,6 +220,8 @@ export function groupPeople(input: {
   line: LineMember[];
   offshore: { id: string; name: string }[];
   desk: boolean;
+  /** Every other active person registered in the app, for the last group. */
+  everyone?: { id: string; name: string }[];
 }): PeopleGroup[] {
   const offshoreName = new Map(input.offshore.map((p) => [p.id, p.name]));
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
@@ -238,9 +242,14 @@ export function groupPeople(input: {
     .sort((a, b) => a.depth - b.depth || (a.label === "My team" ? -1 : b.label === "My team" ? 1 : a.label.localeCompare(b.label)))
     .map((t) => ({ label: t.label, people: t.people.sort(byName) }));
 
+  const listed = new Set(inLine);
   if (input.desk) {
     const others = input.offshore.filter((p) => p.id !== input.me && !inLine.has(p.id)).sort(byName);
+    for (const p of others) listed.add(p.id);
     if (others.length) groups.push({ label: groups.length ? "All other offshore staff" : "Offshore staff", people: others });
   }
+  // Anyone may raise a request for anybody; it is endorsed by their line.
+  const rest = (input.everyone ?? []).filter((p) => p.id !== input.me && !listed.has(p.id)).sort(byName);
+  if (rest.length) groups.push({ label: "Everyone else", people: rest });
   return groups;
 }
