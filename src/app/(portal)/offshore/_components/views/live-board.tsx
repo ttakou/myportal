@@ -135,9 +135,12 @@ export function LiveBoardPanel({
 
   // Group on-board people by muster station (lifeboat); the "—" bucket collects
   // anyone without one — a safety gap worth surfacing prominently.
+  // "Without a bed" narrows the board to the people on board with no room.
+  const [noBedOnly, setNoBedOnly] = useState(false);
   const groups = useMemo(() => {
     const m = new Map<string, PobOnboard[]>();
     for (const p of people) {
+      if (noBedOnly && p.room_id) continue;
       const lb = p.lifeboat || "—";
       const list = m.get(lb) ?? [];
       list.push(p);
@@ -150,7 +153,7 @@ export function LiveBoardPanel({
         people: list.sort((x, y) => x.name.localeCompare(y.name)),
         roles: roles.filter((r) => r.lifeboat === lb),
       }));
-  }, [people, roles]);
+  }, [people, roles, noBedOnly]);
 
   const visitorCount = people.filter((p) => p.category === "visitor").length;
   const noBed = people.filter((p) => !p.room_id).length;
@@ -162,7 +165,19 @@ export function LiveBoardPanel({
         <span className="text-base font-semibold">{people.length} on board</span>
         <span className="text-muted-foreground">· {stationCount} muster station(s)</span>
         {visitorCount > 0 && <span className="text-muted-foreground">· {visitorCount} visitor(s)</span>}
-        {noBed > 0 && <span className="font-medium text-destructive">· {noBed} without a bed</span>}
+        {noBed > 0 && (
+          <button
+            type="button"
+            onClick={() => setNoBedOnly((v) => !v)}
+            title={noBedOnly ? "Show everyone on board" : "Show only the people on board with no room"}
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-xs font-medium",
+              noBedOnly ? "border-destructive bg-destructive text-white" : "border-destructive/40 text-destructive hover:bg-destructive/10",
+            )}
+          >
+            {noBedOnly ? `Showing ${noBed} without a bed · show all` : `${noBed} without a bed — show only them`}
+          </button>
+        )}
         {active && (
           <span className="text-xs text-muted-foreground">Emergency org: {active.from} → {active.to}</span>
         )}

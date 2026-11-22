@@ -286,8 +286,12 @@ export interface AccommodationSummary {
   totalRooms: number;
   totalBeds: number;
   fixedBeds: number;
+  /** People on board who are in a room (what the room cards add up to). */
   occupiedBeds: number;
+  /** People on board with no room recorded: counted in POB, on no room card. */
+  noRoom: number;
   blockedRooms: number;
+  /** Free beds in usable rooms, as the room cards show them. */
   availableBeds: number;
   /** Rooms whose current occupancy exceeds bed_count (day/night hot-bunking). */
   sharedRooms: number;

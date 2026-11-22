@@ -165,14 +165,14 @@ function Stat({
   label: string;
   value: string | number;
   sub?: string;
-  tone?: "green";
+  tone?: "green" | "amber";
   /** When set, the card becomes a button that opens its detail drill-down. */
   onClick?: () => void;
   active?: boolean;
 }) {
   const body = (
     <>
-      <div className={cn("text-2xl font-semibold", tone === "green" && "text-green-700")}>{value}</div>
+      <div className={cn("text-2xl font-semibold", tone === "green" && "text-green-700", tone === "amber" && "text-amber-700")}>{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
       {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
     </>
@@ -180,6 +180,7 @@ function Stat({
   const base = cn(
     "rounded-lg border bg-card p-3 text-left",
     tone === "green" && "border-green-300 bg-green-50",
+    tone === "amber" && "border-amber-300 bg-amber-50",
   );
   if (!onClick) return <div className={base}>{body}</div>;
   return (
@@ -620,9 +621,14 @@ export function Dashboard({
       case "beds":
         return { title: `Usable beds (${accommodation.totalBeds})`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r))} /> };
       case "occupied":
-        return { title: `Occupied — who's in a bed (${accommodation.occupiedBeds})`, node: <PobPeopleRows people={pob.people.filter((p) => p.room_id)} canDemob={canDecide} /> };
+        return { title: `In a room (${accommodation.occupiedBeds})`, node: <PobPeopleRows people={pob.people.filter((p) => p.room_id)} canDemob={canDecide} /> };
+      case "noroom":
+        return {
+          title: `On board with no room (${accommodation.noRoom}) — seat them from the Bed board, or demob anyone who has left`,
+          node: <PobPeopleRows people={pob.people.filter((p) => !p.room_id)} canDemob={canDecide} />,
+        };
       case "available":
-        return { title: `Rooms with a free bed (${accommodation.availableBeds} beds)`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r) && Math.max(0, (r.bed_count || 0) - r.occupied) > 0)} showFree /> };
+        return { title: `Rooms with a free bed (${accommodation.availableBeds} free beds)`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r) && Math.max(0, (r.bed_count || 0) - r.occupied) > 0)} showFree /> };
       case "fixed":
         return { title: `Fixed cabins — staff (${accommodation.fixedBeds})`, node: <FixedCabinRows roster={roster} /> };
       case "blocked":
@@ -867,11 +873,17 @@ export function Dashboard({
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Accommodation
         </h3>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           <Stat label="Rooms" value={accommodation.totalRooms} {...statDrill("rooms")} />
           <Stat label="Beds (usable)" value={accommodation.totalBeds} {...statDrill("beds")} />
-          <Stat label="Occupied" value={accommodation.occupiedBeds} {...statDrill("occupied")} />
-          <Stat label="Available" value={accommodation.availableBeds} tone="green" {...statDrill("available")} />
+          <Stat label="In a room" value={accommodation.occupiedBeds} {...statDrill("occupied")} />
+          <Stat
+            label="On board, no room"
+            value={accommodation.noRoom}
+            tone={accommodation.noRoom > 0 ? "amber" : undefined}
+            {...statDrill("noroom")}
+          />
+          <Stat label="Free beds" value={accommodation.availableBeds} tone="green" {...statDrill("available")} />
           <Stat label="Fixed (staff)" value={accommodation.fixedBeds} {...statDrill("fixed")} />
           <Stat label="Blocked rooms" value={accommodation.blockedRooms} {...statDrill("blocked")} />
         </div>

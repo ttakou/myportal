@@ -178,10 +178,14 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
   // On-board occupants per room (a 2-bed room may hold 4 on day/night shift).
   const occByRoom = new Map<string, { trip_id: string; name: string; bed_no: string | null }[]>();
   let occupiedBeds = 0;
+  let noRoom = 0;
   for (const t of (onboard ?? []) as Record<string, any>[]) {
-    occupiedBeds++;
     const rid = t.room_id as string | null;
-    if (!rid) continue;
+    if (!rid) {
+      noRoom++;
+      continue;
+    }
+    occupiedBeds++;
     const list = occByRoom.get(rid) ?? [];
     list.push({
       trip_id: t.id as string,
@@ -194,9 +198,9 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
   for (const a of (visitorBeds ?? []) as Record<string, any>[]) {
     const visit = one<{ visitor_name?: string; status?: string }>(a.visit);
     if (!["approved", "onboard"].includes(visit?.status ?? "")) continue;
-    occupiedBeds++;
     const rid = a.room_id as string | null;
     if (!rid) continue;
+    occupiedBeds++;
     const list = occByRoom.get(rid) ?? [];
     list.push({
       trip_id: `visit-${a.id}`,
@@ -207,6 +211,7 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
   }
 
   let totalBeds = 0;
+  let freeBeds = 0;
   let fixedBeds = 0;
   let blockedRooms = 0;
   const overbooked: AccommodationSummary["overbooked"] = [];
@@ -216,6 +221,7 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
     else totalBeds += r.bed_count ?? 0;
     fixedBeds += r.offshore_staff?.[0]?.count ?? 0;
     const occupants = occByRoom.get(r.id as string) ?? [];
+    if (!blocked) freeBeds += Math.max(0, (r.bed_count ?? 0) - occupants.length);
     if (occupants.length > (r.bed_count ?? 0)) {
       overbooked.push({
         room_id: r.id as string,
@@ -230,8 +236,9 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
     totalBeds,
     fixedBeds,
     occupiedBeds,
+    noRoom,
     blockedRooms,
-    availableBeds: Math.max(0, totalBeds - occupiedBeds),
+    availableBeds: freeBeds,
     sharedRooms: overbooked.length,
     overbooked: overbooked.sort((a, b) => a.label.localeCompare(b.label)),
   };
