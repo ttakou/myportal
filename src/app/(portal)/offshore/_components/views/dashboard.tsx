@@ -590,6 +590,11 @@ export function Dashboard({
     ...EXCEPTION_STATES.map((s) => `sched:${s}`),
   ];
   const blocked = (r: Room) => ["blocked", "maintenance"].includes(r.status);
+  // Free beds in the Echo room, shown under the Free beds tile: a block of
+  // beds there is not the same as beds spread across the cabins.
+  const echoFree = rooms
+    .filter((r) => !blocked(r) && /\becho\b/i.test([r.block, r.room_number].filter(Boolean).join(" ")))
+    .reduce((n, r) => n + Math.max(0, (r.bed_count || 0) - r.occupants.length), 0);
   function statCard(key: string): { title: string; node: ReactNode } | null {
     // Schedule-state chips drill into the same people list, filtered by state.
     if (key.startsWith("sched:")) {
@@ -883,7 +888,13 @@ export function Dashboard({
             tone={accommodation.noRoom > 0 ? "amber" : undefined}
             {...statDrill("noroom")}
           />
-          <Stat label="Free beds" value={accommodation.availableBeds} tone="green" {...statDrill("available")} />
+          <Stat
+            label="Free beds"
+            value={accommodation.availableBeds}
+            sub={echoFree > 0 ? `${echoFree} of them in Echo` : undefined}
+            tone="green"
+            {...statDrill("available")}
+          />
           <Stat label="Fixed (staff)" value={accommodation.fixedBeds} {...statDrill("fixed")} />
           <Stat label="Blocked rooms" value={accommodation.blockedRooms} {...statDrill("blocked")} />
         </div>
