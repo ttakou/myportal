@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkMove,
+  groupPeople,
   firstStatus,
   movesForDay,
   scheduledFor,
@@ -108,5 +109,39 @@ describe("approved changes in the POB outlook", () => {
       defaultInstallationId: "J",
     })[0];
     expect(o.days.map((d) => d.total)).toEqual([1, 2, 2, 1, 0]);
+  });
+});
+
+describe("who a leader can raise a request for", () => {
+  const offshore = [
+    { id: "me", name: "Leader" },
+    { id: "a", name: "Ann (direct)" },
+    { id: "b", name: "Bob (direct, leads a team)" },
+    { id: "c", name: "Cid (under Bob)" },
+    { id: "d", name: "Dan (under Cid)" },
+    { id: "z", name: "Zoe (elsewhere)" },
+  ];
+  const line = [
+    { profile_id: "a", full_name: "Ann", manager_id: "me", manager_name: "Leader", depth: 1 },
+    { profile_id: "b", full_name: "Bob", manager_id: "me", manager_name: "Leader", depth: 1 },
+    { profile_id: "c", full_name: "Cid", manager_id: "b", manager_name: "Bob", depth: 2 },
+    { profile_id: "d", full_name: "Dan", manager_id: "c", manager_name: "Cid", depth: 3 },
+    { profile_id: "x", full_name: "Not offshore", manager_id: "me", manager_name: "Leader", depth: 1 },
+  ];
+  it("lists the team, each sub-team, then everyone else for the desk", () => {
+    const groups = groupPeople({ me: "me", line, offshore, desk: true });
+    expect(groups.map((g) => [g.label, g.people.map((p) => p.id)])).toEqual([
+      ["My team", ["a", "b"]],
+      ["Bob's team", ["c"]],
+      ["Cid's team", ["d"]],
+      ["All other offshore staff", ["z"]],
+    ]);
+  });
+  it("keeps a line manager outside the desk to their own line", () => {
+    expect(groupPeople({ me: "me", line, offshore, desk: false }).map((g) => g.label)).toEqual(["My team", "Bob's team", "Cid's team"]);
+  });
+  it("gives the desk everyone when they lead no team", () => {
+    const groups = groupPeople({ me: "me", line: [], offshore, desk: true });
+    expect(groups).toEqual([{ label: "Offshore staff", people: offshore.filter((p) => p.id !== "me").sort((x, y) => x.name.localeCompare(y.name)) }]);
   });
 });
