@@ -173,3 +173,57 @@ export function movesForDay(
   }
   return { skip, add };
 }
+
+// --- Who a request can be raised for --------------------------------------------
+
+export interface LineMember {
+  profile_id: string;
+  full_name: string | null;
+  manager_id: string | null;
+  manager_name: string | null;
+  /** 1 = reports to the viewer directly. */
+  depth: number;
+}
+
+export interface PeopleGroup {
+  label: string;
+  people: { id: string; name: string }[];
+}
+
+/**
+ * The people a leader can raise a request for, grouped the way their
+ * organisation reads: their direct team, then each sub-team under the manager
+ * it reports to, then — for the offshore desk only — every other offshore
+ * staff member. Only offshore staff are listed; the viewer is not.
+ */
+export function groupPeople(input: {
+  me: string;
+  line: LineMember[];
+  offshore: { id: string; name: string }[];
+  desk: boolean;
+}): PeopleGroup[] {
+  const offshoreName = new Map(input.offshore.map((p) => [p.id, p.name]));
+  const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+  const inLine = new Set<string>();
+  const teams = new Map<string, { label: string; depth: number; people: { id: string; name: string }[] }>();
+
+  for (const m of input.line) {
+    if (m.profile_id === input.me || !offshoreName.has(m.profile_id)) continue;
+    inLine.add(m.profile_id);
+    const key = m.depth <= 1 ? "" : m.manager_id ?? "";
+    const label = m.depth <= 1 ? "My team" : `${m.manager_name ?? "Sub-team"}'s team`;
+    const team = teams.get(key) ?? { label, depth: m.depth <= 1 ? 1 : m.depth, people: [] };
+    team.people.push({ id: m.profile_id, name: offshoreName.get(m.profile_id) ?? m.full_name ?? "—" });
+    teams.set(key, team);
+  }
+
+  const groups: PeopleGroup[] = [...teams.values()]
+    .sort((a, b) => a.depth - b.depth || (a.label === "My team" ? -1 : b.label === "My team" ? 1 : a.label.localeCompare(b.label)))
+    .map((t) => ({ label: t.label, people: t.people.sort(byName) }));
+
+  if (input.desk) {
+    const others = input.offshore.filter((p) => p.id !== input.me && !inLine.has(p.id)).sort(byName);
+    if (others.length) groups.push({ label: groups.length ? "All other offshore staff" : "Offshore staff", people: others });
+  }
+  return groups;
+}

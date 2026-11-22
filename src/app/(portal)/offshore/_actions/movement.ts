@@ -8,6 +8,7 @@ import type { ActionResult } from "@/types/actions";
 import {
   checkMove,
   firstStatus,
+  groupPeople,
   isOpen,
   moveDirection,
   MOVE_KIND_LABEL,
@@ -19,6 +20,8 @@ import {
   type MoveKind,
   type MoveReason,
   type MoveStatus,
+  type LineMember,
+  type PeopleGroup,
   type PersonMovements,
 } from "@/lib/offshore/movement-change";
 import { listMovementRequests, type MovementRequestRow } from "@/lib/offshore/movement-requests";
@@ -121,8 +124,8 @@ async function mayActFor(profileId: string, uid: string): Promise<boolean> {
 
 export interface MovementPanel {
   me: string;
-  /** People the user may raise a request for besides themselves. */
-  people: { id: string; name: string }[];
+  /** People the user may raise a request for besides themselves: their team, sub-teams, then everyone else (desk only). */
+  groups: PeopleGroup[];
   mine: MovementRequestRow[];
   raised: MovementRequestRow[];
   toEndorse: MovementRequestRow[];
@@ -145,7 +148,7 @@ export async function fetchMovementPanel(): Promise<{ ok: boolean; panel?: Movem
   const lineIds = new Set(((line.data ?? []) as { profile_id: string }[]).map((r) => r.profile_id));
   const toEndorse = waiting.filter((r) => lineIds.has(r.profile_id));
 
-  let people: { id: string; name: string }[] = [];
+  let offshore: { id: string; name: string }[] = [];
   const admin = createAdminClient();
   if (admin) {
     const tenant = await tenantId();
@@ -153,17 +156,16 @@ export async function fetchMovementPanel(): Promise<{ ok: boolean; panel?: Movem
       .from("offshore_staff")
       .select("profile_id, profile:profiles!offshore_staff_profile_id_fkey(full_name, email, is_active)")
       .eq("tenant_id", tenant ?? "");
-    people = ((staff ?? []) as Record<string, any>[])
-      .filter((s) => s.profile_id !== uid && (desk || lineIds.has(s.profile_id)))
+    offshore = ((staff ?? []) as Record<string, any>[])
       .map((s) => {
         const p = Array.isArray(s.profile) ? s.profile[0] : s.profile;
         return { id: s.profile_id as string, name: (p?.full_name || p?.email || "—") as string, active: p?.is_active !== false };
       })
       .filter((p) => p.active)
-      .map(({ id, name }) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .map(({ id, name }) => ({ id, name }));
   }
-  return { ok: true, panel: { me: uid, people, mine, raised, toEndorse } };
+  const groups = groupPeople({ me: uid, line: (line.data ?? []) as LineMember[], offshore, desk });
+  return { ok: true, panel: { me: uid, groups, mine, raised, toEndorse } };
 }
 
 /** The person's scheduled movements, for the request form. */

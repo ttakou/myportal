@@ -204,15 +204,19 @@ function RequestForm({
       className="space-y-3 rounded-lg border bg-card p-4"
     >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {panel.people.length > 0 && (
+        {panel.groups.length > 0 && (
           <label className="text-xs text-muted-foreground">
             For
             <select value={who} onChange={(e) => setWho(e.target.value)} className={field}>
               <option value={panel.me}>Myself</option>
-              {panel.people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
+              {panel.groups.map((g) => (
+                <optgroup key={g.label} label={`${g.label} (${g.people.length})`}>
+                  {g.people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>
