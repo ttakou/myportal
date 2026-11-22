@@ -156,7 +156,7 @@ async function loadDayInputs(client: SupabaseClient, tenantId: string, fromIso: 
         name: p?.full_name || p?.email || "Crew member",
         position: positionOf.get(m.profile_id as string) ?? null,
         kind: m.kind as MoveKind,
-        scheduled_date: m.scheduled_date as string,
+        scheduled_date: (m.scheduled_date as string | null) ?? null,
         requested_date: m.requested_date as string,
         installation_id: (m.installation_id as string | null) ?? null,
       };

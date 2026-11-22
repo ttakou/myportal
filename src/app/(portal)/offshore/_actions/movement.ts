@@ -16,6 +16,7 @@ import {
   MOVE_REASONS,
   scheduledFor,
   scheduledMovements,
+  shiftDays,
   shiftLabel,
   type MoveKind,
   type MoveReason,
@@ -202,7 +203,7 @@ export async function requestMovementChange(input: {
   if (!info) return { ok: false, error: "Not available." };
   const problem = checkMove({ kind: input.kind, movements: info.movements, requested: input.requestedDate, todayIso: today() });
   if (problem) return { ok: false, error: problem };
-  const scheduled = scheduledFor(input.kind, info.movements)!;
+  const scheduled = scheduledFor(input.kind, info.movements);
 
   // One change per movement at a time.
   const direction = moveDirection(input.kind);
@@ -239,7 +240,7 @@ export async function requestMovementChange(input: {
   if (error || !row) return { ok: false, error: error?.message ?? "Could not save the request." };
 
   const who = await personName(input.profileId);
-  const what = `${MOVE_KIND_LABEL[input.kind]}: ${who}, ${scheduled} → ${input.requestedDate} (${shiftLabel(input.kind, scheduled, input.requestedDate)})`;
+  const what = `${MOVE_KIND_LABEL[input.kind]}: ${who}, ${scheduled ?? "no demob date"} → ${input.requestedDate} (${shiftLabel(input.kind, scheduled, input.requestedDate)})`;
   if (status === "pending_endorsement" && info.managerId) {
     await notifyUsers({
       tenantId: tenant,
@@ -301,7 +302,7 @@ export async function endorseMovementChange(id: string, endorse: boolean, commen
   if (error) return { ok: false, error: error.message };
 
   const who = await personName(r.profile_id);
-  const what = `${MOVE_KIND_LABEL[r.kind as MoveKind]}: ${who}, ${r.scheduled_date} → ${r.requested_date}`;
+  const what = `${MOVE_KIND_LABEL[r.kind as MoveKind]}: ${who}, ${r.scheduled_date ?? "no demob date"} → ${r.requested_date}`;
   if (endorse) {
     await notifyUsers({
       tenantId: r.tenant_id,
@@ -351,7 +352,7 @@ export async function decideMovementChange(id: string, approve: boolean, comment
   }
 
   const who = await personName(r.profile_id);
-  const what = `${MOVE_KIND_LABEL[r.kind as MoveKind]}: ${who}, ${r.scheduled_date} → ${r.requested_date}`;
+  const what = `${MOVE_KIND_LABEL[r.kind as MoveKind]}: ${who}, ${r.scheduled_date ?? "no demob date"} → ${r.requested_date}`;
   const desk = approve ? await roleHolders(r.tenant_id, ["dispatcher", "campboss"]) : [];
   await notifyUsers({
     tenantId: r.tenant_id,
@@ -389,12 +390,13 @@ export async function fetchMovementDesk(): Promise<{ ok: boolean; open?: Movemen
   let outlook: Awaited<ReturnType<typeof getPobOutlook>> = [];
   const adding = open.filter((r) => r.kind === "early_mob" || r.kind === "late_demob");
   if (adding.length) {
-    const dates = adding.flatMap((r) => [r.scheduled_date, r.requested_date]).sort();
+    const dates = adding.flatMap((r) => [r.scheduled_date ?? r.requested_date, r.requested_date]).sort();
     outlook = await getPobOutlook(dates[0], dates[dates.length - 1]);
   }
   const rows: MovementDeskRow[] = open.map((r) => {
+    const sched = r.scheduled_date;
     const stay =
-      r.kind === "early_mob" ? { from: r.requested_date, to: r.scheduled_date } : r.kind === "late_demob" ? { from: r.scheduled_date, to: r.requested_date } : null;
+      sched && r.kind === "early_mob" ? { from: r.requested_date, to: sched } : sched && r.kind === "late_demob" ? { from: sched, to: r.requested_date } : null;
     const past = year.filter((y) => y.profile_id === r.profile_id);
     return {
       ...r,
@@ -402,7 +404,7 @@ export async function fetchMovementDesk(): Promise<{ ok: boolean; open?: Movemen
       pob: stay ? peakDuring(outlook, r.installation_id, stay, true) : null,
       history: {
         count: past.length,
-        days: past.reduce((n, y) => n + Math.abs(Math.round((Date.parse(y.requested_date) - Date.parse(y.scheduled_date)) / 86_400_000)), 0),
+        days: past.reduce((n, y) => n + shiftDays(y.scheduled_date, y.requested_date), 0),
       },
     };
   });

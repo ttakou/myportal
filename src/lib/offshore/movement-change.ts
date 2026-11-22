@@ -1,6 +1,7 @@
 /**
  * Movement change requests: moving one date of one hitch — mobilising early
- * or late, demobilising early or late.
+ * or late, demobilising early or late — or, for someone on board with no
+ * planned demobilisation, setting one.
  *
  * The rotation never moves. An approved change takes the person off the crew
  * change manifest of their scheduled date and puts them on the manifest of the
@@ -12,12 +13,12 @@
 import type { RotationCycle } from "./rotation-math";
 import { nextCrewChangeDate } from "./manifest-plan";
 
-export type MoveKind = "early_mob" | "late_mob" | "early_demob" | "late_demob";
+export type MoveKind = "early_mob" | "late_mob" | "early_demob" | "late_demob" | "set_demob";
 export type MoveReason = "medical" | "compassionate" | "operational" | "training_logistics" | "other";
 export type MoveStatus = "pending_endorsement" | "pending" | "approved" | "rejected" | "withdrawn";
 export type MoveDirection = "out" | "in";
 
-export const MOVE_KINDS: MoveKind[] = ["early_mob", "late_mob", "early_demob", "late_demob"];
+export const MOVE_KINDS: MoveKind[] = ["early_mob", "late_mob", "early_demob", "late_demob", "set_demob"];
 export const MOVE_REASONS: MoveReason[] = ["medical", "compassionate", "operational", "training_logistics", "other"];
 
 export const MOVE_KIND_LABEL: Record<MoveKind, string> = {
@@ -25,6 +26,7 @@ export const MOVE_KIND_LABEL: Record<MoveKind, string> = {
   late_mob: "Late mobilisation",
   early_demob: "Early demobilisation",
   late_demob: "Late demobilisation (extension)",
+  set_demob: "Set demob date (none planned)",
 };
 
 export const MOVE_REASON_LABEL: Record<MoveReason, string> = {
@@ -46,18 +48,19 @@ export const MOVE_STATUS_LABEL: Record<MoveStatus, string> = {
 /** Mobilisations go out to the installation, demobilisations come in. */
 export const moveDirection = (kind: MoveKind): MoveDirection => (kind.endsWith("_mob") ? "out" : "in");
 
-/** The attendance flag an approved change leaves on the record. */
-export const moveFlagKind = (kind: MoveKind) =>
-  ({ early_mob: "early_arrival", late_mob: "late_arrival", early_demob: "early_departure", late_demob: "late_departure" })[kind];
+/** The attendance flag an approved change leaves on the record; none for setting a first date. */
+export const moveFlagKind = (kind: MoveKind): string | null =>
+  ({ early_mob: "early_arrival", late_mob: "late_arrival", early_demob: "early_departure", late_demob: "late_departure", set_demob: null })[kind];
 
 const dayMs = (iso: string) => new Date(iso + "T00:00:00Z").getTime();
 
-/** Whole days between the scheduled and requested dates. */
-export const shiftDays = (scheduled: string, requested: string) =>
-  Math.abs(Math.round((dayMs(requested) - dayMs(scheduled)) / 86_400_000));
+/** Whole days between the scheduled and requested dates; 0 when nothing was scheduled. */
+export const shiftDays = (scheduled: string | null, requested: string) =>
+  scheduled ? Math.abs(Math.round((dayMs(requested) - dayMs(scheduled)) / 86_400_000)) : 0;
 
-/** "3 days early", "1 day late". */
-export function shiftLabel(kind: MoveKind, scheduled: string, requested: string): string {
+/** "3 days early", "1 day late", or "no date before" when one is being set. */
+export function shiftLabel(kind: MoveKind, scheduled: string | null, requested: string): string {
+  if (kind === "set_demob" || !scheduled) return "no demob date before";
   const n = shiftDays(scheduled, requested);
   return `${n} day${n === 1 ? "" : "s"} ${kind.startsWith("early") ? "early" : "late"}`;
 }
@@ -96,7 +99,14 @@ export function scheduledMovements(input: {
 
 /** The scheduled date a change of this kind moves, if there is one. */
 export function scheduledFor(kind: MoveKind, m: PersonMovements): string | null {
+  if (kind === "set_demob") return null;
   return moveDirection(kind) === "out" ? m.mob : m.demob;
+}
+
+/** The changes open to someone: setting a demob date when on board with none, else moving their dates. */
+export function kindsFor(m: PersonMovements): MoveKind[] {
+  if (m.aboard && !m.demob) return ["set_demob"];
+  return MOVE_KINDS.filter((k) => k !== "set_demob" && !(m.aboard && moveDirection(k) === "out"));
 }
 
 /** Can this change be asked for? An error to show, or null. */
@@ -108,6 +118,12 @@ export function checkMove(input: {
 }): string | null {
   const { kind, movements: m, requested, todayIso } = input;
   if (!requested) return "Pick the date you are asking for.";
+  if (kind === "set_demob") {
+    if (!m.aboard) return "Only someone on board can set a demob date.";
+    if (m.demob) return `A demob date is planned already (${m.demob}): ask for an early or late demobilisation instead.`;
+    if (requested < todayIso) return "The requested date has passed.";
+    return null;
+  }
   const scheduled = scheduledFor(kind, m);
   if (!scheduled) {
     return moveDirection(kind) === "out"
@@ -144,7 +160,8 @@ export interface DayMove {
   name: string;
   position: string | null;
   kind: MoveKind;
-  scheduled_date: string;
+  /** Empty when a demob date is being set for the first time. */
+  scheduled_date: string | null;
   requested_date: string;
   installation_id: string | null;
 }
@@ -164,7 +181,7 @@ export function movesForDay(
   const add: { profile_id: string; name: string; position: string | null; reason: string }[] = [];
   for (const m of moves) {
     if (moveDirection(m.kind) !== direction) continue;
-    if (m.scheduled_date === date) skip.add(m.profile_id);
+    if (m.scheduled_date && m.scheduled_date === date) skip.add(m.profile_id);
     const inst = m.installation_id ?? defaultInstallationId;
     const here = inst === null || installationId === null || inst === installationId;
     if (m.requested_date === date && here) {

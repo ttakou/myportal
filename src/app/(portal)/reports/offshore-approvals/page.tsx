@@ -96,7 +96,7 @@ export default async function OffshoreApprovalsPage({
       m.person,
       m.crew ?? "",
       MOVE_KIND_LABEL[m.kind],
-      m.scheduled_date,
+      m.scheduled_date ?? "none planned",
       m.requested_date,
       shiftLabel(m.kind, m.scheduled_date, m.requested_date),
       MOVE_REASON_LABEL[m.reason],
@@ -299,7 +299,7 @@ export default async function OffshoreApprovalsPage({
                     <span className="block text-xs text-muted-foreground">{MOVE_KIND_LABEL[m.kind]}</span>
                   </td>
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">
-                    {m.scheduled_date} → <span className="text-foreground">{m.requested_date}</span>
+                    {m.scheduled_date ?? "none planned"} → <span className="text-foreground">{m.requested_date}</span>
                     <span className="block text-[11px]">{shiftLabel(m.kind, m.scheduled_date, m.requested_date)}</span>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">
