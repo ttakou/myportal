@@ -110,6 +110,8 @@ export async function getPobOutlook(from: string, to: string): Promise<Installat
   // that the schedule counts on board are taken off once approved.
   const away: { person: string; from: string; to: string }[] = [];
   for (const m of (moveRows ?? []) as Record<string, unknown>[]) {
+    // Setting a first demob date changes the trip itself, which is counted already.
+    if (!m.scheduled_date) continue;
     const person = `p:${m.profile_id}`;
     const sched = String(m.scheduled_date);
     const req = String(m.requested_date);

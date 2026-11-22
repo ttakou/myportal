@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   checkMove,
   isOpen,
+  kindsFor,
   MOVE_KIND_LABEL,
   MOVE_KINDS,
   MOVE_REASON_LABEL,
@@ -172,7 +173,11 @@ function RequestForm({
         setOpen(res.open ?? []);
         setLoadError(null);
         // Someone on board can only move their demobilisation.
-        if (res.movements?.aboard) setKind((k) => (moveDirection(k) === "out" ? "late_demob" : k));
+        // Offer only what applies: setting a demob date when on board with none, else moving dates.
+        if (res.movements) {
+          const allowed = kindsFor(res.movements);
+          setKind((k) => (allowed.includes(k) ? k : allowed[0]));
+        }
       } else setLoadError(res.error ?? "Could not load the schedule.");
     });
     return () => {
@@ -224,7 +229,7 @@ function RequestForm({
         <label className="text-xs text-muted-foreground">
           Change
           <select value={kind} onChange={(e) => setKind(e.target.value as MoveKind)} className={field}>
-            {MOVE_KINDS.filter((k) => !(movements?.aboard && moveDirection(k) === "out")).map((k) => (
+            {(movements ? kindsFor(movements) : MOVE_KINDS.filter((k) => k !== "set_demob")).map((k) => (
               <option key={k} value={k}>
                 {MOVE_KIND_LABEL[k]}
               </option>
@@ -233,7 +238,7 @@ function RequestForm({
         </label>
         <label className="text-xs text-muted-foreground">
           Scheduled
-          <input value={scheduled ?? "—"} readOnly className={`${field} bg-muted/40`} />
+          <input value={scheduled ?? (kind === "set_demob" ? "None planned" : "—")} readOnly className={`${field} bg-muted/40`} />
         </label>
         <label className="text-xs text-muted-foreground">
           Requested date
@@ -250,7 +255,7 @@ function RequestForm({
           </select>
         </label>
         <label className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">
-          {kind === "early_demob" || kind === "late_mob" ? "Who covers the post meanwhile" : "Reliever / back-to-back affected"}
+          {kind === "early_demob" || kind === "late_mob" ? "Who covers the post meanwhile" : kind === "set_demob" ? "Relief / handover (if any)" : "Reliever / back-to-back affected"}
           <input value={cover} onChange={(e) => setCover(e.target.value)} maxLength={200} className={field} />
         </label>
       </div>
@@ -260,7 +265,7 @@ function RequestForm({
       </label>
 
       {loadError && <p className="text-xs text-destructive">{loadError}</p>}
-      {movements && !scheduled && (
+      {movements && !scheduled && kind !== "set_demob" && (
         <p className="text-xs text-muted-foreground">
           {movements.aboard ? "On board: only the demobilisation can be moved." : "No scheduled movement to change."}
         </p>
@@ -276,7 +281,7 @@ function RequestForm({
             ? "Goes to your line manager (if you have one), then the OIM. Only this hitch moves; your rotation stays the same."
             : "Goes straight to the OIM. Only this hitch moves; the rotation stays the same."}
         </p>
-        <Button type="submit" disabled={pending || !scheduled || !date || !!problem || blocked}>
+        <Button type="submit" disabled={pending || (!scheduled && kind !== "set_demob") || !date || !!problem || blocked}>
           Send request
         </Button>
       </div>

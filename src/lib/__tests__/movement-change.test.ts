@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkMove,
   groupPeople,
+  kindsFor,
   firstStatus,
   movesForDay,
   scheduledFor,
@@ -143,5 +144,31 @@ describe("who a leader can raise a request for", () => {
   it("gives the desk everyone when they lead no team", () => {
     const groups = groupPeople({ me: "me", line: [], offshore, desk: true });
     expect(groups).toEqual([{ label: "Offshore staff", people: offshore.filter((p) => p.id !== "me").sort((x, y) => x.name.localeCompare(y.name)) }]);
+  });
+});
+
+describe("setting a first demob date", () => {
+  const aboardNoDate = { aboard: true, mob: null, demob: null };
+  it("is the only change offered to someone on board with no demob date", () => {
+    expect(kindsFor(aboardNoDate)).toEqual(["set_demob"]);
+    expect(kindsFor({ aboard: true, mob: null, demob: "2026-12-15" })).toEqual(["early_demob", "late_demob"]);
+    expect(kindsFor({ aboard: false, mob: "2026-12-01", demob: "2026-12-15" })).toEqual(["early_mob", "late_mob", "early_demob", "late_demob"]);
+  });
+  it("needs a date from today on, and only when none is planned", () => {
+    expect(checkMove({ kind: "set_demob", movements: aboardNoDate, requested: "2026-11-30", todayIso: "2026-11-22" })).toBeNull();
+    expect(checkMove({ kind: "set_demob", movements: aboardNoDate, requested: "2026-11-20", todayIso: "2026-11-22" })).toMatch(/passed/);
+    expect(checkMove({ kind: "set_demob", movements: { aboard: true, mob: null, demob: "2026-12-15" }, requested: "2026-11-30", todayIso: "2026-11-22" })).toMatch(/planned already/);
+  });
+  it("puts them on the new day's DEMOB manifest, with nothing to take them off", () => {
+    const res = movesForDay(
+      [{ profile_id: "p9", name: "Open-ended", position: null, kind: "set_demob", scheduled_date: null, requested_date: "2026-11-30", installation_id: null }],
+      "2026-11-30",
+      "in",
+      "J",
+      "J",
+    );
+    expect(res.skip.size).toBe(0);
+    expect(res.add.map((a) => a.reason)).toEqual(["Set demob date (none planned) — approved"]);
+    expect(shiftLabel("set_demob", null, "2026-11-30")).toBe("no demob date before");
   });
 });

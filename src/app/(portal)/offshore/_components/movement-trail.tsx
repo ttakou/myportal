@@ -27,7 +27,7 @@ export function MovementTrail({ r, showPerson = true }: { r: MovementRequestRow;
         {showPerson && <span className="font-medium">{r.person}</span>}
         <span className="font-medium">{MOVE_KIND_LABEL[r.kind]}</span>
         <span className="text-muted-foreground">
-          {r.scheduled_date} → <span className="font-medium text-foreground">{r.requested_date}</span> ·{" "}
+          {r.scheduled_date ?? "none planned"} → <span className="font-medium text-foreground">{r.requested_date}</span> ·{" "}
           {shiftLabel(r.kind, r.scheduled_date, r.requested_date)}
         </span>
         <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLE[r.status])}>

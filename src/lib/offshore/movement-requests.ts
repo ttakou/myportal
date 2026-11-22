@@ -11,7 +11,8 @@ export interface MovementRequestRow {
   crew: string | null;
   installation_id: string | null;
   kind: MoveKind;
-  scheduled_date: string;
+  /** Empty when a demob date is being set for the first time. */
+  scheduled_date: string | null;
   requested_date: string;
   reason: MoveReason;
   note: string | null;
@@ -50,7 +51,7 @@ export function toMovementRow(r: Row): MovementRequestRow {
     crew: one<{ name?: string }>(r.crew)?.name ?? null,
     installation_id: r.installation_id ?? null,
     kind: r.kind,
-    scheduled_date: r.scheduled_date,
+    scheduled_date: r.scheduled_date ?? null,
     requested_date: r.requested_date,
     reason: r.reason,
     note: r.note ?? null,

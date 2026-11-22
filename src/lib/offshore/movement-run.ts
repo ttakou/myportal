@@ -48,8 +48,10 @@ export async function placeApprovedMove(client: SupabaseClient, tenantId: string
   if (!m || m.status !== "approved") return;
   const direction = moveDirection(m.kind as MoveKind);
 
-  // Off the scheduled day's open manifest.
-  const { data: oldDay } = await client
+  // Off the scheduled day's open manifest (setting a first date has none).
+  const { data: oldDay } = !m.scheduled_date
+    ? { data: [] }
+    : await client
     .from("offshore_manifests")
     .select("id")
     .eq("tenant_id", tenantId)
@@ -179,13 +181,15 @@ export async function carryOutDueMoves(client: SupabaseClient, tenantId: string,
       }
     }
 
-    // On the attendance record, already dealt with.
+    // On the attendance record, already dealt with — an early or late change
+    // only; setting a first demob date is not an exception.
     const now = new Date().toISOString();
-    await client.from("offshore_rotation_flags").insert({
+    const flagKind = moveFlagKind(kind);
+    if (flagKind) await client.from("offshore_rotation_flags").insert({
       tenant_id: tenantId,
       profile_id: m.profile_id,
       installation_id: m.installation_id ?? null,
-      kind: moveFlagKind(kind),
+      kind: flagKind,
       reason: FLAG_REASON[m.reason as MoveReason] ?? "other",
       note: `Approved: ${MOVE_KIND_LABEL[kind]} (${MOVE_REASON_LABEL[m.reason as MoveReason] ?? m.reason}), scheduled ${m.scheduled_date}.`,
       effective_date: m.requested_date,
