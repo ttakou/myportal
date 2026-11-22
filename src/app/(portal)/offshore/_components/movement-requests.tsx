@@ -279,7 +279,7 @@ function RequestForm({
           {scheduled && date && !problem ? `${shiftLabel(kind, scheduled, date)} · ` : ""}
           {self
             ? "Goes to your line manager (if you have one), then the OIM. Only this hitch moves; your rotation stays the same."
-            : "Goes straight to the OIM. Only this hitch moves; the rotation stays the same."}
+            : "Goes to their line manager first unless you are their manager or on the offshore desk, then the OIM. Only this hitch moves; the rotation stays the same."}
         </p>
         <Button type="submit" disabled={pending || (!scheduled && kind !== "set_demob") || !date || !!problem || blocked}>
           Send request
