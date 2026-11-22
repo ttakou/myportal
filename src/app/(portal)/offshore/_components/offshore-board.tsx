@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Ship, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,11 +31,14 @@ export function OffshoreBoard({
   installations,
   people,
   meId,
+  afterTrips,
 }: {
   mine: OffshoreTrip[];
   installations: Installation[];
   people: { id: string; name: string }[];
   meId: string;
+  /** Shown right under "My offshore trips" (the date change requests). */
+  afterTrips?: ReactNode;
 }) {
   const { can } = usePermissions();
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -113,6 +116,8 @@ export function OffshoreBoard({
           </Button>
         )}
       </section>
+
+      {afterTrips}
 
       {can("offshore", "create") && (
       <section className="space-y-3">

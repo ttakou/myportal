@@ -236,9 +236,8 @@ export default async function OffshorePage({
             installations={installations}
             people={people}
             meId={meId}
+            afterTrips={<MovementRequests />}
           />
-
-          <MovementRequests />
 
           <VisitorRequestForm
             installations={installations}
