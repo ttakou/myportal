@@ -62,13 +62,13 @@ export default async function BedBoardPrintPage({
           subtitle={`As of ${stamp} · ${totalFree} free bed(s) · ${waiting.length} on board waiting for a bed${filters ? ` · ${filters}` : ""}`}
         />
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-5 gap-1.5">
           {visible.map((r) => {
             const beds = r.bed_count || 0;
             const free = freeOf(r);
             const over = r.occupied > beds;
             return (
-              <div key={r.id} className="rounded border border-gray-200 p-2 text-[11px]" style={{ breakInside: "avoid" }}>
+              <div key={r.id} className="rounded border border-gray-200 p-1.5 text-[10px] leading-tight" style={{ breakInside: "avoid" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 pb-1">
                   <span className="font-semibold text-gray-900">
                     {labelOf(r) || "—"}

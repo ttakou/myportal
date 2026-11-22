@@ -49,11 +49,11 @@ export default async function RoomAllocationReportPage({
         />
 
         {/* Room grid */}
-        <div className="mt-3 grid grid-cols-3 gap-2" style={{ breakInside: "auto" }}>
+        <div className="mt-3 grid grid-cols-5 gap-1.5" style={{ breakInside: "auto" }}>
           {report.rooms.map((r) => {
             const over = r.occupants.length > r.beds;
             return (
-              <div key={r.id} className="rounded border border-gray-200 p-2 text-[11px]" style={{ breakInside: "avoid" }}>
+              <div key={r.id} className="rounded border border-gray-200 p-1.5 text-[10px] leading-tight" style={{ breakInside: "avoid" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 pb-1">
                   <span className="font-semibold text-gray-900">
                     {r.label}
