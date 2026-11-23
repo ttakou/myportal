@@ -231,7 +231,8 @@ export default async function OffshorePage({
           visits={approvalVisits}
           trips={approvalTrips}
           // Deciding needs the approve verb; a registrar sees the queue only.
-          canDecide={offshoreManager || access.isDispatcher}
+          // Approving is the OIM's (admins carry the OIM's hat).
+          canDecide={access.isAdmin || access.isOim}
         />
       )}
           <OffshoreBoard

@@ -8,7 +8,7 @@ import { searchBedAvailability } from "@/lib/offshore";
 import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import type { RoomAvailability } from "@/types/offshore";
-import { VISITOR_TYPES, requireOffshore, requireOffshoreDispatch, rev, tenantId } from "./_shared";
+import { VISITOR_TYPES, requireOffshore, requireOffshoreDispatch, rev, tenantId, requireOim } from "./_shared";
 
 export async function createVisitRequest(input: {
   visitorName: string;
@@ -65,7 +65,7 @@ export async function decideVisitRequest(
   decision: "approved" | "rejected",
   reason?: string,
 ): Promise<ActionResult> {
-  const gate = await requireOffshoreDispatch("approve");
+  const gate = await requireOim();
   if (gate) return gate;
   const supabase = createClient();
   const {
@@ -168,7 +168,7 @@ export async function decideVisitGroup(
   decision: "approved" | "rejected",
   reason?: string,
 ): Promise<ActionResult> {
-  const gate = await requireOffshoreDispatch("approve");
+  const gate = await requireOim();
   if (gate) return gate;
   const supabase = createClient();
   const {

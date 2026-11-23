@@ -60,6 +60,16 @@ export interface DayVisit {
   return_date: string | null;
 }
 
+/** A one-off trip the OIM approved (HSE-cleared): travels on its own dates, not a crew's. */
+export interface DayTrip {
+  id: string;
+  profile_id: string | null;
+  name: string;
+  installation_id: string | null;
+  mobilize_date: string;
+  demob_date: string | null;
+}
+
 export interface DuePax {
   profile_id: string | null;
   visit_request_id: string | null;
@@ -130,6 +140,8 @@ export function dueForDay(input: {
   defaultInstallationId?: string | null;
   /** Approved movement changes: off on the scheduled date, on on the requested one. */
   moves?: DayMove[];
+  /** One-off trips the OIM approved: out on their mobilise date, back on their demob date. */
+  trips?: DayTrip[];
 }): DuePax[] {
   const { date, direction, installationId } = input;
   const here = (inst: string | null) => inst === null || installationId === null || inst === installationId;
@@ -174,6 +186,22 @@ export function dueForDay(input: {
 
   // Visitors on their booked dates.
   for (const p of visitorsDue(input.visits, date, direction, installationId, input.defaultInstallationId ?? null)) add(p);
+
+  // One-off trips the OIM approved, on their own dates.
+  const tripPositions = new Map(input.staff.map((s) => [s.profile_id, s.position]));
+  for (const t of input.trips ?? []) {
+    const inst = t.installation_id ?? input.defaultInstallationId ?? null;
+    if (!(inst === null || installationId === null || inst === installationId)) continue;
+    const day = direction === "out" ? t.mobilize_date : t.demob_date;
+    if (day !== date) continue;
+    add({
+      profile_id: t.profile_id,
+      visit_request_id: null,
+      name: t.name,
+      position: t.profile_id ? tripPositions.get(t.profile_id) ?? null : null,
+      reason: direction === "out" ? "Approved trip" : "Approved trip — return",
+    });
+  }
 
   // Approved movement changes: moved off their scheduled day, onto the new one.
   const moved = movesForDay(input.moves ?? [], date, direction, installationId, input.defaultInstallationId ?? null);
@@ -241,6 +269,7 @@ export function manifestDays(input: {
   days: number;
   defaultInstallationId?: string | null;
   moves?: DayMove[];
+  trips?: DayTrip[];
 }): ManifestDay[] {
   const def = input.defaultInstallationId ?? null;
   const crewDays = crewChangeDays(input).map((d) => ({ ...d, directions: ["out", "in"] as Direction[], crewDay: true }));
@@ -261,6 +290,18 @@ export function manifestDays(input: {
       byKey.set(k, day);
     }
   }
+  // Approved one-off trips need their travel days too.
+  for (const t of input.trips ?? []) {
+    const inst = t.installation_id ?? def;
+    for (const [date, direction] of [[t.mobilize_date, "out"], [t.demob_date, "in"]] as [string | null, Direction][]) {
+      if (!date || !inWindow(date)) continue;
+      const k = key(date, inst);
+      const day = byKey.get(k) ?? { date, installationId: inst, out: [], in: [], directions: [], crewDay: false };
+      if (!day.directions.includes(direction)) day.directions.push(direction);
+      byKey.set(k, day);
+    }
+  }
+
   // A day someone moves to by an approved change needs its manifest too.
   for (const m of input.moves ?? []) {
     if (!inWindow(m.requested_date)) continue;

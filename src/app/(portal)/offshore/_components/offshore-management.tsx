@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { canApproveRequests } from "@/lib/offshore/trip-requests";
 import { cn } from "@/lib/utils";
 import type { Installation } from "@/types/offshore";
 import type {
@@ -132,6 +133,7 @@ export function OffshoreManagement(props: {
           visits={props.visits}
           trips={props.trips}
           installations={props.installations.map((i) => ({ id: i.id, name: i.name }))}
+          canApprove={canApproveRequests(props.flags)}
         />
       )}
       {tab === "board" && (
@@ -194,7 +196,7 @@ export function OffshoreManagement(props: {
           readOnly={readOnly}
         />
       )}
-      {tab === "visitors" && <VisitorsPanel visits={props.visits} />}
+      {tab === "visitors" && <VisitorsPanel visits={props.visits} canApprove={canApproveRequests(props.flags)} />}
       {tab === "requests" && (
         <TripRequestsPanel visits={props.visits} trips={props.trips} rooms={props.rooms} flags={props.flags} />
       )}
@@ -209,7 +211,7 @@ export function OffshoreManagement(props: {
         />
       )}
       {tab === "trips" && (
-        <TripsPanel all={props.trips} flights={props.flights} canAddFlight={props.canAddFlight} />
+        <TripsPanel all={props.trips} flights={props.flights} canAddFlight={props.canAddFlight} canApprove={canApproveRequests(props.flags)} />
       )}
       {tab === "assign" && <CrewAssign employees={props.employees} crews={props.crews} />}
       {tab === "catering" && <CateringPanel installations={props.installations} />}

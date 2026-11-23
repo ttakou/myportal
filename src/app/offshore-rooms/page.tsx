@@ -16,7 +16,8 @@ export default async function RoomAllocationReportPage({
   const sp = await searchParams;
   const daySheet = sp.view === "day";
   const access = await getAccess();
-  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
+  // The Dispatcher runs the manifests and reads POB, rooms and the roster.
+  if (!access.isAdmin && !access.isCampboss && !access.isOim && !access.isDispatcher) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 

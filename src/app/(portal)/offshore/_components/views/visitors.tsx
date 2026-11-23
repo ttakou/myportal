@@ -56,7 +56,14 @@ function groupVisits(list: VisitRequest[]): VisitRequest[][] {
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
-export function VisitorsPanel({ visits }: { visits: VisitRequest[] }) {
+export function VisitorsPanel({
+  visits,
+  canApprove = false,
+}: {
+  visits: VisitRequest[];
+  /** Approving is the OIM's; the Dispatcher and others follow the queue. */
+  canApprove?: boolean;
+}) {
   const { pending, error, run } = useRun();
   const open = visits.filter((v) => !["returned", "rejected", "cancelled"].includes(v.status));
   const closed = visits.filter((v) => ["returned", "rejected", "cancelled"].includes(v.status));
@@ -83,7 +90,10 @@ export function VisitorsPanel({ visits }: { visits: VisitRequest[] }) {
                     {head.installation_name ?? "—"} · {head.depart_date}
                     {head.host_name ? ` · host ${head.host_name}` : ""}
                   </span>
-                  {pendingDecision && (
+                  {pendingDecision && !canApprove && (
+                    <span className="ml-auto rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Waiting for the OIM</span>
+                  )}
+                  {pendingDecision && canApprove && (
                     <span className="ml-auto flex gap-2">
                       <Button
                         size="sm"
@@ -119,7 +129,7 @@ export function VisitorsPanel({ visits }: { visits: VisitRequest[] }) {
               )}
               <div className="space-y-3">
                 {g.map((v) => (
-                  <VisitorCard key={v.id} v={v} pending={pending} run={run} hideDecision={grouped} />
+                  <VisitorCard key={v.id} v={v} pending={pending} run={run} hideDecision={grouped || !canApprove} />
                 ))}
               </div>
             </div>

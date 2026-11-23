@@ -40,10 +40,13 @@ export function TripsPanel({
   all,
   flights,
   canAddFlight,
+  canApprove = false,
 }: {
   all: OffshoreTrip[];
   flights: Flight[];
   canAddFlight: boolean;
+  /** HSE clearance approves the trip: the OIM's decision. */
+  canApprove?: boolean;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
   const [error, setError] = useState<string | null>(null);
@@ -92,10 +95,12 @@ export function TripsPanel({
                       <span className="inline-flex items-center gap-1 text-xs text-green-700">
                         <ShieldCheck className="h-3.5 w-3.5" /> Cleared
                       </span>
-                    ) : (
+                    ) : canApprove ? (
                       <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => clearHse(t.id))}>
                         Clear HSE
                       </Button>
+                    ) : (
+                      <span className="text-xs text-amber-800">Waiting for the OIM</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
