@@ -25,6 +25,7 @@ export type OffshoreViewKey =
   | "staff-history"
   | "whereis"
   | "requests"
+  | "lookahead"
   | "mytrips";
 
 export interface OffshoreView {
@@ -56,6 +57,8 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "register", label: "Register staff", icon: "UserPlus" },
   // After "register" so a registrar still lands on the view they act in.
   { key: "requests", label: "Trip Requests", icon: "Inbox" },
+  // Its own page (/offshore/look-ahead), listed here for the menu and access.
+  { key: "lookahead", label: "Look-ahead", icon: "Telescope" },
   { key: "visitors", label: "Visitors", icon: "Plane" },
   { key: "emergency", label: "Muster roles", icon: "LifeBuoy" },
   { key: "drill", label: "Muster drill", icon: "Siren" },
@@ -155,6 +158,8 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
   // Trip Requests is the OIM's and the Campboss's desk; the Dispatcher has
   // Visitors and All trips for the same rows.
   requests: "none",
+  // Planning ahead: the Dispatcher reads it for the manifests.
+  lookahead: "view",
 };
 
 /** The Dispatcher's (or full manager's) access level for one management view. */
@@ -208,6 +213,7 @@ export interface OffshoreHub {
 export const OFFSHORE_HUBS: OffshoreHub[] = [
   { key: "mytrips", label: "My trips & requests", icon: "Ship" },
   { key: "requests", label: "Trip Requests", icon: "Inbox" },
+  { key: "lookahead", label: "Look-ahead", icon: "Telescope" },
   {
     key: "dashboard", label: "POB & Live Board", icon: "LayoutGrid",
     tabs: [
@@ -309,7 +315,8 @@ export function offshoreHubSubmenu(flags: OffshoreRoleFlags): OffshoreNavItem[] 
       key: landing,
       label: h.label,
       icon: h.icon,
-      href: `/offshore?view=${landing}`,
+      // The Look-ahead is a page of its own, not a `?view=` of the offshore page.
+      href: landing === "lookahead" ? "/offshore/look-ahead" : `/offshore?view=${landing}`,
       matchViews: h.tabs ? visible : undefined,
     });
   }

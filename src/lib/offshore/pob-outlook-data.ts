@@ -1,7 +1,9 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "./_shared";
 import { getOffshoreDefaultInstallation } from "./crews";
+import { offshoreDefaultInstallation } from "./day-manifest-run";
 import {
   pobOutlook,
   visitStay,
@@ -20,31 +22,40 @@ const VISIT_CONFIRMED = ["approved", "onboard", "returned"];
  * POB limits, each crew's cycle and rotational members, and the trips and
  * visits that overlap the range. RLS-scoped (offshore managers read it all).
  */
-export async function getPobOutlook(from: string, to: string): Promise<InstallationOutlook[]> {
-  const supabase = createClient();
+export async function getPobOutlook(
+  from: string,
+  to: string,
+  /** For a run with no signed-in user (the nightly job): its client and the tenant to read. */
+  scope?: { client: SupabaseClient; tenantId: string },
+): Promise<InstallationOutlook[]> {
+  const supabase = scope?.client ?? createClient();
+  // RLS scopes a user's reads to their tenant; a service-role run says so itself.
+  const t = <Q,>(q: Q): Q => (scope ? (q as unknown as { eq: (c: string, v: string) => Q }).eq("tenant_id", scope.tenantId) : q);
   const [{ data: insts }, { data: crews }, { data: staff }, { data: trips }, { data: visits }, fallback, { data: moveRows }] = await Promise.all([
-    supabase.from("offshore_installations").select("id, name, pob_capacity").eq("is_active", true).order("name"),
-    supabase.from("offshore_crews").select("id, name, installation_id, offshore_days, onshore_days, cycle_start_date").eq("is_active", true),
-    supabase.from("offshore_staff").select("profile_id, crew_id, is_rotational, profile:profiles!offshore_staff_profile_id_fkey(is_active)"),
-    supabase
+    t(supabase.from("offshore_installations").select("id, name, pob_capacity").eq("is_active", true)).order("name"),
+    t(supabase.from("offshore_crews").select("id, name, installation_id, offshore_days, onshore_days, cycle_start_date").eq("is_active", true)),
+    t(supabase.from("offshore_staff").select("profile_id, crew_id, is_rotational, profile:profiles!offshore_staff_profile_id_fkey(is_active)")),
+    t(supabase
       .from("offshore_trips")
       .select("id, profile_id, installation_id, mobilize_date, demob_date, status, requester_id")
       .in("status", [...TRIP_CONFIRMED, "requested"])
       .lte("mobilize_date", to)
-      .or(`demob_date.is.null,demob_date.gte.${from}`),
-    supabase
+      .or(`demob_date.is.null,demob_date.gte.${from}`)),
+    t(supabase
       .from("offshore_visit_requests")
       .select("id, installation_id, depart_date, return_date, status")
       .in("status", [...VISIT_CONFIRMED, "requested"])
       .lte("depart_date", to)
-      .or(`return_date.is.null,return_date.gte.${from}`),
-    getOffshoreDefaultInstallation(),
+      .or(`return_date.is.null,return_date.gte.${from}`)),
+    scope
+      ? offshoreDefaultInstallation(scope.client, scope.tenantId).then((id) => (id ? { id, name: "" } : null))
+      : getOffshoreDefaultInstallation(),
     // Movement changes, approved or awaiting a decision, touching the range.
-    supabase
+    t(supabase
       .from("offshore_movement_requests")
       .select("profile_id, kind, scheduled_date, requested_date, installation_id, status")
       .in("status", ["approved", "pending", "pending_endorsement"])
-      .or(`and(scheduled_date.gte.${from},scheduled_date.lte.${to}),and(requested_date.gte.${from},requested_date.lte.${to})`),
+      .or(`and(scheduled_date.gte.${from},scheduled_date.lte.${to}),and(requested_date.gte.${from},requested_date.lte.${to})`)),
   ]);
 
   const installations: OutlookInstallation[] = ((insts ?? []) as Record<string, unknown>[]).map((i) => ({

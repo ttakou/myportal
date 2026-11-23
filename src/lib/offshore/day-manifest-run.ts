@@ -451,3 +451,35 @@ export async function advanceVisitorStatuses(client: SupabaseClient, tenantId: s
   }
   return { boarded: board.length, returned: ret.length };
 }
+
+/**
+ * Who the schedule moves on each day from `fromIso` to `toIso`, per
+ * installation: the same lists the day manifests are built from (crews by
+ * their rotation, approved date changes, booked visitors, non-rotational
+ * staff on their demob date). For planning ahead.
+ */
+export async function dueByDay(
+  client: SupabaseClient,
+  tenantId: string,
+  fromIso: string,
+  toIso: string,
+  defaultInstallationId: string | null,
+): Promise<{
+  days: { date: string; installationId: string | null; out: DuePax[]; in: DuePax[] }[];
+  crews: DayCrew[];
+  staff: DayStaff[];
+}> {
+  const inputs = await loadDayInputs(client, tenantId, fromIso, toIso);
+  const n = Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 86_400_000) + 1;
+  const days = manifestDays({ crews: inputs.crews, staff: inputs.staff, visits: inputs.visits, moves: inputs.moves, fromIso, days: n, defaultInstallationId });
+  return {
+    days: days.map((d) => ({
+      date: d.date,
+      installationId: d.installationId,
+      out: d.directions.includes("out") ? dueForDay({ date: d.date, direction: "out", installationId: d.installationId, ...inputs, defaultInstallationId }) : [],
+      in: d.directions.includes("in") ? dueForDay({ date: d.date, direction: "in", installationId: d.installationId, ...inputs, defaultInstallationId }) : [],
+    })),
+    crews: inputs.crews,
+    staff: inputs.staff,
+  };
+}

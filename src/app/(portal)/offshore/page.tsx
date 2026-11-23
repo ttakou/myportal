@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { FileBarChart } from "lucide-react";
 import { getAccess, getCurrentRole, isAdminRole } from "@/lib/auth";
 import { getMyPermissions } from "@/lib/permissions-server";
@@ -53,6 +54,8 @@ export default async function OffshorePage({
   searchParams: Promise<{ view?: string; person?: string; by?: string; only?: string }>;
 }) {
   const { view, person, by, only } = await searchParams;
+  // The Look-ahead lives on its own page.
+  if (view === "lookahead") redirect("/offshore/look-ahead");
   const access = await getAccess();
   const isAdmin = isAdminRole(await getCurrentRole());
   // Full managers see and edit everything; the Dispatcher also reaches the
