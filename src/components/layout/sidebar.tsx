@@ -106,7 +106,9 @@ export async function Sidebar({
       return {
         ...base,
         defaultSubKey: "mytrips",
-        subItems: offshoreHubSubmenu(offshoreFlags),
+        // Without an offshore access role (the module is open to all):
+        // "My trips & requests" only.
+        subItems: offshoreHubSubmenu(offshoreFlags, !hasPermission(perms, "offshore", "view")),
       };
     }
     // Training & Competence: My Training for everyone; Team views for managers;

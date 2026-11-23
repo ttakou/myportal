@@ -303,7 +303,17 @@ function hubViewKeys(h: OffshoreHub): OffshoreViewKey[] {
  * Dispatcher's "POB & Live Board" entry lands on the Overview and never exposes
  * the Catering tab.
  */
-export function offshoreHubSubmenu(flags: OffshoreRoleFlags): OffshoreNavItem[] {
+export function offshoreHubSubmenu(flags: OffshoreRoleFlags, selfServiceOnly = false): OffshoreNavItem[] {
+  // Someone in the module only because it is open to all (no offshore access
+  // role) gets their own trips and requests, not the shared look-ups.
+  if (selfServiceOnly && !canSeeOffshoreManagement(flags)) {
+    return OFFSHORE_VIEWS.filter((v) => v.key === "mytrips").map((v) => ({
+      key: v.key,
+      label: v.label,
+      icon: v.icon,
+      href: `/offshore?view=${v.key}`,
+    }));
+  }
   if (!canSeeOffshoreManagement(flags)) {
     return OFFSHORE_VIEWS.filter((v) => SELF_SERVICE_VIEWS.has(v.key)).map((v) => ({
       key: v.key,

@@ -121,8 +121,11 @@ export async function createVisitGroup(input: {
   overnight?: boolean;
   visitors: { name: string; company?: string; gender?: string; emergencyContact?: string }[];
 }): Promise<ActionResult> {
-  const gate = await requireOffshoreDispatch("create");
-  if (gate) return gate;
+  // Any signed-in employee may ask for a visit; the OIM approves it.
+  const {
+    data: { user: caller },
+  } = await createClient().auth.getUser();
+  if (!caller) return { ok: false, error: "Not signed in." };
   const dates = visitDates(input.departDate, input.returnDate, input.overnight ?? true);
   if (!dates.ok) return dates;
   const visitors = (input.visitors ?? []).filter((v) => v.name?.trim());

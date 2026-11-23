@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { openToAll } from "@/lib/module-access";
 import { createMiddlewareClient } from "@/lib/supabase/middleware";
 import {
   ALWAYS_ALLOWED_PREFIXES,
@@ -152,7 +153,9 @@ export async function middleware(request: NextRequest) {
       return ((role?.module_slugs as string[]) ?? []).includes(matched.slug);
     });
 
-  let roleAllowed = grantsSlug(myRoles);
+  // Some modules (offshore) are open to every signed-in member; the page
+  // itself limits what they can do there.
+  let roleAllowed = openToAll(matched.slug) || grantsSlug(myRoles);
 
   // Fallback: a module reachable via an active delegation. Only queried when the
   // user's own roles don't already grant it, so the common path stays a single
