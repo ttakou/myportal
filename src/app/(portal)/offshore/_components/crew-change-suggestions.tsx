@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { CalendarClock, Pencil, Zap, X } from "lucide-react";
+import { CalendarClock, ChevronRight, Pencil, Zap, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { CrewChangePrefill, CrewChangeSuggestion, TripMode } from "@/types/offshore";
@@ -57,6 +57,8 @@ function SuggestionRow({
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<TripMode>(defaultMode);
   const [prefill, setPrefill] = useState<CrewChangePrefill | null>(null);
+  // The people behind the count, opened by clicking the row — nothing moves.
+  const [showPeople, setShowPeople] = useState(false);
 
   function loadPrefill() {
     if (prefill) return;
@@ -92,14 +94,23 @@ function SuggestionRow({
     <div className="rounded-md border border-amber-200 bg-white/60 p-2">
       {error && <p className="mb-1 text-sm text-destructive">{error}</p>}
       <div className="flex flex-wrap items-center gap-2 text-sm text-amber-900">
-        <span className="min-w-0">
-          <strong>{s.crew_name}</strong>{" "}
-          {s.action === "mobilise" ? (
-            <>is scheduled offshore since <strong>{s.since}</strong> but isn&apos;t boarded ({s.count} crew).</>
-          ) : (
-            <>is scheduled onshore since <strong>{s.since}</strong> but {s.count} are still on board.</>
-          )}
-        </span>
+        <button
+          type="button"
+          onClick={() => setShowPeople((v) => !v)}
+          aria-expanded={showPeople}
+          title={showPeople ? "Hide who" : "Show who — nothing is moved"}
+          className="flex min-w-0 items-start gap-1 rounded text-left hover:underline"
+        >
+          <ChevronRight className={cn("mt-0.5 h-4 w-4 shrink-0 transition-transform", showPeople && "rotate-90")} />
+          <span>
+            <strong>{s.crew_name}</strong>{" "}
+            {s.action === "mobilise" ? (
+              <>is scheduled offshore since <strong>{s.since}</strong> but isn&apos;t boarded ({s.count} crew).</>
+            ) : (
+              <>is scheduled onshore since <strong>{s.since}</strong> but {s.count} are still on board.</>
+            )}
+          </span>
+        </button>
 
         <span className="ml-auto flex items-center gap-2">
           {/* Per crew change: run it automatically, or set it up by hand. */}
@@ -136,6 +147,26 @@ function SuggestionRow({
           </Button>
         </span>
       </div>
+
+      {showPeople && (
+        <div className="mt-2 rounded border border-amber-200 bg-white px-2 py-1.5">
+          {s.people && s.people.length > 0 ? (
+            <ul className="divide-y text-sm">
+              {s.people.map((p, i) => (
+                <li key={`${p.name}-${i}`} className="flex flex-wrap gap-x-2 py-1">
+                  <span className="font-medium text-foreground">{p.name}</span>
+                  <span className="text-xs text-muted-foreground">{p.detail}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">No names to show.</p>
+          )}
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Viewing only — nobody is moved until you press {s.action === "mobilise" ? "Mobilise" : "Demobilise"}.
+          </p>
+        </div>
+      )}
 
       {mode === "manual" && (
         <ManualEditor

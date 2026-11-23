@@ -114,15 +114,73 @@ export async function getCrews(): Promise<Crew[]> {
 export async function getCrewChangeSuggestions(): Promise<CrewChangeSuggestion[]> {
   const supabase = createClient();
   const crews = await getCrews();
-  const { data: onboard } = await supabase
-    .from("offshore_trips")
-    .select("crew_id")
-    .eq("status", "onboard");
+  const [{ data: onboard }, { data: staffRows }, { data: moveRows }] = await Promise.all([
+    supabase
+      .from("offshore_trips")
+      .select("profile_id, crew_id, mobilize_date, demob_date, person:profiles!offshore_trips_profile_id_fkey(full_name, email)")
+      .eq("status", "onboard"),
+    supabase
+      .from("offshore_staff")
+      .select("profile_id, crew_id, profile:profiles!offshore_staff_profile_id_fkey(full_name, email)"),
+    supabase
+      .from("offshore_movement_requests")
+      .select("profile_id, kind, requested_date")
+      .eq("status", "approved")
+      .gte("requested_date", todayIso()),
+  ]);
   const onboardByCrew = new Map<string, number>();
   for (const t of onboard ?? []) {
     const cid = t.crew_id as string | null;
     if (cid) onboardByCrew.set(cid, (onboardByCrew.get(cid) ?? 0) + 1);
   }
+  // For the row's detail: who is behind each count, and why.
+  const crewName = new Map(crews.map((c) => [c.id, c.name]));
+  const nameOf = (p: unknown) => {
+    const r = one<{ full_name?: string | null; email?: string | null }>(p as never);
+    return r?.full_name || r?.email || "—";
+  };
+  const rosterCrew = new Map<string, string | null>();
+  const membersOf = new Map<string, { id: string; name: string }[]>();
+  for (const s of (staffRows ?? []) as Record<string, any>[]) {
+    rosterCrew.set(String(s.profile_id), (s.crew_id as string | null) ?? null);
+    if (!s.crew_id) continue;
+    const list = membersOf.get(s.crew_id) ?? [];
+    list.push({ id: String(s.profile_id), name: nameOf(s.profile) });
+    membersOf.set(s.crew_id, list);
+  }
+  const tripsOf = new Map<string, Record<string, any>[]>(); // by profile
+  for (const t of (onboard ?? []) as Record<string, any>[]) {
+    if (!t.profile_id) continue;
+    tripsOf.set(String(t.profile_id), [...(tripsOf.get(String(t.profile_id)) ?? []), t]);
+  }
+  const approved = new Map<string, string>();
+  for (const m of (moveRows ?? []) as Record<string, any>[]) {
+    const label = String(m.kind).replace("_", " ");
+    approved.set(String(m.profile_id), `approved ${label} to ${m.requested_date}`);
+  }
+  const ashorePeople = (crewId: string) =>
+    (membersOf.get(crewId) ?? [])
+      .filter((m) => !(tripsOf.get(m.id) ?? []).some((t) => t.crew_id === crewId))
+      .map((m) => {
+        const other = (tripsOf.get(m.id) ?? [])[0];
+        const detail = other
+          ? `on board, booked under ${crewName.get(other.crew_id as string) ?? "no crew"}`
+          : approved.get(m.id) ?? "ashore";
+        return { name: m.name, detail };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  const aboardPeople = (crewId: string) =>
+    ((onboard ?? []) as Record<string, any>[])
+      .filter((t) => t.crew_id === crewId)
+      .map((t) => {
+        const pid = String(t.profile_id ?? "");
+        const parts = [`on board since ${t.mobilize_date}`, t.demob_date ? `demob ${t.demob_date}` : "no demob date"];
+        const now = rosterCrew.get(pid);
+        if (pid && now !== undefined && now !== crewId) parts.push(now ? `now in ${crewName.get(now) ?? "another crew"} on the roster` : "no crew on the roster now");
+        if (approved.has(pid)) parts.push(approved.get(pid)!);
+        return { name: nameOf(t.person), detail: parts.join(" · ") };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
 
   const today = new Date(todayIso() + "T00:00:00Z").getTime();
   const out: CrewChangeSuggestion[] = [];
@@ -143,10 +201,10 @@ export async function getCrewChangeSuggestions(): Promise<CrewChangeSuggestion[]
     const ashore = Math.max(0, c.member_count - aboard);
     if (expectedOffshore && ashore > 0) {
       const since = new Date(today - idx * DAY_MS).toISOString().slice(0, 10);
-      out.push({ crew_id: c.id, crew_name: c.name, action: "mobilise", since, count: ashore });
+      out.push({ crew_id: c.id, crew_name: c.name, action: "mobilise", since, count: ashore, people: ashorePeople(c.id) });
     } else if (!expectedOffshore && aboard > 0) {
       const since = new Date(today - (idx - c.offshore_days) * DAY_MS).toISOString().slice(0, 10);
-      out.push({ crew_id: c.id, crew_name: c.name, action: "demobilise", since, count: aboard });
+      out.push({ crew_id: c.id, crew_name: c.name, action: "demobilise", since, count: aboard, people: aboardPeople(c.id) });
     }
   }
   return out;
