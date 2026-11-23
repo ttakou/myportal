@@ -1,5 +1,6 @@
 "use client";
 
+import { manifestWorkOrder, siteToday } from "@/lib/offshore/manifest-order";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileText, History, ChevronDown, Trash2, CalendarRange, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -468,7 +469,11 @@ export function ManifestsPanel({
   const { pending, error, run } = useRun();
   const [notice, setNotice] = useState<string | null>(null);
 
-  const active = manifests.filter((m) => m.status !== "completed" && m.status !== "cancelled");
+  // Today's manifests first, then the coming days soonest first.
+  const active = manifestWorkOrder(
+    manifests.filter((m) => m.status !== "completed" && m.status !== "cancelled"),
+    siteToday(),
+  );
   const history = manifests.filter((m) => m.status === "completed" || m.status === "cancelled");
 
   const prepareDays = () =>
@@ -785,6 +790,9 @@ function ManifestCard({
 
       <p className="mt-1 text-xs text-muted-foreground">
         {m.installation_name ?? "—"} · {m.scheduled_date}
+        {m.scheduled_date === siteToday() && (
+          <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">Today</span>
+        )}
         {m.transport_mode ? ` · ${m.transport_mode}` : ""}
         {issues > 0 ? ` · ${issues} eligibility issue(s)` : ""}
       </p>

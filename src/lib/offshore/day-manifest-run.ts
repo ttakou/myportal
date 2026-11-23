@@ -20,6 +20,7 @@ import {
 import type { Direction } from "./manifest-plan";
 import { visitorMoves } from "./visitor-moves";
 import type { DayMove, MoveKind } from "./movement-change";
+import { confirmedTravellers, type ClosePax, type CloseTrip, type CloseVisit } from "./manifest-close";
 
 type Row = Record<string, any>;
 const DAY_MS = 86_400_000;
@@ -601,4 +602,64 @@ export async function removeTripFromManifests(client: SupabaseClient, tenantId: 
     }
   }
   return removed;
+}
+
+/**
+ * Close every manifest whose date has passed (draft, approved or locked →
+ * completed), ticking as boarded the passengers whose travel the trips and
+ * visits confirm. Today's manifests stay open.
+ */
+export async function closePastManifests(client: SupabaseClient, tenantId: string, todayIso: string): Promise<{ closed: number; boarded: number }> {
+  const manifests = await allRows((a, b) =>
+    client
+      .from("offshore_manifests")
+      .select("id, scheduled_date, direction, offshore_manifest_pax(id, profile_id, visit_request_id, boarded, no_show)")
+      .eq("tenant_id", tenantId)
+      .in("status", ["draft", "approved", "locked"])
+      .lt("scheduled_date", todayIso)
+      .order("scheduled_date")
+      .range(a, b),
+  );
+  if (manifests.length === 0) return { closed: 0, boarded: 0 };
+
+  const profileIds = [...new Set(manifests.flatMap((m) => ((m.offshore_manifest_pax ?? []) as Row[]).map((p) => p.profile_id).filter(Boolean)))] as string[];
+  const visitIds = [...new Set(manifests.flatMap((m) => ((m.offshore_manifest_pax ?? []) as Row[]).map((p) => p.visit_request_id).filter(Boolean)))] as string[];
+  const [trips, visits] = await Promise.all([
+    profileIds.length
+      ? allRows((a, b) =>
+          client
+            .from("offshore_trips")
+            .select("profile_id, status, mobilize_date, demob_date")
+            .eq("tenant_id", tenantId)
+            .in("profile_id", profileIds)
+            .in("status", ["onboard", "demobilised"])
+            .order("id")
+            .range(a, b),
+        )
+      : Promise.resolve([] as Row[]),
+    visitIds.length
+      ? allRows((a, b) =>
+          client.from("offshore_visit_requests").select("id, status, depart_date, return_date").eq("tenant_id", tenantId).in("id", visitIds).order("id").range(a, b),
+        )
+      : Promise.resolve([] as Row[]),
+  ]);
+
+  let boarded = 0;
+  let closed = 0;
+  for (const m of manifests) {
+    const ids = confirmedTravellers({
+      date: m.scheduled_date as string,
+      direction: m.direction as "out" | "in",
+      pax: (m.offshore_manifest_pax ?? []) as ClosePax[],
+      trips: trips as CloseTrip[],
+      visits: visits as CloseVisit[],
+    });
+    if (ids.length) {
+      const { error } = await client.from("offshore_manifest_pax").update({ boarded: true }).in("id", ids);
+      if (!error) boarded += ids.length;
+    }
+    const { error } = await client.from("offshore_manifests").update({ status: "completed" }).eq("id", m.id as string);
+    if (!error) closed += 1;
+  }
+  return { closed, boarded };
 }
