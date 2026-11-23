@@ -79,3 +79,14 @@ export const VISITOR_TYPES = [
   "client",
   "management",
 ];
+
+/**
+ * Approving offshore requests (visits, staff trips) is the OIM's decision;
+ * admins carry the OIM's hat. The Dispatcher puts approved people on the
+ * manifests but does not approve them.
+ */
+export async function requireOim(): Promise<ActionResult | null> {
+  const a = await getAccess();
+  if (a.isAdmin || a.isOim) return null;
+  return { ok: false, error: "Only the OIM approves offshore requests." };
+}

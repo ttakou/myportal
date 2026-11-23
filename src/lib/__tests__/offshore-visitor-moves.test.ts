@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { visitDates, visitorMoves } from "@/lib/offshore/visitor-moves";
-import { manifestDays, visitorManifestTitle, visitorsDue, type DayCrew, type DayStaff, type DayVisit } from "@/lib/offshore/day-manifests";
+import { dueForDay, manifestDays, visitorManifestTitle, visitorsDue, type DayCrew, type DayStaff, type DayVisit } from "@/lib/offshore/day-manifests";
 
 describe("visit dates", () => {
   it("brings a day visit back the same day, and needs a later return for an overnight one", () => {
@@ -76,5 +76,25 @@ describe("visitors on the manifests", () => {
   it("titles a visitor-only manifest as a visitor movement", () => {
     expect(visitorManifestTitle("2026-12-03", "out", "Juliet")).toBe("Visitor movement 2026-12-03 · MOB · Shore → Juliet");
     expect(visitorManifestTitle("2026-12-05", "in", "Juliet")).toBe("Visitor movement 2026-12-05 · DEMOB · Juliet → Shore");
+  });
+});
+
+describe("approved one-off trips on the manifests", () => {
+  const crew: DayCrew = { id: "A", name: "CREW A", offshore_days: 14, onshore_days: 14, cycle_start_date: "2026-12-01", installation_id: "juliet", transport_mode: "boat" };
+  const staff: DayStaff[] = [{ profile_id: "p9", name: "Engineer", position: "Inspector", crew_id: null, is_rotational: false }];
+  const trips = [{ id: "t1", profile_id: "p9", name: "Engineer", installation_id: null, mobilize_date: "2026-12-04", demob_date: "2026-12-06" }];
+
+  it("puts them on the MOB of their mobilise date and the DEMOB of their demob date", () => {
+    const base = { crews: [crew], staff, onboard: [], visits: [], trips, defaultInstallationId: "juliet" };
+    expect(dueForDay({ ...base, date: "2026-12-04", direction: "out", installationId: "juliet" }).map((p) => [p.name, p.position, p.reason])).toEqual([
+      ["Engineer", "Inspector", "Approved trip"],
+    ]);
+    expect(dueForDay({ ...base, date: "2026-12-06", direction: "in", installationId: "juliet" }).map((p) => p.reason)).toEqual(["Approved trip — return"]);
+    expect(dueForDay({ ...base, date: "2026-12-05", direction: "out", installationId: "juliet" })).toEqual([]);
+  });
+
+  it("makes their travel days manifest days", () => {
+    const days = manifestDays({ crews: [crew], staff, visits: [], trips, fromIso: "2026-12-02", days: 6, defaultInstallationId: "juliet" });
+    expect(days.map((d) => `${d.date}:${d.directions.join("+")}`)).toEqual(["2026-12-04:out", "2026-12-06:in"]);
   });
 });

@@ -13,7 +13,8 @@ export default async function ManifestReportPage({
 }) {
   const { id } = await params;
   const access = await getAccess();
-  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
+  // The Dispatcher runs the manifests and reads POB, rooms and the roster.
+  if (!access.isAdmin && !access.isCampboss && !access.isOim && !access.isDispatcher) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 
@@ -77,6 +78,8 @@ export default async function ManifestReportPage({
               <th className="px-2 py-1.5 font-semibold">Position</th>
               <th className="px-2 py-1.5 font-semibold">Status</th>
               <th className="px-2 py-1.5 font-semibold">Remarks</th>
+              <th className="w-24 px-2 py-1.5 font-semibold">Checked</th>
+              <th className="w-40 px-2 py-1.5 font-semibold">Signature</th>
             </tr>
           </thead>
           <tbody>
@@ -87,6 +90,9 @@ export default async function ManifestReportPage({
                 <td className="px-2 py-1.5 text-gray-700">{p.position ?? "—"}</td>
                 <td className="px-2 py-1.5 text-gray-700">{p.boarded ? "Boarded" : "Booked"}</td>
                 <td className="px-2 py-1.5 text-gray-700">{p.issues.length ? p.issues.join(", ") : ""}</td>
+                {/* Ticked and signed at the helideck / jetty on the day. */}
+                <td className="border-l border-gray-200 px-2 py-1.5" />
+                <td className="border-l border-gray-200 px-2 py-1.5" />
               </tr>
             ))}
             {noShow.map((p, i) => (
@@ -96,19 +102,21 @@ export default async function ManifestReportPage({
                 <td className="px-2 py-1.5">{p.position ?? "—"}</td>
                 <td className="px-2 py-1.5">No-show</td>
                 <td className="px-2 py-1.5">{p.issues.length ? p.issues.join(", ") : ""}</td>
+                <td className="border-l border-gray-200 px-2 py-1.5" />
+                <td className="border-l border-gray-200 px-2 py-1.5" />
               </tr>
             ))}
             {m.pax.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-2 py-4 text-center text-gray-400">No passengers.</td>
+                <td colSpan={7} className="px-2 py-4 text-center text-gray-400">No passengers.</td>
               </tr>
             )}
           </tbody>
         </table>
 
         {/* Signatures */}
-        <div className="mt-10 grid grid-cols-3 gap-8 text-xs text-gray-600">
-          {["Prepared by", "Helicopter / Marine officer", "Date & time"].map((s) => (
+        <div className="mt-10 grid grid-cols-2 gap-8 text-xs text-gray-600 sm:grid-cols-4 print:grid-cols-4">
+          {["Prepared by — Offshore Dispatcher", "Approved by — OIM", "Helicopter / Marine officer", "Date & time"].map((s) => (
             <div key={s}>
               <div className="h-10 border-b border-gray-400" />
               <div className="mt-1">{s}</div>

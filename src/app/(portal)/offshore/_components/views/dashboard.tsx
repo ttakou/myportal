@@ -580,9 +580,12 @@ export function Dashboard({
   visits,
   trips,
   installations = [],
+  canApprove = false,
 }: {
   /** False for viewers who see the queue but cannot decide it. */
   canDecide: boolean;
+  /** Approving visits and trips: the OIM's (and admins'). */
+  canApprove?: boolean;
   /** Active installations, for moving someone on board between them. */
   installations?: { id: string; name: string }[];
   pob: PobBreakdown;
@@ -688,7 +691,7 @@ export function Dashboard({
   return (
     <InstallationsCtx.Provider value={installations}>
     <div className="space-y-5">
-      <PendingApprovals visits={visits} trips={trips} canDecide={canDecide} />
+      <PendingApprovals visits={visits} trips={trips} canDecide={canApprove} />
       <VisitorBookingQueue visits={visits} canDemob={canDecide} />
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">

@@ -37,11 +37,13 @@ function csvResponse(filename: string, rows: (string | number | null | undefined
 /** CSV/Excel export for the offshore reports. */
 export async function GET(req: NextRequest) {
   const access = await getAccess();
-  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
-    return new NextResponse("Not authorized", { status: 403 });
-  }
   const sp = req.nextUrl.searchParams;
   const type = sp.get("type");
+  // The Dispatcher exports what they run or read — not catering or muster.
+  const dispatcherMay = access.isDispatcher && !["meals", "muster"].includes(type ?? "");
+  if (!access.isAdmin && !access.isCampboss && !access.isOim && !dispatcherMay) {
+    return new NextResponse("Not authorized", { status: 403 });
+  }
 
   if (type === "roster") {
     const roster = await getRoster();

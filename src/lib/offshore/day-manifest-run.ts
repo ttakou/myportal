@@ -14,6 +14,7 @@ import {
   type DayOnboard,
   type DayStaff,
   type DayVisit,
+  type DayTrip,
   type DuePax,
 } from "./day-manifests";
 import type { Direction } from "./manifest-plan";
@@ -42,6 +43,7 @@ interface DayInputs {
   onboard: DayOnboard[];
   visits: DayVisit[];
   moves: DayMove[];
+  trips: DayTrip[];
   installationName: Map<string, string>;
 }
 
@@ -59,7 +61,7 @@ export async function offshoreDefaultInstallation(client: SupabaseClient, tenant
 
 /** Crews, roster, who is aboard and the visitor bookings, for the days `fromIso`..`toIso`. */
 async function loadDayInputs(client: SupabaseClient, tenantId: string, fromIso: string, toIso: string): Promise<DayInputs> {
-  const [crews, staff, onboard, visits, installations, moves] = await Promise.all([
+  const [crews, staff, onboard, visits, installations, moves, approvedTrips] = await Promise.all([
     allRows((a, b) =>
       client
         .from("offshore_crews")
@@ -106,6 +108,17 @@ async function loadDayInputs(client: SupabaseClient, tenantId: string, fromIso: 
         .eq("tenant_id", tenantId)
         .eq("status", "approved")
         .or(`and(scheduled_date.gte.${fromIso},scheduled_date.lte.${toIso}),and(requested_date.gte.${fromIso},requested_date.lte.${toIso})`)
+        .order("id")
+        .range(a, b),
+    ),
+    // One-off trips the OIM approved (HSE-cleared), travelling in the window.
+    allRows((a, b) =>
+      client
+        .from("offshore_trips")
+        .select("id, profile_id, installation_id, mobilize_date, demob_date, person_name, profile:profiles!offshore_trips_profile_id_fkey(full_name)")
+        .eq("tenant_id", tenantId)
+        .in("status", ["hse_cleared", "manifested"])
+        .or(`and(mobilize_date.gte.${fromIso},mobilize_date.lte.${toIso}),and(demob_date.gte.${fromIso},demob_date.lte.${toIso})`)
         .order("id")
         .range(a, b),
     ),
@@ -161,6 +174,14 @@ async function loadDayInputs(client: SupabaseClient, tenantId: string, fromIso: 
         installation_id: (m.installation_id as string | null) ?? null,
       };
     }),
+    trips: approvedTrips.map((t) => ({
+      id: t.id as string,
+      profile_id: (t.profile_id as string | null) ?? null,
+      name: one<{ full_name?: string }>(t.profile)?.full_name || (t.person_name as string) || "Traveller",
+      installation_id: (t.installation_id as string | null) ?? null,
+      mobilize_date: t.mobilize_date as string,
+      demob_date: (t.demob_date as string | null) ?? null,
+    })),
     installationName: new Map(installations.map((i) => [i.id as string, i.name as string])),
   };
 }
@@ -208,7 +229,7 @@ export async function ensureDayManifests(
   const to = addDays(from, horizon - 1);
   const defaultInstallationId = opts.defaultInstallationId ?? null;
   const inputs = await loadDayInputs(client, tenantId, from, to);
-  const days = manifestDays({ crews: inputs.crews, staff: inputs.staff, visits: inputs.visits, moves: inputs.moves, fromIso: from, days: horizon, defaultInstallationId });
+  const days = manifestDays({ crews: inputs.crews, staff: inputs.staff, visits: inputs.visits, moves: inputs.moves, trips: inputs.trips, fromIso: from, days: horizon, defaultInstallationId });
   const run: DayManifestRun = { days: days.length, created: 0, superseded: 0 };
   if (days.length === 0) return run;
 
@@ -471,7 +492,7 @@ export async function dueByDay(
 }> {
   const inputs = await loadDayInputs(client, tenantId, fromIso, toIso);
   const n = Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 86_400_000) + 1;
-  const days = manifestDays({ crews: inputs.crews, staff: inputs.staff, visits: inputs.visits, moves: inputs.moves, fromIso, days: n, defaultInstallationId });
+  const days = manifestDays({ crews: inputs.crews, staff: inputs.staff, visits: inputs.visits, moves: inputs.moves, trips: inputs.trips, fromIso, days: n, defaultInstallationId });
   return {
     days: days.map((d) => ({
       date: d.date,
@@ -482,4 +503,101 @@ export async function dueByDay(
     crews: inputs.crews,
     staff: inputs.staff,
   };
+}
+
+type TripLite = { profile_id: string | null; person_name: string | null; name: string; installation_id: string | null; mobilize_date: string; demob_date: string | null };
+
+async function tripLite(client: SupabaseClient, tenantId: string, tripId: string): Promise<TripLite | null> {
+  const { data: t } = await client
+    .from("offshore_trips")
+    .select("profile_id, person_name, installation_id, mobilize_date, demob_date, profile:profiles!offshore_trips_profile_id_fkey(full_name)")
+    .eq("tenant_id", tenantId)
+    .eq("id", tripId)
+    .maybeSingle();
+  if (!t) return null;
+  return {
+    profile_id: (t.profile_id as string | null) ?? null,
+    person_name: (t.person_name as string | null) ?? null,
+    name: one<{ full_name?: string }>(t.profile as never)?.full_name || (t.person_name as string) || "Traveller",
+    installation_id: (t.installation_id as string | null) ?? null,
+    mobilize_date: t.mobilize_date as string,
+    demob_date: (t.demob_date as string | null) ?? null,
+  };
+}
+
+/** The open day manifests of one date and direction on the trip's installation. */
+async function openDayManifests(client: SupabaseClient, tenantId: string, date: string, direction: Direction, installationId: string | null) {
+  let q = client
+    .from("offshore_manifests")
+    .select("id, seat_capacity, offshore_manifest_pax(id, profile_id, person_name, boarded)")
+    .eq("tenant_id", tenantId)
+    .eq("kind", "day")
+    .eq("scheduled_date", date)
+    .eq("direction", direction)
+    .in("status", ["draft", "approved"]);
+  q = installationId ? q.eq("installation_id", installationId) : q.is("installation_id", null);
+  const { data } = await q;
+  return (data ?? []) as Row[];
+}
+
+const samePerson = (p: Row, t: TripLite) =>
+  t.profile_id ? p.profile_id === t.profile_id : !p.profile_id && (p.person_name ?? "").toLowerCase() === t.name.toLowerCase();
+
+/**
+ * A trip the OIM has just approved goes on the manifests of its travel
+ * dates: MOB on the mobilise date, DEMOB on the demob date (a manifest is
+ * made for a date that has none). Dates already past are left alone.
+ */
+export async function placeTripOnManifests(client: SupabaseClient, tenantId: string, tripId: string, todayIso: string): Promise<number> {
+  const t = await tripLite(client, tenantId, tripId);
+  if (!t) return 0;
+  const defaultInstallationId = await offshoreDefaultInstallation(client, tenantId);
+  const inst = t.installation_id ?? defaultInstallationId;
+  let added = 0;
+  for (const [date, direction] of [[t.mobilize_date, "out"], [t.demob_date, "in"]] as [string | null, Direction][]) {
+    if (!date || date < todayIso) continue;
+    await ensureDayManifests(client, tenantId, { todayIso: date, horizonDays: 1, defaultInstallationId });
+    for (const m of await openDayManifests(client, tenantId, date, direction, inst)) {
+      const pax = (m.offshore_manifest_pax ?? []) as Row[];
+      if (pax.some((p) => samePerson(p, t))) continue;
+      const { data: staff } = t.profile_id
+        ? await client.from("offshore_staff").select("position").eq("profile_id", t.profile_id).maybeSingle()
+        : { data: null };
+      const { error } = await client.from("offshore_manifest_pax").insert({
+        tenant_id: tenantId,
+        manifest_id: m.id,
+        profile_id: t.profile_id,
+        person_name: t.name,
+        position: (staff?.position as string | null) ?? null,
+      });
+      if (!error) {
+        added += 1;
+        const seats = daySeats(pax.length + 1);
+        if (seats > Number(m.seat_capacity ?? 0)) await client.from("offshore_manifests").update({ seat_capacity: seats }).eq("id", m.id as string);
+      }
+    }
+  }
+  return added;
+}
+
+/**
+ * A trip cancelled or rejected comes off the manifests of its travel dates
+ * that are still ahead (or today, if not yet boarded).
+ */
+export async function removeTripFromManifests(client: SupabaseClient, tenantId: string, tripId: string, todayIso: string): Promise<number> {
+  const t = await tripLite(client, tenantId, tripId);
+  if (!t) return 0;
+  const defaultInstallationId = await offshoreDefaultInstallation(client, tenantId);
+  const inst = t.installation_id ?? defaultInstallationId;
+  let removed = 0;
+  for (const [date, direction] of [[t.mobilize_date, "out"], [t.demob_date, "in"]] as [string | null, Direction][]) {
+    if (!date || date < todayIso) continue;
+    for (const m of await openDayManifests(client, tenantId, date, direction, inst)) {
+      const ids = ((m.offshore_manifest_pax ?? []) as Row[]).filter((p) => !p.boarded && samePerson(p, t)).map((p) => p.id as string);
+      if (!ids.length) continue;
+      const { error } = await client.from("offshore_manifest_pax").delete().in("id", ids);
+      if (!error) removed += ids.length;
+    }
+  }
+  return removed;
 }

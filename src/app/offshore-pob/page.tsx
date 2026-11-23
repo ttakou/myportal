@@ -9,7 +9,8 @@ import { PrintButton } from "../offshore-manifest/[id]/print-button";
  *  grouped by lifeboat station, for the noticeboard and emergency use. */
 export default async function PobRosterPage() {
   const access = await getAccess();
-  if (!access.isAdmin && !access.isCampboss && !access.isOim) {
+  // The Dispatcher runs the manifests and reads POB, rooms and the roster.
+  if (!access.isAdmin && !access.isCampboss && !access.isOim && !access.isDispatcher) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
 

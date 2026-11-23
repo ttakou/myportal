@@ -5,7 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { ARCHIVE_REASON, isPastTripRequest, isPastVisitRequest } from "@/lib/offshore/past-requests";
-import { requireOffshoreDispatch, rev } from "./_shared";
+import { placeTripOnManifests, removeTripFromManifests } from "@/lib/offshore/day-manifest-run";
+import { requireOffshoreDispatch, requireOim, rev, tenantId } from "./_shared";
 
 export async function requestOffshoreTrip(input: {
   installationId: string;
@@ -137,7 +138,7 @@ export async function requestOffshoreTripGroup(input: {
 }
 
 export async function clearHse(id: string): Promise<ActionResult> {
-  const gate = await requireOffshoreDispatch("approve");
+  const gate = await requireOim();
   if (gate) return gate;
   const supabase = createClient();
   const {
@@ -152,6 +153,9 @@ export async function clearHse(id: string): Promise<ActionResult> {
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  // Approved: on the manifests of their travel dates, for the Dispatcher.
+  const tenant = await tenantId();
+  if (tenant) await placeTripOnManifests(supabase, tenant, id, new Date().toISOString().slice(0, 10));
   rev();
   return { ok: true };
 }
@@ -180,6 +184,14 @@ export async function setOffshoreStatus(
   const gate = await requireOffshoreDispatch("approve");
   if (gate) return gate;
   const supabase = createClient();
+  // Turning down a request not yet decided is the OIM's call.
+  if (status === "cancelled") {
+    const { data: cur } = await supabase.from("offshore_trips").select("status").eq("id", id).maybeSingle();
+    if (cur?.status === "requested") {
+      const oim = await requireOim();
+      if (oim) return oim;
+    }
+  }
   // A rejection or cancellation records who made it, for the approvals log.
   let who: Record<string, string | null> = {};
   if (status === "cancelled") {
@@ -190,6 +202,11 @@ export async function setOffshoreStatus(
   }
   const { error } = await supabase.from("offshore_trips").update({ status, ...who }).eq("id", id);
   if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, "") };
+  // Cancelled: off the manifests still ahead.
+  if (status === "cancelled") {
+    const tenant = await tenantId();
+    if (tenant) await removeTripFromManifests(supabase, tenant, id, new Date().toISOString().slice(0, 10));
+  }
   rev();
   return { ok: true };
 }
