@@ -17,7 +17,7 @@ import {
   type ScheduledCrew,
 } from "./schedule-actions";
 import { scheduleActs, type OffshoreScheduleSettings } from "./schedule-settings";
-import { addVisitorsToDayManifests, advanceVisitorStatuses, ensureDayManifests } from "./day-manifest-run";
+import { addVisitorsToDayManifests, advanceVisitorStatuses, closePastManifests, ensureDayManifests } from "./day-manifest-run";
 import { DAY_MANIFEST_HORIZON_DAYS } from "./day-manifests";
 import { carryOutDueMoves, movedAwayOn } from "./movement-run";
 import { getLookAhead } from "./look-ahead";
@@ -69,6 +69,8 @@ export interface TenantScheduleSummary {
   lookAheadSent: number;
   /** Meal sheets generated (or brought up to date) for today. */
   mealSheets: number;
+  /** Past manifests closed. */
+  manifestsClosed: number;
 }
 
 type Row = Record<string, unknown>;
@@ -163,6 +165,7 @@ async function runTenant(
     movesCarriedOut: 0,
     lookAheadSent: 0,
     mealSheets: 0,
+    manifestsClosed: 0,
     visitorsBoarded: 0,
     visitorsReturned: 0,
   };
@@ -436,6 +439,15 @@ async function runTenant(
     summary.visitorsReturned = moved.returned;
   } catch (e) {
     console.error(`offshore visitors: tenant ${tenantId} failed:`, (e as Error).message);
+  }
+
+  // Manifests whose day has passed: closed, with the travellers the records
+  // confirm ticked as boarded.
+  try {
+    const shut = await closePastManifests(admin, tenantId, today);
+    summary.manifestsClosed = shut.closed;
+  } catch (e) {
+    console.error(`offshore manifests close: tenant ${tenantId} failed:`, (e as Error).message);
   }
 
   // Today's meal sheet, from POB after the crew changes above, on every
