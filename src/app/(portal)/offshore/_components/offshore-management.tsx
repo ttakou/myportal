@@ -149,6 +149,7 @@ export function OffshoreManagement(props: {
           musterGroups={props.musterGroups}
           installations={props.installations}
           readOnly={readOnly}
+          canAddCasual={!readOnly || props.flags.dispatcher}
         />
       )}
       {tab === "installations" && <InstallationsPanel installations={props.manageInstallations} />}
