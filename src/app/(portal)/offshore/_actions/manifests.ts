@@ -7,6 +7,8 @@ import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 import { boardMember } from "./mobilise";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureDayManifests, offshoreDefaultInstallation, refreshDayManifestPax } from "@/lib/offshore/day-manifest-run";
+import { siteToday } from "@/lib/offshore/manifest-order";
+import { movesPeopleNow } from "@/lib/offshore/undo-mobilise";
 
 /**
  * Generate the crew manifest for the crew's *next* computed change date,
@@ -157,7 +159,9 @@ export async function createManifest(input: {
   }
   await supabase.from("offshore_manifest_pax").insert(pax);
 
-  if (input.applyMovements && input.profileIds.length) {
+  // A manifest for a later day only lists who will travel: nobody moves until
+  // it is confirmed on the day (or the nightly crew change runs).
+  if (input.applyMovements && input.profileIds.length && movesPeopleNow(input.scheduledDate, siteToday())) {
     const { data: live } = await supabase
       .from("offshore_trips")
       .select("id, profile_id")
@@ -166,8 +170,6 @@ export async function createManifest(input: {
     const tripByProfile = new Map(
       (live ?? []).map((t) => [t.profile_id as string, t.id as string]),
     );
-    const today = new Date().toISOString().slice(0, 10);
-
     if (input.direction === "out") {
       // Joining: board everyone not already aboard. boardMember is idempotent
       // and picks up each person's crew, installation and fixed cabin.
@@ -182,7 +184,7 @@ export async function createManifest(input: {
       if (tripIds.length) {
         await supabase
           .from("offshore_trips")
-          .update({ status: "demobilised", demob_date: today })
+          .update({ status: "demobilised", demob_date: input.scheduledDate })
           .in("id", tripIds);
       }
     }
@@ -332,6 +334,8 @@ export async function confirmManifestMovement(id: string): Promise<ActionResult>
   if (!m) return { ok: false, error: "Manifest not found." };
   if (m.status === "completed") return { ok: false, error: "Manifest already approved." };
   if (m.status === "cancelled") return { ok: false, error: "Manifest is cancelled." };
+  if (!movesPeopleNow(m.scheduled_date as string, siteToday()))
+    return { ok: false, error: `This manifest is for ${m.scheduled_date}. Confirm it on the day the people travel.` };
 
   const { data: pax } = await supabase
     .from("offshore_manifest_pax")

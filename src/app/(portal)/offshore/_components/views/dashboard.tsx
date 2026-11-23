@@ -35,6 +35,7 @@ import {
   reassignTripRoom,
   setTripCategory,
   setVisitorMovement,
+  undoMobilisation,
 } from "../../actions";
 import { PendingApprovals } from "../pending-approvals";
 import { field, useRun } from "./shared";
@@ -249,10 +250,44 @@ function PobPeopleRows({
   const { pending, error, run } = useRun();
   const installations = useContext(InstallationsCtx);
   if (people.length === 0) return <p className="py-1 text-xs text-muted-foreground">None.</p>;
+  // Undo removes the trip as if never entered — for a mobilisation made by
+  // mistake today. The server re-checks who may and who still qualifies.
+  const undo = (list: PobOnboard[]) => {
+    const names = list.map((p) => `• ${p.name}`).join("\n");
+    if (
+      !confirm(
+        `Undo the mobilisation of ${list.length} person(s)?\n\n${names}\n\n` +
+          "They come off POB, the muster roll and the meal sheet, and the trip is removed as if it had never been entered. " +
+          "Use this only for a mobilisation entered by mistake — someone who really travelled and has left is demobilised instead.",
+      )
+    )
+      return;
+    run(async () => {
+      const res = await undoMobilisation(list.map((p) => p.trip_id));
+      if (res.ok && res.warning) alert(res.warning);
+      return res;
+    });
+  };
+  const undoable = canDemob ? people.filter((p) => p.undoable) : [];
   return (
     <>
       {error && (
         <p className="my-1 rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{error}</p>
+      )}
+      {undoable.length > 1 && (
+        <div className="my-1 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+          <span>
+            {undoable.length} of these were mobilised today. If that was a mistake, it can still be undone.
+          </span>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => undo(undoable)}
+            className="ml-auto rounded border border-amber-400 bg-white px-1.5 py-0.5 font-medium hover:bg-amber-100"
+          >
+            Undo all {undoable.length}
+          </button>
+        </div>
       )}
       {[...people]
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -307,6 +342,17 @@ function PobPeopleRows({
                     </option>
                   ))}
               </select>
+            )}
+            {canDemob && p.undoable && (
+              <button
+                type="button"
+                disabled={pending}
+                title={`Undo ${p.name}'s mobilisation — for one entered by mistake today`}
+                onClick={() => undo([p])}
+                className="rounded border px-1.5 py-0.5 text-[11px] hover:bg-amber-100 hover:text-amber-900"
+              >
+                Undo
+              </button>
             )}
             {canDemob && (
               <button
