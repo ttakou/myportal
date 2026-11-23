@@ -21,6 +21,7 @@ import { addVisitorsToDayManifests, advanceVisitorStatuses, ensureDayManifests }
 import { DAY_MANIFEST_HORIZON_DAYS } from "./day-manifests";
 import { carryOutDueMoves, movedAwayOn } from "./movement-run";
 import { getLookAhead } from "./look-ahead";
+import { buildMealSheet } from "./meal-sheet-run";
 
 /**
  * The nightly job that makes the rotation schedule act.
@@ -66,6 +67,8 @@ export interface TenantScheduleSummary {
   movesCarriedOut: number;
   /** Monday look-ahead messages sent. */
   lookAheadSent: number;
+  /** Meal sheets generated (or brought up to date) for today. */
+  mealSheets: number;
 }
 
 type Row = Record<string, unknown>;
@@ -159,6 +162,7 @@ async function runTenant(
     visitorsManifested: 0,
     movesCarriedOut: 0,
     lookAheadSent: 0,
+    mealSheets: 0,
     visitorsBoarded: 0,
     visitorsReturned: 0,
   };
@@ -432,6 +436,21 @@ async function runTenant(
     summary.visitorsReturned = moved.returned;
   } catch (e) {
     console.error(`offshore visitors: tenant ${tenantId} failed:`, (e as Error).message);
+  }
+
+  // Today's meal sheet, from POB after the crew changes above, on every
+  // installation whose beds and catering are run here (it has rooms). The
+  // canteen adjusts it; running again keeps their ticks.
+  try {
+    const { data: roomInsts } = await admin.from("offshore_rooms").select("installation_id").eq("tenant_id", tenantId).eq("is_active", true);
+    const insts = new Set(((roomInsts ?? []) as { installation_id: string | null }[]).map((r) => r.installation_id ?? settings.defaultInstallationId).filter(Boolean) as string[]);
+    for (const inst of insts) {
+      const res = await buildMealSheet(admin, tenantId, inst, today);
+      if (res.ok) summary.mealSheets += 1;
+      else if (!/No one is on board/.test(res.error)) console.error(`offshore meal sheet ${inst}: ${res.error}`);
+    }
+  } catch (e) {
+    console.error(`offshore meal sheet: tenant ${tenantId} failed:`, (e as Error).message);
   }
 
   // Mondays: the next 14 days, in a few lines, to the OIM and the Campboss.

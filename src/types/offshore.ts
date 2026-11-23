@@ -540,10 +540,18 @@ export const MEAL_TIME: Partial<Record<MealKind, string>> = {
   dinner: "17:30",
 };
 
+export const MEAL_CATEGORY_LABEL: Record<MealEntry["category"], string> = {
+  staff: "Staff",
+  visitor: "Visitor",
+  casual: "Casual",
+  caterer: "Pellegrini (catering)",
+};
+
 export interface MealEntry {
   id: string;
   person_name: string;
-  category: "staff" | "visitor" | "casual";
+  /** "caterer": the catering contractor's own staff (Pellegrini), listed last, unticked. */
+  category: "staff" | "visitor" | "casual" | "caterer";
   breakfast: boolean;
   snack: boolean;
   lunch: boolean;

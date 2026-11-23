@@ -1,3 +1,4 @@
+import { MEAL_CATEGORY_LABEL } from "@/types/offshore";
 import { NextResponse, type NextRequest } from "next/server";
 import { getAccess } from "@/lib/auth";
 import {
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
     for (const e of entries) {
       rows.push([
         e.person_name,
-        e.category,
+        MEAL_CATEGORY_LABEL[e.category as keyof typeof MEAL_CATEGORY_LABEL] ?? e.category,
         yn(e.breakfast),
         yn(e.snack),
         yn(e.lunch),

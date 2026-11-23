@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { MealEntry } from "@/types/offshore";
+import { sheetOrder } from "./meal-sheet";
 
 /** Meal-sheet rows already saved for an installation + date. */
 export async function getMealSheet(
@@ -12,8 +13,7 @@ export async function getMealSheet(
     .from("offshore_meal_entries")
     .select("id, person_name, category, breakfast, snack, lunch, dinner, lodging")
     .eq("installation_id", installationId)
-    .eq("meal_date", date)
-    .order("category")
-    .order("person_name");
-  return (data ?? []) as MealEntry[];
+    .eq("meal_date", date);
+  // Staff, visitors, casual diners, then the caterer's own staff — each by name.
+  return sheetOrder((data ?? []) as MealEntry[]);
 }

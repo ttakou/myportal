@@ -1,7 +1,7 @@
 import { getAccess } from "@/lib/auth";
 import { getMealSheet, getAllInstallations } from "@/lib/offshore";
 import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
-import { MEAL_LABEL } from "@/types/offshore";
+import { MEAL_CATEGORY_LABEL, MEAL_LABEL } from "@/types/offshore";
 import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
@@ -88,7 +88,7 @@ export default async function MealSheetReportPage({
                   <tr key={e.id} className="border-b border-gray-200">
                     <td className="px-2 py-1.5 tabular-nums text-gray-500">{i + 1}</td>
                     <td className="px-2 py-1.5 font-medium">{e.person_name}</td>
-                    <td className="px-2 py-1.5 capitalize text-gray-600">{e.category}</td>
+                    <td className="px-2 py-1.5 text-gray-600">{MEAL_CATEGORY_LABEL[e.category] ?? e.category}</td>
                     {(["breakfast", "snack", "lunch", "dinner", "lodging"] as const).map((k) => (
                       <td key={k} className="px-2 py-1.5 text-center">
                         {tick(e[k])}
