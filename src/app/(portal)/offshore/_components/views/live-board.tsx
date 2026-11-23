@@ -268,7 +268,18 @@ export function LiveBoardPanel({
               <span className={cn("font-semibold", g.lb === "—" && "text-destructive")}>
                 {g.lb === "—" ? "No muster station" : `Muster ${g.lb}`}
               </span>
-              <span className="text-xs font-medium text-muted-foreground">{g.people.length} on board</span>
+              <span className="ml-auto text-xs font-medium text-muted-foreground">{g.people.length} on board</span>
+              {/* This station's roster on its own sheet. */}
+              <a
+                href={`/offshore-pob?lb=${encodeURIComponent(g.lb === "—" ? "Unassigned" : g.lb)}`}
+                target="_blank"
+                rel="noopener"
+                title={`Print the ${g.lb === "—" ? "no-station" : g.lb} roster`}
+                aria-label={`Print the ${g.lb === "—" ? "no-station" : g.lb} roster`}
+                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-accent"
+              >
+                <Printer className="h-3.5 w-3.5" /> Print
+              </a>
             </div>
 
             {/* Evacuation & head-count leaders for this station (current window). */}

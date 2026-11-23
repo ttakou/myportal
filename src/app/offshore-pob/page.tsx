@@ -6,8 +6,14 @@ import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhe
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
 /** Standalone, print-friendly POB / muster roster — everyone on board now,
- *  grouped by lifeboat station, for the noticeboard and emergency use. */
-export default async function PobRosterPage() {
+ *  grouped by lifeboat station, for the noticeboard and emergency use.
+ *  `?lb=LB-1` prints one muster station's roster on its own. */
+export default async function PobRosterPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ lb?: string }>;
+}) {
+  const only = (await searchParams).lb?.trim() || null;
   const access = await getAccess();
   // The Dispatcher runs the manifests and reads POB, rooms and the roster.
   if (!access.isAdmin && !access.isCampboss && !access.isOim && !access.isDispatcher) {
@@ -24,7 +30,7 @@ export default async function PobRosterPage() {
     const k = p.lifeboat ?? "Unassigned";
     byLb.set(k, [...(byLb.get(k) ?? []), p]);
   }
-  const groups = [...byLb.entries()].sort((a, b) => {
+  const groups = [...byLb.entries()].filter(([lb]) => !only || lb === only).sort((a, b) => {
     if (a[0] === "Unassigned") return 1;
     if (b[0] === "Unassigned") return -1;
     return a[0].localeCompare(b[0], undefined, { numeric: true });
@@ -46,8 +52,16 @@ export default async function PobRosterPage() {
       </div>
 
       <div className="pob-report mx-auto max-w-[900px] bg-white p-6 shadow-sm print:max-w-none print:shadow-none">
-        <ReportHeader title="POB & muster roster" subtitle={`As of ${stamp} UTC · ${pob.total} on board`} />
+        <ReportHeader
+          title={only ? `Muster ${only === "Unassigned" ? "— no station" : only} roster` : "POB & muster roster"}
+          subtitle={
+            only
+              ? `As of ${stamp} UTC · ${groups[0]?.[1].length ?? 0} at this station · ${pob.total} on board in all`
+              : `As of ${stamp} UTC · ${pob.total} on board`
+          }
+        />
 
+        {!only && (
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-700">
           <span className="font-semibold">{pob.total} on board</span>
           <span>{pob.byIdentity.rotational} rotational</span>
@@ -57,6 +71,7 @@ export default async function PobRosterPage() {
             <span key={lb.name}>{lb.name}: {lb.pob}</span>
           ))}
         </div>
+        )}
 
         {groups.map(([lb, people]) => (
           <div key={lb} className="mt-4" style={{ breakInside: "avoid" }}>
@@ -96,9 +111,13 @@ export default async function PobRosterPage() {
             </table>
           </div>
         ))}
-        {pob.people.length === 0 && <p className="mt-4 text-sm text-gray-400">Nobody is currently on board.</p>}
+        {groups.length === 0 && (
+          <p className="mt-4 text-sm text-gray-400">
+            {only ? `Nobody is on board at muster station ${only}.` : "Nobody is currently on board."}
+          </p>
+        )}
 
-        {flags.length > 0 && (
+        {!only && flags.length > 0 && (
           <div className="mt-5" style={{ breakInside: "avoid" }}>
             <h2 className="mb-1 text-sm font-bold text-gray-900">Flagged absences & exceptions · {flags.length}</h2>
             <table className="w-full border-collapse text-[11px]">
@@ -126,7 +145,7 @@ export default async function PobRosterPage() {
           </div>
         )}
 
-        <ReportStampFooter label="POB & muster roster" />
+        <ReportStampFooter label={only ? `Muster ${only} roster` : "POB & muster roster"} />
       </div>
     </div>
   );
