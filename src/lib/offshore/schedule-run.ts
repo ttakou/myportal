@@ -457,7 +457,7 @@ async function sendLookAhead(admin: SupabaseClient, tenantId: string, today: str
     const parts: string[] = [];
     if (d.crewsOut.length) parts.push(`${d.crewsOut.join(" & ")} in (${d.arrivals})`);
     if (d.crewsIn.length) parts.push(`${d.crewsIn.join(" & ")} out (${d.departures})`);
-    if (d.bedsFree < 0) parts.push(`${-d.bedsFree} beds short`);
+    if (d.bedsFree !== null && d.bedsFree < 0) parts.push(`${-d.bedsFree} beds short`);
     if (d.noBed > 0) parts.push(`${d.noBed} arrival(s) with no bed`);
     if (d.overIfApproved) parts.push(d.over ? `POB ${d.total}/${d.capacity} over the limit` : `${d.total + d.pending}/${d.capacity} if pending approved`);
     if (parts.length) lines.push(`${short(d.date)}: ${parts.join(", ")}`);

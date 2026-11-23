@@ -131,6 +131,7 @@ export function OffshoreManagement(props: {
           roster={props.roster}
           visits={props.visits}
           trips={props.trips}
+          installations={props.installations.map((i) => ({ id: i.id, name: i.name }))}
         />
       )}
       {tab === "board" && (

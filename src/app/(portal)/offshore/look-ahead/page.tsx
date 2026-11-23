@@ -311,9 +311,13 @@ function DayCard({ d, selected, href }: { d: LookAheadDay; selected: boolean; hr
       <div className="my-1 h-1.5 overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full", d.over || d.overIfApproved ? "bg-destructive" : "bg-green-500")} style={{ width: `${pct}%` }} />
       </div>
-      <div className={cn("rounded px-0.5 text-[10px]", d.bedsFree < 0 ? "bg-destructive/10 font-semibold text-destructive" : "bg-green-50 text-green-700")}>
-        {d.bedsFree < 0 ? `${-d.bedsFree} beds short` : `${d.bedsFree} beds free`}
-      </div>
+      {d.bedsFree === null ? (
+        <div className="rounded bg-muted px-0.5 text-[10px] text-muted-foreground">contractor beds</div>
+      ) : (
+        <div className={cn("rounded px-0.5 text-[10px]", d.bedsFree < 0 ? "bg-destructive/10 font-semibold text-destructive" : "bg-green-50 text-green-700")}>
+          {d.bedsFree < 0 ? `${-d.bedsFree} beds short` : `${d.bedsFree} beds free`}
+        </div>
+      )}
       {d.noBed > 0 && <div className="mt-0.5 text-[10px] font-semibold text-destructive">{d.noBed} with no bed</div>}
       {(d.arrivals > 0 || d.departures > 0) && (
         <div className="mt-0.5 text-[10px]">

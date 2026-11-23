@@ -190,7 +190,7 @@ export async function autoAllocateBeds(): Promise<AutoAllocateResult> {
   // Everyone on board (seated or not); the seated ones tell us which beds are free.
   const { data: tripRows } = await supabase
     .from("offshore_trips")
-    .select("id, profile_id, crew_id, room_id, bed_no")
+    .select("id, profile_id, crew_id, room_id, bed_no, installation_id")
     .eq("status", "onboard");
   const onboard = (tripRows ?? []) as {
     id: string;
@@ -198,15 +198,20 @@ export async function autoAllocateBeds(): Promise<AutoAllocateResult> {
     crew_id: string | null;
     room_id: string | null;
     bed_no: string | null;
+    installation_id: string | null;
   }[];
-  const needBed = onboard.filter((t) => !t.room_id);
-  if (needBed.length === 0) return { ok: true, placed: 0, unplaced: 0 };
 
   // Rooms open for allocation (skip blocked / under maintenance).
   const { data: roomRows } = await supabase
     .from("offshore_rooms")
-    .select("id, bed_count, gender_restriction, status, is_active")
+    .select("id, bed_count, gender_restriction, status, is_active, installation_id")
     .eq("is_active", true);
+  // Only people on an installation whose beds are managed here need one: a
+  // contractor's rig has no rooms in the app.
+  const defaultInst = (await getOffshoreDefaultInstallation())?.id ?? "";
+  const managed = new Set(((roomRows ?? []) as Record<string, any>[]).map((r) => (r.installation_id as string | null) ?? defaultInst));
+  const needBed = onboard.filter((t) => !t.room_id && managed.has(t.installation_id ?? defaultInst));
+  if (needBed.length === 0) return { ok: true, placed: 0, unplaced: 0 };
   const rooms = ((roomRows ?? []) as Record<string, any>[]).filter(
     (r) => !["blocked", "maintenance"].includes(r.status),
   );
@@ -451,6 +456,46 @@ export async function placeTripInRoom(tripId: string, roomId: string): Promise<A
   const bed = lowestFreeBed(Number(room.bed_count ?? 0), overlapping.map((o) => o.bed_no as string | null));
   if (!bed) return { ok: false, error: "No bed is free in that room for the stay — refresh the list." };
   const { error } = await supabase.from("offshore_trips").update({ room_id: roomId, bed_no: bed }).eq("id", tripId);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
+/**
+ * Move someone on board to another installation for this hitch (a crew
+ * member sent to the rig, and back). Their crew and rotation do not change.
+ * On an installation whose beds are not managed here (no rooms in the app)
+ * they leave their room and muster under that installation's name; moving
+ * back, they need a bed again from the bed board.
+ */
+export async function moveTripInstallation(tripId: string, installationId: string): Promise<ActionResult> {
+  const gate = await requireOffshoreDispatch("operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const [{ data: inst }, { data: trip }, { data: roomRows }, defaultInst] = await Promise.all([
+    supabase.from("offshore_installations").select("id, name").eq("id", installationId).maybeSingle(),
+    supabase.from("offshore_trips").select("id, status, installation_id, room:offshore_rooms(installation_id)").eq("id", tripId).maybeSingle(),
+    supabase.from("offshore_rooms").select("installation_id").eq("is_active", true),
+    getOffshoreDefaultInstallation(),
+  ]);
+  if (!inst) return { ok: false, error: "Installation not found." };
+  if (!trip || trip.status !== "onboard") return { ok: false, error: "Only someone on board can be moved." };
+  const def = defaultInst?.id ?? "";
+  const managed = new Set(((roomRows ?? []) as { installation_id: string | null }[]).map((r) => r.installation_id ?? def));
+  const bedsHere = managed.has(inst.id);
+  const roomInst = ((Array.isArray(trip.room) ? trip.room[0] : trip.room) as { installation_id: string | null } | null)?.installation_id ?? null;
+  const keepsRoom = bedsHere && roomInst !== null && (roomInst ?? def) === inst.id;
+  const patch: Record<string, unknown> = {
+    installation_id: inst.id,
+    // Muster: the installation's own station where it has no rooms here,
+    // otherwise back to the cabin's lifeboat.
+    lifeboat_override: bedsHere ? null : inst.name,
+  };
+  if (!keepsRoom) {
+    patch.room_id = null;
+    patch.bed_no = null;
+  }
+  const { error } = await supabase.from("offshore_trips").update(patch).eq("id", tripId);
   if (error) return { ok: false, error: error.message };
   rev();
   return { ok: true };

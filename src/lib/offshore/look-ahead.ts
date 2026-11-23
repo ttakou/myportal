@@ -26,8 +26,8 @@ export interface LookAheadDay {
   pending: number;
   over: boolean;
   overIfApproved: boolean;
-  /** Free beds = usable beds − POB; negative means short. */
-  bedsFree: number;
+  /** Free beds = usable beds − POB; negative means short; null where beds are not managed here. */
+  bedsFree: number | null;
   /** Arrivals the bed plan found no bed for. */
   noBed: number;
   arrivals: number;
@@ -161,6 +161,8 @@ export async function getLookAhead(input: {
       closed: ["blocked", "maintenance"].includes(r.status),
     }));
   const usableBeds = rooms.filter((r) => !r.closed).reduce((n, r) => n + r.beds, 0);
+  // An installation with no rooms here (a contractor's rig): POB only, no beds.
+  const bedsManaged = rooms.length > 0;
 
   const nameOf = (r: Row) => one<{ full_name?: string }>(r.person)?.full_name || (r.person_name as string) || "—";
   const onboard = ((onboardRows ?? []) as Row[]).filter((r) => here(r.installation_id));
@@ -268,7 +270,7 @@ export async function getLookAhead(input: {
     const p = planBy.get(date);
     const crewsOut = crewsOf("out");
     const crewsIn = crewsOf("in");
-    const bedsFree = usableBeds - total;
+    const bedsFree = bedsManaged ? usableBeds - total : null;
     const day: LookAheadDay = {
       date,
       weekday: weekday(date),
@@ -286,7 +288,7 @@ export async function getLookAhead(input: {
       crewChange: crewsOut.length + crewsIn.length > 0,
       flagged: false,
     };
-    day.flagged = day.overIfApproved || day.bedsFree < 0 || day.noBed > 0;
+    day.flagged = day.overIfApproved || (day.bedsFree !== null && day.bedsFree < 0) || day.noBed > 0;
     return day;
   });
 
@@ -337,7 +339,7 @@ export async function getLookAhead(input: {
     selected,
     kpis: {
       overDays: days.filter((d) => d.overIfApproved).length,
-      shortDays: days.filter((d) => d.bedsFree < 0 || d.noBed > 0).length,
+      shortDays: days.filter((d) => (d.bedsFree !== null && d.bedsFree < 0) || d.noBed > 0).length,
       pending: pendingList.length,
       crewChanges: days.filter((d) => d.crewChange).length,
       peak: peakDay?.total ?? 0,
@@ -349,7 +351,7 @@ export async function getLookAhead(input: {
       pending: pendingList.length,
       pendingOverDates: days.filter((d) => d.overIfApproved && !d.over).map((d) => d.date),
       draftManifests: { count: drafts.length, dates: [...new Set(drafts.map((d) => d.date))].sort() },
-      noRoom: onboard.filter((o) => !o.room_id).length,
+      noRoom: bedsManaged ? onboard.filter((o) => !o.room_id).length : 0,
       openEnded: onboard.filter((o) => !o.demob_date).length,
       overstaying: onboard.filter((o) => o.demob_date && (o.demob_date as string) < from).length,
     },

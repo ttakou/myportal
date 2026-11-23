@@ -98,7 +98,7 @@ function RoomOccupancyList({
   // Everyone on board, for the "put someone in this bed" picker.
   const pool = useMemo(
     () =>
-      onboard.map((p) => ({
+      onboard.filter((p) => p.beds_managed).map((p) => ({
         id: p.trip_id,
         room_id: p.room_id,
         name: p.company ? `${p.name} · ${p.company}` : p.name,

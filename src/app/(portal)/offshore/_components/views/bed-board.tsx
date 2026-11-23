@@ -79,7 +79,8 @@ export function BedBoardPanel({
   // their previous room automatically.
   const pool = useMemo(
     () =>
-      onboard.map((p) => ({
+      // Only people on an installation whose beds are managed here.
+      onboard.filter((p) => p.beds_managed).map((p) => ({
         id: p.trip_id,
         room_id: p.room_id,
         name: p.company ? `${p.name} · ${p.company}` : p.name,
@@ -181,7 +182,7 @@ export function BedBoardPanel({
           <p className="mb-1 font-medium">On board with no room ({waitingCount})</p>
           <p>
             {onboard
-              .filter((p) => !p.room_id)
+              .filter((p) => !p.room_id && p.beds_managed)
               .sort((a, b) => a.name.localeCompare(b.name))
               .map((p) => [p.name, p.crew_name].filter(Boolean).join(" · "))
               .join("  ·  ")}
