@@ -9,7 +9,7 @@ import {
   crewChangesAhead,
   crewChangesDueToday,
   reminderForBackToBack,
-  reminderForDesk,
+  reminderForDeskDay,
   reminderForMember,
   STALE_CANCEL_DAYS,
   STALE_FLAG_DAYS,
@@ -247,47 +247,52 @@ async function runTenant(
   // someone leaving late is not taken off with their crew.
   summary.movesCarriedOut = await carryOutDueMoves(admin, tenantId, today);
 
-  for (const due of crewChangesDueToday(scheduled, today)) {
+  // One notice to the desk for the whole day's crew change, not one per crew.
+  const dueToday = crewChangesDueToday(scheduled, today);
+  const doneLines: string[] = [];
+  let boardedToday = 0;
+  let leftToday = 0;
+  for (const due of dueToday) {
     const members = staffByCrew.get(due.crewId) ?? [];
     const inst = installationOf(due.crewId);
-    if (!acts) {
-      const verb = due.action === "mobilise" ? "to mobilise" : "to demobilise";
-      summary.prompted += await notifyOnce(
-        admin,
-        {
-          tenantId,
-          profileIds: desk,
-          category: "approval",
-          title: `Crew change today: ${due.crewName} (${due.count} ${verb})`,
-          body: `The schedule puts ${due.crewName}'s crew change on ${today}. Open it from "Crew changes due" on the dashboard.`,
-          url: "/offshore?view=dashboard",
-        },
-        1,
-      );
-      continue;
-    }
+    if (!acts) continue;
     // Anyone an approved change moves off today's crew change stays put.
     const away = await movedAwayOn(admin, tenantId, today, due.action === "mobilise" ? "out" : "in");
     const moving = members.filter((m) => !away.has(String(m.profile_id)));
     if (due.action === "mobilise") {
-      summary.mobilised += await mobilise(admin, tenantId, due, moving, aboard, inst, today);
+      const n = await mobilise(admin, tenantId, due, moving, aboard, inst, today);
+      summary.mobilised += n;
+      boardedToday += n;
+      doneLines.push(`${due.crewName} boarded ${inst.name ?? "the installation"} (${n})`);
     } else {
-      summary.demobilised += await demobilise(admin, tenantId, due, moving, today);
+      const n = await demobilise(admin, tenantId, due, moving, today);
+      summary.demobilised += n;
+      leftToday += n;
+      doneLines.push(`${due.crewName} demobilised (${n})`);
     }
-    await notifyOnce(
+  }
+  if (dueToday.length && !acts) {
+    summary.prompted += await notifyOnce(
       admin,
       {
         tenantId,
         profileIds: desk,
         category: "approval",
-        title:
-          due.action === "mobilise"
-            ? `Crew change opened: ${due.crewName} boarded ${inst.name ?? "the installation"}`
-            : `Crew change closed: ${due.crewName} demobilised`,
-        body:
-          due.action === "mobilise"
-            ? `${due.count} boarded by the schedule for the hitch ${due.hitchFrom} → ${due.hitchTo}. Beds carry from the roster; adjust on the bed board if needed.`
-            : `${due.count} taken off board by the schedule at the end of the hitch that began ${due.hitchFrom}.`,
+        title: `Crew change today: ${dueToday.map((d) => `${d.crewName} ${d.action === "mobilise" ? "+" : "−"}${d.count}`).join(", ")}`,
+        body: `The schedule puts these crew changes on ${today}. Open them from "Crew changes due" on the dashboard.`,
+        url: "/offshore?view=dashboard",
+      },
+      1,
+    );
+  } else if (doneLines.length) {
+    await notifyOnce(
+      admin,
+      {
+        tenantId,
+        profileIds: desk,
+        category: "general",
+        title: `Crew change done: ${boardedToday} boarded, ${leftToday} left`,
+        body: `${doneLines.join(" · ")}. Beds carry from the roster; adjust on the bed board if needed.`,
         url: "/offshore?view=dashboard",
       },
       1,
@@ -296,6 +301,7 @@ async function runTenant(
 
   // ---- Reminders three days before ----------------------------------------
   const ahead = crewChangesAhead(scheduled, today);
+  const deskAhead: { a: (typeof ahead)[number]; count: number }[] = [];
   if (ahead.length) {
     const memberIds = ahead.flatMap((a) =>
       (staffByCrew.get(a.crewId) ?? []).map((m) => String(m.profile_id)),
@@ -337,13 +343,19 @@ async function runTenant(
         a.action === "mobilise"
           ? members.filter((m) => !aboard.has(String(m.profile_id))).length
           : members.filter((m) => aboard.has(String(m.profile_id))).length;
+      deskAhead.push({ a, count });
+    }
+    // One heads-up to the desk per crew-change day, listing every crew.
+    const byDate = new Map<string, { a: (typeof ahead)[number]; count: number }[]>();
+    for (const x of deskAhead) byDate.set(x.a.date, [...(byDate.get(x.a.date) ?? []), x]);
+    for (const list of byDate.values()) {
       summary.reminded += await notifyOnce(
         admin,
         {
           tenantId,
           profileIds: desk,
-          category: "approval",
-          ...reminderForDesk(a, count, acts),
+          category: "general",
+          ...reminderForDeskDay(list, acts),
           url: "/offshore?view=crews",
         },
         7,

@@ -77,6 +77,7 @@ export const VIEW_DATA: Record<OffshoreViewKey, readonly ManagementDataKey[]> = 
   history: [],
   "staff-history": [],
   lookahead: [],
+  today: [],
 };
 
 /**

@@ -5,11 +5,15 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Bell, Car, CheckCheck, Plane, Stamp, Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AppNotification, NotificationCategory, NotificationFeed } from "@/lib/notifications";
+import { NOTICE_GROUPS, dueLabel, type NoticeGroup } from "@/lib/notification-groups";
 import {
   fetchMyNotifications,
   markAllNotificationsRead,
+  markGroupRead,
   markNotificationRead,
 } from "../notifications-actions";
+
+type Tab = NoticeGroup | "all";
 
 const ICON: Record<NotificationCategory, typeof Bell> = {
   emergency: AlertTriangle,
@@ -38,6 +42,9 @@ function ago(iso: string) {
 export function NotificationBell({ initial }: { initial: NotificationFeed }) {
   const router = useRouter();
   const [feed, setFeed] = useState<NotificationFeed>(initial);
+  // Which module's notices the list shows; remembered per browser.
+  const [tab, setTab] = useState<Tab>("all");
+  const tabRef = useRef<Tab>("all");
   const [open, setOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [, startTransition] = useTransition();
@@ -50,12 +57,33 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
   const flashTimer = useRef<number | null>(null);
   const baseTitle = useRef<string>("");
 
-  // Load the saved sound preference once.
+  // Load the saved sound preference and tab once.
   useEffect(() => {
     const m = typeof window !== "undefined" && localStorage.getItem("notif-muted") === "1";
     setMuted(m);
     mutedRef.current = m;
+    try {
+      const t = localStorage.getItem("notif-tab") as Tab | null;
+      if (t && t !== "all" && NOTICE_GROUPS.some((g) => g.key === t)) {
+        setTab(t);
+        tabRef.current = t;
+        void fetchMyNotifications(t).then(setFeed);
+      }
+    } catch {
+      /* ignore */
+    }
   }, []);
+
+  function chooseTab(t: Tab) {
+    setTab(t);
+    tabRef.current = t;
+    try {
+      localStorage.setItem("notif-tab", t);
+    } catch {
+      /* ignore */
+    }
+    startTransition(async () => setFeed(await fetchMyNotifications(t)));
+  }
 
   // A short chime, synthesised so no audio asset is needed. Best-effort:
   // browsers only allow audio after a user gesture, so it stays silent until the
@@ -123,7 +151,7 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
   useEffect(() => {
     const tick = async () => {
       if (document.hidden) return;
-      const f = await fetchMyNotifications();
+      const f = await fetchMyNotifications(tabRef.current);
       const emergencyUnread = f.items.filter((n) => n.category === "emergency" && !n.read_at).length;
       if (f.unread > prevUnread.current) {
         const urgent = emergencyUnread > prevEmergency.current;
@@ -184,7 +212,7 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
     if (!n.read_at) {
       startTransition(async () => {
         await markNotificationRead(n.id);
-        setFeed(await fetchMyNotifications());
+        setFeed(await fetchMyNotifications(tabRef.current));
       });
     }
     if (n.url) router.push(n.url);
@@ -193,10 +221,13 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
 
   function markAll() {
     startTransition(async () => {
-      await markAllNotificationsRead();
-      setFeed(await fetchMyNotifications());
+      if (tab === "all") await markAllNotificationsRead();
+      else await markGroupRead(tab);
+      setFeed(await fetchMyNotifications(tab));
     });
   }
+  const tabUnread = tab === "all" ? feed.unread : feed.unreadByGroup[tab];
+  const now = new Date();
 
   return (
     <div className="relative" ref={ref}>
@@ -218,7 +249,7 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 rounded-lg border bg-card shadow-lg">
+        <div className="absolute right-0 z-50 mt-2 w-[22rem] max-w-[calc(100vw-1rem)] rounded-lg border bg-card shadow-lg">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-sm font-medium">Notifications</span>
             <div className="flex items-center gap-2">
@@ -230,21 +261,70 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
               >
                 {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
               </button>
-              {feed.unread > 0 && (
+              {tabUnread > 0 && (
                 <button
                   onClick={markAll}
                   className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                 >
-                  <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+                  <CheckCheck className="h-3.5 w-3.5" /> {tab === "all" ? "Mark all read" : "Mark these read"}
                 </button>
               )}
             </div>
           </div>
 
+          {/* One module at a time, so offshore notices are not lost among the rest. */}
+          <div className="flex gap-1 overflow-x-auto border-b px-2 py-1.5" role="tablist">
+            {([{ key: "all", label: "All" }, ...NOTICE_GROUPS] as { key: Tab; label: string }[]).map((g) => {
+              const n = g.key === "all" ? feed.unread : feed.unreadByGroup[g.key];
+              return (
+                <button
+                  key={g.key}
+                  role="tab"
+                  aria-selected={tab === g.key}
+                  onClick={() => chooseTab(g.key)}
+                  className={cn(
+                    "shrink-0 rounded-full px-2 py-0.5 text-xs",
+                    tab === g.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
+                  )}
+                >
+                  {g.label}
+                  {n > 0 && <span className="ml-1 tabular-nums opacity-80">{n > 99 ? "99+" : n}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Decisions with a deadline ahead stay on top until decided. */}
+          {feed.due.length > 0 && (
+            <div className="border-b bg-amber-50 dark:bg-amber-950/30">
+              <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                Needs a decision
+              </p>
+              {feed.due.map((n) => (
+                <button
+                  key={`due-${n.id}`}
+                  onClick={() => open_(n)}
+                  className="flex w-full gap-3 px-3 py-2 text-left hover:bg-amber-100/60 dark:hover:bg-amber-900/30"
+                >
+                  <Stamp className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{n.title}</p>
+                    {n.body && <p className="line-clamp-2 text-xs text-muted-foreground">{n.body}</p>}
+                    {n.due_at && (
+                      <p className="mt-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                        {dueLabel(n.due_at, now)}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="max-h-96 overflow-y-auto">
             {feed.items.length === 0 && (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-                You&apos;re all caught up.
+                {tab === "all" ? "You're all caught up." : "Nothing here."}
               </p>
             )}
             {feed.items.map((n) => {
@@ -264,7 +344,12 @@ export function NotificationBell({ initial }: { initial: NotificationFeed }) {
                     {n.body && (
                       <p className="line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
                     )}
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{ago(n.created_at)}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {ago(n.created_at)}
+                      {n.due_at && !n.read_at && Date.parse(n.due_at) > now.getTime() && (
+                        <span className="ml-1 font-semibold text-amber-700">· {dueLabel(n.due_at, now)}</span>
+                      )}
+                    </p>
                   </div>
                   {!n.read_at && (
                     <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />

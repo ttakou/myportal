@@ -174,6 +174,28 @@ export function reminderForDesk(
   };
 }
 
+/**
+ * The desk's one heads-up for a crew-change day: every crew moving that day
+ * in a single notice ("Crew change on 2026-11-24: CREW C +24, CREW D −25").
+ */
+export function reminderForDeskDay(
+  list: { a: CrewChangeAhead; count: number }[],
+  acts: boolean,
+): { title: string; body: string } {
+  const date = list[0]?.a.date ?? "";
+  const parts = list.map(({ a, count }) => `${a.crewName} ${a.action === "mobilise" ? "+" : "−"}${count}`);
+  const on = list.filter((x) => x.a.action === "mobilise").reduce((n, x) => n + x.count, 0);
+  const off = list.filter((x) => x.a.action !== "mobilise").reduce((n, x) => n + x.count, 0);
+  return {
+    title: `Crew change on ${date}: ${parts.join(", ")}`,
+    body:
+      `${on} to mobilise, ${off} to demobilise. ` +
+      (acts
+        ? "The schedule carries it out itself that morning. Check beds, transport and certificates now."
+        : "Confirm it on the dashboard on the day. Check beds, transport and certificates now."),
+  };
+}
+
 /** A trip past its mobilise date this long with no movement is flagged… */
 export const STALE_FLAG_DAYS = 7;
 /** …and this long, cancelled. */

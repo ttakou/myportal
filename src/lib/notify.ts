@@ -5,7 +5,7 @@ import { isWebPushConfigured, sendWebPush, type PushSubscriptionRecord } from "@
 import { isEmailConfigured, sendEmail } from "@/lib/email";
 import { isDeliverableEmail, notificationEmail } from "@/lib/email-digest-format";
 import { loadModuleStates } from "@/lib/module-notify-state";
-import { emailAllowed, moduleFor, notifyAllowed } from "@/lib/notification-modules";
+import { emailAllowed, moduleFor, notifyAllowed, urlSegment } from "@/lib/notification-modules";
 
 /**
  * Deliver a notification to specific people: writes the in-app bell record and,
@@ -31,6 +31,10 @@ export async function notifyUsers(input: {
   instantEmail?: boolean;
   /** The module it comes from, when its link does not say (e.g. a dashboard link). */
   module?: string;
+  /** A decision's deadline: pinned in the bell as "decide before…" until then. */
+  dueAt?: string | null;
+  /** The request it is about ("move:<id>"), so deciding it clears the notice. */
+  ref?: string | null;
 }): Promise<void> {
   try {
     const ids = [...new Set(input.profileIds.filter((x): x is string => Boolean(x)))];
@@ -57,6 +61,9 @@ export async function notifyUsers(input: {
           title: input.title,
           body: input.body ?? null,
           url: input.url ?? null,
+          module: input.module ?? urlSegment(input.url) ?? null,
+          due_at: input.dueAt ?? null,
+          ref: input.ref ?? null,
           // Emailed below, so the morning digest leaves it out.
           emailed_at: stamp,
         })),
@@ -130,6 +137,8 @@ export async function notifyOffshoreApprovers(input: {
   title: string;
   body?: string;
   url?: string;
+  dueAt?: string | null;
+  ref?: string | null;
 }): Promise<void> {
   try {
     const admin = createAdminClient();
@@ -146,8 +155,32 @@ export async function notifyOffshoreApprovers(input: {
       title: input.title,
       body: input.body,
       url: input.url ?? "/offshore",
+      module: "offshore",
+      dueAt: input.dueAt,
+      ref: input.ref,
     });
   } catch (e) {
     console.error("notifyOffshoreApprovers failed:", (e as Error).message);
+  }
+}
+
+/**
+ * The request a notice was about has been decided (or withdrawn): mark its
+ * open notices read for everyone who was told, so it stops asking. Best-effort.
+ */
+export async function closeNotices(tenantId: string, refs: string[]): Promise<void> {
+  try {
+    const list = refs.filter(Boolean);
+    if (!list.length) return;
+    const admin = createAdminClient();
+    if (!admin) return;
+    await admin
+      .from("notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .in("ref", list)
+      .is("read_at", null);
+  } catch (e) {
+    console.error("closeNotices failed:", (e as Error).message);
   }
 }

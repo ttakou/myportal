@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
+import { decideBy } from "@/lib/notification-groups";
 import type { ActionResult } from "@/types/actions";
 import { ARCHIVE_REASON, isPastTripRequest, isPastVisitRequest } from "@/lib/offshore/past-requests";
 import { placeTripOnManifests, removeTripFromManifests } from "@/lib/offshore/day-manifest-run";
@@ -31,6 +32,7 @@ export async function requestOffshoreTrip(input: {
     title: "New offshore trip request",
     body: `Awaiting HSE clearance — mobilise ${input.mobilizeDate}.`,
     url: "/offshore?view=trips",
+    dueAt: decideBy(input.mobilizeDate),
   });
   rev();
   return { ok: true };
@@ -132,6 +134,7 @@ export async function requestOffshoreTripGroup(input: {
     title: `Offshore trip request: ${rows.length} person(s)`,
     body: `${purpose} · awaiting HSE clearance — mobilise ${input.mobilizeDate}.`,
     url: "/offshore?view=trips",
+    dueAt: decideBy(input.mobilizeDate),
   });
   rev();
   return { ok: true };

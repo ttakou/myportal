@@ -56,6 +56,7 @@ export default async function OffshorePage({
   const { view, person, by, only } = await searchParams;
   // The Look-ahead lives on its own page.
   if (view === "lookahead") redirect("/offshore/look-ahead");
+  if (view === "today") redirect("/offshore/today");
   const access = await getAccess();
   const isAdmin = isAdminRole(await getCurrentRole());
   // Full managers see and edit everything; the Dispatcher also reaches the
