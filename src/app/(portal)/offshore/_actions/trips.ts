@@ -2,8 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
-import { decideBy } from "@/lib/notification-groups";
+import { closeTripNotices, notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
+import { decideBy, tripsRef } from "@/lib/notification-groups";
 import type { ActionResult } from "@/types/actions";
 import { ARCHIVE_REASON, isPastTripRequest, isPastVisitRequest } from "@/lib/offshore/past-requests";
 import { placeTripOnManifests, removeTripFromManifests } from "@/lib/offshore/day-manifest-run";
@@ -20,12 +20,16 @@ export async function requestOffshoreTrip(input: {
   const supabase = createClient();
   const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
-  const { error } = await supabase.from("offshore_trips").insert({
-    tenant_id: tenant.id,
-    installation_id: input.installationId || null,
-    mobilize_date: input.mobilizeDate,
-    demob_date: input.demobDate || null,
-  });
+  const { data: created, error } = await supabase
+    .from("offshore_trips")
+    .insert({
+      tenant_id: tenant.id,
+      installation_id: input.installationId || null,
+      mobilize_date: input.mobilizeDate,
+      demob_date: input.demobDate || null,
+    })
+    .select("id")
+    .maybeSingle();
   if (error) return { ok: false, error: error.message };
   await notifyOffshoreApprovers({
     tenantId: tenant.id as string,
@@ -33,6 +37,7 @@ export async function requestOffshoreTrip(input: {
     body: `Awaiting HSE clearance — mobilise ${input.mobilizeDate}.`,
     url: "/offshore?view=trips",
     dueAt: decideBy(input.mobilizeDate),
+    ref: created?.id ? tripsRef([created.id as string]) : null,
   });
   rev();
   return { ok: true };
@@ -119,7 +124,7 @@ export async function requestOffshoreTripGroup(input: {
     ...names.map((person_name) => ({ ...base, profile_id: null, person_name })),
   ];
 
-  const { error } = await adminCli.from("offshore_trips").insert(rows);
+  const { data: inserted, error } = await adminCli.from("offshore_trips").insert(rows).select("id");
   if (error) return { ok: false, error: error.message };
   await notifyUsers({
     tenantId,
@@ -135,6 +140,8 @@ export async function requestOffshoreTripGroup(input: {
     body: `${purpose} · awaiting HSE clearance — mobilise ${input.mobilizeDate}.`,
     url: "/offshore?view=trips",
     dueAt: decideBy(input.mobilizeDate),
+    // Clears once every trip in the request has been decided.
+    ref: tripsRef(((inserted ?? []) as { id: string }[]).map((r) => r.id)),
   });
   rev();
   return { ok: true };
@@ -159,6 +166,7 @@ export async function clearHse(id: string): Promise<ActionResult> {
   // Approved: on the manifests of their travel dates, for the Dispatcher.
   const tenant = await tenantId();
   if (tenant) await placeTripOnManifests(supabase, tenant, id, new Date().toISOString().slice(0, 10));
+  if (tenant) await closeTripNotices(tenant, [id]);
   rev();
   return { ok: true };
 }
@@ -209,6 +217,7 @@ export async function setOffshoreStatus(
   if (status === "cancelled") {
     const tenant = await tenantId();
     if (tenant) await removeTripFromManifests(supabase, tenant, id, new Date().toISOString().slice(0, 10));
+    if (tenant) await closeTripNotices(tenant, [id]);
   }
   rev();
   return { ok: true };
@@ -276,6 +285,8 @@ export async function archivePastRequests(input: {
       .update({ status: "cancelled" })
       .in("id", pastTrips.map((t) => t.id));
     if (error) return { ok: false, error: error.message };
+    const tenant = await tenantId();
+    if (tenant) await closeTripNotices(tenant, pastTrips.map((t) => t.id as string));
   }
   if (pastVisits.length) {
     const { error } = await supabase

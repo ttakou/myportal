@@ -93,3 +93,17 @@ export function dueLabel(dueAt: string, now: Date): string {
     ? `Decide before tonight's run (${time} ${when})`
     : `Decide before ${time} ${when} (nightly run)`;
 }
+
+/**
+ * A trip request notice covers every trip it created (one per person); its
+ * reference lists them, so the notice can clear once none is still waiting.
+ */
+export function tripsRef(tripIds: string[]): string | null {
+  const ids = [...new Set(tripIds.filter(Boolean))].sort();
+  return ids.length ? `trips:${ids.join(",")}` : null;
+}
+
+export function tripIdsOfRef(ref: string | null | undefined): string[] {
+  if (!ref || !ref.startsWith("trips:")) return [];
+  return ref.slice(6).split(",").filter(Boolean);
+}

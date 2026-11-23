@@ -184,3 +184,38 @@ export async function closeNotices(tenantId: string, refs: string[]): Promise<vo
     console.error("closeNotices failed:", (e as Error).message);
   }
 }
+
+/**
+ * Trips were decided (cleared, rejected, cancelled): clear each trip-request
+ * notice that covers them once none of its trips is still waiting.
+ */
+export async function closeTripNotices(tenantId: string, tripIds: string[]): Promise<void> {
+  try {
+    const ids = [...new Set(tripIds.filter(Boolean))];
+    if (!ids.length) return;
+    const admin = createAdminClient();
+    if (!admin) return;
+    const { tripIdsOfRef } = await import("@/lib/notification-groups");
+    const { data: open } = await admin
+      .from("notifications")
+      .select("ref")
+      .eq("tenant_id", tenantId)
+      .is("read_at", null)
+      .like("ref", "trips:%")
+      .or(ids.map((id) => `ref.like.*${id}*`).join(","));
+    const refs = [...new Set(((open ?? []) as { ref: string }[]).map((r) => r.ref))];
+    const done: string[] = [];
+    for (const ref of refs) {
+      const covered = tripIdsOfRef(ref);
+      const { count } = await admin
+        .from("offshore_trips")
+        .select("id", { count: "exact", head: true })
+        .in("id", covered)
+        .eq("status", "requested");
+      if ((count ?? 0) === 0) done.push(ref);
+    }
+    await closeNotices(tenantId, done);
+  } catch (e) {
+    console.error("closeTripNotices failed:", (e as Error).message);
+  }
+}

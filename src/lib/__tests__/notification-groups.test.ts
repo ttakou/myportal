@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideBy, dueLabel, earlierDate, isUrgent, noticeGroup } from "@/lib/notification-groups";
+import { decideBy, dueLabel, earlierDate, isUrgent, noticeGroup, tripIdsOfRef, tripsRef } from "@/lib/notification-groups";
 
 describe("sorting the bell", () => {
   it("puts each notice in its module's group", () => {
@@ -35,5 +35,14 @@ describe("decisions due before the nightly run", () => {
     const now = new Date("2026-11-23T12:00:00Z");
     expect(dueLabel("2026-11-24T04:00:00.000Z", now)).toBe("Decide before tonight's run (05:00 tomorrow)");
     expect(dueLabel("2026-11-26T04:00:00.000Z", now)).toBe("Decide before 05:00 on 26 Nov (nightly run)");
+  });
+});
+
+describe("a trip request notice covers all its trips", () => {
+  it("lists every trip, once and in order, and reads them back", () => {
+    expect(tripsRef(["b", "a", "b"])).toBe("trips:a,b");
+    expect(tripsRef([])).toBeNull();
+    expect(tripIdsOfRef("trips:a,b")).toEqual(["a", "b"]);
+    expect(tripIdsOfRef("move:x")).toEqual([]);
   });
 });
