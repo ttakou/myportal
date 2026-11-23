@@ -62,6 +62,8 @@ export default async function OffshorePage({
   // Full managers see and edit everything; the Dispatcher also reaches the
   // management area but with a scoped, partly read-only set of views.
   const offshoreManager = access.isAdmin || access.isCampboss || access.isOim;
+  // The crew-change mode and the overnight schedule switch: admins only.
+  const offshoreAdmin = access.isAdmin || access.isSystemAdmin;
   // Holders of the offshore `create` verb (the seeded Receptionist / Radio
   // Operator / Operations Supervisor access roles) reach one view only:
   // registering non-rotational staff.
@@ -213,10 +215,10 @@ export default async function OffshorePage({
           musterDrillHistory={musterDrillHistory}
           // Crew changes sit on the Overview just below Accommodation.
           crewChange={
-            managementView === "dashboard" && (offshoreManager || suggestions.length > 0) ? (
+            managementView === "dashboard" && (offshoreAdmin || suggestions.length > 0) ? (
               <div className="space-y-4">
-                {/* The tenant-wide default crew-change mode is a manager setting. */}
-                {offshoreManager && <DefaultModeToggle mode={schedule.mode} nightly={schedule.nightly} />}
+                {/* The crew-change mode and the overnight run are admin settings. */}
+                {offshoreAdmin && <DefaultModeToggle mode={schedule.mode} nightly={schedule.nightly} />}
                 {suggestions.length > 0 && (
                   <CrewChangeSuggestions items={suggestions} defaultMode={schedule.mode} />
                 )}
