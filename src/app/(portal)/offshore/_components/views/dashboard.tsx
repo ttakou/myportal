@@ -677,6 +677,9 @@ export function Dashboard({
   const echoFree = rooms
     .filter((r) => !blocked(r) && /\becho\b/i.test([r.block, r.room_number].filter(Boolean).join(" ")))
     .reduce((n, r) => n + Math.max(0, (r.bed_count || 0) - r.occupants.length), 0);
+  // Rooms with nobody in them at all (usable rooms only): a whole cabin free.
+  const emptyRooms = rooms.filter((r) => !blocked(r) && (r.bed_count || 0) > 0 && r.occupied === 0 && r.occupants.length === 0);
+  const emptyRoomBeds = emptyRooms.reduce((n, r) => n + (r.bed_count || 0), 0);
   function statCard(key: string): { title: string; node: ReactNode } | null {
     // Schedule-state chips drill into the same people list, filtered by state.
     if (key.startsWith("sched:")) {
@@ -716,6 +719,11 @@ export function Dashboard({
         };
       case "available":
         return { title: `Rooms with a free bed (${accommodation.availableBeds} free beds)`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r) && Math.max(0, (r.bed_count || 0) - r.occupied) > 0)} showFree /> };
+      case "empty":
+        return {
+          title: `Empty rooms (${emptyRooms.length}) — nobody in them, ${emptyRoomBeds} bed(s)`,
+          node: <RoomRows rooms={emptyRooms} />,
+        };
       case "fixed":
         return { title: `Fixed cabins — staff (${accommodation.fixedBeds})`, node: <FixedCabinRows roster={roster} /> };
       case "blocked":
@@ -961,7 +969,7 @@ export function Dashboard({
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Accommodation
         </h3>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
           <Stat label="Rooms" value={accommodation.totalRooms} {...statDrill("rooms")} />
           <Stat label="Beds (usable)" value={accommodation.totalBeds} {...statDrill("beds")} />
           <Stat label="In a room" value={accommodation.occupiedBeds} {...statDrill("occupied")} />
@@ -977,6 +985,12 @@ export function Dashboard({
             sub={echoFree > 0 ? `${echoFree} of them in Echo` : undefined}
             tone="green"
             {...statDrill("available")}
+          />
+          <Stat
+            label="Empty rooms"
+            value={emptyRooms.length}
+            sub={emptyRooms.length > 0 ? `${emptyRoomBeds} bed(s)` : undefined}
+            {...statDrill("empty")}
           />
           <Stat label="Fixed (staff)" value={accommodation.fixedBeds} {...statDrill("fixed")} />
           <Stat label="Blocked rooms" value={accommodation.blockedRooms} {...statDrill("blocked")} />
