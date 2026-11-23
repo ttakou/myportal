@@ -280,6 +280,13 @@ export interface PobOnboard {
   company: string | null;
   mobilize_date: string;
   demob_date: string | null;
+  installation_id: string | null;
+  installation_name: string | null;
+  /**
+   * False on an installation whose beds are not managed here (no rooms in the
+   * app, e.g. a contractor's rig): POB and muster only, never "no room".
+   */
+  beds_managed: boolean;
 }
 
 export interface AccommodationSummary {

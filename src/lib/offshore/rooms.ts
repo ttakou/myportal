@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getOffshoreDefaultInstallation } from "./crews";
 import { compareRoomLabels } from "@/lib/offshore/room-order";
 import type {
   AccommodationSummary,
@@ -161,11 +162,11 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
   const [{ data: rooms }, { data: onboard }, { data: visitorBeds }] = await Promise.all([
     supabase
       .from("offshore_rooms")
-      .select("id, room_number, block, bed_count, status, offshore_staff(count)")
+      .select("id, room_number, block, bed_count, status, installation_id, offshore_staff(count)")
       .eq("is_active", true),
     supabase
       .from("offshore_trips")
-      .select("id, room_id, bed_no, person:profiles!offshore_trips_profile_id_fkey(full_name)")
+      .select("id, room_id, bed_no, installation_id, person:profiles!offshore_trips_profile_id_fkey(full_name)")
       .eq("status", "onboard"),
     // Visitors hold beds through an allocation, not a trip. Counting only trips
     // made this rollup disagree with the room cards, which do count them.
@@ -179,10 +180,14 @@ export async function getAccommodationSummary(): Promise<AccommodationSummary> {
   const occByRoom = new Map<string, { trip_id: string; name: string; bed_no: string | null }[]>();
   let occupiedBeds = 0;
   let noRoom = 0;
+  // Only installations whose beds are managed here (they have rooms) can
+  // leave someone "with no room"; a contractor's rig cannot.
+  const defaultInst = (await getOffshoreDefaultInstallation())?.id ?? "";
+  const managed = new Set(((rooms ?? []) as Record<string, any>[]).map((r) => (r.installation_id as string | null) ?? defaultInst));
   for (const t of (onboard ?? []) as Record<string, any>[]) {
     const rid = t.room_id as string | null;
     if (!rid) {
-      noRoom++;
+      if (managed.has((t.installation_id as string | null) ?? defaultInst)) noRoom++;
       continue;
     }
     occupiedBeds++;

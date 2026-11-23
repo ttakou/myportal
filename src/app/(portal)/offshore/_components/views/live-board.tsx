@@ -140,7 +140,7 @@ export function LiveBoardPanel({
   const groups = useMemo(() => {
     const m = new Map<string, PobOnboard[]>();
     for (const p of people) {
-      if (noBedOnly && p.room_id) continue;
+      if (noBedOnly && (p.room_id || !p.beds_managed)) continue;
       const lb = p.lifeboat || "—";
       const list = m.get(lb) ?? [];
       list.push(p);
@@ -156,7 +156,8 @@ export function LiveBoardPanel({
   }, [people, roles, noBedOnly]);
 
   const visitorCount = people.filter((p) => p.category === "visitor").length;
-  const noBed = people.filter((p) => !p.room_id).length;
+  // A rig whose beds the contractor manages has no rooms here: not "no bed".
+  const noBed = people.filter((p) => !p.room_id && p.beds_managed).length;
   const stationCount = groups.filter((g) => g.lb !== "—").length;
 
   return (

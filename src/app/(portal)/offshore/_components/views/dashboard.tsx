@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BedDouble, RefreshCw, Siren, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ import {
   boardMember,
   startMusterDrill,
   offboardTrip,
+  moveTripInstallation,
   reassignTripRoom,
   setTripCategory,
   setVisitorMovement,
@@ -234,6 +235,9 @@ function DrillCard({
 }
 
 /** Compact rows for a list of on-board people in a stat drill-down. */
+/** The installations someone on board can be moved between (from the dashboard). */
+const InstallationsCtx = createContext<{ id: string; name: string }[]>([]);
+
 function PobPeopleRows({
   people,
   canDemob = false,
@@ -243,6 +247,7 @@ function PobPeopleRows({
   canDemob?: boolean;
 }) {
   const { pending, error, run } = useRun();
+  const installations = useContext(InstallationsCtx);
   if (people.length === 0) return <p className="py-1 text-xs text-muted-foreground">None.</p>;
   return (
     <>
@@ -276,8 +281,33 @@ function PobPeopleRows({
               </span>
             )}
             <span className="ml-auto text-xs text-muted-foreground">
-              {p.crew_name ?? "—"} · {p.room_label ?? "no bed"}{p.lifeboat ? ` · ${p.lifeboat}` : ""}
+              {installations.length > 1 && p.installation_name ? `${p.installation_name} · ` : ""}
+              {p.crew_name ?? "—"} · {p.room_label ?? (p.beds_managed ? "no bed" : "contractor bed")}{p.lifeboat ? ` · ${p.lifeboat}` : ""}
             </span>
+            {canDemob && !visitId && installations.length > 1 && (
+              <select
+                value=""
+                disabled={pending}
+                aria-label={`Move ${p.name} to another installation`}
+                title="Move to another installation for this hitch (crew and rotation unchanged)"
+                onChange={(e) => {
+                  const to = installations.find((i) => i.id === e.target.value);
+                  if (!to) return;
+                  if (!confirm(`Move ${p.name} to ${to.name} for this hitch?\n\nTheir crew and rotation stay the same.`)) return;
+                  run(() => moveTripInstallation(p.trip_id, to.id));
+                }}
+                className="rounded border bg-background px-1 py-0.5 text-[11px]"
+              >
+                <option value="">Move to…</option>
+                {installations
+                  .filter((i) => i.id !== p.installation_id)
+                  .map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                    </option>
+                  ))}
+              </select>
+            )}
             {canDemob && (
               <button
                 type="button"
@@ -549,9 +579,12 @@ export function Dashboard({
   roster,
   visits,
   trips,
+  installations = [],
 }: {
   /** False for viewers who see the queue but cannot decide it. */
   canDecide: boolean;
+  /** Active installations, for moving someone on board between them. */
+  installations?: { id: string; name: string }[];
   pob: PobBreakdown;
   accommodation: AccommodationSummary;
   certAlerts: CertAlert[];
@@ -630,7 +663,7 @@ export function Dashboard({
       case "noroom":
         return {
           title: `On board with no room (${accommodation.noRoom}) — seat them from the Bed board, or demob anyone who has left`,
-          node: <PobPeopleRows people={pob.people.filter((p) => !p.room_id)} canDemob={canDecide} />,
+          node: <PobPeopleRows people={pob.people.filter((p) => !p.room_id && p.beds_managed)} canDemob={canDecide} />,
         };
       case "available":
         return { title: `Rooms with a free bed (${accommodation.availableBeds} free beds)`, node: <RoomRows rooms={rooms.filter((r) => !blocked(r) && Math.max(0, (r.bed_count || 0) - r.occupied) > 0)} showFree /> };
@@ -653,6 +686,7 @@ export function Dashboard({
     ) : null;
 
   return (
+    <InstallationsCtx.Provider value={installations}>
     <div className="space-y-5">
       <PendingApprovals visits={visits} trips={trips} canDecide={canDecide} />
       <VisitorBookingQueue visits={visits} canDemob={canDecide} />
@@ -984,5 +1018,6 @@ export function Dashboard({
         )}
       </section>
     </div>
+    </InstallationsCtx.Provider>
   );
 }

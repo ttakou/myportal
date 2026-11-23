@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { PobAsOf, PobBreakdown, PobPerson } from "@/types/offshore";
 import { one } from "./_shared";
 import { tripLifeboat, visitorLifeboat } from "./lifeboat";
+import { getOffshoreDefaultInstallation } from "./crews";
 import type { RotationCycle } from "./rotation-math";
 import {
   identityOf,
@@ -28,7 +29,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
         .from("offshore_trips")
         .select(
           "id, profile_id, crew_id, room_id, bed_no, category, mobilize_date, demob_date, lifeboat, lifeboat_override," +
-            " installation:offshore_installations(name), crew:offshore_crews(name)," +
+            " installation_id, installation:offshore_installations(name), crew:offshore_crews(name)," +
             " room:offshore_rooms(room_number, block, lifeboat)," +
             " person:profiles!offshore_trips_profile_id_fkey(full_name)",
         )
@@ -43,13 +44,23 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
         .from("offshore_visit_requests")
         .select(
           "id, visitor_name, visitor_company, is_casual, lifeboat, return_date, depart_date," +
-            " installation:offshore_installations(name)," +
-            " offshore_bed_allocations(status, room:offshore_rooms(room_number, block, lifeboat))",
+            " installation_id, installation:offshore_installations(name)," +
+            " offshore_bed_allocations(status, room:offshore_rooms(id, room_number, block, lifeboat))",
         )
         .eq("status", "onboard"),
       supabase.from("offshore_staff").select("profile_id, company, is_rotational"),
       supabase.from("offshore_crews").select("id, offshore_days, onshore_days, cycle_start_date"),
     ]);
+
+  // Installations whose beds are managed here: those with rooms in the app
+  // (rooms with no installation belong to the default one). Anyone on an
+  // installation without rooms — a contractor's rig — is never "no room".
+  const [{ data: roomInsts }, defaultInst] = await Promise.all([
+    supabase.from("offshore_rooms").select("installation_id").eq("is_active", true),
+    getOffshoreDefaultInstallation(),
+  ]);
+  const managed = new Set(((roomInsts ?? []) as { installation_id: string | null }[]).map((r) => r.installation_id ?? defaultInst?.id ?? ""));
+  const bedsManaged = (instId: string | null) => managed.has(instId ?? defaultInst?.id ?? "");
 
   // Identity comes from the roster, schedule state from the crew's cycle.
   const rosterByProfile = new Map<string, { is_rotational: boolean }>();
@@ -143,6 +154,9 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       company: r.profile_id ? companyByProfile.get(r.profile_id as string) ?? null : null,
       mobilize_date: r.mobilize_date as string,
       demob_date: (r.demob_date as string | null) ?? null,
+      installation_id: (r.installation_id as string | null) ?? null,
+      installation_name: one<{ name?: string }>(r.installation)?.name ?? null,
+      beds_managed: bedsManaged((r.installation_id as string | null) ?? null),
     });
     if (r.demob_date === today) departuresToday++;
     // Overstay comes from the schedule state, not from demob_date alone: that
@@ -166,7 +180,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
     if (instName) byInstMap.set(instName, (byInstMap.get(instName) ?? 0) + 1);
     // Lifeboat: a manual/direct value wins, else the allocated cabin's station.
     const alloc = ((v.offshore_bed_allocations as any[]) ?? []).find((a) => a.status !== "checked_out");
-    const vroom = alloc && one<{ room_number?: string; block?: string; lifeboat?: string }>(alloc.room);
+    const vroom = alloc && one<{ id?: string; room_number?: string; block?: string; lifeboat?: string }>(alloc.room);
     const vmuster = visitorLifeboat({
       lifeboat: v.lifeboat as string | null,
       room_lifeboat: (vroom?.lifeboat as string | null) ?? null,
@@ -194,12 +208,15 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       crew_id: null,
       crew_name: null,
       lifeboat: vmuster,
-      room_id: null,
+      room_id: (vroom?.id as string | undefined) ?? null,
       room_label: vroom ? [vroom.block, vroom.room_number].filter(Boolean).join(" ") : null,
       bed_no: null,
       company: (v.visitor_company as string | null) ?? null,
       mobilize_date: (v.depart_date as string) ?? today,
       demob_date: (v.return_date as string | null) ?? null,
+      installation_id: (v.installation_id as string | null) ?? null,
+      installation_name: instName,
+      beds_managed: bedsManaged((v.installation_id as string | null) ?? null),
     });
     if (v.return_date === today) departuresToday++;
     if (vState === "overstaying") {
