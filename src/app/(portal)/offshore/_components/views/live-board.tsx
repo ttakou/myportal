@@ -48,6 +48,7 @@ export function LiveBoardPanel({
   musterGroups,
   installations,
   readOnly = false,
+  canAddCasual,
 }: {
   people: PobOnboard[];
   emergencyRoles: EmergencyRole[];
@@ -55,6 +56,8 @@ export function LiveBoardPanel({
   musterGroups: string[];
   installations: Installation[];
   readOnly?: boolean;
+  /** Adding a casual visitor; defaults to the board's own write access. */
+  canAddCasual?: boolean;
 }) {
   const router = useRouter();
   const [auto, setAuto] = useState(true);
@@ -197,14 +200,14 @@ export function LiveBoardPanel({
         >
           <Printer className="h-3.5 w-3.5" /> Print roster
         </a>
-        {!readOnly && (
+        {(canAddCasual ?? !readOnly) && (
           <Button size="sm" variant="outline" onClick={() => setShowCasual((s) => !s)}>
             {showCasual ? "Close" : "Add casual visitor"}
           </Button>
         )}
       </div>
 
-      {!readOnly && showCasual && (
+      {(canAddCasual ?? !readOnly) && showCasual && (
         <CasualVisitorForm
           lbOptions={lbOptions}
           installations={installations}

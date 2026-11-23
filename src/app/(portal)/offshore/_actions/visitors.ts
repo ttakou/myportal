@@ -374,7 +374,9 @@ export async function addCasualVisitor(input: {
   installationId?: string;
   lifeboat: string;
 }): Promise<ActionResult> {
-  const gate = await requireOffshore("operate");
+  // The Dispatcher adds the casual visitors arriving on a run, as the
+  // Campboss and OIM do; muster-station changes stay theirs.
+  const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
   const name = input.name.trim();
   const lifeboat = input.lifeboat.trim();
