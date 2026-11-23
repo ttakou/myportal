@@ -193,7 +193,12 @@ async function PeopleView({ flags, canImpersonate }: { flags: AdminFlags; canImp
   return (
     <div className="space-y-8">
       {flags.isHr && (
-        <PendingUsersPanel pending={pendingUsers} users={users} accessRoles={accessRoles} />
+        <PendingUsersPanel
+          pending={pendingUsers}
+          users={users}
+          accessRoles={accessRoles}
+          canLink={flags.isSystemAdmin}
+        />
       )}
       {flags.isHr && (
         <RegisterStaffPanel managers={users.filter((u) => u.is_active)} accessRoles={accessRoles} />

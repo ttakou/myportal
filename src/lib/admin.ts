@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { nameMatchesFor } from "@/lib/sso-link";
 import type { UserRole } from "@/types/database";
 
 export type EmployeeType = "employee" | "contractor" | "guest";
@@ -55,6 +56,11 @@ export interface PendingUser {
   created_at: string;
   /** When the holder asked an admin for access (null if they never did). */
   access_requested_at: string | null;
+  /**
+   * Accounts already in the organisation that look like this person (same
+   * name, or the name their email spells) — to link rather than duplicate.
+   */
+  matches?: { id: string; full_name: string | null; strength: "exact" | "partial"; signedIn: boolean }[];
 }
 
 /**
@@ -78,7 +84,19 @@ export async function getPendingUsers(): Promise<PendingUser[]> {
     console.error("getPendingUsers:", error.message);
     return [];
   }
-  return (data ?? []) as PendingUser[];
+  const pending = (data ?? []) as PendingUser[];
+  // Likely existing accounts in the caller's organisation, for "Link".
+  const { data: tenant } = await createClient().from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant || pending.length === 0) return pending;
+  return Promise.all(
+    pending.map(async (u) => {
+      const found = await nameMatchesFor(admin, { id: u.id, email: u.email, fullName: u.full_name });
+      const matches = found
+        .filter((m) => m.tenant_id === tenant.id)
+        .map(({ id, full_name, strength, signedIn }) => ({ id, full_name, strength, signedIn }));
+      return { ...u, matches };
+    }),
+  );
 }
 
 /** Catalog of modules with whether the current tenant has each one active. */

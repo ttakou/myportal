@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
-import { UserCheck, UserX, AlertTriangle, ChevronDown, Clock } from "lucide-react";
+import { UserCheck, UserX, AlertTriangle, ChevronDown, Clock, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
 import type { PendingUser, TenantUser } from "@/lib/admin";
 import type { AccessRole } from "@/lib/access-roles";
-import { assignPendingUser, dismissPendingUser } from "../actions";
+import { assignPendingUser, dismissPendingUser, linkPendingUser } from "../actions";
 
 const ROLES: UserRole[] = ["employee", "manager", "tenant_admin"];
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -29,10 +29,13 @@ export function PendingUsersPanel({
   pending,
   users,
   accessRoles,
+  canLink = false,
 }: {
   pending: PendingUser[];
   users: TenantUser[];
   accessRoles: AccessRole[];
+  /** Linking to an existing account is a system admin's act. */
+  canLink?: boolean;
 }) {
   const managers = useMemo(() => users.filter((u) => u.is_active), [users]);
   // Flag a pending sign-up whose email already belongs to an active member —
@@ -68,6 +71,7 @@ export function PendingUsersPanel({
             managers={managers}
             accessRoles={accessRoles}
             duplicateOf={u.email ? dupByEmail.get(u.email.toLowerCase()) ?? null : null}
+            canLink={canLink}
           />
         ))}
       </div>
@@ -80,11 +84,13 @@ function PendingRow({
   managers,
   accessRoles,
   duplicateOf,
+  canLink,
 }: {
   user: PendingUser;
   managers: TenantUser[];
   accessRoles: AccessRole[];
   duplicateOf: string | null;
+  canLink: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<UserRole>("employee");
@@ -107,6 +113,22 @@ function PendingRow({
         accessRoleIds: roleIds,
       });
       if (!res.ok) setError(res.error ?? "Could not grant access.");
+    });
+  }
+
+  function link(existingId: string, name: string) {
+    if (
+      !window.confirm(
+        `Link this sign-in to ${name}'s existing account?\n\n` +
+          `Everything on ${name}'s account — offshore trips, crew, room, roles and history — moves onto this sign-in, ` +
+          "which takes its place in the organisation. The old account is retired. Only do this if they are the same person.",
+      )
+    )
+      return;
+    setError(null);
+    start(async () => {
+      const res = await linkPendingUser({ userId: user.id, existingId });
+      if (!res.ok) setError(res.error ?? "Could not link the accounts.");
     });
   }
 
@@ -150,6 +172,36 @@ function PendingRow({
           </Button>
         </div>
       </div>
+
+      {(user.matches?.length ?? 0) > 0 && (
+        <div className="mt-2 space-y-1 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+          <p className="text-xs font-medium">
+            Probably someone already registered — link instead of granting access, so they don&apos;t end up with two
+            accounts:
+          </p>
+          {user.matches!.map((m) => (
+            <div key={m.id} className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{m.full_name ?? "—"}</span>
+              <span className="text-xs">
+                {m.strength === "exact" ? "same name" : "similar name"}
+                {m.signedIn ? " · already signs in to that account" : " · never signed in"}
+              </span>
+              {canLink && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto"
+                  disabled={pending}
+                  onClick={() => link(m.id, m.full_name ?? "this person")}
+                >
+                  <Link2 className="h-3.5 w-3.5" /> Link
+                </Button>
+              )}
+            </div>
+          ))}
+          {!canLink && <p className="text-xs">A system admin can link them.</p>}
+        </div>
+      )}
 
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
 

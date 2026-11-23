@@ -678,6 +678,45 @@ export async function assignPendingUser(input: {
 }
 
 /**
+ * Link a tenant-less sign-up to the account the organisation already holds
+ * for that person (often an offshore roster entry with no email): everything
+ * on the existing account — trips, crew, room, roles, history — moves onto the
+ * sign-in, which takes its place, and the old account is retired. System
+ * admins only.
+ */
+export async function linkPendingUser(input: { userId: string; existingId: string }): Promise<ActionResult> {
+  if (!(await getAccess()).isSystemAdmin) return { ok: false, error: "Only a system admin can link accounts." };
+  const supabase = createClient();
+  const { data: tenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+  const admin = createAdminClient();
+  if (!admin) return { ok: false, error: "Server is missing the service-role key." };
+
+  const [{ data: signIn }, { data: existing }] = await Promise.all([
+    admin.from("profiles").select("id, tenant_id").eq("id", input.userId).maybeSingle(),
+    admin.from("profiles").select("id, tenant_id, is_active").eq("id", input.existingId).maybeSingle(),
+  ]);
+  if (!signIn) return { ok: false, error: "Sign-in account not found." };
+  if (signIn.tenant_id) return { ok: false, error: "That sign-in already belongs to an organisation." };
+  if (!existing || existing.tenant_id !== tenant.id || !existing.is_active)
+    return { ok: false, error: "The existing account is not an active member of your organisation." };
+
+  const { error } = await admin.rpc("merge_profile_into", { p_from: input.existingId, p_to: input.userId });
+  if (error) return { ok: false, error: error.message };
+
+  await admin.from("notifications").insert({
+    tenant_id: tenant.id,
+    profile_id: input.userId,
+    category: "general",
+    title: "Access granted",
+    body: "Your sign-in is now linked to your existing record. Welcome aboard.",
+    url: "/dashboard",
+  });
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+/**
  * Dismiss a tenant-less sign-up that shouldn't be onboarded (spam, a duplicate
  * of an existing account, etc.) by deactivating it so it drops off the queue.
  * Only acts on accounts with no tenant. HR/system admin only.

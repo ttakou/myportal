@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { autoLinkTarget, findAccountMatches, isOrgDomain, type AccountMatch } from "@/lib/account-match";
 
 type MatchRow = {
   id: string;
@@ -32,7 +33,7 @@ type MatchRow = {
 export async function adoptOrFlagSsoUser(
   userId: string,
   email: string | null,
-): Promise<"adopted" | "flagged" | "noop"> {
+): Promise<"adopted" | "linked" | "flagged" | "noop"> {
   if (!email) return "noop";
   const admin = createAdminClient();
   if (!admin) return "noop";
@@ -56,7 +57,9 @@ export async function adoptOrFlagSsoUser(
     .eq("is_active", true)
     .neq("id", userId);
   const candidates = (matches ?? []) as MatchRow[];
-  if (candidates.length === 0) return "noop";
+  // No account with this email: look for the person by name — the offshore
+  // roster registers many people with no email at all.
+  if (candidates.length === 0) return linkByName(admin, userId, email, (me.full_name as string | null) ?? null);
 
   if (candidates.length === 1) {
     const old = candidates[0];
@@ -69,10 +72,86 @@ export async function adoptOrFlagSsoUser(
       await adopt(admin, userId, (me.full_name as string | null) ?? null, old);
       return "adopted";
     }
+    // Same email, never used, from the organisation's own domain: the same
+    // person, whose records (trips, crew, room…) move onto this sign-in.
+    if (neverSignedIn && isOrgDomain(email, await orgDomains(admin, old.tenant_id))) {
+      if (await mergeInto(admin, old.id, userId)) return "linked";
+    }
   }
 
   // Ambiguous or has history → don't touch it; route to admins.
   await flagForAdmins(admin, userId, email, candidates);
+  return "flagged";
+}
+
+/** The organisation's own email domains (tenant setting `sso_domains`). */
+async function orgDomains(admin: SupabaseClient, tenantId: string): Promise<string[]> {
+  const { data } = await admin.from("tenants").select("settings").eq("id", tenantId).maybeSingle();
+  const list = (data?.settings as { sso_domains?: unknown } | null)?.sso_domains;
+  return Array.isArray(list) ? list.filter((d): d is string => typeof d === "string") : [];
+}
+
+/** Move the old account's records onto the sign-in account and retire it. */
+async function mergeInto(admin: SupabaseClient, fromId: string, toId: string): Promise<boolean> {
+  const { error } = await admin.rpc("merge_profile_into", { p_from: fromId, p_to: toId });
+  if (error) {
+    console.error("sso-link merge:", error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Existing accounts in any organisation whose name matches the person who
+ * just signed in — by display name or by the name their email spells — with
+ * whether each was ever signed in to. Read with the service role.
+ */
+export async function nameMatchesFor(
+  admin: SupabaseClient,
+  signIn: { id: string; email: string | null; fullName: string | null },
+): Promise<(AccountMatch & { tenant_id: string })[]> {
+  const { data } = await admin
+    .from("profiles")
+    .select("id, full_name, tenant_id")
+    .not("tenant_id", "is", null)
+    .eq("is_active", true)
+    .neq("id", signIn.id);
+  const rows = (data ?? []) as { id: string; full_name: string | null; tenant_id: string }[];
+  const found = findAccountMatches(
+    { email: signIn.email, fullName: signIn.fullName },
+    rows.map((r) => ({ id: r.id, full_name: r.full_name, signedIn: false })),
+  );
+  const tenantOf = new Map(rows.map((r) => [r.id, r.tenant_id]));
+  return Promise.all(
+    found.slice(0, 5).map(async (m) => {
+      const { data: u } = await admin.auth.admin.getUserById(m.id);
+      return { ...m, signedIn: !!u?.user?.last_sign_in_at, tenant_id: tenantOf.get(m.id)! };
+    }),
+  );
+}
+
+async function linkByName(
+  admin: SupabaseClient,
+  userId: string,
+  email: string,
+  fullName: string | null,
+): Promise<"linked" | "flagged" | "noop"> {
+  const matches = await nameMatchesFor(admin, { id: userId, email, fullName });
+  if (matches.length === 0) return "noop";
+
+  const exact = matches.filter((m) => m.strength === "exact");
+  if (exact.length === 1) {
+    const domains = await orgDomains(admin, exact[0].tenant_id);
+    const target = autoLinkTarget({ email, fullName }, matches, domains);
+    if (target && (await mergeInto(admin, target, userId))) return "linked";
+  }
+
+  // Not certain enough: the admins decide, with the likely match named.
+  const { data: rows } = await admin
+    .from("profiles")
+    .select("id, tenant_id, role, manager_id, department, emp_num, employee_type, lunch_eligible, job_title, full_name")
+    .in("id", matches.map((m) => m.id));
+  await flagForAdmins(admin, userId, email, (rows ?? []) as MatchRow[], true);
   return "flagged";
 }
 
@@ -137,6 +216,7 @@ async function flagForAdmins(
   newId: string,
   email: string,
   matches: MatchRow[],
+  byName = false,
 ): Promise<void> {
   await admin
     .from("profiles")
@@ -167,7 +247,9 @@ async function flagForAdmins(
       profile_id: pid,
       category: "general",
       title: "Duplicate sign-in to review",
-      body: `${email} signed in via SSO and matches an existing account. Review pending users to grant access or merge.`,
+      body: byName
+        ? `${email} signed in for the first time and looks like ${matches.map((m) => m.full_name ?? "an existing account").join(" or ")}. Open Pending access to link them to their existing account.`
+        : `${email} signed in via SSO and matches an existing account. Review pending users to grant access or merge.`,
       url: "/admin?view=people",
     })),
   );
