@@ -15,6 +15,7 @@ import { MUSTER_OUTCOME_LABEL } from "@/lib/offshore/muster-closeout";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { siteToday } from "@/lib/offshore/manifest-order";
 import { getMonthlyReport } from "@/lib/offshore/monthly-report-run";
+import { canOpenMonthlyReport } from "@/lib/offshore/report-access";
 import { tenantId } from "../(portal)/offshore/_actions/_shared";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -45,8 +46,8 @@ export async function GET(req: NextRequest) {
   const type = sp.get("type");
   // The Dispatcher exports what they run or read — not catering or muster.
   const dispatcherMay = access.isDispatcher && !["meals", "muster"].includes(type ?? "");
-  // Finance reads the monthly man-days (recharging contractors), nothing else.
-  const financeMay = access.isFinance && type === "monthly";
+  // Finance and Operations Supervisors read the monthly man-days, nothing else.
+  const financeMay = type === "monthly" && (await canOpenMonthlyReport(access));
   if (!access.isAdmin && !access.isCampboss && !access.isOim && !dispatcherMay && !financeMay) {
     return new NextResponse("Not authorized", { status: 403 });
   }

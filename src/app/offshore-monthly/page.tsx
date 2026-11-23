@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { siteToday } from "@/lib/offshore/manifest-order";
 import { getMonthlyReport } from "@/lib/offshore/monthly-report-run";
+import { canOpenMonthlyReport } from "@/lib/offshore/report-access";
 import { tenantId } from "../(portal)/offshore/_actions/_shared";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
@@ -28,7 +29,7 @@ const shift = (m: string, by: number) => {
 
 export default async function MonthlyReportPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const access = await getAccess();
-  if (!access.isAdmin && !access.isOim && !access.isCampboss && !access.isDispatcher && !access.isFinance) {
+  if (!(await canOpenMonthlyReport(access))) {
     return <p className="p-8 text-sm text-muted-foreground">Not authorized to view this report.</p>;
   }
   const today = siteToday();

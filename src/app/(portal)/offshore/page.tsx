@@ -37,6 +37,7 @@ import { MovementRequests } from "./_components/movement-requests";
 import { OffshoreManagement } from "./_components/offshore-management";
 import { CrewChangeSuggestions } from "./_components/crew-change-suggestions";
 import { DefaultModeToggle } from "./_components/default-mode-toggle";
+import { canOpenMonthlyReport } from "@/lib/offshore/report-access";
 import { VisitorRequestForm } from "./_components/visitor-request-form";
 import { PendingApprovals } from "./_components/pending-approvals";
 import { WhereIsPicker } from "./_components/where-is";
@@ -168,6 +169,9 @@ export default async function OffshorePage({
     want("schedule", getOffshoreScheduleSettings, { mode: "auto" as const, nightly: "prompt" as const }),
   ]);
 
+  // The monthly report link, for those it opens to (incl. Operations Supervisors).
+  const showMonthlyReport = await canOpenMonthlyReport(access);
+
   return (
     <div className="space-y-8">
       <div>
@@ -177,6 +181,16 @@ export default async function OffshorePage({
         <p className="text-muted-foreground">
           Crew rotations, offshore-staff roster, room/bed accommodation, and live persons-on-board.
         </p>
+        {showMonthlyReport && (
+          <a
+            href="/offshore-monthly"
+            target="_blank"
+            rel="noopener"
+            className="mr-2 mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+          >
+            <FileBarChart className="h-4 w-4" /> Monthly report
+          </a>
+        )}
         {canManage && (
           <Link
             href="/reports/offshore-certifications"
