@@ -76,6 +76,7 @@ export const VIEW_DATA: Record<OffshoreViewKey, readonly ManagementDataKey[]> = 
   drill: ["musterDrill", "musterDrillHistory", "emergencyTeams"],
   history: [],
   "staff-history": [],
+  lookahead: [],
 };
 
 /**

@@ -20,6 +20,7 @@ import { scheduleActs, type OffshoreScheduleSettings } from "./schedule-settings
 import { addVisitorsToDayManifests, advanceVisitorStatuses, ensureDayManifests } from "./day-manifest-run";
 import { DAY_MANIFEST_HORIZON_DAYS } from "./day-manifests";
 import { carryOutDueMoves, movedAwayOn } from "./movement-run";
+import { getLookAhead } from "./look-ahead";
 
 /**
  * The nightly job that makes the rotation schedule act.
@@ -63,6 +64,8 @@ export interface TenantScheduleSummary {
   visitorsReturned: number;
   /** Approved movement changes carried out (boarded or demobilised early/late). */
   movesCarriedOut: number;
+  /** Monday look-ahead messages sent. */
+  lookAheadSent: number;
 }
 
 type Row = Record<string, unknown>;
@@ -155,6 +158,7 @@ async function runTenant(
     dayManifests: 0,
     visitorsManifested: 0,
     movesCarriedOut: 0,
+    lookAheadSent: 0,
     visitorsBoarded: 0,
     visitorsReturned: 0,
   };
@@ -430,7 +434,52 @@ async function runTenant(
     console.error(`offshore visitors: tenant ${tenantId} failed:`, (e as Error).message);
   }
 
+  // Mondays: the next 14 days, in a few lines, to the OIM and the Campboss.
+  if (new Date(today + "T00:00:00Z").getUTCDay() === 1) {
+    try {
+      summary.lookAheadSent = await sendLookAhead(admin, tenantId, today);
+    } catch (e) {
+      console.error(`offshore look-ahead: tenant ${tenantId} failed:`, (e as Error).message);
+    }
+  }
+
   return summary;
+}
+
+/** The Monday look-ahead message: crew changes, beds, the limit and what waits. */
+async function sendLookAhead(admin: SupabaseClient, tenantId: string, today: string): Promise<number> {
+  const la = await getLookAhead({ client: admin, tenantId, from: today, days: 14, serviceRole: true });
+  const { data: roles } = await admin.from("profile_roles").select("profile_id").eq("tenant_id", tenantId).in("role", ["oim", "campboss"]);
+  const to = (roles ?? []).map((r) => r.profile_id as string);
+  const short = (iso: string) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  const lines: string[] = [];
+  for (const d of la.days.filter((x) => x.crewChange || x.flagged)) {
+    const parts: string[] = [];
+    if (d.crewsOut.length) parts.push(`${d.crewsOut.join(" & ")} in (${d.arrivals})`);
+    if (d.crewsIn.length) parts.push(`${d.crewsIn.join(" & ")} out (${d.departures})`);
+    if (d.bedsFree < 0) parts.push(`${-d.bedsFree} beds short`);
+    if (d.noBed > 0) parts.push(`${d.noBed} arrival(s) with no bed`);
+    if (d.overIfApproved) parts.push(d.over ? `POB ${d.total}/${d.capacity} over the limit` : `${d.total + d.pending}/${d.capacity} if pending approved`);
+    if (parts.length) lines.push(`${short(d.date)}: ${parts.join(", ")}`);
+  }
+  const tail = [
+    la.todo.pending ? `${la.todo.pending} decision(s) waiting` : null,
+    la.todo.noRoom ? `${la.todo.noRoom} on board with no room` : null,
+    la.todo.draftManifests.count ? `${la.todo.draftManifests.count} manifest(s) still draft this week` : null,
+  ].filter(Boolean);
+  const body = [lines.length ? lines.join(" · ") : "No crew change in the next 14 days.", tail.join(" · ")].filter(Boolean).join(" — ");
+  return notifyOnce(
+    admin,
+    {
+      tenantId,
+      profileIds: to,
+      category: "general",
+      title: `Offshore look-ahead — next 14 days${la.installation ? ` (${la.installation.name})` : ""}`,
+      body,
+      url: "/offshore/look-ahead",
+    },
+    5,
+  );
 }
 
 /** Board everyone on the crew not yet aboard — the same rows `mobiliseCrew` writes. */
