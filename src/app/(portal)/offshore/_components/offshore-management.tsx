@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { canApproveRequests } from "@/lib/offshore/trip-requests";
@@ -90,6 +92,8 @@ export function OffshoreManagement(props: {
   musterGroups: string[];
   musterDrill: MusterDrill | null;
   musterDrillHistory: MusterDrillSummary[];
+  /** The crew-change panel, shown on the Overview below Accommodation. */
+  crewChange?: ReactNode;
 }) {
   const tab = props.view;
   // Views the user may only read render with their write controls disabled.
@@ -134,6 +138,7 @@ export function OffshoreManagement(props: {
           trips={props.trips}
           installations={props.installations.map((i) => ({ id: i.id, name: i.name }))}
           canApprove={canApproveRequests(props.flags)}
+          afterAccommodation={props.crewChange}
         />
       )}
       {tab === "board" && (

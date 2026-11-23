@@ -180,16 +180,6 @@ export default async function OffshorePage({
         )}
       </div>
 
-      {managementView === "dashboard" && (
-        <div className="space-y-4">
-          {/* The tenant-wide default crew-change mode is a manager setting. */}
-          {offshoreManager && <DefaultModeToggle mode={schedule.mode} nightly={schedule.nightly} />}
-          {suggestions.length > 0 && (
-            <CrewChangeSuggestions items={suggestions} defaultMode={schedule.mode} />
-          )}
-        </div>
-      )}
-
       {showWhereIs && (
         <WhereIsSection selectedId={person ?? null} by={by} only={only} showAttendance={canManage} />
       )}
@@ -220,6 +210,18 @@ export default async function OffshorePage({
           musterGroups={musterGroups}
           musterDrill={musterDrill}
           musterDrillHistory={musterDrillHistory}
+          // Crew changes sit on the Overview just below Accommodation.
+          crewChange={
+            managementView === "dashboard" && (offshoreManager || suggestions.length > 0) ? (
+              <div className="space-y-4">
+                {/* The tenant-wide default crew-change mode is a manager setting. */}
+                {offshoreManager && <DefaultModeToggle mode={schedule.mode} nightly={schedule.nightly} />}
+                {suggestions.length > 0 && (
+                  <CrewChangeSuggestions items={suggestions} defaultMode={schedule.mode} />
+                )}
+              </div>
+            ) : null
+          }
         />
       )}
 
