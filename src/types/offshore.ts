@@ -99,6 +99,8 @@ export interface CrewChangeSuggestion {
   action: "mobilise" | "demobilise";
   since: string; // window start date the change was due
   count: number; // people to move
+  /** Who the count is, with why — shown when the row is opened. */
+  people?: { name: string; detail: string }[];
 }
 
 /** One person in a manual crew change, pre-filled from the schedule/roster. */
