@@ -28,7 +28,8 @@ export async function upsertCrew(input: {
     rotation_pattern: input.rotationPattern?.trim() || null,
     offshore_days: Math.max(1, Math.floor(input.offshoreDays || 14)),
     onshore_days: Math.max(1, Math.floor(input.onshoreDays || 14)),
-    transport_mode: input.transportMode?.trim() || null,
+    // Crews travel by boat unless told otherwise.
+    transport_mode: input.transportMode?.trim() || "BOAT",
     departure_location: input.departureLocation?.trim() || null,
   };
   if (input.cycleStartDate !== undefined) row.cycle_start_date = input.cycleStartDate || null;

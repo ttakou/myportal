@@ -85,7 +85,8 @@ export async function createManifest(input: {
       installationId = (crew.installation_id as string | null) ?? null;
     }
   }
-  const modeLabel = input.transportMode === "boat" ? "boat" : "helicopter";
+  // Boat unless helicopter is chosen: crews travel by boat by default.
+  const modeLabel = input.transportMode === "helicopter" ? "helicopter" : "boat";
 
   const { data: manifest, error } = await supabase
     .from("offshore_manifests")
@@ -220,12 +221,12 @@ export async function generateCrewManifest(input: {
     .from("offshore_manifests")
     .insert({
       tenant_id: tenant,
-      title: `${crew.name} · ${input.direction === "out" ? "MOB" : "DEMOB"} · ${crew.transport_mode ?? "transport not set"} · ${input.scheduledDate}`,
+      title: `${crew.name} · ${input.direction === "out" ? "MOB" : "DEMOB"} · ${crew.transport_mode ?? "boat"} · ${input.scheduledDate}`,
       crew_id: input.crewId,
       installation_id: crew.installation_id,
       trip_type: input.direction === "out" ? "crew_change_out" : "crew_change_in",
       direction: input.direction,
-      transport_mode: crew.transport_mode,
+      transport_mode: crew.transport_mode ?? "boat",
       // Size the manifest to the whole crew (a crew change may span several
       // transport runs); keep at least a helicopter's 12.
       seat_capacity: Math.max(12, members.length),
