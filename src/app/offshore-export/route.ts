@@ -12,6 +12,11 @@ import {
 } from "@/lib/offshore";
 import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
 import { MUSTER_OUTCOME_LABEL } from "@/lib/offshore/muster-closeout";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { siteToday } from "@/lib/offshore/manifest-order";
+import { getMonthlyReport } from "@/lib/offshore/monthly-report-run";
+import { canOpenMonthlyReport } from "@/lib/offshore/report-access";
+import { tenantId } from "../(portal)/offshore/_actions/_shared";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -41,8 +46,31 @@ export async function GET(req: NextRequest) {
   const type = sp.get("type");
   // The Dispatcher exports what they run or read — not catering or muster.
   const dispatcherMay = access.isDispatcher && !["meals", "muster"].includes(type ?? "");
-  if (!access.isAdmin && !access.isCampboss && !access.isOim && !dispatcherMay) {
+  // Finance and Operations Supervisors read the monthly man-days, nothing else.
+  const financeMay = type === "monthly" && (await canOpenMonthlyReport(access));
+  if (!access.isAdmin && !access.isCampboss && !access.isOim && !dispatcherMay && !financeMay) {
     return new NextResponse("Not authorized", { status: 403 });
+  }
+
+  if (type === "monthly") {
+    const tenant = await tenantId();
+    const admin = createAdminClient();
+    if (!tenant || !admin) return new NextResponse("No organisation in scope", { status: 400 });
+    const todayIso = siteToday();
+    const month = /^\d{4}-\d{2}$/.test(sp.get("month") ?? "") ? (sp.get("month") as string) : todayIso.slice(0, 7);
+    const r = await getMonthlyReport(admin, tenant, month, todayIso);
+    const rows: (string | number | null)[][] = [
+      ["Month", month],
+      ["Days", r.days.length],
+      [],
+      ["Company", "People", "Man-days", "Breakfast", "Snack", "Lunch", "Dinner", "Lodging"],
+    ];
+    for (const c of r.companies)
+      rows.push([c.company, c.people, c.manDays, c.meals.breakfast, c.meals.snack, c.meals.lunch, c.meals.dinner, c.meals.lodging]);
+    rows.push(["Total", r.totals.people, r.totals.manDays]);
+    rows.push([], ["Date", "POB"]);
+    for (const d of r.days) rows.push([d.date, d.total]);
+    return csvResponse(`offshore-man-days-${month}.csv`, rows);
   }
 
   if (type === "roster") {

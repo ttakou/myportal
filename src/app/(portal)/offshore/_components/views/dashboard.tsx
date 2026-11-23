@@ -757,6 +757,14 @@ export function Dashboard({
           <Link href="/reports/pob-outlook" className="ml-auto text-xs font-medium text-primary hover:underline">
             POB outlook with crew changes →
           </Link>
+          <a
+            href="/offshore-monthly"
+            target="_blank"
+            rel="noopener"
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Monthly report →
+          </a>
           <Button
             size="sm"
             variant="outline"
