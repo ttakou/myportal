@@ -65,15 +65,22 @@ export const EXCEPTION_STATES: ScheduleState[] = [
 ];
 
 /**
+ * Coming out this close to the crew's next offshore phase is "early"; any
+ * further out, aboard while the crew is ashore is overstaying.
+ */
+export const EARLY_WINDOW_DAYS = 7;
+
+/**
  * Where this person sits against their crew's cycle today.
  *
- * A planned return date wins outright — it is an explicit statement about this
- * person, whereas the cycle is a statement about their crew. That also closes
- * the gap where somebody with NO return date could never be flagged however
- * long they stayed: the cycle catches them instead.
+ * The crew's rotation decides, not the trip's dates: a late or early mover
+ * falls back to their rotation schedule. On board while the crew is due
+ * ashore is overstaying — unless they came out within a week of the crew's
+ * next offshore phase, which is early. On the boundary day the offshore
+ * phase ends, so the crew is "due ashore today" rather than overstaying.
  *
- * On the boundary day the offshore phase ends, so the crew is "due ashore
- * today" rather than overstaying — they are not late until the flight has gone.
+ * Somebody with no crew cycle (a visitor, a non-rotator) is judged by their
+ * planned return date instead: past it they are overstaying.
  */
 export function scheduleStateOf(input: {
   todayIso: string;
@@ -82,18 +89,16 @@ export function scheduleStateOf(input: {
   cycle?: RotationCycle | null;
 }): ScheduleState {
   const { todayIso, demobDate, mobilizeDate, cycle } = input;
-
-  if (demobDate) {
-    if (demobDate < todayIso) return "overstaying";
-    if (demobDate === todayIso) return "due_ashore";
-  }
-
   const period = cycle ? cycle.offshore_days + cycle.onshore_days : 0;
-  if (!cycle?.cycle_start_date || period <= 0) return "unscheduled";
-
-  const start = dayMs(cycle.cycle_start_date);
+  const start = cycle?.cycle_start_date ? dayMs(cycle.cycle_start_date) : NaN;
   const today = dayMs(todayIso);
-  if (today < start) return "unscheduled"; // the cycle has not begun
+
+  if (!cycle?.cycle_start_date || period <= 0 || today < start) {
+    // No rotation to measure against: the planned return date is all there is.
+    if (demobDate && demobDate < todayIso) return "overstaying";
+    if (demobDate && demobDate === todayIso) return "due_ashore";
+    return "unscheduled";
+  }
 
   // Start of the cycle currently running, and when its offshore phase ends.
   const cyclesElapsed = Math.floor((today - start) / (period * DAY_MS));
@@ -103,9 +108,10 @@ export function scheduleStateOf(input: {
   if (today < windowEnd) return "on_schedule";
   if (today === windowEnd) return "due_ashore";
 
-  // Past the offshore phase and still aboard. Whether that is late or keen
-  // depends on when they boarded: before the phase closed they simply stayed;
-  // after it closed they came out ahead of the next one.
-  if (mobilizeDate && dayMs(mobilizeDate) > windowEnd) return "early";
+  // The crew is ashore. Out a few days ahead of the next phase is early;
+  // otherwise they should have gone home with their crew.
+  const nextStart = windowStart + period * DAY_MS;
+  const daysToNext = Math.round((nextStart - today) / DAY_MS);
+  if (mobilizeDate && dayMs(mobilizeDate) > windowEnd && daysToNext <= EARLY_WINDOW_DAYS) return "early";
   return "overstaying";
 }

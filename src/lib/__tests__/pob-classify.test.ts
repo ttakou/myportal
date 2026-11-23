@@ -52,11 +52,15 @@ describe("scheduleStateOf — against the cycle", () => {
     ).toBe("overstaying");
   });
 
-  it("is early when they boarded after the phase closed", () => {
-    // Out ahead of the next window rather than left over from the last one.
+  it("is early only when they came out within a week of the crew's next phase", () => {
+    // Next offshore phase starts 2026-08-27.
+    expect(
+      scheduleStateOf({ todayIso: "2026-08-22", cycle: CYCLE, mobilizeDate: "2026-08-21" }),
+    ).toBe("early");
+    // Out on 08-09, with the crew ashore until 08-27: overstaying, not early.
     expect(
       scheduleStateOf({ todayIso: "2026-08-10", cycle: CYCLE, mobilizeDate: "2026-08-09" }),
-    ).toBe("early");
+    ).toBe("overstaying");
   });
 
   it("flags an overstay even with no planned return date", () => {
@@ -91,9 +95,13 @@ describe("scheduleStateOf — against the cycle", () => {
   });
 });
 
-describe("scheduleStateOf — a planned return date wins", () => {
-  it("overstays once the return date has passed", () => {
+describe("scheduleStateOf — the rotation decides for crew, the return date for others", () => {
+  it("judges a crew member by the rotation, not the trip's return date", () => {
+    // No drift: a late or early mover falls back to the crew's schedule.
     expect(scheduleStateOf({ todayIso: "2026-08-06", demobDate: "2026-06-18", cycle: CYCLE })).toBe(
+      "due_ashore",
+    );
+    expect(scheduleStateOf({ todayIso: "2026-08-10", demobDate: "2026-09-01", cycle: CYCLE, mobilizeDate: "2026-07-16" })).toBe(
       "overstaying",
     );
   });
