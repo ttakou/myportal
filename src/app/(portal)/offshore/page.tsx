@@ -220,7 +220,7 @@ export default async function OffshorePage({
                 {/* The crew-change mode and the overnight run are admin settings. */}
                 {offshoreAdmin && <DefaultModeToggle mode={schedule.mode} nightly={schedule.nightly} />}
                 {suggestions.length > 0 && (
-                  <CrewChangeSuggestions items={suggestions} defaultMode={schedule.mode} />
+                  <CrewChangeSuggestions items={suggestions} defaultMode={schedule.mode} canSwitchMode={offshoreAdmin} />
                 )}
               </div>
             ) : null
