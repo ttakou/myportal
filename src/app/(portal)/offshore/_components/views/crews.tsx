@@ -310,7 +310,7 @@ export function CrewsPanel({
           ))}
         </select>
         <input value={rotation} onChange={(e) => setRotation(e.target.value)} placeholder="Rotation (14/14)" className={field} />
-        <input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="Transport (helicopter)" className={field} />
+        <input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="Transport (boat)" className={field} />
         <input value={departure} onChange={(e) => setDeparture(e.target.value)} placeholder="Departure (Douala heliport)" className={field} />
         <label className="text-xs text-muted-foreground">
           Cycle start date

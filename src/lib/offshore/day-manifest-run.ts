@@ -297,7 +297,8 @@ export async function ensureDayManifests(
           installation_id: day.installationId,
           trip_type: day.crewDay ? (direction === "out" ? "crew_change_out" : "crew_change_in") : direction === "out" ? "visitor_out" : "visitor_in",
           direction,
-          transport_mode: day.crewDay ? sharedTransport(crewsThisWay.length ? crewsThisWay : [...day.out, ...day.in]) : null,
+          // Boat by default: a visitor-only day, or crews that name none or differ.
+          transport_mode: (day.crewDay ? sharedTransport(crewsThisWay.length ? crewsThisWay : [...day.out, ...day.in]) : null) ?? "boat",
           seat_capacity: daySeats(pax.length),
           scheduled_date: day.date,
           status: "draft",
