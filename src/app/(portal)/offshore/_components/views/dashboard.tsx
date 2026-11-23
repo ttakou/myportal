@@ -627,7 +627,10 @@ export function Dashboard({
   trips,
   installations = [],
   canApprove = false,
+  afterAccommodation,
 }: {
+  /** Shown right after the Accommodation section (the crew-change panel). */
+  afterAccommodation?: ReactNode;
   /** False for viewers who see the queue but cannot decide it. */
   canDecide: boolean;
   /** Approving visits and trips: the OIM's (and admins'). */
@@ -1039,6 +1042,8 @@ export function Dashboard({
           </DrillCard>
         )}
       </section>
+
+      {afterAccommodation}
 
       {pob.overstayers.length > 0 && (
         <div className="rounded-md bg-amber-50 p-3 text-sm">
