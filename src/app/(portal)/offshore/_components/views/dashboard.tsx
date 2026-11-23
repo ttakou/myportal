@@ -38,6 +38,7 @@ import {
   undoMobilisation,
 } from "../../actions";
 import { PendingApprovals } from "../pending-approvals";
+import { emptyRoomsTone, freeBedsTone, noRoomTone, pobTone, type TileTone } from "@/lib/offshore/tile-tones";
 import { field, useRun } from "./shared";
 
 /**
@@ -167,14 +168,23 @@ function Stat({
   label: string;
   value: string | number;
   sub?: string;
-  tone?: "green" | "amber";
+  tone?: TileTone;
   /** When set, the card becomes a button that opens its detail drill-down. */
   onClick?: () => void;
   active?: boolean;
 }) {
   const body = (
     <>
-      <div className={cn("text-2xl font-semibold", tone === "green" && "text-green-700", tone === "amber" && "text-amber-700")}>{value}</div>
+      <div
+        className={cn(
+          "text-2xl font-semibold",
+          tone === "green" && "text-green-700",
+          tone === "amber" && "text-amber-700",
+          tone === "red" && "text-red-700",
+        )}
+      >
+        {value}
+      </div>
       <div className="text-xs text-muted-foreground">{label}</div>
       {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
     </>
@@ -183,6 +193,7 @@ function Stat({
     "rounded-lg border bg-card p-3 text-left",
     tone === "green" && "border-green-300 bg-green-50",
     tone === "amber" && "border-amber-300 bg-amber-50",
+    tone === "red" && "border-red-300 bg-red-50",
   );
   if (!onClick) return <div className={base}>{body}</div>;
   return (
@@ -430,23 +441,6 @@ function FixedCabinRows({ roster }: { roster: RosterEntry[] }) {
   );
 }
 
-/** Rows for the overstayer list (past planned return). */
-function OverstayerRows({ list }: { list: PobBreakdown["overstayers"] }) {
-  if (list.length === 0) return <p className="py-1 text-xs text-muted-foreground">None.</p>;
-  return (
-    <>
-      {list.map((o, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2 border-b py-1.5 text-sm last:border-0">
-          <span className="font-medium">{o.name}</span>
-          <span className="text-xs text-muted-foreground">{o.installation ?? "—"}</span>
-          <span className="ml-auto text-xs text-amber-700">
-            {o.demob_date ? `due ${o.demob_date}` : "no return date set"}
-          </span>
-        </div>
-      ))}
-    </>
-  );
-}
 
 /** Parse a rotation pattern like "28/28" or "28" into offshore/onshore day counts. */
 function parsePattern(pattern: string, start: string, end: string): { off: number; on: number } | null {
@@ -708,7 +702,12 @@ export function Dashboard({
       case "departures":
         return { title: `Departing today (${pob.departuresToday})`, node: <PobPeopleRows people={pob.people.filter((p) => p.demob_date === today)} canDemob={canDecide} /> };
       case "overstayers":
-        return { title: `Overstayers (${pob.overstayers.length})`, node: <OverstayerRows list={pob.overstayers} /> };
+        return {
+          title: `Overstayers (${pob.overstayers.length}) — on board while their crew is scheduled ashore`,
+          node: (
+            <PobPeopleRows people={pob.people.filter((p) => p.schedule_state === "overstaying")} canDemob={canDecide} />
+          ),
+        };
       case "rooms":
         return { title: `Rooms (${accommodation.totalRooms})`, node: <RoomRows rooms={rooms} /> };
       case "beds":
@@ -774,13 +773,19 @@ export function Dashboard({
         {/* Two independent axes. These cards answer "what is this person"; the
             strip below answers "are they where the schedule expects them". */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-          <Stat label="Current POB" value={pob.total} {...statDrill("pob")} />
+          <Stat label="Current POB" value={pob.total} tone={pobTone(pob.total)} {...statDrill("pob")} />
           <Stat label="Rotational staff" value={pob.byIdentity.rotational} {...statDrill("rotational")} />
           <Stat label="Non-rotational staff" value={pob.byIdentity.non_rotational} {...statDrill("non_rotational")} />
           <Stat label="Visitors" value={pob.byIdentity.visitor} {...statDrill("visitors")} />
           <Stat label="Arrivals today" value={pob.arrivalsToday} {...statDrill("arrivals")} />
           <Stat label="Departures today" value={pob.departuresToday} {...statDrill("departures")} />
-          <Stat label="Overstayers" value={pob.overstayers.length} {...statDrill("overstayers")} />
+          <Stat
+            label="Overstayers"
+            value={pob.overstayers.length}
+            sub={pob.overstayers.length ? "aboard while their crew is ashore" : undefined}
+            tone={pob.overstayers.length ? "amber" : undefined}
+            {...statDrill("overstayers")}
+          />
         </div>
         {EXCEPTION_STATES.some((s) => pob.byScheduleState[s] > 0) && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
@@ -979,20 +984,26 @@ export function Dashboard({
           <Stat
             label="On board, no room"
             value={accommodation.noRoom}
-            tone={accommodation.noRoom > 0 ? "amber" : undefined}
+            tone={noRoomTone(accommodation.noRoom)}
             {...statDrill("noroom")}
           />
           <Stat
             label="Free beds"
             value={accommodation.availableBeds}
-            sub={echoFree > 0 ? `${echoFree} of them in Echo` : undefined}
-            tone="green"
+            sub={
+              echoFree > 0
+                ? `${echoFree} of them in Echo · ${Math.max(0, accommodation.availableBeds - echoFree)} elsewhere`
+                : undefined
+            }
+            // Coloured on the beds outside Echo: the Echo block is not cabins.
+            tone={freeBedsTone(Math.max(0, accommodation.availableBeds - echoFree))}
             {...statDrill("available")}
           />
           <Stat
             label="Empty rooms"
             value={emptyRooms.length}
             sub={emptyRooms.length > 0 ? `${emptyRoomBeds} bed(s)` : undefined}
+            tone={emptyRoomsTone(emptyRooms.length)}
             {...statDrill("empty")}
           />
           <Stat label="Fixed (staff)" value={accommodation.fixedBeds} {...statDrill("fixed")} />
@@ -1047,13 +1058,16 @@ export function Dashboard({
 
       {pob.overstayers.length > 0 && (
         <div className="rounded-md bg-amber-50 p-3 text-sm">
-          <p className="font-medium text-amber-800">Overstayers (past planned return)</p>
+          <p className="font-medium text-amber-800">Overstayers — on board while their crew is scheduled ashore</p>
           <ul className="mt-1 text-amber-800">
-            {pob.overstayers.map((o, i) => (
-              <li key={i}>
-                {o.name} — {o.installation ?? "?"} · due {o.demob_date}
-              </li>
-            ))}
+            {pob.people
+              .filter((p) => p.schedule_state === "overstaying")
+              .map((p) => (
+                <li key={p.trip_id}>
+                  {p.name} — {p.crew_name ?? "no crew"}
+                  {p.installation_name ? ` · ${p.installation_name}` : ""} · on board since {p.mobilize_date}
+                </li>
+              ))}
           </ul>
         </div>
       )}
