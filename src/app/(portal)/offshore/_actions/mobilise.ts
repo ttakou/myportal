@@ -10,7 +10,14 @@ import { getOffshoreDefaultInstallation } from "@/lib/offshore/crews";
 import { movedAwayOn } from "@/lib/offshore/movement-run";
 import { siteToday } from "@/lib/offshore/manifest-order";
 import { canUndoMobilisation } from "@/lib/offshore/undo-mobilise";
+import { getAccess } from "@/lib/auth";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
+
+/** A crew change set up by hand (manual mode) is an admin's to run. */
+async function requireAdminManual(): Promise<{ ok: false; error: string } | null> {
+  const a = await getAccess();
+  return a.isAdmin || a.isSystemAdmin ? null : { ok: false, error: "Only an admin can run a crew change manually." };
+}
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -219,6 +226,8 @@ export async function getCrewChangePrefill(
 ): Promise<{ ok: true; data: CrewChangePrefill } | { ok: false; error: string }> {
   const gate = await requireOffshoreDispatch("operate");
   if (gate) return { ok: false, error: gate.error ?? "Not authorized." };
+  const notAdmin = await requireAdminManual();
+  if (notAdmin) return notAdmin;
   const supabase = createClient();
 
   const { data: crew } = await supabase
@@ -315,6 +324,8 @@ export async function mobiliseCrewManual(input: {
 }): Promise<ActionResult> {
   const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
+  const notAdmin = await requireAdminManual();
+  if (notAdmin) return notAdmin;
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
@@ -381,6 +392,8 @@ export async function demobiliseSelected(input: {
 }): Promise<ActionResult> {
   const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
+  const notAdmin = await requireAdminManual();
+  if (notAdmin) return notAdmin;
   const supabase = createClient();
   const ids = input.profileIds.filter(Boolean);
   if (ids.length === 0) return { ok: false, error: "Select at least one person." };

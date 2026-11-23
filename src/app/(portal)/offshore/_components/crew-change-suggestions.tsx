@@ -19,9 +19,12 @@ import {
 export function CrewChangeSuggestions({
   items,
   defaultMode = "auto",
+  canSwitchMode = false,
 }: {
   items: CrewChangeSuggestion[];
   defaultMode?: TripMode;
+  /** Only an admin may switch a crew change to manual; everyone else runs it automatically. */
+  canSwitchMode?: boolean;
 }) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const visible = items.filter((s) => !dismissed.has(s.crew_id + s.action));
@@ -36,7 +39,8 @@ export function CrewChangeSuggestions({
         <SuggestionRow
           key={s.crew_id + s.action}
           s={s}
-          defaultMode={defaultMode}
+          defaultMode={canSwitchMode ? defaultMode : "auto"}
+          canSwitchMode={canSwitchMode}
           onDismiss={() => setDismissed((d) => new Set(d).add(s.crew_id + s.action))}
         />
       ))}
@@ -47,10 +51,12 @@ export function CrewChangeSuggestions({
 function SuggestionRow({
   s,
   defaultMode,
+  canSwitchMode,
   onDismiss,
 }: {
   s: CrewChangeSuggestion;
   defaultMode: TripMode;
+  canSwitchMode: boolean;
   onDismiss: () => void;
 }) {
   const [pending, startTransition] = useStatusTransition("Saving…");
@@ -113,7 +119,8 @@ function SuggestionRow({
         </button>
 
         <span className="ml-auto flex items-center gap-2">
-          {/* Per crew change: run it automatically, or set it up by hand. */}
+          {/* Per crew change: run it automatically, or (admins) set it up by hand. */}
+          {canSwitchMode && (
           <span className="inline-flex overflow-hidden rounded-md border border-amber-300 text-xs">
             <button
               type="button"
@@ -136,6 +143,7 @@ function SuggestionRow({
               <Pencil className="h-3 w-3" /> Manual
             </button>
           </span>
+          )}
 
           {mode === "auto" && (
             <Button size="sm" disabled={pending} onClick={runAuto}>
@@ -168,7 +176,7 @@ function SuggestionRow({
         </div>
       )}
 
-      {mode === "manual" && (
+      {canSwitchMode && mode === "manual" && (
         <ManualEditor
           action={s.action}
           crewId={s.crew_id}
