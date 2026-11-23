@@ -119,7 +119,8 @@ export function OffshoreBoard({
 
       {afterTrips}
 
-      {can("offshore", "create") && (
+      {/* Every signed-in employee may request a trip; the OIM approves it. */}
+      {(
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Request an offshore trip</h2>
         <form

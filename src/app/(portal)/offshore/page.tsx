@@ -67,7 +67,11 @@ export default async function OffshorePage({
   // Holders of the offshore `create` verb (the seeded Receptionist / Radio
   // Operator / Operations Supervisor access roles) reach one view only:
   // registering non-rotational staff.
-  const offshoreRegistrar = hasPermission(await getMyPermissions(), "offshore", "create");
+  const myPerms = await getMyPermissions();
+  const offshoreRegistrar = hasPermission(myPerms, "offshore", "create");
+  // Offshore is open to every signed-in member for their own trips; the shared
+  // look-ups (Where is…, the rotation calendar) need an offshore access role.
+  const offshoreReader = hasPermission(myPerms, "offshore", "view");
   const canManage = offshoreManager || access.isDispatcher || offshoreRegistrar;
   const offshoreFlags = {
     manager: offshoreManager,
@@ -85,10 +89,10 @@ export default async function OffshorePage({
   // "Where is…" is open to everyone with the module. It is answered here on
   // the server for one person at a time and needs none of the management
   // area's data, so that is not loaded for it.
-  const showWhereIs = activeView === "whereis";
+  const showWhereIs = activeView === "whereis" && (offshoreReader || access.isAdmin || access.isCampboss || access.isOim || access.isDispatcher);
   // A shared view (the rotation calendar) opens the management area read-only
   // for anyone; everything else there needs an offshore role.
-  const sharedView = SHARED_READ_VIEWS.has(activeView as OffshoreViewKey);
+  const sharedView = offshoreReader && SHARED_READ_VIEWS.has(activeView as OffshoreViewKey);
   const showManagement = (canManage || sharedView) && activeView !== "mytrips" && !showWhereIs;
   const showMyTrips = !showManagement && !showWhereIs;
   const showMonolith = showManagement;

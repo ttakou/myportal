@@ -140,7 +140,7 @@ export function VisitorRequestForm({
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Offshore visitor requests</h2>
-        {can("offshore", "create") && (
+        {(
           <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((o) => !o)}>
             <Plane className="h-4 w-4" /> {open ? "Close" : "Request a visit"}
           </Button>
@@ -149,7 +149,7 @@ export function VisitorRequestForm({
 
       {error && <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>}
 
-      {open && can("offshore", "create") && (
+      {open && (
         <form onSubmit={submit} className="space-y-3 rounded-lg border bg-card p-4">
           <datalist id="visitor-names">
             {nameSuggestions.map((n) => <option key={n} value={n} />)}

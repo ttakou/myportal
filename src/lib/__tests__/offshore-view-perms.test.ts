@@ -82,6 +82,12 @@ describe("management entry points", () => {
     expect(offshoreViewPerm("requests", MANAGER)).toBe("full");
   });
 
+  it("gives someone in the module only because it is open to all just their own trips", () => {
+    expect(offshoreHubSubmenu(NOBODY, true).map((i) => i.key)).toEqual(["mytrips"]);
+    // An offshore role still wins over the open-to-all trim.
+    expect(offshoreHubSubmenu(MANAGER, true).length).toBeGreaterThan(5);
+  });
+
   it("still gives a manager every hub", () => {
     const items = offshoreHubSubmenu(MANAGER);
     expect(items.length).toBeGreaterThan(5);

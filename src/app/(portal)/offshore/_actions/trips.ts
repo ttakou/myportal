@@ -56,8 +56,8 @@ export async function requestOffshoreTripGroup(input: {
    */
   people: { profileId?: string | null; name?: string | null }[];
 }): Promise<ActionResult> {
-  const gate = await requireOffshoreDispatch("create");
-  if (gate) return gate;
+  // Open to every signed-in employee: the sign-in and tenant checks below
+  // are the gate, and the OIM approves every request before anyone travels.
   if (!input.mobilizeDate) return { ok: false, error: "Mobilise date is required." };
   const purpose = (input.purpose ?? "").trim().slice(0, 300);
   if (!purpose) return { ok: false, error: "Say what the trip is for." };

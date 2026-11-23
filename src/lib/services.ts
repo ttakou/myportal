@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getMyAllowedSlugs } from "@/lib/access-roles";
 import { getAccess } from "@/lib/auth";
+import { openToAll } from "@/lib/module-access";
 import type { ActiveService } from "@/types/database";
 
 /**
@@ -59,7 +60,7 @@ export async function getActiveServices(): Promise<ActiveService[]> {
         tenant_service_settings: (row.settings ?? {}) as Record<string, unknown>,
       } as ActiveService;
     })
-    .filter((svc) => (svc.slug === "core" ? canAdmin : allowedSlugs.includes(svc.slug)))
+    .filter((svc) => (svc.slug === "core" ? canAdmin : openToAll(svc.slug) || allowedSlugs.includes(svc.slug)))
     .sort((a, b) => a.sort_order - b.sort_order);
 }
 
