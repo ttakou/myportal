@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
 import { Button } from "@/components/ui/button";
 import type { Installation } from "@/types/offshore";
-import { MEAL_LABEL, MEAL_TIME, type MealEntry, type MealKind } from "@/types/offshore";
+import { MEAL_CATEGORY_LABEL, MEAL_LABEL, MEAL_TIME, type MealEntry, type MealKind } from "@/types/offshore";
 import {
   addCasualMeal,
   fetchMealSheet,
@@ -75,7 +75,7 @@ export function CateringPanel({ installations }: { installations: Installation[]
     const body = entries.map((e, i) => [
       String(i + 1),
       e.person_name,
-      e.category,
+      MEAL_CATEGORY_LABEL[e.category] ?? e.category,
       ...MEALS.map((m) => (e[m] ? "1" : "")),
     ]);
     body.push(["", "TOTAL", "", ...MEALS.map((m) => String(totals[m]))]);
@@ -99,9 +99,9 @@ export function CateringPanel({ installations }: { installations: Installation[]
       </div>
       <p className="text-xs text-muted-foreground">
         Breakfast {MEAL_TIME.breakfast} · Snack {MEAL_TIME.snack} · Lunch {MEAL_TIME.lunch} · Dinner{" "}
-        {MEAL_TIME.dinner}. Generated from POB with every meal ticked — untick what was not served.
-        Generating again adds whoever has boarded since and removes whoever has left, keeping your
-        ticks for everyone else and any casual diners.
+        {MEAL_TIME.dinner}. Generated from POB every night (and with the button) with every meal ticked —
+        untick what was not served. Pellegrini (catering) staff come last with nothing ticked. Generating
+        again adds whoever has boarded since and removes whoever has left, keeping your ticks.
       </p>
 
       <div className="flex flex-wrap items-end gap-2">
@@ -149,12 +149,12 @@ export function CateringPanel({ installations }: { installations: Installation[]
           </thead>
           <tbody className="divide-y">
             {entries.map((e, i) => (
-              <tr key={e.id} className={cn(e.category === "casual" && "bg-amber-50/50")}>
+              <tr key={e.id} className={cn(e.category === "casual" && "bg-amber-50/50", e.category === "caterer" && "bg-muted/40")}>
                 <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
                 <td className="px-3 py-1.5">
                   {e.person_name}
                   {e.category !== "staff" && (
-                    <span className="ml-1 rounded bg-muted px-1 text-[10px] text-muted-foreground">{e.category}</span>
+                    <span className="ml-1 rounded bg-muted px-1 text-[10px] text-muted-foreground">{MEAL_CATEGORY_LABEL[e.category] ?? e.category}</span>
                   )}
                 </td>
                 {MEALS.map((m) => (
