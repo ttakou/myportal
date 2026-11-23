@@ -304,6 +304,22 @@ export async function togglePaxNoShow(id: string, noShow: boolean): Promise<Acti
   return { ok: true };
 }
 
+/**
+ * Tick a passenger off as boarded (or untick) on the day's sign-off list. Only
+ * records who went: moving people on and off POB stays with the manifest's
+ * approval and the nightly run. Ticking clears a no-show mark.
+ */
+export async function setPaxBoarded(id: string, boarded: boolean): Promise<ActionResult> {
+  const gate = await requireOffshoreDispatch("operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const patch = boarded ? { boarded: true, no_show: false } : { boarded: false };
+  const { error } = await supabase.from("offshore_manifest_pax").update(patch).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  rev();
+  return { ok: true };
+}
+
 export async function removeManifestPax(id: string): Promise<ActionResult> {
   const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;

@@ -3,7 +3,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAccess } from "@/lib/auth";
-import { notifyUsers } from "@/lib/notify";
+import { closeNotices, notifyUsers } from "@/lib/notify";
+import { decideBy, earlierDate } from "@/lib/notification-groups";
 import type { ActionResult } from "@/types/actions";
 import {
   checkMove,
@@ -261,6 +262,9 @@ export async function requestMovementChange(input: {
 
   const who = await personName(input.profileId);
   const what = `${MOVE_KIND_LABEL[input.kind]}: ${who}, ${scheduled ?? "no demob date"} → ${input.requestedDate} (${shiftLabel(input.kind, scheduled, input.requestedDate)})`;
+  // Due before the nightly run of the first day it changes.
+  const dueAt = decideBy(earlierDate(scheduled, input.requestedDate));
+  const ref = `move:${row.id}`;
   if (status === "pending_endorsement" && info.managerId) {
     await notifyUsers({
       tenantId: tenant,
@@ -270,6 +274,8 @@ export async function requestMovementChange(input: {
       body: what,
       url: "/offshore?view=mytrips",
       module: "offshore",
+      dueAt,
+      ref,
     });
   } else {
     await notifyUsers({
@@ -280,6 +286,8 @@ export async function requestMovementChange(input: {
       body: what,
       url: "/offshore?view=requests",
       module: "offshore",
+      dueAt,
+      ref,
     });
   }
   rev();
@@ -302,6 +310,7 @@ export async function withdrawMovementChange(id: string): Promise<ActionResult> 
   if (!isOpen(r.status)) return { ok: false, error: "It has been decided already." };
   const { error } = await createAdminClient()!.from("offshore_movement_requests").update({ status: "withdrawn" }).eq("id", id);
   if (error) return { ok: false, error: error.message };
+  await closeNotices(r.tenant_id, [`move:${id}`]);
   rev();
   return { ok: true };
 }
@@ -323,6 +332,8 @@ export async function endorseMovementChange(id: string, endorse: boolean, commen
 
   const who = await personName(r.profile_id);
   const what = `${MOVE_KIND_LABEL[r.kind as MoveKind]}: ${who}, ${r.scheduled_date ?? "no demob date"} → ${r.requested_date}`;
+  // The line manager's notice is answered; the OIM's (if endorsed) follows.
+  await closeNotices(r.tenant_id, [`move:${id}`]);
   if (endorse) {
     await notifyUsers({
       tenantId: r.tenant_id,
@@ -332,6 +343,8 @@ export async function endorseMovementChange(id: string, endorse: boolean, commen
       body: what,
       url: "/offshore?view=requests",
       module: "offshore",
+      dueAt: decideBy(earlierDate(r.scheduled_date, r.requested_date)),
+      ref: `move:${id}`,
     });
   } else {
     await notifyUsers({
@@ -370,6 +383,8 @@ export async function decideMovementChange(id: string, approve: boolean, comment
     await placeApprovedMove(admin, r.tenant_id, id, today());
     if (r.requested_date <= today()) await carryOutDueMoves(admin, r.tenant_id, today());
   }
+  // Decided: the "to decide" notices stop asking, for every OIM told.
+  await closeNotices(r.tenant_id, [`move:${id}`]);
 
   const who = await personName(r.profile_id);
   const what = `${MOVE_KIND_LABEL[r.kind as MoveKind]}: ${who}, ${r.scheduled_date ?? "no demob date"} → ${r.requested_date}`;

@@ -5,6 +5,7 @@ import {
   crewChangesDueToday,
   reminderForBackToBack,
   reminderForDesk,
+  reminderForDeskDay,
   reminderForMember,
   type ScheduledCrew,
 } from "@/lib/offshore/schedule-actions";
@@ -103,6 +104,11 @@ describe("reminder wording", () => {
     expect(reminderForDesk(a, 2, true).body).toMatch(/opens this change itself/);
     expect(reminderForDesk(a, 2, false).body).toMatch(/Confirm the change on the dashboard/);
     expect(reminderForDesk(a, 2, false).title).toBe("CREW H: crew change on 2026-09-12 (2 to mobilise)");
+    // The desk gets the whole day in one notice.
+    const off = { ...a, crewName: "CREW D", action: "demobilise" as const };
+    const day = reminderForDeskDay([{ a, count: 24 }, { a: off, count: 25 }], true);
+    expect(day.title).toBe("Crew change on 2026-09-12: CREW H +24, CREW D −25");
+    expect(day.body).toMatch(/^24 to mobilise, 25 to demobilise\./);
   });
 });
 

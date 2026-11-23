@@ -26,6 +26,7 @@ export type OffshoreViewKey =
   | "whereis"
   | "requests"
   | "lookahead"
+  | "today"
   | "mytrips";
 
 export interface OffshoreView {
@@ -65,6 +66,8 @@ export const OFFSHORE_VIEWS: OffshoreView[] = [
   { key: "installations", label: "Installations", icon: "Anchor" },
   { key: "history", label: "History", icon: "History" },
   { key: "staff-history", label: "Staff rotations", icon: "CalendarClock" },
+  // Its own page (/offshore/today): each role's work for the day in one place.
+  { key: "today", label: "Today", icon: "Sun" },
 ];
 
 export const OFFSHORE_VIEW_KEYS = OFFSHORE_VIEWS.map((v) => v.key);
@@ -160,6 +163,8 @@ const DISPATCHER_VIEW_PERMS: Record<OffshoreViewKey, OffshorePerm> = {
   requests: "none",
   // Planning ahead: the Dispatcher reads it for the manifests.
   lookahead: "view",
+  // Today's runs, ticked off as people board.
+  today: "full",
 };
 
 /** The Dispatcher's (or full manager's) access level for one management view. */
@@ -212,6 +217,7 @@ export interface OffshoreHub {
 
 export const OFFSHORE_HUBS: OffshoreHub[] = [
   { key: "mytrips", label: "My trips & requests", icon: "Ship" },
+  { key: "today", label: "Today", icon: "Sun" },
   { key: "requests", label: "Trip Requests", icon: "Inbox" },
   { key: "lookahead", label: "Look-ahead", icon: "Telescope" },
   {
@@ -316,7 +322,12 @@ export function offshoreHubSubmenu(flags: OffshoreRoleFlags): OffshoreNavItem[] 
       label: h.label,
       icon: h.icon,
       // The Look-ahead is a page of its own, not a `?view=` of the offshore page.
-      href: landing === "lookahead" ? "/offshore/look-ahead" : `/offshore?view=${landing}`,
+      href:
+        landing === "lookahead"
+          ? "/offshore/look-ahead"
+          : landing === "today"
+            ? "/offshore/today"
+            : `/offshore?view=${landing}`,
       matchViews: h.tabs ? visible : undefined,
     });
   }

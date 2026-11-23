@@ -5,7 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { placeVisitsOnManifests } from "@/lib/offshore/day-manifest-run";
 import { visitDates } from "@/lib/offshore/visitor-moves";
 import { searchBedAvailability } from "@/lib/offshore";
-import { notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
+import { closeNotices, notifyOffshoreApprovers, notifyUsers } from "@/lib/notify";
+import { decideBy } from "@/lib/notification-groups";
 import type { ActionResult } from "@/types/actions";
 import type { RoomAvailability } from "@/types/offshore";
 import { VISITOR_TYPES, requireOffshore, requireOffshoreDispatch, rev, tenantId, requireOim } from "./_shared";
@@ -33,7 +34,7 @@ export async function createVisitRequest(input: {
   const supabase = createClient();
   const tenant = await tenantId();
   if (!tenant) return { ok: false, error: "No tenant in scope." };
-  const { error } = await supabase.from("offshore_visit_requests").insert({
+  const { data: created, error } = await supabase.from("offshore_visit_requests").insert({
     tenant_id: tenant,
     visitor_name: input.visitorName.trim(),
     visitor_company: input.visitorCompany?.trim() || null,
@@ -48,13 +49,15 @@ export async function createVisitRequest(input: {
     overnight,
     accommodation_required: overnight,
     emergency_contact: input.emergencyContact?.trim() || null,
-  });
+  }).select("id").maybeSingle();
   if (error) return { ok: false, error: error.message };
   await notifyOffshoreApprovers({
     tenantId: tenant,
     title: `Visit request: ${input.visitorName.trim()}`,
     body: `Awaiting your approval — travel ${input.departDate}.`,
     url: "/offshore",
+    dueAt: decideBy(dates.departDate),
+    ref: created?.id ? `visit:${created.id}` : null,
   });
   rev();
   return { ok: true };
@@ -88,6 +91,7 @@ export async function decideVisitRequest(
     .eq("id", id)
     .maybeSingle();
   if (decision === "approved" && vr?.tenant_id) await manifestApproved(vr.tenant_id as string, [id]);
+  if (vr?.tenant_id) await closeNotices(vr.tenant_id as string, [`visit:${id}`]);
   if (vr?.requester_id && vr.tenant_id) {
     await notifyUsers({
       tenantId: vr.tenant_id as string,
@@ -157,6 +161,8 @@ export async function createVisitGroup(input: {
     title: `Visit request: ${visitors.length} visitor(s)`,
     body: `Awaiting your approval — travel ${input.departDate}.`,
     url: "/offshore",
+    dueAt: decideBy(dates.departDate),
+    ref: `visitgroup:${groupId}`,
   });
   rev();
   return { ok: true };
@@ -203,6 +209,7 @@ export async function decideVisitGroup(
     .eq("group_id", groupId)
     .limit(1);
   const head = rows?.[0];
+  if (head?.tenant_id) await closeNotices(head.tenant_id as string, [`visitgroup:${groupId}`]);
   if (head?.requester_id && head.tenant_id) {
     const { count } = await supabase
       .from("offshore_visit_requests")
