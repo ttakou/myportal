@@ -8,6 +8,8 @@ import type { CrewChangePrefill, CrewChangePrefillMember } from "@/types/offshor
 import { scheduleWindow } from "@/lib/offshore/rotation-math";
 import { getOffshoreDefaultInstallation } from "@/lib/offshore/crews";
 import { movedAwayOn } from "@/lib/offshore/movement-run";
+import { siteToday } from "@/lib/offshore/manifest-order";
+import { canUndoMobilisation } from "@/lib/offshore/undo-mobilise";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -454,4 +456,62 @@ export async function demobiliseCrew(crewId: string): Promise<ActionResult> {
   }
   rev();
   return { ok: true };
+}
+
+/**
+ * Undo a mobilisation entered by mistake: the trip is removed as if it had
+ * never been entered, so the person leaves POB, the muster roll and the meal
+ * sheet with no false stay left in their history. Only for mobilisations made
+ * today (see `canUndoMobilisation`); anyone aboard longer is demobilised.
+ * The OIM and the Dispatcher (and the Campboss and admins) may do this.
+ */
+export async function undoMobilisation(tripIds: string[]): Promise<ActionResult> {
+  const gate = await requireOffshoreDispatch("approve");
+  if (gate) return gate;
+  if (tripIds.length === 0) return { ok: false, error: "Nobody selected." };
+  const supabase = createClient();
+  const tenant = await tenantId();
+  if (!tenant) return { ok: false, error: "No tenant in scope." };
+
+  const { data: trips, error: readErr } = await supabase
+    .from("offshore_trips")
+    .select("id, profile_id, status, mobilize_date, created_at")
+    .eq("tenant_id", tenant)
+    .in("id", tripIds);
+  if (readErr) return { ok: false, error: readErr.message };
+  const today = siteToday();
+  const undo = (trips ?? []).filter((t) =>
+    canUndoMobilisation(
+      { status: t.status as string, mobilize_date: t.mobilize_date as string, created_at: t.created_at as string },
+      today,
+    ),
+  );
+  if (undo.length === 0)
+    return { ok: false, error: "Only a mobilisation made today can be undone. Use Demob for anyone aboard since an earlier day." };
+
+  const { error } = await supabase.from("offshore_trips").delete().in("id", undo.map((t) => t.id as string));
+  if (error) return { ok: false, error: error.message };
+
+  // A confirmed MOB manifest that boarded them no longer stands for them.
+  const dates = [...new Set(undo.map((t) => t.mobilize_date as string))];
+  const profiles = undo.map((t) => t.profile_id as string | null).filter(Boolean) as string[];
+  const { data: mobs } = await supabase
+    .from("offshore_manifests")
+    .select("id")
+    .eq("tenant_id", tenant)
+    .eq("direction", "out")
+    .in("scheduled_date", dates);
+  if (mobs?.length && profiles.length) {
+    await supabase
+      .from("offshore_manifest_pax")
+      .update({ boarded: false })
+      .in("manifest_id", mobs.map((m) => m.id as string))
+      .in("profile_id", profiles);
+  }
+
+  rev();
+  const skipped = tripIds.length - undo.length;
+  return skipped > 0
+    ? { ok: true, warning: `${skipped} person(s) were aboard since an earlier day and were left as they are.` }
+    : { ok: true };
 }

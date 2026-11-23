@@ -1,6 +1,7 @@
 "use client";
 
 import { manifestWorkOrder, siteToday } from "@/lib/offshore/manifest-order";
+import { movesPeopleNow } from "@/lib/offshore/undo-mobilise";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileText, History, ChevronDown, Trash2, CalendarRange, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -111,8 +112,10 @@ function ManifestBuilder({
     .filter((c) => !pickedKeys.has(c.key))
     .filter((c) => c.label.toLowerCase().includes(search.toLowerCase()));
 
-  // What creating this manifest would do to the people on it.
-  const movements = pendingMovements(picked, direction);
+  // What creating this manifest would do to the people on it. A manifest for a
+  // later day moves nobody: they travel when it is confirmed on the day.
+  const laterDay = !!date && !movesPeopleNow(date, siteToday());
+  const movements = laterDay ? { board: [], offboard: [] } : pendingMovements(picked, direction);
   const movementCount = movements.board.length + movements.offboard.length;
 
   // Everyone the schedule says should travel on this date and direction: the
@@ -332,6 +335,13 @@ function ManifestBuilder({
             </>
           )}{" "}
           You can still build the movement by hand.
+        </p>
+      )}
+
+      {laterDay && picked.some((p) => p.kind === "staff") && (
+        <p className="rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] text-muted-foreground">
+          This manifest is for {date}: nobody is moved now. People {direction === "out" ? "board" : "leave"} when
+          it is confirmed on that day, or with the nightly crew change.
         </p>
       )}
 
@@ -857,7 +867,13 @@ function ManifestCard({
         {m.status !== "completed" && m.status !== "cancelled" && (
           <Button
             size="sm"
-            disabled={pending}
+            // People move on the manifest's own day, never ahead of it.
+            disabled={pending || !movesPeopleNow(m.scheduled_date, siteToday())}
+            title={
+              movesPeopleNow(m.scheduled_date, siteToday())
+                ? undefined
+                : `For ${m.scheduled_date} — approve it on the day the people travel`
+            }
             onClick={() => {
               const verb = m.direction === "out" ? "board (mobilise)" : "demob (offboard)";
               if (confirm(`Approve this manifest? ${travelling.length} passenger(s) will be ${verb}.`))

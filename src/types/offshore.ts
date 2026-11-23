@@ -287,6 +287,11 @@ export interface PobOnboard {
    * app, e.g. a contractor's rig): POB and muster only, never "no room".
    */
   beds_managed: boolean;
+  /**
+   * Mobilised today, so the OIM or Dispatcher can still undo it (the trip is
+   * removed as if never entered). Never for visitors.
+   */
+  undoable?: boolean;
 }
 
 export interface AccommodationSummary {

@@ -3,6 +3,8 @@ import type { PobAsOf, PobBreakdown, PobPerson } from "@/types/offshore";
 import { one } from "./_shared";
 import { tripLifeboat, visitorLifeboat } from "./lifeboat";
 import { getOffshoreDefaultInstallation } from "./crews";
+import { siteToday } from "./manifest-order";
+import { canUndoMobilisation } from "./undo-mobilise";
 import type { RotationCycle } from "./rotation-math";
 import {
   identityOf,
@@ -28,7 +30,7 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       supabase
         .from("offshore_trips")
         .select(
-          "id, profile_id, crew_id, room_id, bed_no, category, mobilize_date, demob_date, lifeboat, lifeboat_override," +
+          "id, profile_id, crew_id, room_id, bed_no, category, mobilize_date, demob_date, created_at, lifeboat, lifeboat_override," +
             " installation_id, installation:offshore_installations(name), crew:offshore_crews(name)," +
             " room:offshore_rooms(room_number, block, lifeboat)," +
             " person:profiles!offshore_trips_profile_id_fkey(full_name)",
@@ -102,7 +104,9 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
   let staff = 0;
   let visitor = 0;
   let departuresToday = 0;
+  // Arrived today (on board, mobilised today) plus anyone still expected today.
   let arrivalsToday = arrivals?.length ?? 0;
+  const siteDay = siteToday();
   const overstayers: PobBreakdown["overstayers"] = [];
   const people: PobBreakdown["people"] = [];
 
@@ -157,8 +161,13 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       installation_id: (r.installation_id as string | null) ?? null,
       installation_name: one<{ name?: string }>(r.installation)?.name ?? null,
       beds_managed: bedsManaged((r.installation_id as string | null) ?? null),
+      undoable: canUndoMobilisation(
+        { status: "onboard", mobilize_date: r.mobilize_date as string, created_at: r.created_at as string },
+        siteDay,
+      ),
     });
     if (r.demob_date === today) departuresToday++;
+    if (r.mobilize_date === today) arrivalsToday++;
     // Overstay comes from the schedule state, not from demob_date alone: that
     // is what catches somebody whose crew's phase closed weeks ago but who was
     // never given a planned return date at all.
@@ -217,8 +226,10 @@ export async function getPobBreakdown(): Promise<PobBreakdown> {
       installation_id: (v.installation_id as string | null) ?? null,
       installation_name: instName,
       beds_managed: bedsManaged((v.installation_id as string | null) ?? null),
+      undoable: false,
     });
     if (v.return_date === today) departuresToday++;
+    if (v.depart_date === today) arrivalsToday++;
     if (vState === "overstaying") {
       overstayers.push({
         name: v.visitor_name,
