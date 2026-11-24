@@ -15,6 +15,7 @@ import { closeNotices } from "@/lib/notify";
 import { runConfirmRef } from "@/lib/offshore/run-reminders";
 import { resyncDaySheets } from "@/lib/offshore/meal-sheet-run";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
+import { parsePick } from "@/lib/offshore/traveller-picks";
 
 /**
  * Making a run's manifest reflect what really happened that morning — the
@@ -267,56 +268,170 @@ export async function confirmRun(
 /**
  * Someone travelled who was not on the list: add them to the run and, on or
  * after its day, board them (MOB) or send them home (DEMOB) dated that day.
+ *
+ * Anyone in the people database can be picked, not only the offshore roster,
+ * and any registered visitor. Someone POB missed is put right where it can be:
+ * a MOB arrival is boarded. A DEMOB leaver POB never had is listed on the run
+ * by name only (nothing on board to take off), and the result says so.
  */
-export async function addRunTraveller(input: { manifestId: string; profileId: string }): Promise<ActionResult> {
+export async function addRunTraveller(input: {
+  manifestId: string;
+  /** A pick id: "p:<profile id>" or "v:<visit request id>". */
+  pick?: string;
+  /** Older callers: a profile id. */
+  profileId?: string;
+}): Promise<ActionResult & { warning?: string }> {
   const gate = await requireOffshoreDispatch("operate");
   if (gate) return gate;
+  const target = input.pick ? parsePick(input.pick) : input.profileId ? { kind: "person" as const, id: input.profileId } : null;
+  if (!target) return { ok: false, error: "Pick someone from the list." };
   const supabase = createClient();
   const m = await loadManifest(supabase, input.manifestId);
   if (!m) return { ok: false, error: "Manifest not found." };
   if (m.status === "cancelled") return { ok: false, error: "This manifest is cancelled." };
+  const day = String(m.scheduled_date);
+  const moveNow = movesPeopleNow(day, siteToday());
+  const res = target.kind === "person" ? await addPerson(supabase, m, target.id, moveNow) : await addVisitor(supabase, m, target.id, moveNow);
+  if (!res.ok) return res;
+  await mealsFollow(m.tenant_id as string, day);
+  refresh();
+  return { ok: true, warning: res.warning };
+}
+
+async function addPerson(
+  supabase: ReturnType<typeof createClient>,
+  m: Row,
+  profileId: string,
+  moveNow: boolean,
+): Promise<ActionResult & { warning?: string }> {
   const { data: dup } = await supabase
     .from("offshore_manifest_pax")
     .select("id")
-    .eq("manifest_id", input.manifestId)
-    .eq("profile_id", input.profileId)
+    .eq("manifest_id", m.id)
+    .eq("profile_id", profileId)
     .maybeSingle();
   if (dup) return { ok: false, error: "Already on this manifest." };
 
   const [{ data: prof }, { data: staff }, { data: aboard }] = await Promise.all([
-    supabase.from("profiles").select("full_name, email").eq("id", input.profileId).maybeSingle(),
-    supabase.from("offshore_staff").select("position").eq("profile_id", input.profileId).maybeSingle(),
-    supabase.from("offshore_trips").select("id").eq("profile_id", input.profileId).eq("status", "onboard").limit(1),
+    supabase.from("profiles").select("full_name, email").eq("id", profileId).maybeSingle(),
+    supabase.from("offshore_staff").select("position").eq("profile_id", profileId).maybeSingle(),
+    supabase.from("offshore_trips").select("id").eq("profile_id", profileId).eq("status", "onboard").limit(1),
   ]);
   if (!prof) return { ok: false, error: "Person not found." };
-  const day = String(m.scheduled_date);
+  const name = (prof.full_name as string | null) || (prof.email as string | null) || "Passenger";
   const direction = m.direction as "out" | "in";
   const aboardTripId = (aboard?.[0]?.id as string | undefined) ?? null;
-  const moveNow = movesPeopleNow(day, siteToday());
+  let warning: string | undefined;
+  let linked = true;
 
   if (moveNow) {
     const step = confirmStep({ direction, noShow: false, aboard: !!aboardTripId, leftOnDay: false });
-    if (step === "not-aboard") return { ok: false, error: "They are not on board, so they cannot leave on this run." };
-    const tenant = await tenantId();
-    const admin = createAdminClient();
-    const installationId =
-      (m.installation_id as string | null) ?? (tenant && admin ? await offshoreDefaultInstallation(admin, tenant) : null);
-    const err = await moveStaff(supabase, m, input.profileId, installationId, step, aboardTripId);
-    if (err) return { ok: false, error: err };
+    if (step === "not-aboard") {
+      // On board without being in POB: list them by name; POB had nothing to take off.
+      linked = false;
+      warning = `${name} was not in POB, so POB is unchanged; they are listed on this run by name.`;
+    } else {
+      if (step === "already-aboard") warning = `${name} was already in POB; listed on this run, POB unchanged.`;
+      const tenant = await tenantId();
+      const admin = createAdminClient();
+      const installationId =
+        (m.installation_id as string | null) ?? (tenant && admin ? await offshoreDefaultInstallation(admin, tenant) : null);
+      const err = await moveStaff(supabase, m, profileId, installationId, step, aboardTripId);
+      if (err) return { ok: false, error: err };
+    }
   }
 
   const { error } = await supabase.from("offshore_manifest_pax").insert({
     tenant_id: m.tenant_id,
-    manifest_id: input.manifestId,
-    profile_id: input.profileId,
-    person_name: (prof.full_name as string | null) || (prof.email as string | null) || "Passenger",
+    manifest_id: m.id,
+    profile_id: linked ? profileId : null,
+    person_name: name,
     position: (staff?.position as string | null) ?? null,
     boarded: moveNow,
   });
   if (error) return { ok: false, error: error.message };
-  await mealsFollow(m.tenant_id as string, day);
-  refresh();
-  return { ok: true };
+  return { ok: true, warning };
+}
+
+async function addVisitor(
+  supabase: ReturnType<typeof createClient>,
+  m: Row,
+  visitId: string,
+  moveNow: boolean,
+): Promise<ActionResult & { warning?: string }> {
+  const { data: picked } = await supabase
+    .from("offshore_visit_requests")
+    .select("id, visitor_name, visitor_company, status, depart_date, return_date, lifeboat")
+    .eq("id", visitId)
+    .maybeSingle();
+  if (!picked) return { ok: false, error: "Visitor not found." };
+  const name = String(picked.visitor_name).trim();
+  const day = String(m.scheduled_date);
+  const direction = m.direction as "out" | "in";
+
+  const { data: onRun } = await supabase.from("offshore_manifest_pax").select("person_name").eq("manifest_id", m.id);
+  if (((onRun ?? []) as Row[]).some((p) => String(p.person_name).trim().toLowerCase() === name.toLowerCase()))
+    return { ok: false, error: "Already on this manifest." };
+
+  // Their visit on board now, if any (a visitor can have come more than once).
+  const { data: aboardRows } = await supabase
+    .from("offshore_visit_requests")
+    .select("id")
+    .eq("tenant_id", m.tenant_id)
+    .ilike("visitor_name", name.replace(/[%_\\]/g, "\\$&"))
+    .eq("status", "onboard")
+    .limit(1);
+  const aboardId = (aboardRows?.[0]?.id as string | undefined) ?? null;
+
+  let linkId: string | null = null;
+  let warning: string | undefined;
+  if (direction === "out") {
+    if (aboardId) {
+      linkId = aboardId;
+      warning = `${name} was already in POB; listed on this run, POB unchanged.`;
+    } else if (picked.status === "approved" && picked.depart_date === day) {
+      // Their planned visit for this day: it starts now.
+      linkId = String(picked.id);
+      if (moveNow) await supabase.from("offshore_visit_requests").update({ status: "onboard" }).eq("id", linkId);
+    } else {
+      // A past visitor coming again: a new casual visit, as the live board records one.
+      const { data: made, error } = await supabase
+        .from("offshore_visit_requests")
+        .insert({
+          tenant_id: m.tenant_id,
+          visitor_name: name,
+          visitor_company: (picked.visitor_company as string | null) ?? null,
+          installation_id: (m.installation_id as string | null) ?? null,
+          depart_date: day,
+          overnight: false,
+          accommodation_required: false,
+          status: moveNow ? "onboard" : "approved",
+          is_casual: true,
+          lifeboat: (picked.lifeboat as string | null) ?? null,
+        })
+        .select("id")
+        .maybeSingle();
+      if (error || !made) return { ok: false, error: error?.message ?? "Could not record the visit." };
+      linkId = String(made.id);
+      if (moveNow && !picked.lifeboat) warning = `${name} has no lifeboat station yet: set one on the live board.`;
+    }
+  } else if (aboardId) {
+    linkId = aboardId;
+    if (moveNow) await supabase.from("offshore_visit_requests").update({ status: "returned", return_date: day }).eq("id", aboardId);
+  } else {
+    warning = `${name} was not in POB, so POB is unchanged; they are listed on this run by name.`;
+  }
+
+  const { error } = await supabase.from("offshore_manifest_pax").insert({
+    tenant_id: m.tenant_id,
+    manifest_id: m.id,
+    visit_request_id: linkId,
+    person_name: name,
+    position: "Visitor",
+    boarded: moveNow,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, warning };
 }
 
 /**

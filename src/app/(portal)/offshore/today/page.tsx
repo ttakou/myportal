@@ -202,7 +202,7 @@ export default async function TodayPage() {
                 <RunControls
                   manifestId={m.id}
                   direction={m.direction}
-                  picks={m.direction === "out" ? t.pickAshore : t.pickAboard}
+                  picks={t.travellers}
                   confirmed={m.status === "completed"}
                 />
               </div>

@@ -50,10 +50,8 @@ export interface TodayManifest {
   confirmedBy: string | null;
 }
 
-export interface Pick {
-  id: string;
-  name: string;
-}
+import { travellerPicks, type Pick } from "./traveller-picks";
+export type { Pick };
 
 export interface TodayRun {
   date: string;
@@ -76,9 +74,8 @@ export interface TodayData {
   manifests: TodayManifest[];
   arrivalsNeedingBeds: TodayArrival[];
   meals: (MealTotals & { installation: string })[];
-  /** People who can be added to a run: ashore (for MOB), on board (for DEMOB). */
-  pickAshore: Pick[];
-  pickAboard: Pick[];
+  /** Who can be added to a run: everyone in the people database and every registered visitor. */
+  travellers: Pick[];
 }
 
 export async function getToday(admin: SupabaseClient, tenantId: string, today: string): Promise<TodayData> {
@@ -170,7 +167,7 @@ export async function getToday(admin: SupabaseClient, tenantId: string, today: s
   const paxOf = (id: string) => pax.filter((p) => String(p.manifest_id) === id);
 
   // Who the night run already moved today, who may be added to a run, and who confirmed.
-  const [{ data: movedRows }, { data: rosterRows }, { data: aboardRows }] = await Promise.all([
+  const [{ data: movedRows }, { data: rosterRows }, { data: aboardRows }, { data: peopleRows }, { data: visitorRows }] = await Promise.all([
     admin
       .from("offshore_trips")
       .select("profile_id, status, mobilize_date, demob_date")
@@ -178,9 +175,15 @@ export async function getToday(admin: SupabaseClient, tenantId: string, today: s
       .or(`and(status.eq.onboard,mobilize_date.eq.${today}),and(status.eq.demobilised,demob_date.eq.${today})`),
     admin
       .from("offshore_staff")
-      .select("profile_id, profile:profiles!offshore_staff_profile_id_fkey(full_name, email)")
+      .select("profile_id")
       .eq("tenant_id", tenantId),
     admin.from("offshore_trips").select("profile_id").eq("tenant_id", tenantId).eq("status", "onboard"),
+    admin.from("profiles").select("id, full_name, email").eq("tenant_id", tenantId).eq("is_active", true),
+    admin
+      .from("offshore_visit_requests")
+      .select("id, visitor_name, visitor_company, status, created_at")
+      .eq("tenant_id", tenantId)
+      .neq("status", "cancelled"),
   ]);
   const cameToday = new Set(((movedRows ?? []) as Row[]).filter((t) => t.status === "onboard").map((t) => String(t.profile_id)));
   const leftToday = new Set(((movedRows ?? []) as Row[]).filter((t) => t.status === "demobilised").map((t) => String(t.profile_id)));
@@ -189,9 +192,22 @@ export async function getToday(admin: SupabaseClient, tenantId: string, today: s
     const r = (Array.isArray(p) ? p[0] : p) as { full_name?: string | null; email?: string | null } | null;
     return r?.full_name || r?.email || "—";
   };
-  const roster = ((rosterRows ?? []) as Row[]).map((r) => ({ id: String(r.profile_id), name: personName(r.profile) }));
-  const pickAshore = roster.filter((r) => !aboardNow.has(r.id)).sort((a, b) => a.name.localeCompare(b.name));
-  const pickAboard = roster.filter((r) => aboardNow.has(r.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const onRoster = new Set(((rosterRows ?? []) as Row[]).map((r) => String(r.profile_id)));
+  const travellers = travellerPicks(
+    ((peopleRows ?? []) as Row[]).map((p) => ({
+      id: String(p.id),
+      name: personName(p),
+      onRoster: onRoster.has(String(p.id)),
+      aboard: aboardNow.has(String(p.id)),
+    })),
+    ((visitorRows ?? []) as Row[]).map((v) => ({
+      id: String(v.id),
+      name: String(v.visitor_name ?? ""),
+      company: (v.visitor_company as string | null) ?? null,
+      status: String(v.status),
+      created_at: String(v.created_at ?? ""),
+    })),
+  );
   const confirmerIds = manifests.map((m) => m.confirmed_by).filter(Boolean) as string[];
   const { data: confirmers } = confirmerIds.length
     ? await admin.from("profiles").select("id, full_name, email").in("id", confirmerIds)
@@ -291,5 +307,5 @@ export async function getToday(admin: SupabaseClient, tenantId: string, today: s
     installation: (t.installation_id && instName.get(t.installation_id)) || "—",
   }));
 
-  return { today, tomorrow, moves, trips, visits, run, manifests: todays, arrivalsNeedingBeds, meals, pickAshore, pickAboard };
+  return { today, tomorrow, moves, trips, visits, run, manifests: todays, arrivalsNeedingBeds, meals, travellers };
 }
