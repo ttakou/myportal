@@ -19,7 +19,7 @@ import {
 import { scheduleActs, type OffshoreScheduleSettings } from "./schedule-settings";
 import { addVisitorsToDayManifests, advanceVisitorStatuses, closePastManifests, ensureDayManifests } from "./day-manifest-run";
 import { DAY_MANIFEST_HORIZON_DAYS } from "./day-manifests";
-import { carryOutDueMoves, movedAwayOn } from "./movement-run";
+import { carryOutDueMoves, expireUndecidedMoves, movedAwayOn } from "./movement-run";
 import { getLookAhead } from "./look-ahead";
 import { buildMealSheet } from "./meal-sheet-run";
 
@@ -71,6 +71,8 @@ export interface TenantScheduleSummary {
   mealSheets: number;
   /** Past manifests closed. */
   manifestsClosed: number;
+  /** Date change requests nobody decided before their day, closed. */
+  movesExpired: number;
 }
 
 type Row = Record<string, unknown>;
@@ -163,6 +165,7 @@ async function runTenant(
     dayManifests: 0,
     visitorsManifested: 0,
     movesCarriedOut: 0,
+    movesExpired: 0,
     lookAheadSent: 0,
     mealSheets: 0,
     manifestsClosed: 0,
@@ -298,6 +301,11 @@ async function runTenant(
       1,
     );
   }
+
+  // ---- Requests nobody decided in time ------------------------------------
+  // After the crew changes: whatever was still undecided for today has now
+  // been settled by the schedule.
+  summary.movesExpired = await expireUndecidedMoves(admin, tenantId, today);
 
   // ---- Reminders three days before ----------------------------------------
   const ahead = crewChangesAhead(scheduled, today);

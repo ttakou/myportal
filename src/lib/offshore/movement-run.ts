@@ -3,7 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { one } from "./_shared";
 import { ensureDayManifests, offshoreDefaultInstallation } from "./day-manifest-run";
 import { nextCrewChangeDate } from "./manifest-plan";
-import { moveDirection, moveFlagKind, MOVE_KIND_LABEL, MOVE_REASON_LABEL, type MoveKind, type MoveReason, type MoveDirection } from "./movement-change";
+import { hasExpired, moveDirection, moveFlagKind, MOVE_KIND_LABEL, MOVE_REASON_LABEL, type MoveKind, type MoveReason, type MoveDirection, type MoveStatus } from "./movement-change";
+import { closeNotices, notifyUsers } from "@/lib/notify";
 
 /**
  * Carrying out approved movement changes, on a client that may write trips
@@ -206,4 +207,42 @@ export async function carryOutDueMoves(client: SupabaseClient, tenantId: string,
 /** One row's people, for messages: the person and whoever raised it. */
 export function moveName(row: Row): string {
   return one<{ full_name?: string }>(row.person)?.full_name ?? "Staff member";
+}
+
+/**
+ * Close the requests nobody decided before the night run of their first day:
+ * the person has moved (or not) by the schedule, so a late decision would
+ * change nothing. Their "to decide" notices clear, and the person and whoever
+ * raised it are told. Returns how many closed.
+ */
+export async function expireUndecidedMoves(client: SupabaseClient, tenantId: string, todayIso: string): Promise<number> {
+  const { data } = await client
+    .from("offshore_movement_requests")
+    .select("id, profile_id, requested_by, kind, status, scheduled_date, requested_date, person:profiles!offshore_movement_requests_profile_id_fkey(full_name, email)")
+    .eq("tenant_id", tenantId)
+    .in("status", ["pending", "pending_endorsement"]);
+  const stale = ((data ?? []) as Row[]).filter((r) =>
+    hasExpired({ status: r.status as MoveStatus, scheduled_date: (r.scheduled_date as string | null) ?? null, requested_date: String(r.requested_date) }, todayIso),
+  );
+  for (const r of stale) {
+    const first = r.scheduled_date && r.scheduled_date < r.requested_date ? r.scheduled_date : r.requested_date;
+    await client
+      .from("offshore_movement_requests")
+      .update({ status: "expired", decided_at: new Date().toISOString(), decision_comment: `Not decided before the run of ${first}.` })
+      .eq("id", r.id)
+      .in("status", ["pending", "pending_endorsement"]);
+    await closeNotices(tenantId, [`move:${r.id}`]);
+    const person = one<{ full_name?: string; email?: string }>(r.person);
+    const who = person?.full_name || person?.email || "the traveller";
+    await notifyUsers({
+      tenantId,
+      profileIds: [r.profile_id as string, r.requested_by as string | null],
+      category: "general",
+      title: `Date change closed: ${who}`,
+      body: `${MOVE_KIND_LABEL[r.kind as MoveKind] ?? r.kind} (${r.scheduled_date ?? "no demob date"} → ${r.requested_date}) was not decided before ${first}, so the schedule applied. Raise a new request if it is still needed.`,
+      url: "/offshore?view=mytrips",
+      module: "offshore",
+    });
+  }
+  return stale.length;
 }
