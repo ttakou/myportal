@@ -418,7 +418,7 @@ export async function fetchMovementDesk(): Promise<{ ok: boolean; open?: Movemen
   const yearStart = `${today().slice(0, 4)}-01-01T00:00:00Z`;
   const [open, recent, year] = await Promise.all([
     listMovementRequests(supabase, (q) => q.in("status", ["pending_endorsement", "pending"]), 200),
-    listMovementRequests(supabase, (q) => q.in("status", ["approved", "rejected", "withdrawn"]).gte("updated_at", since), 200),
+    listMovementRequests(supabase, (q) => q.in("status", ["approved", "rejected", "withdrawn", "expired"]).gte("updated_at", since), 200),
     listMovementRequests(supabase, (q) => q.eq("status", "approved").gte("decided_at", yearStart), 1000),
   ]);
 

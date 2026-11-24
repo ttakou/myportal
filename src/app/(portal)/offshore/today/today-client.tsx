@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { addRunTraveller, confirmRun, decideMovementChange, setPaxBoarded, togglePaxNoShow } from "../actions";
+import { addRunTraveller, confirmRun, decideMovementChange, postponeRun, setPaxBoarded, togglePaxNoShow } from "../actions";
 import type { Pick, TodayPax } from "@/lib/offshore/today-run";
 
 /** Approve or reject a date change in place (the OIM's decision is final). */
@@ -190,6 +190,26 @@ export function RunControls({
     });
   };
 
+  const postpone = () => {
+    if (
+      !window.confirm(
+        "Postpone this run to tomorrow?\n\nThis morning's automatic " +
+          (direction === "out" ? "boarding is undone (they come off POB)" : "demobilisation is undone (they stay on board)") +
+          ", everyone moves to tomorrow's manifest, and tomorrow night's run carries it out. Marked no-shows are left as they are.",
+      )
+    )
+      return;
+    setError(null);
+    start(async () => {
+      const res = await postponeRun(manifestId);
+      if (!res.ok) setError(res.error ?? "Could not postpone.");
+      else {
+        setNote(`${res.postponed ?? 0} moved to ${res.to}.`);
+        router.refresh();
+      }
+    });
+  };
+
   return (
     <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2">
       <input
@@ -217,8 +237,18 @@ export function RunControls({
         <button
           type="button"
           disabled={pending}
+          onClick={postpone}
+          className="ml-auto rounded-md border border-amber-300 px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50"
+        >
+          Postpone to tomorrow
+        </button>
+      )}
+      {!confirmed && (
+        <button
+          type="button"
+          disabled={pending}
           onClick={confirm}
-          className="ml-auto inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90"
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90"
         >
           <Check className="h-3.5 w-3.5" /> Confirm run
         </button>

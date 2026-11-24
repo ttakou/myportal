@@ -14,6 +14,7 @@ const STATUS_STYLE: Record<MoveStatus, string> = {
   approved: "bg-green-100 text-green-700",
   rejected: "bg-destructive/10 text-destructive",
   withdrawn: "bg-muted text-muted-foreground line-through",
+  expired: "bg-muted text-muted-foreground",
 };
 
 const when = (iso: string | null) =>

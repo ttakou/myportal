@@ -15,7 +15,7 @@ import { nextCrewChangeDate } from "./manifest-plan";
 
 export type MoveKind = "early_mob" | "late_mob" | "early_demob" | "late_demob" | "set_demob";
 export type MoveReason = "medical" | "compassionate" | "operational" | "training_logistics" | "other";
-export type MoveStatus = "pending_endorsement" | "pending" | "approved" | "rejected" | "withdrawn";
+export type MoveStatus = "pending_endorsement" | "pending" | "approved" | "rejected" | "withdrawn" | "expired";
 export type MoveDirection = "out" | "in";
 
 export const MOVE_KINDS: MoveKind[] = ["early_mob", "late_mob", "early_demob", "late_demob", "set_demob"];
@@ -43,6 +43,7 @@ export const MOVE_STATUS_LABEL: Record<MoveStatus, string> = {
   approved: "Approved",
   rejected: "Rejected",
   withdrawn: "Withdrawn",
+  expired: "Expired — not decided in time",
 };
 
 /** Mobilisations go out to the installation, demobilisations come in. */
@@ -252,4 +253,21 @@ export function groupPeople(input: {
   const rest = (input.everyone ?? []).filter((p) => p.id !== input.me && !listed.has(p.id)).sort(byName);
   if (rest.length) groups.push({ label: "Everyone else", people: rest });
   return groups;
+}
+
+/**
+ * An undecided request has expired once the night run of its first day has
+ * gone: by then the person has moved (or not) by the schedule, and a late
+ * decision would change nothing. The first day is the earlier of the two
+ * dates (setting a first demob date has only the requested one).
+ */
+export function hasExpired(r: { status: MoveStatus; scheduled_date: string | null; requested_date: string }, todayIso: string): boolean {
+  if (!isOpen(r.status)) return false;
+  const first = r.scheduled_date && r.scheduled_date < r.requested_date ? r.scheduled_date : r.requested_date;
+  return first <= todayIso;
+}
+
+/** A run put back a day: everyone on it gets an approved late move of this kind. */
+export function postponedKind(direction: MoveDirection): MoveKind {
+  return direction === "out" ? "late_mob" : "late_demob";
 }

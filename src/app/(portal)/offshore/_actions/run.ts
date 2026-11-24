@@ -7,7 +7,12 @@ import type { ActionResult } from "@/types/actions";
 import { siteToday } from "@/lib/offshore/manifest-order";
 import { movesPeopleNow } from "@/lib/offshore/undo-mobilise";
 import { confirmStep, noShowEffect, TRAVELLED, type ConfirmStep } from "@/lib/offshore/run-reconcile";
-import { offshoreDefaultInstallation } from "@/lib/offshore/day-manifest-run";
+import { offshoreDefaultInstallation, placeVisitsOnManifests } from "@/lib/offshore/day-manifest-run";
+import { placeApprovedMove } from "@/lib/offshore/movement-run";
+import { postponedKind } from "@/lib/offshore/movement-change";
+import { nextDay } from "@/lib/offshore/today";
+import { closeNotices } from "@/lib/notify";
+import { runConfirmRef } from "@/lib/offshore/run-reminders";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 /**
@@ -26,7 +31,7 @@ const refresh = () => {
 async function loadManifest(supabase: ReturnType<typeof createClient>, id: string) {
   const { data } = await supabase
     .from("offshore_manifests")
-    .select("id, tenant_id, direction, scheduled_date, status, installation_id")
+    .select("id, tenant_id, title, direction, scheduled_date, status, installation_id")
     .eq("id", id)
     .maybeSingle();
   return data as Row | null;
@@ -239,6 +244,7 @@ export async function confirmRun(
     .update({ status: "completed", confirmed_by: user?.id ?? null, confirmed_at: new Date().toISOString() })
     .eq("id", manifestId);
   if (error) return { ok: false, error: error.message };
+  await closeNotices(String(m.tenant_id), [runConfirmRef(manifestId)]);
   refresh();
   return {
     ok: true,
@@ -300,4 +306,127 @@ export async function addRunTraveller(input: { manifestId: string; profileId: st
   if (error) return { ok: false, error: error.message };
   refresh();
   return { ok: true };
+}
+
+/**
+ * The run did not go (weather, breakdown): put it back a day. This
+ * morning's automatic movement is undone for everyone on it, each traveller
+ * gets an approved late move to the next day (so that night's run carries it
+ * out and puts them on that day's manifest), and this run is closed as
+ * postponed. No-shows and people never concerned are left as they are.
+ */
+export async function postponeRun(manifestId: string): Promise<ActionResult & { postponed?: number; to?: string }> {
+  const gate = await requireOffshoreDispatch("operate");
+  if (gate) return gate;
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const tenant = await tenantId();
+  const admin = createAdminClient();
+  if (!tenant || !admin) return { ok: false, error: "No organisation in scope." };
+  const m = await loadManifest(supabase, manifestId);
+  if (!m) return { ok: false, error: "Manifest not found." };
+  if (m.status === "completed") return { ok: false, error: "This run is already confirmed as gone." };
+  if (m.status === "cancelled") return { ok: false, error: "This manifest is cancelled." };
+  const day = String(m.scheduled_date);
+  const to = nextDay(day);
+  const direction = m.direction as "out" | "in";
+  const today = siteToday();
+  const now = new Date().toISOString();
+
+  const { data: paxRows } = await admin
+    .from("offshore_manifest_pax")
+    .select("id, profile_id, visit_request_id, no_show, person_name")
+    .eq("manifest_id", manifestId);
+  const pax = ((paxRows ?? []) as Row[]).filter((p) => !p.no_show);
+  let postponed = 0;
+  const visitIds: string[] = [];
+
+  for (const p of pax) {
+    if (p.profile_id) {
+      const pid = String(p.profile_id);
+      const { data: trips } = await admin
+        .from("offshore_trips")
+        .select("id, status, mobilize_date, demob_date")
+        .eq("tenant_id", tenant)
+        .eq("profile_id", pid)
+        .in("status", ["onboard", "demobilised"])
+        .order("updated_at", { ascending: false })
+        .limit(3);
+      const list = (trips ?? []) as Row[];
+      const aboard = list.find((t) => t.status === "onboard");
+      if (direction === "out") {
+        // Aboard since before the run: not travelling on it, leave them be.
+        if (aboard && aboard.mobilize_date < day) continue;
+        // Boarded by this morning's run: undo it — they never left the shore.
+        if (aboard && aboard.mobilize_date === day) await admin.from("offshore_trips").delete().eq("id", aboard.id);
+      } else {
+        const leftToday = list.find((t) => t.status === "demobilised" && t.demob_date === day);
+        if (!aboard && !leftToday) continue; // never on board: nothing to put back
+        // Sent home by this morning's run: back on board until the new day.
+        if (leftToday && !aboard) {
+          await admin.from("offshore_trips").update({ status: "onboard", demob_date: to }).eq("id", leftToday.id);
+        }
+      }
+      const { data: staff } = await admin
+        .from("offshore_staff")
+        .select("crew_id")
+        .eq("profile_id", pid)
+        .maybeSingle();
+      const { data: move, error } = await admin
+        .from("offshore_movement_requests")
+        .insert({
+          tenant_id: tenant,
+          profile_id: pid,
+          crew_id: (staff?.crew_id as string | null) ?? null,
+          installation_id: (m.installation_id as string | null) ?? null,
+          kind: postponedKind(direction),
+          scheduled_date: day,
+          requested_date: to,
+          reason: "operational",
+          note: "Run postponed (weather / transport).",
+          status: "approved",
+          requested_by: user?.id ?? null,
+          decided_by: user?.id ?? null,
+          decided_at: now,
+          decision_comment: `Run of ${day} postponed to ${to}.`,
+        })
+        .select("id")
+        .maybeSingle();
+      if (error || !move) return { ok: false, error: error?.message ?? "Could not record the postponement." };
+      // Off this run, onto the new day's manifest; that night's run moves them.
+      await placeApprovedMove(admin, tenant, move.id as string, today);
+      postponed++;
+    } else if (p.visit_request_id) {
+      const { data: v } = await admin
+        .from("offshore_visit_requests")
+        .select("id, status, depart_date, return_date")
+        .eq("id", p.visit_request_id)
+        .maybeSingle();
+      if (!v) continue;
+      const shift = (d: string | null) => (d ? nextDay(d) : null);
+      const patch: Row | null =
+        direction === "out" && v.depart_date === day
+          ? { status: v.status === "onboard" ? "approved" : v.status, depart_date: to, return_date: shift(v.return_date as string | null) }
+          : direction === "in" && v.return_date === day
+            ? { status: v.status === "returned" ? "onboard" : v.status, return_date: to }
+            : null;
+      if (!patch) continue;
+      await admin.from("offshore_visit_requests").update(patch).eq("id", v.id);
+      await admin.from("offshore_manifest_pax").delete().eq("id", p.id);
+      visitIds.push(String(v.id));
+      postponed++;
+    }
+  }
+  if (visitIds.length) await placeVisitsOnManifests(admin, tenant, visitIds, to);
+
+  const { error } = await admin
+    .from("offshore_manifests")
+    .update({ status: "cancelled", title: `${m.title ?? "Run"} · postponed to ${to}` })
+    .eq("id", manifestId);
+  if (error) return { ok: false, error: error.message };
+  await closeNotices(tenant, [runConfirmRef(manifestId)]);
+  refresh();
+  return { ok: true, postponed, to };
 }
