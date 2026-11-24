@@ -6,7 +6,7 @@ import { getPobBreakdown } from "@/lib/offshore";
 import { siteToday } from "@/lib/offshore/manifest-order";
 import { getToday } from "@/lib/offshore/today-run";
 import { tenantId } from "../_actions/_shared";
-import { MoveDecision, PaxTicks } from "./today-client";
+import { MoveDecision, PaxTicks, RunControls } from "./today-client";
 
 /**
  * Today: each offshore role's work for the day on one page, so nobody hunts
@@ -140,6 +140,24 @@ export default async function TodayPage() {
           title="Dispatcher — today's runs"
           hint={t.manifests.length ? `${t.manifests.length} manifest${t.manifests.length === 1 ? "" : "s"}` : "no runs today"}
         >
+          {(() => {
+            // The night run moved people before the boat went: ask for the real outcome.
+            const open = t.manifests.filter((m) => m.status !== "completed" && m.moved > 0);
+            if (!open.length) return null;
+            const on = open.filter((m) => m.direction === "out").reduce((n, m) => n + m.moved, 0);
+            const off = open.filter((m) => m.direction === "in").reduce((n, m) => n + m.moved, 0);
+            return (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <p className="font-semibold">
+                  Tonight&apos;s run moved {on} on and {off} off — confirm who actually travelled.
+                </p>
+                <p className="text-xs">
+                  Once the boat or helicopter has gone: mark anyone who didn&apos;t travel as <strong>No-show</strong> (POB is
+                  corrected straight away), add anyone who travelled but isn&apos;t listed, then press <strong>Confirm run</strong>.
+                </p>
+              </div>
+            );
+          })()}
           {t.manifests.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No runs today.{" "}
@@ -174,12 +192,25 @@ export default async function TodayPage() {
                     <Printer className="h-3 w-3" /> Sign-off sheet
                   </a>
                 </div>
-                <PaxTicks pax={m.pax} canTick />
+                <PaxTicks pax={m.pax} canTick={m.status !== "completed"} />
+                {m.status === "completed" && m.confirmedAt ? (
+                  <p className="border-t px-3 py-1.5 text-xs text-green-700">
+                    Confirmed{m.confirmedBy ? ` by ${m.confirmedBy}` : ""} at{" "}
+                    {new Date(m.confirmedAt).toLocaleTimeString("en-GB", { timeZone: "Africa/Douala", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                ) : null}
+                <RunControls
+                  manifestId={m.id}
+                  direction={m.direction}
+                  picks={m.direction === "out" ? t.pickAshore : t.pickAboard}
+                  confirmed={m.status === "completed"}
+                />
               </div>
             ))
           )}
           <p className="text-xs text-muted-foreground">
-            Ticks record who travelled. People go on and off POB when the manifest is approved or with tonight&apos;s run.
+            The night run moves crews by the schedule; marking a no-show corrects POB for anyone who didn&apos;t travel.
+            Ticks record who travelled; <strong>Confirm run</strong> settles the rest and closes the manifest.
           </p>
         </Section>
       )}

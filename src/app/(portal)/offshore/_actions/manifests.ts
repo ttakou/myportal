@@ -5,6 +5,7 @@ import { notifyUsers } from "@/lib/notify";
 import type { ActionResult } from "@/types/actions";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 import { boardMember } from "./mobilise";
+import { setRunNoShow } from "./run";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureDayManifests, offshoreDefaultInstallation, refreshDayManifestPax } from "@/lib/offshore/day-manifest-run";
 import { siteToday } from "@/lib/offshore/manifest-order";
@@ -291,17 +292,9 @@ export async function updateManifestTransport(input: {
   return { ok: true };
 }
 
+/** Mark a no-show; on a run that has already moved people, POB follows (see run.ts). */
 export async function togglePaxNoShow(id: string, noShow: boolean): Promise<ActionResult> {
-  const gate = await requireOffshoreDispatch("operate");
-  if (gate) return gate;
-  const supabase = createClient();
-  const { error } = await supabase
-    .from("offshore_manifest_pax")
-    .update({ no_show: noShow })
-    .eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  rev();
-  return { ok: true };
+  return setRunNoShow(id, noShow);
 }
 
 /**
