@@ -19,3 +19,4 @@ export * from "./_actions/mobilise";
 export * from "./_actions/settings";
 export * from "./_actions/self-declare";
 export * from "./_actions/movement";
+export * from "./_actions/run";

@@ -44,6 +44,15 @@ export interface TodayManifest {
   transport: string | null;
   status: string;
   pax: TodayPax[];
+  /** How many on this run the night job already moved (boarded / sent home today). */
+  moved: number;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+}
+
+export interface Pick {
+  id: string;
+  name: string;
 }
 
 export interface TodayRun {
@@ -67,6 +76,9 @@ export interface TodayData {
   manifests: TodayManifest[];
   arrivalsNeedingBeds: TodayArrival[];
   meals: (MealTotals & { installation: string })[];
+  /** People who can be added to a run: ashore (for MOB), on board (for DEMOB). */
+  pickAshore: Pick[];
+  pickAboard: Pick[];
 }
 
 export async function getToday(admin: SupabaseClient, tenantId: string, today: string): Promise<TodayData> {
@@ -93,7 +105,7 @@ export async function getToday(admin: SupabaseClient, tenantId: string, today: s
         .lte("depart_date", tomorrow),
       admin
         .from("offshore_manifests")
-        .select("id, title, direction, transport_mode, status, scheduled_date")
+        .select("id, title, direction, transport_mode, status, scheduled_date, confirmed_at, confirmed_by")
         .eq("tenant_id", tenantId)
         .in("scheduled_date", [today, tomorrow])
         .neq("status", "cancelled"),
@@ -156,6 +168,35 @@ export async function getToday(admin: SupabaseClient, tenantId: string, today: s
   }));
 
   const paxOf = (id: string) => pax.filter((p) => String(p.manifest_id) === id);
+
+  // Who the night run already moved today, who may be added to a run, and who confirmed.
+  const [{ data: movedRows }, { data: rosterRows }, { data: aboardRows }] = await Promise.all([
+    admin
+      .from("offshore_trips")
+      .select("profile_id, status, mobilize_date, demob_date")
+      .eq("tenant_id", tenantId)
+      .or(`and(status.eq.onboard,mobilize_date.eq.${today}),and(status.eq.demobilised,demob_date.eq.${today})`),
+    admin
+      .from("offshore_staff")
+      .select("profile_id, profile:profiles!offshore_staff_profile_id_fkey(full_name, email)")
+      .eq("tenant_id", tenantId),
+    admin.from("offshore_trips").select("profile_id").eq("tenant_id", tenantId).eq("status", "onboard"),
+  ]);
+  const cameToday = new Set(((movedRows ?? []) as Row[]).filter((t) => t.status === "onboard").map((t) => String(t.profile_id)));
+  const leftToday = new Set(((movedRows ?? []) as Row[]).filter((t) => t.status === "demobilised").map((t) => String(t.profile_id)));
+  const aboardNow = new Set(((aboardRows ?? []) as Row[]).map((t) => String(t.profile_id)));
+  const personName = (p: unknown) => {
+    const r = (Array.isArray(p) ? p[0] : p) as { full_name?: string | null; email?: string | null } | null;
+    return r?.full_name || r?.email || "—";
+  };
+  const roster = ((rosterRows ?? []) as Row[]).map((r) => ({ id: String(r.profile_id), name: personName(r.profile) }));
+  const pickAshore = roster.filter((r) => !aboardNow.has(r.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const pickAboard = roster.filter((r) => aboardNow.has(r.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const confirmerIds = manifests.map((m) => m.confirmed_by).filter(Boolean) as string[];
+  const { data: confirmers } = confirmerIds.length
+    ? await admin.from("profiles").select("id, full_name, email").in("id", confirmerIds)
+    : { data: [] as Row[] };
+  const confirmerName = new Map(((confirmers ?? []) as Row[]).map((p) => [String(p.id), String(p.full_name || p.email || "—")]));
   const byDir = (a: Row, b: Row) => (a.direction === b.direction ? 0 : a.direction === "out" ? -1 : 1);
 
   const todays: TodayManifest[] = manifests
@@ -167,6 +208,11 @@ export async function getToday(admin: SupabaseClient, tenantId: string, today: s
       direction: m.direction as "out" | "in",
       transport: (m.transport_mode as string | null) ?? null,
       status: String(m.status),
+      moved: paxOf(String(m.id)).filter((p) =>
+        p.profile_id ? (m.direction === "out" ? cameToday : leftToday).has(String(p.profile_id)) : false,
+      ).length,
+      confirmedAt: (m.confirmed_at as string | null) ?? null,
+      confirmedBy: m.confirmed_by ? confirmerName.get(String(m.confirmed_by)) ?? null : null,
       pax: paxOf(String(m.id))
         .map((p) => ({
           id: String(p.id),
@@ -245,5 +291,5 @@ export async function getToday(admin: SupabaseClient, tenantId: string, today: s
     installation: (t.installation_id && instName.get(t.installation_id)) || "—",
   }));
 
-  return { today, tomorrow, moves, trips, visits, run, manifests: todays, arrivalsNeedingBeds, meals };
+  return { today, tomorrow, moves, trips, visits, run, manifests: todays, arrivalsNeedingBeds, meals, pickAshore, pickAboard };
 }

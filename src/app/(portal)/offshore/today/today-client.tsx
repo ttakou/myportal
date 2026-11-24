@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { decideMovementChange, setPaxBoarded, togglePaxNoShow } from "../actions";
-import type { TodayPax } from "@/lib/offshore/today-run";
+import { addRunTraveller, confirmRun, decideMovementChange, setPaxBoarded, togglePaxNoShow } from "../actions";
+import type { Pick, TodayPax } from "@/lib/offshore/today-run";
 
 /** Approve or reject a date change in place (the OIM's decision is final). */
 export function MoveDecision({ id, name }: { id: string; name: string }) {
@@ -104,7 +104,18 @@ export function PaxTicks({ pax, canTick }: { pax: TodayPax[]; canTick: boolean }
               <button
                 type="button"
                 disabled={pending}
-                onClick={() => update(p.id, { no_show: !p.no_show }, () => togglePaxNoShow(p.id, !p.no_show))}
+                onClick={() => {
+                  // On a run that has already moved people this changes POB, so say so.
+                  if (
+                    !p.no_show &&
+                    !window.confirm(
+                      `Mark ${p.name} as a no-show?\n\nIf the night run already moved them, POB is corrected now: ` +
+                        "an arrival who didn't come comes off board; a leaver who didn't go stays on board.",
+                    )
+                  )
+                    return;
+                  update(p.id, { no_show: !p.no_show }, () => togglePaxNoShow(p.id, !p.no_show));
+                }}
                 className={cn(
                   "rounded border px-1.5 py-0.5 text-[11px]",
                   p.no_show ? "border-destructive/40 text-destructive" : "text-muted-foreground hover:bg-accent",
@@ -116,6 +127,104 @@ export function PaxTicks({ pax, canTick }: { pax: TodayPax[]; canTick: boolean }
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * The run's real outcome: add someone who travelled but was not listed, and
+ * confirm the run once the boat or helicopter has gone.
+ */
+export function RunControls({
+  manifestId,
+  direction,
+  picks,
+  confirmed,
+}: {
+  manifestId: string;
+  direction: "out" | "in";
+  picks: Pick[];
+  confirmed: boolean;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [who, setWho] = useState("");
+  const listId = `run-picks-${manifestId}`;
+
+  const add = () => {
+    const person = picks.find((p) => p.name.toLowerCase() === who.trim().toLowerCase());
+    if (!person) {
+      setError(direction === "out" ? "Pick someone ashore from the list." : "Pick someone on board from the list.");
+      return;
+    }
+    const verb = direction === "out" ? "board them now (POB goes up)" : "send them home now (POB goes down)";
+    if (!window.confirm(`Add ${person.name} to this run and ${verb}?`)) return;
+    setError(null);
+    start(async () => {
+      const res = await addRunTraveller({ manifestId, profileId: person.id });
+      if (!res.ok) setError(res.error ?? "Could not add them.");
+      else {
+        setWho("");
+        router.refresh();
+      }
+    });
+  };
+
+  const confirm = () => {
+    if (
+      !window.confirm(
+        "Confirm this run? Everyone not marked no-show is recorded as having travelled, and the manifest is closed.",
+      )
+    )
+      return;
+    setError(null);
+    start(async () => {
+      const res = await confirmRun(manifestId);
+      if (!res.ok) setError(res.error ?? "Could not confirm.");
+      else {
+        setNote(res.warning ?? null);
+        router.refresh();
+      }
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2">
+      <input
+        list={listId}
+        value={who}
+        onChange={(e) => setWho(e.target.value)}
+        placeholder={direction === "out" ? "Someone not listed who travelled out…" : "Someone not listed who left…"}
+        className="min-w-[14rem] flex-1 rounded-md border bg-background px-2 py-1 text-sm"
+        disabled={pending}
+      />
+      <datalist id={listId}>
+        {picks.map((p) => (
+          <option key={p.id} value={p.name} />
+        ))}
+      </datalist>
+      <button
+        type="button"
+        disabled={pending || !who.trim()}
+        onClick={add}
+        className="rounded-md border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+      >
+        Add traveller
+      </button>
+      {!confirmed && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={confirm}
+          className="ml-auto inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90"
+        >
+          <Check className="h-3.5 w-3.5" /> Confirm run
+        </button>
+      )}
+      {error && <p className="w-full text-xs text-destructive">{error}</p>}
+      {note && <p className="w-full text-xs text-amber-700">{note}</p>}
     </div>
   );
 }
