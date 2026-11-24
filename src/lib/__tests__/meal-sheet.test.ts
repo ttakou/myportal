@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aboardOn, isCaterer, sheetOrder, startingMeals, syncMealSheet, type SheetTrip, type SheetVisit } from "@/lib/offshore/meal-sheet";
+import { aboardOn, isCaterer, sheetGroup, sheetOrder, startingMeals, syncMealSheet, type SheetTrip, type SheetVisit } from "@/lib/offshore/meal-sheet";
 
 const J = "juliet";
 const trip = (name: string, status: string, mob: string, demob: string | null, inst: string | null = null): SheetTrip => ({
@@ -10,16 +10,23 @@ const visit = (name: string, status: string, dep: string, ret: string | null, in
 });
 
 describe("who is on a day's meal sheet", () => {
-  it("follows POB: on board from arrival, gone once demobilised", () => {
-    const names = aboardOn("2026-11-22", J, [
+  it("follows POB, with that day's arrivals and leavers marked", () => {
+    const list = aboardOn("2026-11-22", J, [
       trip("Arrived today", "onboard", "2026-11-22", "2026-12-13"),
-      trip("Overdue but aboard", "onboard", "2026-10-01", "2026-11-20"),
+      trip("Overdue but aboard", "onboard", "2026-10-01", "2026-11-22"),
       trip("Left today", "demobilised", "2026-11-03", "2026-11-22"),
+      trip("Left yesterday", "demobilised", "2026-11-01", "2026-11-21"),
       trip("Not yet", "onboard", "2026-11-23", null),
       trip("Other rig", "onboard", "2026-11-01", null, "rig"),
       trip("Juliet", "onboard", "2026-11-01", null, J),
-    ], []).map((p) => p.name);
-    expect(names).toEqual(["Arrived today", "Overdue but aboard", "Juliet"]);
+    ], []);
+    expect(list.map((p) => [p.name, p.movement])).toEqual([
+      ["Arrived today", "arrival"],
+      // Still marked on board past their date: staying, not leaving.
+      ["Overdue but aboard", null],
+      ["Left today", "departure"],
+      ["Juliet", null],
+    ]);
   });
 
   it("rebuilds a past day with the people who have left since", () => {
@@ -34,8 +41,8 @@ describe("who is on a day's meal sheet", () => {
       visit("Back tomorrow", "returned", "2026-11-18", "2026-11-23"),
     ]);
     expect(list).toEqual([
-      { name: "Day visit", category: "visitor" },
-      { name: "Back tomorrow", category: "visitor" },
+      { name: "Day visit", category: "visitor", movement: "day" },
+      { name: "Back tomorrow", category: "visitor", movement: null },
     ]);
   });
 });
@@ -50,7 +57,48 @@ describe("bringing a saved sheet in line with POB", () => {
       ],
       [{ name: "Stays", category: "staff" }, { name: "New", category: "staff" }],
     );
-    expect(res).toEqual({ add: [{ name: "New", category: "staff" }], removeIds: ["2"], toCaterer: [] });
+    expect(res).toEqual({ add: [{ name: "New", category: "staff" }], removeIds: ["2"], toCaterer: [], remark: [] });
+  });
+
+  it("re-marks someone whose day changed: a postponed leaver is staying again", () => {
+    const res = syncMealSheet(
+      [
+        { id: "1", person_name: "Was leaving", category: "staff", movement: "departure" },
+        { id: "2", person_name: "Made ahead", category: "staff", movement: null },
+        { id: "3", person_name: "Unchanged", category: "staff", movement: "arrival" },
+      ],
+      [
+        { name: "Was leaving", category: "staff", movement: null },
+        { name: "Made ahead", category: "staff", movement: "departure" },
+        { name: "Unchanged", category: "staff", movement: "arrival" },
+      ],
+    );
+    expect(res.remark).toEqual([
+      { id: "1", category: "staff", movement: null },
+      { id: "2", category: "staff", movement: "departure" },
+    ]);
+  });
+});
+
+describe("crew-change day ticks", () => {
+  it("arrivals: snack, lunch, dinner and a bed; leavers: breakfast, snack and lunch", () => {
+    expect(startingMeals("staff", "arrival")).toEqual({ breakfast: false, snack: true, lunch: true, dinner: true, lodging: true });
+    expect(startingMeals("staff", "departure")).toEqual({ breakfast: true, snack: true, lunch: true, dinner: false, lodging: false });
+    expect(startingMeals("visitor", "day")).toEqual({ breakfast: false, snack: true, lunch: true, dinner: false, lodging: false });
+    expect(startingMeals("staff")).toEqual({ breakfast: true, snack: true, lunch: true, dinner: true, lodging: true });
+    expect(startingMeals("caterer", "arrival").lunch).toBe(false);
+  });
+
+  it("lists arrivals, then leavers, then everyone staying, the caterer's staff last", () => {
+    const order = sheetOrder([
+      { category: "staff", person_name: "Aaron", movement: null },
+      { category: "caterer", person_name: "Cook", movement: "arrival" },
+      { category: "staff", person_name: "Zed", movement: "departure" },
+      { category: "visitor", person_name: "Yan", movement: "arrival" },
+      { category: "staff", person_name: "Xavier", movement: "arrival" },
+    ]).map((r) => r.person_name);
+    expect(order).toEqual(["Xavier", "Yan", "Zed", "Aaron", "Cook"]);
+    expect(sheetGroup({ category: "caterer", movement: "arrival" })).toBe("caterer");
   });
 });
 
@@ -68,8 +116,8 @@ describe("the caterer's own staff", () => {
       trip("Operator", "onboard", "2026-11-10", null),
     ], []);
     expect(people).toEqual([
-      { name: "Cook", category: "caterer" },
-      { name: "Operator", category: "staff" },
+      { name: "Cook", category: "caterer", movement: null },
+      { name: "Operator", category: "staff", movement: null },
     ]);
     expect(startingMeals("caterer")).toEqual({ breakfast: false, snack: false, lunch: false, dinner: false, lodging: false });
     expect(startingMeals("staff").lunch).toBe(true);
@@ -84,6 +132,6 @@ describe("the caterer's own staff", () => {
 
   it("moves a caterer saved earlier as staff into their group", () => {
     const res = syncMealSheet([{ id: "9", person_name: "Cook", category: "staff" }], [{ name: "Cook", category: "caterer" }]);
-    expect(res).toEqual({ add: [], removeIds: [], toCaterer: ["9"] });
+    expect(res).toEqual({ add: [], removeIds: [], toCaterer: ["9"], remark: [] });
   });
 });

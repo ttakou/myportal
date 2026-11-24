@@ -14,6 +14,7 @@ import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
 import { MUSTER_OUTCOME_LABEL } from "@/lib/offshore/muster-closeout";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { siteToday } from "@/lib/offshore/manifest-order";
+import { MOVEMENT_LABEL } from "@/lib/offshore/meal-sheet";
 import { getMonthlyReport } from "@/lib/offshore/monthly-report-run";
 import { canOpenMonthlyReport } from "@/lib/offshore/report-access";
 import { tenantId } from "../(portal)/offshore/_actions/_shared";
@@ -113,13 +114,14 @@ export async function GET(req: NextRequest) {
     const installationId = sp.get("installation") || "";
     const entries = installationId ? await getMealSheet(installationId, date) : [];
     const rows: (string | number | null)[][] = [
-      ["Name", "Category", "Breakfast", "Snack", "Lunch", "Dinner", "Lodging"],
+      ["Name", "Category", "Movement", "Breakfast", "Snack", "Lunch", "Dinner", "Lodging"],
     ];
     const yn = (b: boolean) => (b ? "Y" : "N");
     for (const e of entries) {
       rows.push([
         e.person_name,
         MEAL_CATEGORY_LABEL[e.category as keyof typeof MEAL_CATEGORY_LABEL] ?? e.category,
+        e.movement ? MOVEMENT_LABEL[e.movement] : "",
         yn(e.breakfast),
         yn(e.snack),
         yn(e.lunch),

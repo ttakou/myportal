@@ -11,9 +11,9 @@ export async function getMealSheet(
   const supabase = createClient();
   const { data } = await supabase
     .from("offshore_meal_entries")
-    .select("id, person_name, category, breakfast, snack, lunch, dinner, lodging")
+    .select("id, person_name, category, movement, breakfast, snack, lunch, dinner, lodging")
     .eq("installation_id", installationId)
     .eq("meal_date", date);
-  // Staff, visitors, casual diners, then the caterer's own staff — each by name.
+  // Arriving, leaving, then staff, visitors, casual diners; the caterer's own staff last.
   return sheetOrder((data ?? []) as MealEntry[]);
 }
