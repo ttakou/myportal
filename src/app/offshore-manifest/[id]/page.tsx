@@ -23,8 +23,8 @@ export default async function ManifestReportPage({
     return <p className="p-8 text-sm text-muted-foreground">Manifest not found.</p>;
   }
 
+  // Only the people who travel: no-shows are left off the manifest.
   const travelling = m.pax.filter((p) => !p.no_show);
-  const noShow = m.pax.filter((p) => p.no_show);
   // Derived from the columns: the stored title contradicts the data on some rows.
   const desc = manifestDescriptor(m);
 
@@ -66,7 +66,6 @@ export default async function ManifestReportPage({
           <Cell label="Crew" value={m.crew_name ?? "—"} />
           <Cell label="Seats" value={String(m.seat_capacity)} />
           <Cell label="Travelling" value={String(travelling.length)} />
-          <Cell label="No-show" value={String(noShow.length)} />
         </div>
 
         {/* Passenger table */}
@@ -95,18 +94,7 @@ export default async function ManifestReportPage({
                 <td className="border-l border-gray-200 px-2 py-1.5" />
               </tr>
             ))}
-            {noShow.map((p, i) => (
-              <tr key={p.id} className="border-b border-gray-200 text-gray-400 line-through">
-                <td className="px-2 py-1.5 tabular-nums">{travelling.length + i + 1}</td>
-                <td className="px-2 py-1.5">{p.person_name}</td>
-                <td className="px-2 py-1.5">{p.position ?? "—"}</td>
-                <td className="px-2 py-1.5">No-show</td>
-                <td className="px-2 py-1.5">{p.issues.length ? p.issues.join(", ") : ""}</td>
-                <td className="border-l border-gray-200 px-2 py-1.5" />
-                <td className="border-l border-gray-200 px-2 py-1.5" />
-              </tr>
-            ))}
-            {m.pax.length === 0 && (
+            {travelling.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-2 py-4 text-center text-gray-400">No passengers.</td>
               </tr>

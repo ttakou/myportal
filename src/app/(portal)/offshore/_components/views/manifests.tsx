@@ -665,6 +665,8 @@ function ManifestCard({
   run: (fn: () => Promise<{ ok: boolean; error?: string }>, onOk?: () => void) => void;
 }) {
   const travelling = m.pax.filter((p) => !p.no_show);
+  const noShows = m.pax.length - travelling.length;
+  const [showNoShows, setShowNoShows] = useState(false);
   const overCapacity = travelling.length > m.seat_capacity;
   const issues = travelling.filter((p) => p.issues.length > 0).length;
   const editable = m.status === "draft" || m.status === "approved";
@@ -808,7 +810,8 @@ function ManifestCard({
       </p>
 
       <div className="mt-2 space-y-1">
-        {m.pax.map((p) => (
+        {/* Only the people who travel; no-shows are folded below, only so a mistake can be undone. */}
+        {[...travelling, ...(showNoShows ? m.pax.filter((p) => p.no_show) : [])].map((p) => (
           <div
             key={p.id}
             className={cn(
@@ -831,7 +834,7 @@ function ManifestCard({
                   onClick={() => run(() => togglePaxNoShow(p.id, !p.no_show))}
                   className="rounded border px-1.5 py-0.5 text-[11px] hover:bg-accent"
                 >
-                  {p.no_show ? "Travelling" : "No-show"}
+                  {p.no_show ? "Put back on the run" : "No-show"}
                 </button>
                 <button
                   disabled={pending}
@@ -860,7 +863,16 @@ function ManifestCard({
             )}
           </div>
         ))}
-        {m.pax.length === 0 && <p className="text-xs text-muted-foreground">No passengers.</p>}
+        {travelling.length === 0 && <p className="text-xs text-muted-foreground">No passengers.</p>}
+        {noShows > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowNoShows((v) => !v)}
+            className="text-xs text-destructive hover:underline"
+          >
+            {showNoShows ? "Hide" : "Show"} {noShows} no-show{noShows === 1 ? "" : "s"} (not on the manifest)
+          </button>
+        )}
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2">

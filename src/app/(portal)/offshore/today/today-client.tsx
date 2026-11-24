@@ -74,60 +74,74 @@ export function PaxTicks({ pax, canTick }: { pax: TodayPax[]; canTick: boolean }
     });
   };
 
+  const [showMissing, setShowMissing] = useState(false);
   if (rows.length === 0) return <p className="px-3 py-2 text-xs text-muted-foreground">Nobody on this manifest.</p>;
+  const going = rows.filter((p) => !p.no_show);
+  const away = rows.filter((p) => p.no_show);
+
+  const row = (p: TodayPax) => (
+    <li key={p.id} className={cn("flex items-center gap-2 px-3 py-1.5 text-sm", p.no_show && "opacity-60")}>
+      <label className="flex flex-1 cursor-pointer items-center gap-2">
+        {!p.no_show && (
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={p.boarded}
+            disabled={!canTick || pending}
+            onChange={(e) => update(p.id, { boarded: e.target.checked }, () => setPaxBoarded(p.id, e.target.checked))}
+          />
+        )}
+        <span className={cn("font-medium", p.no_show && "line-through")}>{p.name}</span>
+        {p.visitor && <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">visitor</span>}
+        {p.position && <span className="truncate text-xs text-muted-foreground">{p.position}</span>}
+      </label>
+      {canTick && !p.boarded && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            // On a run that has already moved people this changes POB, so say so.
+            if (
+              !p.no_show &&
+              !window.confirm(
+                `Mark ${p.name} as a no-show?\n\nThey come off this manifest. If the night run already moved them, POB is corrected now: ` +
+                  "an arrival who didn't come comes off board; a leaver who didn't go stays on board.",
+              )
+            )
+              return;
+            update(p.id, { no_show: !p.no_show }, () => togglePaxNoShow(p.id, !p.no_show));
+          }}
+          className={cn(
+            "rounded border px-1.5 py-0.5 text-[11px]",
+            p.no_show ? "hover:bg-accent" : "text-muted-foreground hover:bg-accent",
+          )}
+        >
+          {p.no_show ? "Put back on the run" : "No-show"}
+        </button>
+      )}
+    </li>
+  );
+
   return (
     <div>
       <p className="px-3 py-1.5 text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground">{done}</span> of {rows.length} ticked
-        {missing > 0 && <span className="text-destructive"> · {missing} no-show</span>}
+        <span className="font-semibold text-foreground">{done}</span> of {going.length} travelling ticked
         {error && <span className="ml-2 text-destructive">{error}</span>}
       </p>
-      <ul className="divide-y">
-        {rows.map((p) => (
-          <li key={p.id} className={cn("flex items-center gap-2 px-3 py-1.5 text-sm", p.no_show && "opacity-60")}>
-            <label className="flex flex-1 cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={p.boarded}
-                disabled={!canTick || pending}
-                onChange={(e) =>
-                  update(p.id, { boarded: e.target.checked, no_show: e.target.checked ? false : p.no_show }, () =>
-                    setPaxBoarded(p.id, e.target.checked),
-                  )
-                }
-              />
-              <span className={cn("font-medium", p.no_show && "line-through")}>{p.name}</span>
-              {p.visitor && <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">visitor</span>}
-              {p.position && <span className="truncate text-xs text-muted-foreground">{p.position}</span>}
-            </label>
-            {canTick && !p.boarded && (
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  // On a run that has already moved people this changes POB, so say so.
-                  if (
-                    !p.no_show &&
-                    !window.confirm(
-                      `Mark ${p.name} as a no-show?\n\nIf the night run already moved them, POB is corrected now: ` +
-                        "an arrival who didn't come comes off board; a leaver who didn't go stays on board.",
-                    )
-                  )
-                    return;
-                  update(p.id, { no_show: !p.no_show }, () => togglePaxNoShow(p.id, !p.no_show));
-                }}
-                className={cn(
-                  "rounded border px-1.5 py-0.5 text-[11px]",
-                  p.no_show ? "border-destructive/40 text-destructive" : "text-muted-foreground hover:bg-accent",
-                )}
-              >
-                {p.no_show ? "No-show ✓" : "No-show"}
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+      <ul className="divide-y">{going.map(row)}</ul>
+      {/* No-shows are off the manifest; kept here, folded, only so a mistake can be undone. */}
+      {away.length > 0 && (
+        <div className="border-t">
+          <button
+            type="button"
+            onClick={() => setShowMissing((s) => !s)}
+            className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-accent"
+          >
+            {showMissing ? "Hide" : "Show"} {missing} no-show{missing === 1 ? "" : "s"} (not on the manifest)
+          </button>
+          {showMissing && <ul className="divide-y bg-muted/30">{away.map(row)}</ul>}
+        </div>
+      )}
     </div>
   );
 }

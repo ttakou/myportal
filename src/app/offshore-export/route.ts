@@ -160,9 +160,10 @@ export async function GET(req: NextRequest) {
       [],
       ["#", "Name", "Position", "Status", "Remarks"],
     ];
-    m.pax.forEach((p, i) =>
-      rows.push([i + 1, p.person_name, p.position, p.no_show ? "No-show" : p.boarded ? "Boarded" : "Booked", p.issues.join("; ")]),
-    );
+    // Only the people who travel; no-shows are left off the manifest.
+    m.pax
+      .filter((p) => !p.no_show)
+      .forEach((p, i) => rows.push([i + 1, p.person_name, p.position, p.boarded ? "Boarded" : "Booked", p.issues.join("; ")]));
     return csvResponse(`manifest-${m.scheduled_date}.csv`, rows);
   }
 
