@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SearchSelect } from "@/components/ui/search-select";
 import { addRunTraveller, confirmRun, decideMovementChange, postponeRun, setPaxBoarded, togglePaxNoShow } from "../actions";
 import type { Pick, TodayPax } from "@/lib/offshore/today-run";
 
@@ -150,11 +151,10 @@ export function RunControls({
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [who, setWho] = useState("");
-  const listId = `run-picks-${manifestId}`;
+  const [whoId, setWhoId] = useState<string | null>(null);
 
   const add = () => {
-    const person = picks.find((p) => p.name.toLowerCase() === who.trim().toLowerCase());
+    const person = picks.find((p) => p.id === whoId);
     if (!person) {
       setError(direction === "out" ? "Pick someone ashore from the list." : "Pick someone on board from the list.");
       return;
@@ -166,7 +166,7 @@ export function RunControls({
       const res = await addRunTraveller({ manifestId, profileId: person.id });
       if (!res.ok) setError(res.error ?? "Could not add them.");
       else {
-        setWho("");
+        setWhoId(null);
         router.refresh();
       }
     });
@@ -212,22 +212,27 @@ export function RunControls({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2">
-      <input
-        list={listId}
-        value={who}
-        onChange={(e) => setWho(e.target.value)}
-        placeholder={direction === "out" ? "Someone not listed who travelled out…" : "Someone not listed who left…"}
-        className="min-w-[14rem] flex-1 rounded-md border bg-background px-2 py-1 text-sm"
-        disabled={pending}
+      {/* Search the people list: ashore for a MOB run, on board for a DEMOB run. */}
+      <SearchSelect
+        value={whoId}
+        options={picks}
+        getOptionValue={(p) => p.id}
+        getOptionLabel={(p) => p.name}
+        placeholder={
+          picks.length === 0
+            ? "Nobody to add"
+            : direction === "out"
+              ? `Search ${picks.length} people ashore who travelled out…`
+              : `Search ${picks.length} people on board who left…`
+        }
+        disabled={pending || picks.length === 0}
+        wrapperClassName="min-w-[14rem] flex-1"
+        className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+        onChange={setWhoId}
       />
-      <datalist id={listId}>
-        {picks.map((p) => (
-          <option key={p.id} value={p.name} />
-        ))}
-      </datalist>
       <button
         type="button"
-        disabled={pending || !who.trim()}
+        disabled={pending || !whoId}
         onClick={add}
         className="rounded-md border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
       >
