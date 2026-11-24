@@ -559,6 +559,8 @@ export interface MealEntry {
   person_name: string;
   /** "caterer": the catering contractor's own staff (Pellegrini), listed last, unticked. */
   category: "staff" | "visitor" | "casual" | "caterer";
+  /** Crew-change day: arriving (MOB), leaving (DEMOB), in and out; null when staying. */
+  movement: "arrival" | "departure" | "day" | null;
   breakfast: boolean;
   snack: boolean;
   lunch: boolean;

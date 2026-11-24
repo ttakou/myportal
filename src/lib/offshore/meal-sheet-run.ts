@@ -1,11 +1,17 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { aboardOn, startingMeals, syncMealSheet, type SavedEntry } from "./meal-sheet";
+import { siteToday } from "./manifest-order";
 
 /**
  * Generate (or bring up to date) one installation's meal sheet for a day,
  * from POB. Used by the catering desk's button and by the nightly job, so
  * every read names the tenant: the job runs on the service role.
+ *
+ * Arrivals and leavers that day are marked and start with their day's ticks.
+ * When someone's day changes after the sheet was made (run postponed, a
+ * no-show), their row is re-marked and, for today or later, re-ticked; a
+ * past day keeps the canteen's ticks and only gets the new mark.
  */
 export async function buildMealSheet(
   client: SupabaseClient,
@@ -32,7 +38,7 @@ export async function buildMealSheet(
         .lte("depart_date", date),
       client
         .from("offshore_meal_entries")
-        .select("id, person_name, category")
+        .select("id, person_name, category, movement")
         .eq("tenant_id", tenantId)
         .eq("installation_id", installationId)
         .eq("meal_date", date),
@@ -66,7 +72,7 @@ export async function buildMealSheet(
   );
   if (aboard.length === 0 && (saved ?? []).length === 0) return { ok: false, error: "No one is on board for that date yet." };
 
-  const { add, removeIds, toCaterer } = syncMealSheet((saved ?? []) as SavedEntry[], aboard);
+  const { add, removeIds, toCaterer, remark } = syncMealSheet((saved ?? []) as SavedEntry[], aboard);
   if (removeIds.length) {
     const { error } = await client.from("offshore_meal_entries").delete().in("id", removeIds);
     if (error) return { ok: false, error: error.message };
@@ -78,6 +84,14 @@ export async function buildMealSheet(
       .in("id", toCaterer);
     if (error) return { ok: false, error: error.message };
   }
+  const reTick = date >= siteToday();
+  for (const r of remark) {
+    const { error } = await client
+      .from("offshore_meal_entries")
+      .update({ movement: r.movement, ...(reTick ? startingMeals(r.category, r.movement) : {}) })
+      .eq("id", r.id);
+    if (error) return { ok: false, error: error.message };
+  }
   if (add.length) {
     const rows = add.map((p) => ({
       tenant_id: tenantId,
@@ -85,7 +99,8 @@ export async function buildMealSheet(
       meal_date: date,
       person_name: p.name,
       category: p.category,
-      ...startingMeals(p.category),
+      movement: p.movement ?? null,
+      ...startingMeals(p.category, p.movement ?? null),
     }));
     const { error } = await client
       .from("offshore_meal_entries")
@@ -93,4 +108,26 @@ export async function buildMealSheet(
     if (error) return { ok: false, error: error.message };
   }
   return { ok: true, added: add.length, removed: removeIds.length, total: (saved?.length ?? 0) + add.length - removeIds.length };
+}
+
+/**
+ * Bring a day's saved sheets back in line after POB changed during the day
+ * (a no-show, a traveller added, a run postponed). Only installations that
+ * already have a sheet for that day; never fails the caller.
+ */
+export async function resyncDaySheets(client: SupabaseClient, tenantId: string, date: string): Promise<void> {
+  try {
+    const { data } = await client
+      .from("offshore_meal_entries")
+      .select("installation_id")
+      .eq("tenant_id", tenantId)
+      .eq("meal_date", date);
+    const insts = new Set(((data ?? []) as { installation_id: string }[]).map((r) => r.installation_id));
+    for (const inst of insts) {
+      const res = await buildMealSheet(client, tenantId, inst, date);
+      if (!res.ok) console.error(`meal sheet resync ${inst} ${date}: ${res.error}`);
+    }
+  } catch (e) {
+    console.error("meal sheet resync failed:", (e as Error).message);
+  }
 }

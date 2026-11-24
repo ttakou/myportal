@@ -13,6 +13,7 @@ import { postponedKind } from "@/lib/offshore/movement-change";
 import { nextDay } from "@/lib/offshore/today";
 import { closeNotices } from "@/lib/notify";
 import { runConfirmRef } from "@/lib/offshore/run-reminders";
+import { resyncDaySheets } from "@/lib/offshore/meal-sheet-run";
 import { requireOffshoreDispatch, rev, tenantId } from "./_shared";
 
 /**
@@ -27,6 +28,13 @@ const refresh = () => {
   rev();
   revalidatePath("/offshore/today");
 };
+
+/** POB changed on a run's day: today's meal sheet follows (arrivals off, leavers back with dinner and a bed). */
+async function mealsFollow(tenant: string | null | undefined, day: string) {
+  const admin = createAdminClient();
+  if (!tenant || !admin || day !== siteToday()) return;
+  await resyncDaySheets(admin, tenant, day);
+}
 
 async function loadManifest(supabase: ReturnType<typeof createClient>, id: string) {
   const { data } = await supabase
@@ -119,6 +127,7 @@ export async function setRunNoShow(paxId: string, noShow: boolean): Promise<Acti
     .update(noShow ? { no_show: true, boarded: false } : { no_show: false })
     .eq("id", paxId);
   if (error) return { ok: false, error: error.message };
+  await mealsFollow(m.tenant_id as string, day);
   refresh();
   return { ok: true };
 }
@@ -245,6 +254,7 @@ export async function confirmRun(
     .eq("id", manifestId);
   if (error) return { ok: false, error: error.message };
   await closeNotices(String(m.tenant_id), [runConfirmRef(manifestId)]);
+  await mealsFollow(m.tenant_id as string, day);
   refresh();
   return {
     ok: true,
@@ -304,6 +314,7 @@ export async function addRunTraveller(input: { manifestId: string; profileId: st
     boarded: moveNow,
   });
   if (error) return { ok: false, error: error.message };
+  await mealsFollow(m.tenant_id as string, day);
   refresh();
   return { ok: true };
 }
@@ -427,6 +438,7 @@ export async function postponeRun(manifestId: string): Promise<ActionResult & { 
     .eq("id", manifestId);
   if (error) return { ok: false, error: error.message };
   await closeNotices(tenant, [runConfirmRef(manifestId)]);
+  await mealsFollow(m.tenant_id as string, day);
   refresh();
   return { ok: true, postponed, to };
 }

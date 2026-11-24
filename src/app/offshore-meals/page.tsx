@@ -1,7 +1,10 @@
 import { getAccess } from "@/lib/auth";
 import { getMealSheet, getAllInstallations } from "@/lib/offshore";
 import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
+import { Fragment } from "react";
 import { MEAL_CATEGORY_LABEL, MEAL_LABEL } from "@/types/offshore";
+import { sheetGroup } from "@/lib/offshore/meal-sheet";
+import { groupCounts, groupHeading, MovementBadge, rowEdge } from "@/app/(portal)/offshore/_components/meal-movement";
 import { ReportHeader, ReportStampFooter } from "@/components/ui/report-letterhead";
 import { PrintButton } from "../offshore-manifest/[id]/print-button";
 
@@ -33,10 +36,13 @@ export default async function MealSheetReportPage({
   const count = (key: "breakfast" | "snack" | "lunch" | "dinner" | "lodging") =>
     entries.filter((e) => e[key]).length;
   const tick = (on: boolean) => (on ? "✓" : "—");
+  const { counts, grouped } = groupCounts(entries);
+  const arriving = counts.get("arrival") ?? 0;
+  const leaving = counts.get("departure") ?? 0;
 
   return (
     <div className="bg-gray-100 p-6 print:bg-white print:p-0">
-      <style>{`@media print { @page { size: A4 portrait; margin: 12mm; } }`}</style>
+      <style>{`@media print { @page { size: A4 portrait; margin: 12mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>
 
       <div className="mx-auto mb-3 flex max-w-[900px] items-center gap-2 print:hidden">
         <PrintButton />
@@ -52,7 +58,11 @@ export default async function MealSheetReportPage({
         <ReportHeader
           title={label.title}
           subtitle={label.subtitle}
-          meta={[`${entries.length} person(s)`, `Lodging ${count("lodging")}`]}
+          meta={[
+            `${entries.length} person(s)`,
+            ...(arriving || leaving ? [`${arriving} arriving (MOB) · ${leaving} leaving (DEMOB)`] : []),
+            `Lodging ${count("lodging")}`,
+          ]}
         />
 
         {entries.length === 0 ? (
@@ -84,18 +94,34 @@ export default async function MealSheetReportPage({
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e, i) => (
-                  <tr key={e.id} className="border-b border-gray-200">
-                    <td className="px-2 py-1.5 tabular-nums text-gray-500">{i + 1}</td>
-                    <td className="px-2 py-1.5 font-medium">{e.person_name}</td>
-                    <td className="px-2 py-1.5 text-gray-600">{MEAL_CATEGORY_LABEL[e.category] ?? e.category}</td>
-                    {(["breakfast", "snack", "lunch", "dinner", "lodging"] as const).map((k) => (
-                      <td key={k} className="px-2 py-1.5 text-center">
-                        {tick(e[k])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {entries.map((e, i) => {
+                  const g = sheetGroup(e);
+                  const heading = grouped && (i === 0 || sheetGroup(entries[i - 1]) !== g) ? groupHeading(g, counts.get(g) ?? 0) : null;
+                  return (
+                    <Fragment key={e.id}>
+                      {heading && (
+                        <tr className={`border-b border-gray-300 ${heading.className}`}>
+                          <td colSpan={8} className="px-2 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wide">
+                            {heading.text}
+                          </td>
+                        </tr>
+                      )}
+                      <tr className={`border-b border-gray-200 ${rowEdge(e.movement)}`}>
+                        <td className="px-2 py-1.5 tabular-nums text-gray-500">{i + 1}</td>
+                        <td className="px-2 py-1.5 font-medium">
+                          {e.person_name}
+                          <MovementBadge movement={e.movement} />
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-600">{MEAL_CATEGORY_LABEL[e.category] ?? e.category}</td>
+                        {(["breakfast", "snack", "lunch", "dinner", "lodging"] as const).map((k) => (
+                          <td key={k} className="px-2 py-1.5 text-center">
+                            {tick(e[k])}
+                          </td>
+                        ))}
+                      </tr>
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </>

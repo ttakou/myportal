@@ -1762,6 +1762,7 @@ export type Database = {
           lodging: boolean
           lunch: boolean
           meal_date: string
+          movement: string | null
           person_name: string
           snack: boolean
           tenant_id: string
@@ -1777,6 +1778,7 @@ export type Database = {
           lodging?: boolean
           lunch?: boolean
           meal_date: string
+          movement?: string | null
           person_name: string
           snack?: boolean
           tenant_id: string
@@ -1792,6 +1794,7 @@ export type Database = {
           lodging?: boolean
           lunch?: boolean
           meal_date?: string
+          movement?: string | null
           person_name?: string
           snack?: boolean
           tenant_id?: string

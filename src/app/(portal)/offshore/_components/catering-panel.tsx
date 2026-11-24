@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useStatusTransition } from "@/components/activity";
 import { Download, FileText, Trash2, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mealSheetLabel } from "@/lib/offshore/meal-sheet-label";
+import { MOVEMENT_LABEL, sheetGroup } from "@/lib/offshore/meal-sheet";
+import { groupCounts, groupHeading, MovementBadge, rowEdge } from "./meal-movement";
 import { Button } from "@/components/ui/button";
 import type { Installation } from "@/types/offshore";
 import { MEAL_CATEGORY_LABEL, MEAL_LABEL, MEAL_TIME, type MealEntry, type MealKind } from "@/types/offshore";
@@ -70,15 +72,20 @@ export function CateringPanel({ installations }: { installations: Installation[]
     {} as Record<MealKind, number>,
   );
 
+  const { counts, grouped } = groupCounts(entries);
+  const arriving = counts.get("arrival") ?? 0;
+  const leaving = counts.get("departure") ?? 0;
+
   function exportCsv() {
-    const head = ["No", "Name", "Category", ...MEALS.map((m) => MEAL_LABEL[m])];
+    const head = ["No", "Name", "Category", "Movement", ...MEALS.map((m) => MEAL_LABEL[m])];
     const body = entries.map((e, i) => [
       String(i + 1),
       e.person_name,
       MEAL_CATEGORY_LABEL[e.category] ?? e.category,
+      e.movement ? MOVEMENT_LABEL[e.movement] : "",
       ...MEALS.map((m) => (e[m] ? "1" : "")),
     ]);
-    body.push(["", "TOTAL", "", ...MEALS.map((m) => String(totals[m]))]);
+    body.push(["", "TOTAL", "", "", ...MEALS.map((m) => String(totals[m]))]);
     const csv = [head, ...body]
       .map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(","))
       .join("\r\n");
@@ -100,9 +107,19 @@ export function CateringPanel({ installations }: { installations: Installation[]
       <p className="text-xs text-muted-foreground">
         Breakfast {MEAL_TIME.breakfast} · Snack {MEAL_TIME.snack} · Lunch {MEAL_TIME.lunch} · Dinner{" "}
         {MEAL_TIME.dinner}. Generated from POB every night (and with the button) with every meal ticked —
-        untick what was not served. Pellegrini (catering) staff come last with nothing ticked. Generating
+        untick what was not served. On a crew-change day, people arriving (MOB) and leaving (DEMOB) are
+        listed first, in their own groups: arrivals start with snack, lunch, dinner and a bed; leavers with
+        breakfast, snack and lunch. Pellegrini (catering) staff come last with nothing ticked. Generating
         again adds whoever has boarded since and removes whoever has left, keeping your ticks.
       </p>
+
+      {(arriving > 0 || leaving > 0) && (
+        <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+          Crew change on this day:
+          <span className="rounded border border-green-300 bg-green-50 px-2 py-0.5 text-green-800">{arriving} arriving (MOB)</span>
+          <span className="rounded border border-orange-300 bg-orange-50 px-2 py-0.5 text-orange-800">{leaving} leaving (DEMOB)</span>
+        </p>
+      )}
 
       <div className="flex flex-wrap items-end gap-2">
         <select value={installationId} onChange={(e) => setInstallationId(e.target.value)} className={field}>
@@ -148,36 +165,50 @@ export function CateringPanel({ installations }: { installations: Installation[]
             </tr>
           </thead>
           <tbody className="divide-y">
-            {entries.map((e, i) => (
-              <tr key={e.id} className={cn(e.category === "casual" && "bg-amber-50/50", e.category === "caterer" && "bg-muted/40")}>
-                <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
-                <td className="px-3 py-1.5">
-                  {e.person_name}
-                  {e.category !== "staff" && (
-                    <span className="ml-1 rounded bg-muted px-1 text-[10px] text-muted-foreground">{MEAL_CATEGORY_LABEL[e.category] ?? e.category}</span>
+            {entries.map((e, i) => {
+              const g = sheetGroup(e);
+              const heading = grouped && (i === 0 || sheetGroup(entries[i - 1]) !== g) ? groupHeading(g, counts.get(g) ?? 0) : null;
+              return (
+                <Fragment key={e.id}>
+                  {heading && (
+                    <tr className={heading.className}>
+                      <td colSpan={MEALS.length + 3} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide">
+                        {heading.text}
+                      </td>
+                    </tr>
                   )}
-                </td>
-                {MEALS.map((m) => (
-                  <td key={m} className="px-3 py-1.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={e[m]}
-                      disabled={pending}
-                      onChange={() => toggle(e, m)}
-                    />
-                  </td>
-                ))}
-                <td className="px-2 py-1.5 text-right">
-                  <button
-                    disabled={pending}
-                    onClick={() => run(() => removeMealEntry(e.id))}
-                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  <tr className={cn(rowEdge(e.movement), e.category === "casual" && "bg-amber-50/50", e.category === "caterer" && "bg-muted/40")}>
+                    <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
+                    <td className="px-3 py-1.5">
+                      {e.person_name}
+                      <MovementBadge movement={e.movement} />
+                      {e.category !== "staff" && (
+                        <span className="ml-1 rounded bg-muted px-1 text-[10px] text-muted-foreground">{MEAL_CATEGORY_LABEL[e.category] ?? e.category}</span>
+                      )}
+                    </td>
+                    {MEALS.map((m) => (
+                      <td key={m} className="px-3 py-1.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={e[m]}
+                          disabled={pending}
+                          onChange={() => toggle(e, m)}
+                        />
+                      </td>
+                    ))}
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        disabled={pending}
+                        onClick={() => run(() => removeMealEntry(e.id))}
+                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                </Fragment>
+              );
+            })}
             {entries.length === 0 && (
               <tr>
                 <td colSpan={MEALS.length + 3} className="px-3 py-6 text-center text-muted-foreground">
