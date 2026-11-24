@@ -156,17 +156,19 @@ export function RunControls({
   const add = () => {
     const person = picks.find((p) => p.id === whoId);
     if (!person) {
-      setError(direction === "out" ? "Pick someone ashore from the list." : "Pick someone on board from the list.");
+      setError("Pick someone from the list.");
       return;
     }
-    const verb = direction === "out" ? "board them now (POB goes up)" : "send them home now (POB goes down)";
-    if (!window.confirm(`Add ${person.name} to this run and ${verb}?`)) return;
+    const verb = direction === "out" ? "board them (POB goes up if they weren't in it)" : "send them home (POB goes down if they were in it)";
+    if (!window.confirm(`Add ${person.label} to this run and ${verb}?`)) return;
     setError(null);
+    setNote(null);
     start(async () => {
-      const res = await addRunTraveller({ manifestId, profileId: person.id });
+      const res = await addRunTraveller({ manifestId, pick: person.id });
       if (!res.ok) setError(res.error ?? "Could not add them.");
       else {
         setWhoId(null);
+        setNote(res.warning ?? null);
         router.refresh();
       }
     });
@@ -212,18 +214,18 @@ export function RunControls({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2">
-      {/* Search the people list: ashore for a MOB run, on board for a DEMOB run. */}
+      {/* Everyone in the people database and every registered visitor; each says where POB has them. */}
       <SearchSelect
         value={whoId}
         options={picks}
         getOptionValue={(p) => p.id}
-        getOptionLabel={(p) => p.name}
+        getOptionLabel={(p) => p.label}
         placeholder={
           picks.length === 0
             ? "Nobody to add"
             : direction === "out"
-              ? `Search ${picks.length} people ashore who travelled out…`
-              : `Search ${picks.length} people on board who left…`
+              ? `Search everyone (${picks.length}, staff and visitors) who travelled out…`
+              : `Search everyone (${picks.length}, staff and visitors) who left…`
         }
         disabled={pending || picks.length === 0}
         wrapperClassName="min-w-[14rem] flex-1"
