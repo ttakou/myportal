@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offshore module — User guide</title>
+<style>
+  :root {
+    --red: #e0001b;
+    --ink: #1a1d23;
+    --muted: #5b6270;
+    --line: #dfe2e7;
+    --soft: #f5f6f8;
+    --amber-bg: #fff7e0; --amber: #a86a00;
+    --green-bg: #e8f6ec; --green: #1d7a3a;
+    --redsoft-bg: #fdecee;
+  }
+  @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+  @page :first { margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: var(--ink); }
+  body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; }
+  h1, h2, h3 { line-height: 1.25; margin: 0; }
+  h2 { font-size: 18pt; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid var(--red); }
+  h2 .num { color: var(--red); margin-right: 3mm; }
+  h3 { font-size: 12.5pt; margin: 6mm 0 2mm; }
+  p { margin: 0 0 2.6mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1mm; }
+  b, strong { font-weight: 600; }
+  .ui { font-weight: 600; background: var(--soft); border: 1px solid var(--line); border-radius: 3px; padding: 0 1.4mm; white-space: nowrap; font-size: 9.5pt; }
+  a { color: var(--red); text-decoration: none; }
+
+  /* Cover */
+  .cover { height: 297mm; width: 210mm; position: relative; overflow: hidden; page-break-after: always;
+           background: linear-gradient(150deg, #151b26 0%, #1e2533 55%, #3a1621 100%); color: #fff; }
+  .cover .band { position: absolute; left: 0; top: 0; bottom: 0; width: 9mm; background: var(--red); }
+  .cover .org { position: absolute; top: 28mm; left: 26mm; letter-spacing: 4px; font-size: 11pt; font-weight: 600; color: #e9ebef; }
+  .cover .title { position: absolute; top: 95mm; left: 26mm; right: 22mm; }
+  .cover .title h1 { font-size: 36pt; font-weight: 700; }
+  .cover .title p { font-size: 14pt; color: #c9ced8; margin-top: 6mm; }
+  .cover .shot { position: absolute; left: 26mm; right: 22mm; top: 160mm; border-radius: 3mm; overflow: hidden; box-shadow: 0 6mm 16mm rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); }
+  .cover .shot img { display: block; width: 100%; max-height: 160mm; object-fit: cover; object-position: top; }
+  .shot.full img { max-height: none; }
+  h3, h2 { break-after: avoid; page-break-after: avoid; }
+  .cover .meta { position: absolute; bottom: 20mm; left: 26mm; font-size: 10.5pt; color: #c9ced8; }
+
+  section { page-break-before: always; }
+  section.nobreak { page-break-before: auto; }
+
+  /* TOC */
+  .toc ol { list-style: none; padding: 0; counter-reset: none; }
+  .toc li { display: flex; gap: 3mm; padding: 2mm 0; border-bottom: 1px dotted var(--line); font-size: 11.5pt; }
+  .toc li span.n { color: var(--red); font-weight: 700; width: 9mm; }
+  .toc li small { color: var(--muted); margin-left: auto; font-size: 9pt; }
+
+  /* Figures */
+  figure { margin: 4mm 0 5mm; page-break-inside: avoid; }
+  .shot { position: relative; border: 1px solid var(--line); border-radius: 2mm; overflow: hidden; box-shadow: 0 1mm 3mm rgba(20,25,35,.08); }
+  .shot img { display: block; width: 100%; max-height: 160mm; object-fit: cover; object-position: top; }
+  .shot.full img { max-height: none; }
+  h3, h2 { break-after: avoid; page-break-after: avoid; }
+  .shot.short img { max-height: 120mm; object-fit: cover; object-position: top; }
+  .co { position: absolute; transform: translate(-50%, -50%); width: 7mm; height: 7mm; border-radius: 50%;
+        background: var(--red); color: #fff; font-weight: 700; font-size: 10pt; display: flex; align-items: center; justify-content: center;
+        border: 2px solid #fff; box-shadow: 0 0.5mm 1.5mm rgba(0,0,0,.35); }
+  figcaption { font-size: 9pt; color: var(--muted); margin-top: 1.8mm; }
+  figcaption b { color: var(--ink); }
+  .legend { list-style: none; padding: 0; margin: 2mm 0 0; font-size: 9.5pt; }
+  .legend li { display: flex; gap: 2mm; align-items: baseline; }
+  .legend li i { flex: 0 0 5mm; height: 5mm; border-radius: 50%; background: var(--red); color: #fff; font-style: normal; font-weight: 700; font-size: 8pt; display: inline-flex; align-items: center; justify-content: center; }
+
+  /* Boxes and tables */
+  .tip, .warn, .note { border-radius: 2mm; padding: 3mm 4mm; margin: 3mm 0 4mm; page-break-inside: avoid; font-size: 10pt; }
+  .tip { background: var(--green-bg); border-left: 4px solid var(--green); }
+  .warn { background: var(--redsoft-bg); border-left: 4px solid var(--red); }
+  .note { background: var(--amber-bg); border-left: 4px solid var(--amber); }
+  .tip b:first-child, .warn b:first-child, .note b:first-child { display: block; margin-bottom: 1mm; }
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; font-size: 9.5pt; page-break-inside: avoid; }
+  th, td { border: 1px solid var(--line); padding: 1.6mm 2.2mm; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  td.c, th.c { text-align: center; }
+  .sw { display: inline-block; width: 3.4mm; height: 3.4mm; border-radius: 1mm; vertical-align: -0.5mm; margin-right: 1mm; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .check li { list-style: none; position: relative; padding-left: 1mm; }
+  .check li::before { content: "☐"; position: absolute; left: -5.5mm; color: var(--red); }
+  .role { border: 1px solid var(--line); border-radius: 2mm; padding: 3mm 4mm; margin-bottom: 4mm; page-break-inside: avoid; }
+  .role h3 { margin-top: 0; }
+  .muted { color: var(--muted); }
+  @media screen { body { max-width: 210mm; margin: 0 auto; } section { padding: 10mm 0; border-top: 1px dashed var(--line); } }
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<div class="cover">
+  <div class="band"></div>
+  <div class="org">ADDAX PETROLEUM</div>
+  <div class="title">
+    <h1>Offshore module —<br>User guide</h1>
+    <p>From sign-in to daily operations: trips and requests, POB, crew change, manifests, beds, meals and muster.</p>
+  </div>
+  <div class="shot"><img src="img/04-today.jpg" alt="The Today page of the Offshore module"></div>
+  <div class="meta">Addax Petroleum · November 2026</div>
+</div>
+
+<!-- ============================ TOC ============================ -->
+<section class="toc nobreak" style="page-break-before:auto">
+  <h2>Contents</h2>
+  <ol>
+    <li><span class="n">1</span><a href="#s1">Signing in</a><small>everyone</small></li>
+    <li><span class="n">2</span><a href="#s2">Finding the Offshore module</a><small>everyone</small></li>
+    <li><span class="n">3</span><a href="#s3">Who sees what</a><small>everyone</small></li>
+    <li><span class="n">4</span><a href="#s4">My trips &amp; requests</a><small>every employee</small></li>
+    <li><span class="n">5</span><a href="#s5">The Today page and the night run</a><small>OIM · Dispatcher · Campboss</small></li>
+    <li><span class="n">6</span><a href="#s6">POB &amp; dashboards, Live board, Where is…</a><small>managers</small></li>
+    <li><span class="n">7</span><a href="#s7">Crew rotation and offshore staff</a><small>Dispatcher · managers</small></li>
+    <li><span class="n">8</span><a href="#s8">Manifests and sign-off sheets</a><small>Dispatcher · managers</small></li>
+    <li><span class="n">9</span><a href="#s9">Trip Requests and Visitors</a><small>OIM · Campboss</small></li>
+    <li><span class="n">10</span><a href="#s10">Accommodation and Bed board</a><small>Campboss</small></li>
+    <li><span class="n">11</span><a href="#s11">Catering and the meal sheet</a><small>Campboss</small></li>
+    <li><span class="n">12</span><a href="#s12">Muster roles and muster drill</a><small>OIM · Campboss</small></li>
+    <li><span class="n">13</span><a href="#s13">Reports and exports</a><small>managers · finance</small></li>
+    <li><span class="n">14</span><a href="#s14">Daily routines and common mistakes</a><small>OIM · Dispatcher · Campboss</small></li>
+  </ol>
+  <div class="note"><b>About the screenshots</b>All pictures in this guide come from the live portal in November 2026, taken with a demonstration account that holds the OIM, Campboss and Dispatcher roles. Names and numbers you see are real at that date and will be different when you log in. Your own menu may be shorter — see section 3.</div>
+  <div class="tip"><b>How to read this guide</b>Button and menu names are written like <span class="ui">this</span>. Red numbered circles on a screenshot match the numbered list under it.</div>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<section id="s1">
+  <h2><span class="num">1</span>Signing in</h2>
+  <p>The portal is a website. Open it in Chrome, Edge or Safari, on a computer or a phone:</p>
+  <p style="font-size:12pt"><b>https://addax-petroleum.mportals.com</b></p>
+  <p>The sign-in page shows the workspace name <b>addax-petroleum</b> under “Sign in to your account”. If you see a different workspace, check the address.</p>
+
+  <figure>
+    <div class="shot"><img src="img/01-login.jpg" alt="Login page">
+      <span class="co" style="left:62%;top:41%">1</span>
+      <span class="co" style="left:62%;top:50.5%">2</span>
+      <span class="co" style="left:62%;top:57%">3</span>
+      <span class="co" style="left:62%;top:68.4%">4</span>
+    </div>
+    <figcaption><b>Figure 1 — The sign-in page.</b></figcaption>
+    <ul class="legend">
+      <li><i>1</i><span><b>Email</b> — only for people who were given a portal password.</span></li>
+      <li><i>2</i><span><b>Password</b>.</span></li>
+      <li><i>3</i><span><span class="ui">Sign in</span> for the email and password form.</span></li>
+      <li><i>4</i><span><span class="ui">Sign in with Microsoft</span> — <b>the normal way for Addax staff.</b></span></li>
+    </ul>
+  </figure>
+
+  <h3>Sign in with Microsoft (staff)</h3>
+  <ol>
+    <li>Click <span class="ui">Sign in with Microsoft</span>.</li>
+    <li>Microsoft asks for your <b>company email</b> and password (the same ones as Outlook and Teams). Approve the sign-in on your phone if asked.</li>
+    <li>You come back to the portal, on your Dashboard.</li>
+  </ol>
+  <h3>Your first sign-in</h3>
+  <p>The first time you sign in, the portal looks for the staff record that already exists for you (your department, staff number, roles, offshore trips, crew and room). It matches you by your company email, or by your name when the roster has no email for you. When the match is clear you are linked straight away and see your own data.</p>
+  <p>If the match is not certain, your account waits for an administrator, who links you to the right record. Nothing is deleted in the meantime. Ask your administrator if you see a “pending” page.</p>
+  <div class="warn"><b>Opening the link from Teams, Outlook or WhatsApp?</b>Microsoft sign-in can fail inside these “in-app” browsers. The page then shows an amber warning. Tap the menu (⋯ or the share icon) and choose <b>Open in browser</b>, then sign in from Chrome or Safari.</div>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section id="s2">
+  <h2><span class="num">2</span>Finding the Offshore module</h2>
+  <p>After you sign in you land on the Dashboard. The menu on the left lists the modules you are allowed to use. The Offshore module is called <b>My Offshore</b>.</p>
+  <figure>
+    <div class="shot"><img src="img/03-mytrips.jpg" alt="Offshore module with submenu">
+      <span class="co" style="left:18.5%;top:25.3%">1</span>
+      <span class="co" style="left:9%;top:37%">2</span>
+      <span class="co" style="left:81.5%;top:3.4%">3</span>
+      <span class="co" style="left:49.5%;top:17.6%">4</span>
+    </div>
+    <figcaption><b>Figure 2 — My Offshore opened, with its submenu.</b></figcaption>
+    <ul class="legend">
+      <li><i>1</i><span><b>My Offshore</b> in the left menu. Clicking it always opens <b>My trips &amp; requests</b>.</span></li>
+      <li><i>2</i><span>The submenu (“hubs”). Some hubs have tabs across the top of the page, for example <b>POB &amp; Live Board</b> → Overview · Live board · Catering.</span></li>
+      <li><i>3</i><span>The notification bell.</span></li>
+      <li><i>4</i><span><span class="ui">Monthly report</span> and <span class="ui">Certification compliance report</span> shortcuts.</span></li>
+    </ul>
+  </figure>
+
+  <table>
+    <tr><th>Menu entry</th><th>Tabs inside</th></tr>
+    <tr><td>My trips &amp; requests</td><td>—</td></tr>
+    <tr><td>Today</td><td>— (one page per role, see section 5)</td></tr>
+    <tr><td>Trip Requests</td><td>—</td></tr>
+    <tr><td>Look-ahead</td><td>— (14 or 28 days)</td></tr>
+    <tr><td>POB &amp; Live Board</td><td>Overview · Live board · Catering</td></tr>
+    <tr><td>Crew Rotation</td><td>Crew change · Rotation calendar · Attendance</td></tr>
+    <tr><td>Offshore Staff</td><td>Staff roster · Assign crews · Register staff</td></tr>
+    <tr><td>Where is…</td><td>—</td></tr>
+    <tr><td>Accommodation</td><td>Rooms · Bed board</td></tr>
+    <tr><td>Travel &amp; Manifests</td><td>Manifests · All trips · Visitors</td></tr>
+    <tr><td>Emergency &amp; Muster</td><td>Muster roles · Muster drill</td></tr>
+    <tr><td>Installations</td><td>—</td></tr>
+    <tr><td>History</td><td>Snapshots · Staff rotations</td></tr>
+  </table>
+
+  <h3>The notification bell</h3>
+  <figure>
+    <div class="shot short"><img src="img/02b-bell.jpg" alt="Notification panel"></div>
+    <figcaption><b>Figure 3 — The notification panel.</b> Tabs at the top keep <b>Offshore</b> notices apart from Performance, Transport and Other. The speaker icon mutes the sound. (The demonstration account had no notices, so the list is empty.)</figcaption>
+  </figure>
+  <ul>
+    <li>The <b>Offshore</b> tab collects everything from the Offshore module, POB pages and manifests.</li>
+    <li>Notices that need a decision before a deadline are <b>pinned on top</b>, in an amber box called <b>“Needs a decision”</b>. The deadline is the night run, so the line reads for example “Decide before tonight's run (05:00 tomorrow)”. A notice leaves the pinned box once you have read it or the deadline has passed.</li>
+    <li><span class="ui">Mark all read</span> (or <span class="ui">Mark these read</span> on a tab) clears the red counter.</li>
+    <li>Emergency notices play a louder alarm and make the browser tab flash “🚨 EMERGENCY ALERT”.</li>
+  </ul>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section id="s3">
+  <h2><span class="num">3</span>Who sees what</h2>
+  <p>Your menu depends on your role. If an entry from this guide is missing for you, you do not have that role. Ask your administrator if you think you should.</p>
+  <table>
+    <tr><th style="width:24%">Role</th><th>What you see and do</th></tr>
+    <tr><td><b>Any employee</b></td><td><b>My trips &amp; requests</b> (your trips, trip and visit requests, date changes). Staff with offshore access also read <b>Where is…</b> and the <b>Rotation calendar</b>.</td></tr>
+    <tr><td><b>OIM</b></td><td>Everything. <b>Decides</b> trip requests, visit requests and date changes (only the OIM or an admin can approve them). Uses the OIM part of the Today page.</td></tr>
+    <tr><td><b>Campboss</b></td><td>Everything. <b>Assigns beds</b> to approved travellers and visitors, runs Accommodation, Bed board and Catering. Uses the Campboss part of the Today page.</td></tr>
+    <tr><td><b>Dispatcher</b></td><td>Full use of Today (runs), Crew Rotation, Offshore Staff (roster, Assign crews, Register staff), Manifests, All trips and Visitors. <b>Read-only</b>: POB &amp; Live board, Rooms, Bed board, Where is…, Look-ahead. Does <b>not</b> see Catering, Muster, Installations, History or Trip Requests.</td></tr>
+    <tr><td><b>Receptionist, Radio Operator, Operations Supervisor</b></td><td>Register non-rotational staff (<b>Register staff</b>) and follow <b>Trip Requests</b> without deciding them.</td></tr>
+    <tr><td><b>Operations Supervisor, Finance</b></td><td>Open the <b>Monthly report</b> and its CSV export.</td></tr>
+    <tr><td><b>Administrator</b></td><td>Everything, plus settings such as automatic/manual crew change and linking duplicate accounts.</td></tr>
+  </table>
+  <div class="note"><b>The Monthly report</b>Admins, OIM, Campboss and Dispatcher can open it as well as Finance and the Operations Supervisor.</div>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section id="s4">
+  <h2><span class="num">4</span>My trips &amp; requests (every employee)</h2>
+  <p>Open <b>My Offshore → My trips &amp; requests</b>. From top to bottom the page has:</p>
+  <ul>
+    <li><b>My offshore trips</b> — your latest three trips with installation, dates, flight/room and status. <span class="ui">Show all … trips</span> lists the rest.</li>
+    <li><b>Request an offshore trip</b>.</li>
+    <li><b>Offshore visitor requests</b> — to bring visitors offshore.</li>
+    <li><b>Change my mob / demob dates</b> — shown when you are on a rotation.</li>
+  </ul>
+
+  <h3>4.1 Request an offshore trip</h3>
+  <ol>
+    <li>Pick the <b>Installation</b> (for example Juliet).</li>
+    <li>Enter the <b>Mobilise</b> date and, if known, the <b>Demob</b> date.</li>
+    <li>Write the <b>Purpose of the trip</b> (required), e.g. “SCADA upgrade”.</li>
+    <li>Under <b>People on this trip</b> your name is already filled in. <span class="ui">Add person</span> adds another row: pick an employee from the list, or type a new name for a visitor or contractor who is not in the system yet.</li>
+    <li>Click <span class="ui">Request trip (N)</span>. Each person gets their own trip, so each can be cleared for HSE and put on a manifest separately.</li>
+  </ol>
+
+  <h3>4.2 Request a visit</h3>
+  <figure>
+    <div class="shot"><img src="img/03b-visitform.jpg" alt="Visitor request form"></div>
+    <figcaption><b>Figure 4 — My trips &amp; requests with the visitor request form opened</b> (<span class="ui">Request a visit</span>; the same button reads <span class="ui">Close</span> while open).</figcaption>
+  </figure>
+  <ol>
+    <li>Click <span class="ui">Request a visit</span>.</li>
+    <li>Choose the <b>destination installation</b>, the <b>Departure</b> date and the <b>Return</b> date. Leave Return empty for a <b>day visit</b> (back the same day).</li>
+    <li>Tick <b>Overnight (needs beds)</b> if the visitors sleep offshore, and set the number of visitors.</li>
+    <li>For each visitor give the <b>full name</b>, <b>Company</b> and <b>Gender</b>. The form warns you if a name already exists or looks similar — pick the existing person rather than creating a second one.</li>
+    <li>Send the request.</li>
+  </ol>
+
+  <h3>4.3 Change my mob / demob dates</h3>
+  <p>Use this when one hitch has to move. Only that hitch changes; your rotation stays the same.</p>
+  <table>
+    <tr><th>Field</th><th>What to enter</th></tr>
+    <tr><td>For</td><td>“Myself”, or someone in your team (managers only).</td></tr>
+    <tr><td>Change</td><td>Early mobilisation · Late mobilisation · Early demobilisation · Late demobilisation (extension) · Set demob date (none planned).</td></tr>
+    <tr><td>Scheduled</td><td>Filled in for you from the rotation.</td></tr>
+    <tr><td>Requested date</td><td>The new date.</td></tr>
+    <tr><td>Reason and Details</td><td>Medical · Compassionate / family · Operational need / handover · Training / logistics · Other, plus a short explanation.</td></tr>
+    <tr><td>Cover</td><td>Who covers the post meanwhile, or the reliever / back-to-back affected.</td></tr>
+  </table>
+  <p>Click <span class="ui">Send request</span>. You can <span class="ui">Withdraw</span> a request while it is still open.</p>
+
+  <h3>4.4 How approval works</h3>
+  <ul>
+    <li><b>Date changes</b> go first to your <b>line manager</b> (<span class="ui">Endorse → OIM</span> or <span class="ui">Turn down</span>, with a comment), then to the <b>OIM</b>, who approves or rejects. Statuses: Waiting for line manager → Waiting for OIM → Approved / Rejected.</li>
+    <li>A date change still undecided when the night run of its first day has gone <b>expires</b> (“Expired — not decided in time”). Send a new one if it is still needed.</li>
+    <li><b>Trip and visit requests</b> are decided by the <b>OIM</b>. The Campboss then assigns a bed. They do not expire like date changes, but a trip that never happens is flagged 7 days after its mobilise date and cancelled after 30 days (you are told).</li>
+    <li>Approved date changes are carried out by the night run at 05:00 — you do not need to do anything else.</li>
+  </ul>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section id="s5">
+  <h2><span class="num">5</span>The Today page and the night run</h2>
+  <p><b>My Offshore → Today</b> puts each role's work for the day on one page. The OIM, the Dispatcher and the Campboss each see their own box (admins see all three). Other staff see “Not available”.</p>
+  <figure>
+    <div class="shot"><img src="img/04-today.jpg" alt="Today page">
+      <span class="co" style="left:26%;top:21.9%">1</span>
+      <span class="co" style="left:75.5%;top:28.7%">2</span>
+      <span class="co" style="left:26%;top:34.5%">3</span>
+      <span class="co" style="left:26%;top:45.9%">4</span>
+      <span class="co" style="left:26%;top:64.9%">5</span>
+      <span class="co" style="left:26%;top:80.9%">6</span>
+    </div>
+    <figcaption><b>Figure 5 — The Today page</b>, Wednesday 25 November. The header says when tonight's run happens.</figcaption>
+    <ul class="legend">
+      <li><i>1</i><span><b>OIM — decide before tonight's run</b>: date changes that take effect at the next run.</span></li>
+      <li><i>2</i><span><span class="ui">Approve</span> / <span class="ui">Reject</span> (a rejection asks for a reason). Trip and visit requests show <span class="ui">Decide →</span>, which opens Trip Requests.</span></li>
+      <li><i>3</i><span>Summary of tonight's run: how many people will be mobilised and demobilised, and on which manifests.</span></li>
+      <li><i>4</i><span><b>Dispatcher — today's runs</b>: one card per manifest travelling today (here none today, one tomorrow).</span></li>
+      <li><i>5</i><span><b>Campboss — beds and meals today</b>: arrivals without a bed, people on board with no room, link to the bed board.</span></li>
+      <li><i>6</i><span><b>Meal count today</b> per installation.</span></li>
+    </ul>
+  </figure>
+
+  <h3>5.1 The night run (05:00 Douala time)</h3>
+  <p>Every night at <b>05:00</b> the system runs automatically. In order, it:</p>
+  <ol>
+    <li>carries out approved date changes;</li>
+    <li>moves crews on and off by the <b>rotation schedule</b> (crew change runs automatically; only an administrator can switch it between Automatic and Manual);</li>
+    <li>expires date changes nobody decided;</li>
+    <li>sends reminders 3 days before a crew change;</li>
+    <li>flags or cancels trips that never happened;</li>
+    <li>prepares crew-change day manifests ahead and adds visitors to them, boarding and returning visitors on their dates;</li>
+    <li>closes manifests whose day has passed;</li>
+    <li>builds today's meal sheet;</li>
+    <li>on Mondays, sends a 14-day look-ahead to the OIM and the Campboss.</li>
+  </ol>
+  <p>People are only moved on their travel day — a manifest dated later never moves anyone early.</p>
+
+  <h3>5.2 Morning reconciliation (Dispatcher)</h3>
+  <p>The night run moves people <b>as planned</b>. After the boat or helicopter has gone, the Dispatcher records what really happened, on the run's card in <b>Dispatcher — today's runs</b>:</p>
+  <ul>
+    <li>The banner says “Tonight's run moved X on and Y off — confirm who actually travelled”.</li>
+    <li><b>Tick box</b> next to each passenger as they board (“N of M travelling ticked”).</li>
+    <li><span class="ui">No-show</span> for someone who did not travel. This corrects POB: a MOB no-show comes off board, a DEMOB no-show stays aboard. No-shows fold into “Show N no-shows (not on the manifest)”; <span class="ui">Put back on the run</span> reverses a mistake.</li>
+    <li><span class="ui">Add traveller</span> for someone who travelled but was not on the list. The search covers <b>everyone in the people database and every registered visitor</b>.</li>
+    <li><span class="ui">Confirm run</span> when done: everyone not marked No-show is recorded as having travelled and the manifest closes (“Confirmed by … at HH:MM”).</li>
+    <li><span class="ui">Postpone to tomorrow</span> if the whole run did not go (weather, breakdown): this morning's move is undone and everyone goes onto tomorrow's manifest. No-shows stay as they are.</li>
+    <li><span class="ui">Sign-off sheet</span> opens the printable manifest (section 8).</li>
+  </ul>
+  <div class="note"><b>Reminders</b>If a run is still not confirmed, the Dispatcher gets a reminder at <b>12:00</b> and the OIM at <b>15:00</b> (Douala time). Confirming or postponing the run clears them.</div>
+  <p class="muted">On the day of the screenshots there was no run, so the run card with tick boxes is not pictured.</p>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section id="s6">
+  <h2><span class="num">6</span>POB &amp; dashboards, Live board, Where is…</h2>
+  <h3>6.1 Overview</h3>
+  <p><b>POB &amp; Live Board → Overview</b> gives the persons-on-board picture and the accommodation picture in coloured tiles.</p>
+  <figure>
+    <div class="shot full"><img src="img/05-pob.jpg" alt="POB dashboard">
+      <span class="co" style="left:19.6%;top:19.6%">1</span>
+      <span class="co" style="left:54.6%;top:41%">2</span>
+      <span class="co" style="left:64.5%;top:41%">3</span>
+      <span class="co" style="left:74.4%;top:41%">4</span>
+      <span class="co" style="left:18.6%;top:52.2%">5</span>
+    </div>
+    <figcaption><b>Figure 6 — POB overview.</b></figcaption>
+    <ul class="legend">
+      <li><i>1</i><span><b>Current POB</b> (here 148, amber). Next to it: rotational and non-rotational staff, visitors, arrivals, departures and overstayers. Below: POB per installation, per crew and per lifeboat.</span></li>
+      <li><i>2</i><span><b>On board, no room</b> — should always be 0 (green).</span></li>
+      <li><i>3</i><span><b>Free beds</b> (the tile says how many are in Echo).</span></li>
+      <li><i>4</i><span><b>Empty rooms</b>.</span></li>
+      <li><i>5</i><span><b>Crew changes due</b> — crews whose schedule and POB do not agree. These are handled by the night run; the buttons here are for managers in Manual mode.</span></li>
+    </ul>
+  </figure>
+  <table>
+    <tr><th>Tile</th><th><span class="sw" style="background:#2e9b55"></span>Green</th><th><span class="sw" style="background:#e3a400"></span>Amber</th><th><span class="sw" style="background:#d6283b"></span>Red</th></tr>
+    <tr><td>Current POB</td><td>under 120</td><td>120 – 150</td><td>over 150</td></tr>
+    <tr><td>Free beds (outside Echo)</td><td>more than 12</td><td>5 – 12</td><td>fewer than 5</td></tr>
+    <tr><td>Empty rooms</td><td>2 or more</td><td>1</td><td>0</td></tr>
+    <tr><td>On board, no room</td><td>nobody</td><td>—</td><td>anyone</td></tr>
+  </table>
+  <p>Further down: <b>Certification alerts</b> (certificates expiring in the next 30 days) and links to the <b>POB outlook</b> and the <b>Monthly report</b>.</p>
+
+  <h3>6.2 Live board</h3>
+  <figure>
+    <div class="shot"><img src="img/06-board.jpg" alt="Live board"></div>
+    <figcaption><b>Figure 7 — Live board.</b> Everyone on board, by lifeboat, with room. <span class="ui">Auto-refresh (30s)</span> keeps it up to date on a wall screen; <span class="ui">Print roster</span> prints the POB list (all, or one lifeboat).</figcaption>
+  </figure>
+
+  <h3>6.3 Where is…</h3>
+  <p>Type or pick a name to see where the schedule puts that person today (offshore or onshore, crew, rotation) and which bed is theirs. The <b>Group</b> (lifeboat, cabin, crew) and <b>Show</b> (Everyone, On board, Exceptions) filters only change the view.</p>
+  <figure>
+    <div class="shot"><img src="img/07b-whereis-person.jpg" alt="Where is with a person selected"></div>
+    <figcaption><b>Figure 8 — Where is…</b> with one person selected.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section id="s7">
+  <h2><span class="num">7</span>Crew rotation and offshore staff</h2>
+  <div class="note"><b>Crew changes run automatically</b>The night run moves crews according to the rotation calendar. Only an <b>administrator</b> can switch the default crew-change mode between <b>Automatic</b> and <b>Manual</b> (and choose “Prompt only” or “Act on the schedule” for 05:00). Do not mobilise or demobilise crews by hand unless you have been told the site is in Manual mode.</div>
+  <h3>7.1 Crew change</h3>
+  <figure>
+    <div class="shot"><img src="img/08-crews.jpg" alt="Crew change"></div>
+    <figcaption><b>Figure 9 — Crew Rotation → Crew change.</b> One card per crew with its rotation, members and next dates. The preview shows who would move without moving anyone; the manifest buttons on each card create inbound/outbound manifests.</figcaption>
+  </figure>
+  <h3>7.2 Rotation calendar</h3>
+  <figure>
+    <div class="shot"><img src="img/09-calendar.jpg" alt="Rotation calendar"></div>
+    <figcaption><b>Figure 10 — Rotation calendar</b> (read-only): which crew is offshore on each day. <span class="ui">Open report (A3)</span> opens the printable version below.</figcaption>
+  </figure>
+  <figure>
+    <div class="shot"><img src="img/09b-rotation-report.jpg" alt="Rotation calendar A3 report"></div>
+    <figcaption><b>Figure 11 — Printable crew rotation calendar</b> (8 weeks).</figcaption>
+  </figure>
+  <h3>7.3 Assign crews</h3>
+  <figure>
+    <div class="shot"><img src="img/10-assign.jpg" alt="Assign crews"></div>
+    <figcaption><b>Figure 12 — Offshore Staff → Assign crews.</b> Build a crew by dragging people (or with the arrows), register a new employee, assign people by rotation calendar, and merge crews that share a calendar. Every action here saves straight away.</figcaption>
+  </figure>
+  <h3>7.4 Attendance flags</h3>
+  <figure>
+    <div class="shot short"><img src="img/11-attendance.jpg" alt="Attendance flags"></div>
+    <figcaption><b>Figure 13 — Crew Rotation → Attendance.</b> Flag an early comer, early leaver or absentee: Absent, Early arrival, Early departure, Late arrival or Late departure. Resolve the flag when settled.</figcaption>
+  </figure>
+  <h3>7.5 Offshore staff roster</h3>
+  <figure>
+    <div class="shot"><img src="img/12-roster.jpg" alt="Staff roster"></div>
+    <figcaption><b>Figure 14 — Offshore Staff → Staff roster.</b> Each person's crew, position, company, back-to-back, fixed room and “Travel eligible”. <span class="ui">Roster &amp; room allocation report</span> prints the list.</figcaption>
+  </figure>
+  <h3>7.6 Register staff</h3>
+  <figure>
+    <div class="shot"><img src="img/13-register.jpg" alt="Register staff"></div>
+    <figcaption><b>Figure 15 — Offshore Staff → Register staff</b>, for non-rotational staff. Choose “Already in the system” or “New person” (full name, optional email, contractor or employee, company, position), then board or demob them.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section id="s8">
+  <h2><span class="num">8</span>Manifests and sign-off sheets</h2>
+  <p><b>Travel &amp; Manifests → Manifests</b> lists the manifests being prepared and their history. Crew-change day manifests are prepared automatically by the night run and filled from the schedule; visitors are added to them.</p>
+  <figure>
+    <div class="shot"><img src="img/14-manifests.jpg" alt="Manifests list"></div>
+    <figcaption><b>Figure 16 — Manifests.</b> Each manifest shows its date, direction (MOB/DEMOB), route and passengers. <span class="ui">Report</span> opens the printable sheet. The <b>History</b> part can be filtered by status and crew, and downloaded as CSV.</figcaption>
+  </figure>
+  <figure>
+    <div class="shot"><img src="img/14b-manifest-sheet.jpg" alt="Passenger manifest sign-off sheet"></div>
+    <figcaption><b>Figure 17 — The printed passenger manifest (sign-off sheet).</b> Columns: Name, Position, Status, Remarks, Checked, Signature. Use the print button at the top.</figcaption>
+  </figure>
+  <div class="tip"><b>Only travellers are printed</b>The sign-off sheet lists only the people who travel. People marked <b>No-show</b> are left off, so mark no-shows before printing.</div>
+  <p><b>All trips</b> (same hub) lists every offshore trip with its status, for searching and checking.</p>
+  <figure>
+    <div class="shot"><img src="img/15-trips.jpg" alt="All trips"></div>
+    <figcaption><b>Figure 18 — Travel &amp; Manifests → All trips.</b></figcaption>
+  </figure>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section id="s9">
+  <h2><span class="num">9</span>Trip Requests and Visitors</h2>
+  <p>A trip request goes through three stages, shown as three counters at the top of <b>Trip Requests</b>:</p>
+  <ol>
+    <li><b>Awaiting the OIM</b> — the OIM clicks <span class="ui">Approve</span> (or <span class="ui">Approve (clear HSE)</span>) or <span class="ui">Reject</span>.</li>
+    <li><b>Awaiting a room</b> — the Campboss clicks <span class="ui">Assign a room</span> and picks a room.</li>
+    <li><b>Ready to travel</b> — approved and bedded; the Dispatcher puts them on a manifest.</li>
+  </ol>
+  <figure>
+    <div class="shot short"><img src="img/16-requests.jpg" alt="Trip Requests"></div>
+    <figcaption><b>Figure 19 — Trip Requests</b> (all queues empty on the day of the screenshot). <b>History</b> keeps past decisions; <span class="ui">Approvals log</span> and <span class="ui">POB outlook</span> are in the top-right corner.</figcaption>
+  </figure>
+  <h3>Visitors</h3>
+  <p><b>Travel &amp; Manifests → Visitors</b> follows each visit from request to return: the OIM approves, the Campboss uses <span class="ui">Find a bed</span>, and on the day the visit is confirmed (<span class="ui">Confirm offshore arrival</span>, <span class="ui">Confirm return onshore</span>). <span class="ui">Didn't travel</span> closes a visit that did not happen and frees the bed.</p>
+  <figure>
+    <div class="shot short"><img src="img/17-visitors.jpg" alt="Visitors"></div>
+    <figcaption><b>Figure 20 — Visitors.</b></figcaption>
+  </figure>
+</section>
+
+<!-- ============================ 10 ============================ -->
+<section id="s10">
+  <h2><span class="num">10</span>Accommodation and Bed board</h2>
+  <figure>
+    <div class="shot"><img src="img/18-rooms.jpg" alt="Rooms"></div>
+    <figcaption><b>Figure 21 — Accommodation → Rooms.</b> Every room with its beds and occupants. <span class="ui">Room allocation report</span> and <span class="ui">Day sheet (occupants only)</span> print the list.</figcaption>
+  </figure>
+  <figure>
+    <div class="shot"><img src="img/18b-rooms-day.jpg" alt="Room allocation day sheet"></div>
+    <figcaption><b>Figure 22 — Room allocation day sheet</b> (printable).</figcaption>
+  </figure>
+  <figure>
+    <div class="shot"><img src="img/19-bedboard.jpg" alt="Bed board"></div>
+    <figcaption><b>Figure 23 — Accommodation → Bed board.</b> Free beds, and the people on board still waiting for a bed. The Campboss places people in beds here; the print link gives the sheet below.</figcaption>
+  </figure>
+  <figure>
+    <div class="shot"><img src="img/19b-bedboard-print.jpg" alt="Bed board print"></div>
+    <figcaption><b>Figure 24 — Printable bed board</b> (free beds).</figcaption>
+  </figure>
+</section>
+
+<!-- ============================ 11 ============================ -->
+<section id="s11">
+  <h2><span class="num">11</span>Catering and the meal sheet</h2>
+  <p><b>POB &amp; Live Board → Catering</b> holds the meal sheet of the day: one line per person with Breakfast (05:00), Snack (09:00), Lunch (11:30), Dinner (17:30) and Lodging. The night run builds it from POB with every meal ticked; untick what was not served. <span class="ui">Update from POB</span> adds whoever has boarded since and removes whoever has left, keeping your ticks.</p>
+  <figure>
+    <div class="shot short"><img src="img/20-catering.jpg" alt="Catering"></div>
+    <figcaption><b>Figure 25 — Catering</b> (installation and date picked at the top).</figcaption>
+  </figure>
+  <h3>Crew-change days</h3>
+  <p>On a crew-change day, people arriving and leaving are listed first, in their own groups:</p>
+  <table>
+    <tr><th>Group</th><th class="c">Breakfast</th><th class="c">Snack</th><th class="c">Lunch</th><th class="c">Dinner</th><th class="c">Bed</th></tr>
+    <tr><td><b>Arriving (MOB)</b></td><td class="c">—</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td></tr>
+    <tr><td><b>Leaving (DEMOB)</b></td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td><td class="c">—</td><td class="c">—</td></tr>
+    <tr><td>In and out the same day</td><td class="c">—</td><td class="c">✓</td><td class="c">✓</td><td class="c">—</td><td class="c">—</td></tr>
+    <tr><td>Staying on board</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td></tr>
+  </table>
+  <p>The caterer's own (Pellegrini) staff come last, with nothing ticked.</p>
+  <figure>
+    <div class="shot"><img src="img/20b-mealsheet.jpg" alt="Printable meal sheet"></div>
+    <figcaption><b>Figure 26 — The printable meal sheet</b> with totals at the top (for admin, Campboss, OIM and the canteen manager).</figcaption>
+  </figure>
+</section>
+
+<!-- ============================ 12 ============================ -->
+<section id="s12">
+  <h2><span class="num">12</span>Muster roles and muster drill</h2>
+  <figure>
+    <div class="shot"><img src="img/21-emergency.jpg" alt="Muster roles"></div>
+    <figcaption><b>Figure 27 — Emergency &amp; Muster → Muster roles.</b> Assign emergency roles and teams for the current window.</figcaption>
+  </figure>
+  <figure>
+    <div class="shot short"><img src="img/22-drill.jpg" alt="Muster drill"></div>
+    <figcaption><b>Figure 28 — Muster drill.</b> <span class="ui">Start drill roll-call</span> (or <span class="ui">Real emergency</span>) opens a roll-call of everyone on board. <span class="ui">Close out roll-call</span> ends it — anyone not yet checked in is recorded as a no-show for that roll-call. Past roll-calls are listed with their report.</figcaption>
+  </figure>
+  <figure>
+    <div class="shot"><img src="img/22b-muster-report.jpg" alt="Muster report"></div>
+    <figcaption><b>Figure 29 — Muster roll-call report</b> (printable).</figcaption>
+  </figure>
+</section>
+
+<!-- ============================ 13 ============================ -->
+<section id="s13">
+  <h2><span class="num">13</span>Reports and exports</h2>
+  <h3>13.1 Look-ahead</h3>
+  <figure>
+    <div class="shot"><img src="img/23-lookahead.jpg" alt="Look-ahead"></div>
+    <figcaption><b>Figure 30 — Look-ahead</b> (14 or 28 days). Day cards with POB per day; click a day for who is <b>arriving</b> (with the bed plan), who is <b>leaving</b>, what is <b>waiting for a decision</b>, a <b>to-do list before the next crew changes</b>, and the <b>catering forecast</b>.</figcaption>
+  </figure>
+  <h3>13.2 History</h3>
+  <ul>
+    <li><b>Snapshots</b>: “POB as of a date” and “Room occupancy over a period”.</li>
+    <li><b>Staff rotations</b>: pick a staff member to see their trips and date changes (early / late mob &amp; demob).</li>
+  </ul>
+  <figure>
+    <div class="shot short"><img src="img/24-history.jpg" alt="History snapshots"></div>
+    <figcaption><b>Figure 31 — History → Snapshots.</b></figcaption>
+  </figure>
+  <h3>13.3 Monthly report</h3>
+  <figure>
+    <div class="shot"><img src="img/26-monthly.jpg" alt="Monthly report"></div>
+    <figcaption><b>Figure 32 — Offshore monthly report</b> (November 2026). Man-days, average and peak POB, POB by installation, daily POB against capacity, and man-days and meals per company. Use the arrows to change month, <span class="ui">Export man-days (CSV)</span> for a spreadsheet, and <span class="ui">Print / Save as PDF</span>. Open it from <span class="ui">Monthly report</span> at the top of any Offshore page.</figcaption>
+  </figure>
+  <h3>13.4 CSV exports</h3>
+  <p>Most lists and print pages have an <span class="ui">Export</span> or CSV link that downloads a spreadsheet file: monthly report, staff roster, rooms, meal sheet, rotation calendar, a manifest, manifest history, muster roll-call. The Dispatcher can export all but meals and muster; Finance and the Operations Supervisor export the monthly report.</p>
+</section>
+
+<!-- ============================ 14 ============================ -->
+<section id="s14">
+  <h2><span class="num">14</span>Daily routines and common mistakes</h2>
+  <div class="role">
+    <h3>OIM — every day</h3>
+    <ul class="check">
+      <li>Open <b>Today</b>. Approve or reject everything in “decide before tonight's run” — undecided date changes expire.</li>
+      <li>Open <b>Trip Requests</b> via <span class="ui">Decide →</span> and decide new trip and visit requests.</li>
+      <li>Check the <b>bell</b> for pinned “Needs a decision” notices.</li>
+      <li>Glance at <b>POB &amp; Live Board → Overview</b>: POB colour, overstayers, certification alerts.</li>
+      <li>After 15:00, if reminded, follow up any run the Dispatcher has not confirmed.</li>
+      <li>Mondays: read the 14-day look-ahead.</li>
+    </ul>
+  </div>
+  <div class="role">
+    <h3>Dispatcher — every day</h3>
+    <ul class="check">
+      <li>Open <b>Today</b> after the boat or helicopter has left. Tick who boarded.</li>
+      <li>Mark <span class="ui">No-show</span> for anyone who did not travel; <span class="ui">Add traveller</span> for anyone extra.</li>
+      <li><span class="ui">Confirm run</span> — before 12:00 to avoid the reminder. If the run did not go at all, <span class="ui">Postpone to tomorrow</span>.</li>
+      <li>Print the <span class="ui">Sign-off sheet</span> when needed.</li>
+      <li>Check tomorrow's manifests in <b>Travel &amp; Manifests</b> and the <b>Look-ahead</b>.</li>
+    </ul>
+  </div>
+  <div class="role">
+    <h3>Campboss — every day</h3>
+    <ul class="check">
+      <li>Open <b>Today</b>: “Arriving today without a bed” and “On board now with no room” should both be 0. If not, <span class="ui">Open the bed board →</span> and place them.</li>
+      <li>Assign rooms in <b>Trip Requests → Approved, awaiting a room</b> and to visitors (<span class="ui">Find a bed</span>).</li>
+      <li>Check the <b>meal count</b> and the <b>Catering</b> sheet; untick meals not served; print the meal sheet for the galley.</li>
+      <li>Keep the <b>Free beds</b> and <b>Empty rooms</b> tiles out of the red.</li>
+    </ul>
+  </div>
+
+  <h3>Common mistakes</h3>
+  <table>
+    <tr><th style="width:36%">Situation</th><th>Do this</th></tr>
+    <tr><td>Someone was on the run but <b>did not travel</b></td><td>Mark <span class="ui">No-show</span> on the <b>Today</b> page (or on the manifest). <b>Never “demobilise” them</b> to correct it — that creates a false trip in their history. No-show puts POB right and keeps them off the sign-off sheet.</td></tr>
+    <tr><td>Someone was <b>mobilised by mistake</b> today</td><td>Use <span class="ui">Undo</span> on the POB overview. It removes the trip as if it was never entered. It only works while the person is still on board and the mobilisation was made or dated today; after that, use Demob.</td></tr>
+    <tr><td>A visitor did not come</td><td>Use <span class="ui">Didn't travel</span> on the Visitors page. This closes the visit and frees the bed.</td></tr>
+    <tr><td>The same person appears <b>twice</b></td><td>Do not create a third record or delete one. Ask an <b>administrator</b> to merge (link) the two records in the Admin console.</td></tr>
+    <tr><td>A date change was not decided in time</td><td>It shows “Expired — not decided in time”. Send a new request if still needed.</td></tr>
+    <tr><td>Crews look out of step with the schedule</td><td>The night run handles crew change automatically. Do not mobilise crews by hand unless an administrator has set Manual mode.</td></tr>
+  </table>
+  <p class="muted" style="margin-top:8mm">Offshore module — User guide · Addax Petroleum · November 2026</p>
+</section>
+
+</body>
+</html>
